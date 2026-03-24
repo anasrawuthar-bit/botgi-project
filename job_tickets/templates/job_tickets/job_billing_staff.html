@@ -1,0 +1,1057 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+
+{% block title %}Invoice - {{ job.job_code }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .billing-breakdown-card {
+        border: 1px solid #e8ecf3;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        box-shadow: 0 4px 16px rgba(17, 24, 39, 0.08);
+        padding: 1rem;
+    }
+
+    .billing-subtext {
+        color: #5f6778;
+    }
+
+    .billing-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .billing-table tbody td {
+        vertical-align: middle;
+    }
+
+    .billing-control-cell {
+        background: #fbfdff;
+        border-top: 1px dashed #d6dfef;
+    }
+
+    .billing-action-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .billing-total-row td {
+        background: #f7faff;
+    }
+
+    .billing-grand-total-row td {
+        background: #eef4ff;
+    }
+
+    .billing-inline-product {
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .product-select.product-select-open {
+        border-color: #fca311;
+        box-shadow: 0 0 0 0.2rem rgba(252, 163, 17, 0.16);
+    }
+
+    .inline-product-meta {
+        color: #5f6778;
+        font-size: 0.8rem;
+    }
+
+    .pending-undo-panel {
+        border: 1px dashed #d6dfef;
+        background: #f7faff;
+        border-radius: 10px;
+        padding: 0.75rem;
+        margin-bottom: 0.8rem;
+    }
+
+    .pending-undo-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .pending-undo-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        border: 1px solid #d9e3f5;
+        border-radius: 999px;
+        background: #fff;
+        padding: 0.25rem 0.35rem 0.25rem 0.65rem;
+        font-size: 0.82rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .billing-action-row .btn {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <h1 class="mb-4">Invoice - {{ job.job_code }}</h1>
+    <hr>
+    
+    <form method="post" id="job-billing-form">
+        {% csrf_token %}
+        <input type="hidden" name="update_amounts_submit" value="1">
+        
+        <div class="row">
+            <div class="col-md-6">
+                <h3>Customer & Job Details</h3>
+                <p><strong>Customer Name:</strong> {{ job.customer_name }}</p>
+                <p><strong>Phone:</strong> {{ job.customer_phone }}</p>
+                <p><strong>Device:</strong> {{ job.device_type }} ({{ job.device_brand }} {{ job.device_model }})</p>
+                <p><strong>Reported Issue:</strong> {{ job.reported_issue }}</p>
+            </div>
+            
+            <div class="col-md-6">
+                <h3>Billing Information</h3>
+                <p><strong>Invoice Date:</strong> {{ job.updated_at|date:"Y-m-d" }}</p>
+                <p><strong>Current Status:</strong> <span class="badge badge-status badge-success">{{ job.status }}</span></p>
+                <p><strong>Created by Staff ID:</strong> {{ job.created_by.id }}</p>
+                <p><strong>Serviced by Technician ID:</strong> {{ technician_id }}</p>
+                <p><strong>Technician Notes:</strong> {{ job.technician_notes|default:"No notes." }}</p>
+            </div>
+            
+            <div class="col-md-6">
+            <div class="row g-1 align-items-center mb-4">
+                
+                <div class="col-4">
+                    <strong class="text-primary">Invoice Number:</strong>
+                </div>
+                
+                <div class="col-8">
+                    <div class="input-group input-group-sm">
+                        <input type="text" 
+                            name="job_sales_invoice_number" 
+                            value="{{ job.vyapar_invoice_number|default:'' }}"
+                            class="form-control"
+                            placeholder="Leave blank if there is no third-party billing."
+                            id="vyapar-invoice-input" 
+                            readonly> 
+                        
+                        <button type="button" 
+                                id="edit-invoice-btn" 
+                                class="btn btn-outline-secondary"
+                                data-bs-toggle="tooltip" 
+                                title="Click to Edit">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        <button type="submit"
+                                id="save-invoice-btn"
+                                class="btn btn-success btn-sm"
+                                style="display: none;">
+                            <i class="fas fa-check me-1"></i>Save Invoice
+                        </button>
+                        <button type="button"
+                                id="cancel-invoice-btn"
+                                class="btn btn-outline-secondary btn-sm"
+                                style="display: none;">
+                            <i class="fas fa-xmark me-1"></i>Cancel
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        Current saved invoice: <strong>{{ job.vyapar_invoice_number|default:"Not assigned" }}</strong>.
+                    </small>
+                </div>
+            </div>
+        </div>
+        <hr class="my-4">
+
+        <div class="billing-header-row mb-3">
+            <div>
+                <h2 class="mb-1">Service & Billing Breakdown</h2>
+                <p class="billing-subtext mb-0">Add service lines and product lines from one billing workspace.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{% url 'inventory_product_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-boxes-stacked me-1"></i>Manage Products
+                </a>
+                <button type="button" 
+                        id="edit-master-btn" 
+                        class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-pen me-1"></i>Edit Amounts / Add product
+                </button>
+                <button type="submit" 
+                        name="update_amounts_submit" 
+                        id="save-master-btn" 
+                        class="btn btn-success btn-sm" 
+                        style="display: none;">
+                    <i class="fas fa-check me-1"></i>Apply & Save
+                </button>
+                <button type="button" 
+                        id="redo-master-btn" 
+                        class="btn btn-danger btn-sm" 
+                        style="display: none;">
+                    <i class="fas fa-undo me-1"></i>Redo
+                </button>
+            </div>
+        </div>
+
+        <div id="validation-warning" class="alert alert-warning" style="display: none;">
+            <i class="fas fa-exclamation-triangle"></i> Please fill in all fields of the current service before adding a new one.
+        </div>
+
+<div id="pending-undo-panel" class="pending-undo-panel" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <strong class="small text-uppercase text-muted">Pending deletions</strong>
+        <button type="button" id="undo-all-btn" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-rotate-left me-1"></i>Undo All
+        </button>
+    </div>
+    <div id="pending-undo-list" class="pending-undo-list"></div>
+</div>
+
+<div class="billing-breakdown-card mb-4">
+<div class="table-responsive">
+    <table class="table table-striped table-hover billing-table mb-0">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th class="text-end">Part Cost (&#8377;)</th>
+                <th class="text-end">Service Charge (&#8377;)</th>
+                <th class="text-center" id="delete-header" style="display: none;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in service_logs %}
+            <tr id="service-row-{{ log.id }}">
+                <td>
+                    {{ log.description|display_service_description }}
+                    {% if log.id in product_sale_log_ids %}
+                        <span class="badge bg-info-subtle text-info-emphasis border ms-1">Product</span>
+                    {% endif %}
+                </td>
+                <td class="text-end">
+                    <input type="number" step="0.01" 
+                           name="part_cost_{{ log.id }}" 
+                           value="{{ log.part_cost|floatformat:2 }}" 
+                           class="form-control form-control-sm text-end editable-finance-field" 
+                           id="part-cost-{{ log.id }}" 
+                           readonly> </td>
+                <td class="text-end">
+                    <input type="number" step="0.01" 
+                        name="service_charge_{{ log.id }}" value="{{ log.service_charge|floatformat:2 }}" 
+                        class="form-control form-control-sm text-end editable-finance-field" 
+                        id="service-charge-{{ log.id }}" 
+                        readonly> 
+                </td>
+                <td class="text-center delete-column" style="display: none;">
+                    <button type="button" class="btn btn-sm btn-danger delete-service-btn" data-service-id="{{ log.id }}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+            <!-- New Service Rows -->
+            <tr id="new-service-row-1" style="display: none;">
+                <td><input type="text" name="new_description[]" class="form-control form-control-sm" placeholder="Service description"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_part_cost[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_service_charge[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
+                <td class="delete-column" style="display: none;"></td>
+            </tr>
+            <tr id="new-service-row-2" style="display: none;">
+                <td><input type="text" name="new_description[]" class="form-control form-control-sm" placeholder="Service description"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_part_cost[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_service_charge[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
+                <td class="delete-column" style="display: none;"></td>
+            </tr>
+            <tr id="new-service-row-3" style="display: none;">
+                <td><input type="text" name="new_description[]" class="form-control form-control-sm" placeholder="Service description"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_part_cost[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_service_charge[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
+                <td class="delete-column" style="display: none;"></td>
+            </tr>
+            <tr id="add-service-row" style="display: none;">
+                <td colspan="4" class="billing-control-cell">
+                    <div class="billing-action-row">
+                        <button type="button" id="add-service-btn" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-plus"></i> Add New Service
+                        </button>
+                        <button
+                            type="button"
+                            id="add-product-btn"
+                            class="btn btn-sm btn-outline-primary"
+                            style="display: none;"
+                            {% if not products_for_sale %}disabled{% endif %}>
+                            <i class="fas fa-plus me-1"></i>Add Product
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            <tr class="billing-total-row">
+                <td colspan="2" class="text-end"><strong>Subtotal:</strong></td>
+                <td><strong id="subtotal-display">&#8377;{{ subtotal|floatformat:2 }}</strong></td>
+            </tr>
+            <tr class="billing-total-row">
+                <td colspan="2" class="text-end"><strong>Discount:</strong></td>
+                <td>
+                    <div class="d-flex justify-content-end">
+                        <span class="me-2">- &#8377;</span>
+                        <input type="number" step="0.01" 
+                               name="discount_amount" 
+                               value="{{ discount|floatformat:2 }}" 
+                               class="form-control form-control-sm w-auto editable-finance-field"
+                               id="discount-input"
+                               readonly> </div>
+                </td>
+            </tr>
+            <tr class="fw-bold billing-grand-total-row">
+                <td colspan="2" class="text-end"><strong>Grand Total:</strong></td>
+                <td><strong id="grand-total-display">&#8377;{{ grand_total|floatformat:2 }}</strong></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+</div>
+
+{% if not products_for_sale %}
+    <div class="alert alert-warning mt-3 mb-0">
+        No products available in stock. Add stock in Product Management to sell with service.
+    </div>
+{% endif %}
+
+<template id="inline-product-row-template">
+    <tr class="product-sale-row-inline">
+        <td>
+            <div class="billing-inline-product">
+                <span class="badge bg-info-subtle text-info-emphasis border align-self-start">Product</span>
+                <input type="search"
+                       class="form-control form-control-sm product-search-input editable-product-field"
+                       placeholder="Search product name"
+                       disabled>
+                <select name="product_id[]" class="form-select form-select-sm product-select editable-product-field" disabled>
+                    <option value="">Select product</option>
+                    {% for product in products_for_sale %}
+                        <option value="{{ product.id }}" data-price="{{ product.unit_price }}" data-stock="{{ product.stock_quantity }}">
+                            {{ product.name }} (Stock: {{ product.stock_quantity }})
+                        </option>
+                    {% endfor %}
+                </select>
+                <small class="inline-product-meta product-stock-hint">Unit Price: &#8377;0.00 | Stock: --</small>
+            </div>
+        </td>
+        <td class="text-end">
+            <div class="d-flex flex-column align-items-end gap-1">
+                <input type="number"
+                       min="1"
+                       step="1"
+                       value="1"
+                       name="product_qty[]"
+                       class="form-control form-control-sm text-end product-qty editable-product-field"
+                       style="max-width: 120px;"
+                       disabled>
+                <small class="text-muted product-unit-price">&#8377;0.00 each</small>
+                <strong class="product-line-total">&#8377;0.00</strong>
+            </div>
+        </td>
+        <td class="text-end">
+            <input type="number"
+                   step="0.01"
+                   value="0.00"
+                   name="product_service_charge[]"
+                   class="form-control form-control-sm text-end product-service-charge editable-product-field"
+                   disabled>
+        </td>
+        <td class="text-center delete-column" style="display: none;">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-product-btn" style="display: none;">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>
+    </tr>
+</template>
+<div class="mb-6 d-flex justify-content-between align-items-center">
+    <div class="row">
+        <div>
+            <h3>Finalize & Print</h3>
+            <p>Mark this job as closed after payment, then print the final invoice.</p>
+            <p class="text-muted small mb-2">Printed invoice includes customer feedback reminder and QR access for rating.</p>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <a href="{% url 'job_billing_print_view' job_code=job.job_code %}" class="btn btn-success">
+                    <i class="fas fa-print"></i> Print Bill
+                </a>
+            </div>
+            <hr>
+            <a href="{% url 'close_job' job_code=job.job_code %}" class="btn btn-danger w-100 mb-2"><i class="fas fa-check-circle"></i> Mark as Closed</a>
+        </div>
+    </div>  
+</div>
+</form>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const formEl = document.getElementById('job-billing-form');
+    const editBtn = document.getElementById('edit-master-btn');
+    const saveBtn = document.getElementById('save-master-btn');
+    const redoBtn = document.getElementById('redo-master-btn');
+    const vyaparEditBtn = document.getElementById('edit-invoice-btn');
+    const vyaparInput = document.getElementById('vyapar-invoice-input');
+    const saveInvoiceBtn = document.getElementById('save-invoice-btn');
+    const cancelInvoiceBtn = document.getElementById('cancel-invoice-btn');
+    const financialFields = document.querySelectorAll('.editable-finance-field');
+    const addServiceBtn = document.getElementById('add-service-btn');
+    const addServiceRow = document.getElementById('add-service-row');
+    const addProductBtn = document.getElementById('add-product-btn');
+    const inlineProductRowTemplate = document.getElementById('inline-product-row-template');
+    const billingTableBody = document.querySelector('.billing-table tbody');
+    const pendingUndoPanel = document.getElementById('pending-undo-panel');
+    const pendingUndoList = document.getElementById('pending-undo-list');
+    const undoAllBtn = document.getElementById('undo-all-btn');
+
+    let originalValues = {};
+    let newServiceCounter = 0;
+    let productRowCounter = 0;
+    let isEditingMode = false;
+    let isInvoiceEditing = false;
+    let originalInvoiceValue = vyaparInput ? vyaparInput.value : '';
+
+    const pendingServiceDeletes = new Map();
+    const pendingProductDeletes = new Map();
+
+    function formatCurrency(value) {
+        return `\u20B9${(parseFloat(value) || 0).toFixed(2)}`;
+    }
+
+    function escapeHtml(value) {
+        return (value || '').replace(/[&<>"']/g, function(char) {
+            const entities = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            };
+            return entities[char] || char;
+        });
+    }
+
+    function saveOriginalValues() {
+        originalValues = {};
+        financialFields.forEach((input) => {
+            originalValues[input.id] = input.value;
+        });
+        if (vyaparInput) {
+            originalValues[vyaparInput.id] = vyaparInput.value;
+            originalInvoiceValue = vyaparInput.value;
+        }
+    }
+
+    function updateInvoiceControls() {
+        if (!vyaparInput) return;
+
+        const invoiceEditable = isEditingMode || isInvoiceEditing;
+        vyaparInput.readOnly = !invoiceEditable;
+        vyaparInput.style.backgroundColor = invoiceEditable ? '#fffbe6' : '';
+
+        if (vyaparEditBtn) {
+            vyaparEditBtn.style.display = isEditingMode || isInvoiceEditing ? 'none' : 'inline-flex';
+        }
+
+        if (saveInvoiceBtn) {
+            saveInvoiceBtn.style.display = !isEditingMode && isInvoiceEditing ? 'inline-flex' : 'none';
+        }
+
+        if (cancelInvoiceBtn) {
+            cancelInvoiceBtn.style.display = !isEditingMode && isInvoiceEditing ? 'inline-flex' : 'none';
+        }
+    }
+
+    function openInvoiceEditing() {
+        if (!vyaparInput || isEditingMode || isInvoiceEditing) return;
+        originalInvoiceValue = vyaparInput.value;
+        isInvoiceEditing = true;
+        updateInvoiceControls();
+        vyaparInput.focus();
+        vyaparInput.select();
+    }
+
+    function cancelInvoiceEditing() {
+        if (!vyaparInput || isEditingMode || !isInvoiceEditing) return;
+        vyaparInput.value = originalInvoiceValue;
+        isInvoiceEditing = false;
+        updateInvoiceControls();
+    }
+
+    function clearNewServiceRows() {
+        newServiceCounter = 0;
+        document.querySelectorAll('[id^="new-service-row-"]').forEach((row) => {
+            row.style.display = 'none';
+            row.querySelectorAll('input').forEach((input) => {
+                input.value = '';
+            });
+        });
+        if (addServiceBtn) {
+            addServiceBtn.style.display = '';
+        }
+    }
+
+    function clearInlineProductRows() {
+        document.querySelectorAll('.product-sale-row-inline').forEach((row) => row.remove());
+        pendingProductDeletes.clear();
+    }
+
+    function createDeleteServiceInput(serviceId) {
+        if (!formEl) return;
+        const existing = formEl.querySelector(`input[name="delete_service_ids[]"][value="${serviceId}"]`);
+        if (existing) return;
+        const deleteInput = document.createElement('input');
+        deleteInput.type = 'hidden';
+        deleteInput.name = 'delete_service_ids[]';
+        deleteInput.value = serviceId;
+        deleteInput.id = `delete-service-input-${serviceId}`;
+        formEl.appendChild(deleteInput);
+    }
+
+    function removeDeleteServiceInput(serviceId) {
+        if (!formEl) return;
+        const input = formEl.querySelector(`input[name="delete_service_ids[]"][value="${serviceId}"]`);
+        if (input) {
+            input.remove();
+        }
+    }
+
+    function rowDescriptionText(row, fallback) {
+        const firstCell = row ? row.querySelector('td') : null;
+        const raw = firstCell ? firstCell.innerText : fallback;
+        return (raw || fallback || '').replace(/\s+/g, ' ').trim().slice(0, 64);
+    }
+
+    function renderPendingUndoList() {
+        if (!pendingUndoPanel || !pendingUndoList) return;
+
+        const chips = [];
+        pendingServiceDeletes.forEach((entry, serviceId) => {
+            chips.push({
+                type: 'service',
+                key: String(serviceId),
+                label: `Service: ${entry.label}`,
+            });
+        });
+        pendingProductDeletes.forEach((entry, token) => {
+            chips.push({
+                type: 'product',
+                key: token,
+                label: `Product: ${entry.label}`,
+            });
+        });
+
+        if (!chips.length) {
+            pendingUndoPanel.style.display = 'none';
+            pendingUndoList.innerHTML = '';
+            return;
+        }
+
+        pendingUndoPanel.style.display = '';
+        pendingUndoList.innerHTML = chips.map((chip) => `
+            <div class="pending-undo-item">
+                <span>${escapeHtml(chip.label)}</span>
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary undo-delete-btn"
+                    data-delete-type="${chip.type}"
+                    data-delete-key="${escapeHtml(chip.key)}">
+                    Undo
+                </button>
+            </div>
+        `).join('');
+    }
+
+    function queueServiceDeletion(serviceId, row) {
+        if (!row || pendingServiceDeletes.has(serviceId)) return;
+        createDeleteServiceInput(serviceId);
+        pendingServiceDeletes.set(serviceId, {
+            row,
+            label: rowDescriptionText(row, `Service #${serviceId}`),
+        });
+        row.style.display = 'none';
+        renderPendingUndoList();
+        calculateTotals();
+    }
+
+    function undoServiceDeletion(serviceId) {
+        const entry = pendingServiceDeletes.get(serviceId);
+        if (!entry) return;
+        entry.row.style.display = '';
+        pendingServiceDeletes.delete(serviceId);
+        removeDeleteServiceInput(serviceId);
+        renderPendingUndoList();
+        calculateTotals();
+    }
+
+    function queueProductDeletion(row) {
+        if (!row) return;
+        const token = row.dataset.productDeleteToken || `prod-${++productRowCounter}`;
+        row.dataset.productDeleteToken = token;
+        if (pendingProductDeletes.has(token)) return;
+
+        const select = row.querySelector('.product-select');
+        const selectedOption = select ? select.options[select.selectedIndex] : null;
+        const label = select && select.value
+            ? rowDescriptionText(null, selectedOption.textContent.replace(/\(Stock:.*?\)/, '').trim())
+            : 'New product line';
+
+        pendingProductDeletes.set(token, { row, label });
+        row.remove();
+        renderPendingUndoList();
+        calculateTotals();
+    }
+
+    function undoProductDeletion(token) {
+        const entry = pendingProductDeletes.get(token);
+        if (!entry) return;
+
+        if (addServiceRow && addServiceRow.parentNode) {
+            addServiceRow.parentNode.insertBefore(entry.row, addServiceRow);
+        } else if (billingTableBody) {
+            billingTableBody.appendChild(entry.row);
+        }
+
+        pendingProductDeletes.delete(token);
+        toggleProductRowEditing(entry.row, isEditingMode);
+        renderPendingUndoList();
+        calculateTotals();
+    }
+
+    function undoAllPendingDeletions() {
+        Array.from(pendingServiceDeletes.keys()).forEach((serviceId) => undoServiceDeletion(serviceId));
+        Array.from(pendingProductDeletes.keys()).forEach((token) => undoProductDeletion(token));
+        renderPendingUndoList();
+    }
+
+    function toggleProductRowEditing(row, isEditing) {
+        row.querySelectorAll('.editable-product-field').forEach((field) => {
+            field.disabled = !isEditing;
+            field.style.backgroundColor = isEditing ? '#fffbe6' : '';
+        });
+        const select = row.querySelector('.product-select');
+        if (!isEditing) {
+            closeProductDropdownList(select);
+        }
+        const deleteCell = row.querySelector('.delete-column');
+        if (deleteCell) {
+            deleteCell.style.display = isEditing ? 'table-cell' : 'none';
+        }
+        const removeBtn = row.querySelector('.remove-product-btn');
+        if (removeBtn) {
+            removeBtn.style.display = isEditing ? 'inline-block' : 'none';
+        }
+    }
+
+    function toggleProductEditing(isEditing) {
+        if (addProductBtn) {
+            addProductBtn.style.display = isEditing ? 'inline-flex' : 'none';
+        }
+
+        document.querySelectorAll('.product-sale-row-inline').forEach((row) => {
+            toggleProductRowEditing(row, isEditing);
+        });
+    }
+
+    function setEditingState(isEditing) {
+        isEditingMode = isEditing;
+
+        if (editBtn) editBtn.style.display = isEditing ? 'none' : 'block';
+        if (saveBtn) saveBtn.style.display = isEditing ? 'block' : 'none';
+        if (redoBtn) redoBtn.style.display = isEditing ? 'block' : 'none';
+
+        if (addServiceRow) {
+            addServiceRow.style.display = isEditing ? 'table-row' : 'none';
+        }
+
+        const deleteHeader = document.getElementById('delete-header');
+        const deleteColumns = document.querySelectorAll('.delete-column');
+        if (deleteHeader) {
+            deleteHeader.style.display = isEditing ? 'table-cell' : 'none';
+        }
+        deleteColumns.forEach((col) => {
+            col.style.display = isEditing ? 'table-cell' : 'none';
+        });
+
+        financialFields.forEach((input) => {
+            input.readOnly = !isEditing;
+            input.style.backgroundColor = isEditing ? '#fffbe6' : '';
+        });
+
+        document.querySelectorAll('[name^="new_"]').forEach((input) => {
+            input.readOnly = !isEditing;
+            input.style.backgroundColor = isEditing ? '#fffbe6' : '';
+        });
+
+        toggleProductEditing(isEditing);
+
+        if (isEditing) {
+            isInvoiceEditing = false;
+            saveOriginalValues();
+        } else {
+            Array.from(pendingServiceDeletes.keys()).forEach((serviceId) => undoServiceDeletion(serviceId));
+            if (formEl) {
+                formEl.querySelectorAll('input[name="delete_service_ids[]"]').forEach((input) => input.remove());
+            }
+            clearNewServiceRows();
+            clearInlineProductRows();
+            renderPendingUndoList();
+        }
+
+        updateInvoiceControls();
+        calculateTotals();
+    }
+
+    function redoChanges() {
+        Object.keys(originalValues).forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.value = originalValues[id];
+            }
+        });
+
+        undoAllPendingDeletions();
+        pendingServiceDeletes.clear();
+        pendingProductDeletes.clear();
+        renderPendingUndoList();
+
+        if (formEl) {
+            formEl.querySelectorAll('input[name="delete_service_ids[]"]').forEach((input) => input.remove());
+        }
+
+        clearNewServiceRows();
+        clearInlineProductRows();
+        setEditingState(false);
+    }
+
+    function showWarning(message) {
+        const warning = document.getElementById('validation-warning');
+        if (!warning) return;
+        warning.style.display = 'block';
+        warning.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
+        setTimeout(() => {
+            warning.style.display = 'none';
+        }, 3000);
+    }
+
+    function canAddNewService() {
+        if (newServiceCounter === 0) return true;
+        const lastRow = document.getElementById(`new-service-row-${newServiceCounter}`);
+        if (!lastRow || lastRow.style.display === 'none') return true;
+
+        const inputs = lastRow.querySelectorAll('input');
+        return Array.from(inputs).every((input) => input.value.trim() !== '');
+    }
+
+    function canAddNewProduct() {
+        const rows = Array.from(document.querySelectorAll('.product-sale-row-inline'));
+        if (!rows.length) return true;
+
+        const lastRow = rows[rows.length - 1];
+        const select = lastRow.querySelector('.product-select');
+        const qtyInput = lastRow.querySelector('.product-qty');
+        const qty = parseInt(qtyInput?.value || '0', 10);
+
+        if (!select || !select.value) return false;
+        if (!Number.isFinite(qty) || qty <= 0) return false;
+        return true;
+    }
+
+    function filterProductOptions(select, searchTerm) {
+        const term = (searchTerm || '').trim().toLowerCase();
+        Array.from(select.options).forEach((option, index) => {
+            if (index === 0) {
+                option.hidden = false;
+                return;
+            }
+            option.hidden = !!term && !option.text.toLowerCase().includes(term);
+        });
+    }
+
+    function firstVisibleProductOption(select) {
+        return Array.from(select.options).find((option, index) => index > 0 && !option.hidden);
+    }
+
+    function openProductDropdownList(select) {
+        if (!select || select.disabled) return;
+        const visibleOptions = Array.from(select.options).filter((option, index) => index > 0 && !option.hidden);
+        if (!visibleOptions.length) {
+            select.removeAttribute('size');
+            select.classList.remove('product-select-open');
+            return;
+        }
+
+        const visibleRows = Math.min(Math.max(visibleOptions.length + 1, 3), 8);
+        select.setAttribute('size', String(visibleRows));
+        select.classList.add('product-select-open');
+    }
+
+    function closeProductDropdownList(select) {
+        if (!select) return;
+        select.removeAttribute('size');
+        select.classList.remove('product-select-open');
+    }
+
+    function updateProductRow(row, syncSearchValue = false) {
+        const select = row.querySelector('.product-select');
+        const searchInput = row.querySelector('.product-search-input');
+        const qtyInput = row.querySelector('.product-qty');
+        const unitPriceText = row.querySelector('.product-unit-price');
+        const stockHint = row.querySelector('.product-stock-hint');
+        const lineTotalText = row.querySelector('.product-line-total');
+
+        if (!select || !qtyInput || !unitPriceText || !lineTotalText || !stockHint) return;
+
+        const selectedOption = select.options[select.selectedIndex];
+        const unitPrice = parseFloat(selectedOption?.dataset?.price || 0);
+        const stock = parseInt(selectedOption?.dataset?.stock || '0', 10);
+        const hasSelection = !!select.value;
+
+        if (!hasSelection) {
+            qtyInput.max = '';
+            unitPriceText.textContent = `${formatCurrency(0)} each`;
+            stockHint.textContent = 'Unit Price: \u20B90.00 | Stock: --';
+            lineTotalText.textContent = formatCurrency(0);
+            return;
+        }
+
+        let qty = parseInt(qtyInput.value || '0', 10);
+        if (!Number.isFinite(qty) || qty < 1) {
+            qty = 1;
+        }
+
+        if (stock > 0 && qty > stock) {
+            qty = stock;
+            showWarning(`Quantity adjusted to available stock (${stock}).`);
+        }
+
+        qtyInput.value = qty;
+        qtyInput.max = stock > 0 ? String(stock) : '';
+
+        const lineTotal = unitPrice * qty;
+        lineTotalText.textContent = formatCurrency(lineTotal);
+        unitPriceText.textContent = `${formatCurrency(unitPrice)} each`;
+        stockHint.textContent = `Unit Price: ${formatCurrency(unitPrice)} | Stock: ${stock}`;
+
+        if (syncSearchValue && searchInput) {
+            searchInput.value = selectedOption.textContent.replace(/\(Stock:.*?\)/, '').trim();
+        }
+    }
+
+    function bindInlineProductRowEvents(rowNode) {
+        const select = rowNode.querySelector('.product-select');
+        const searchInput = rowNode.querySelector('.product-search-input');
+        const qtyInput = rowNode.querySelector('.product-qty');
+        const removeBtn = rowNode.querySelector('.remove-product-btn');
+
+        if (searchInput && select) {
+            searchInput.addEventListener('focus', function() {
+                filterProductOptions(select, searchInput.value);
+                openProductDropdownList(select);
+            });
+
+            searchInput.addEventListener('input', function() {
+                filterProductOptions(select, searchInput.value);
+                openProductDropdownList(select);
+            });
+
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const option = firstVisibleProductOption(select);
+                if (!option) return;
+                select.value = option.value;
+                updateProductRow(rowNode, true);
+                closeProductDropdownList(select);
+                calculateTotals();
+            });
+
+            searchInput.addEventListener('blur', function() {
+                window.setTimeout(function() {
+                    if (document.activeElement !== select) {
+                        closeProductDropdownList(select);
+                    }
+                }, 120);
+            });
+        }
+
+        if (select) {
+            select.addEventListener('focus', function() {
+                openProductDropdownList(select);
+            });
+
+            select.addEventListener('change', function() {
+                updateProductRow(rowNode, true);
+                closeProductDropdownList(select);
+                calculateTotals();
+            });
+
+            select.addEventListener('blur', function() {
+                closeProductDropdownList(select);
+            });
+        }
+
+        if (qtyInput) {
+            qtyInput.addEventListener('input', function() {
+                updateProductRow(rowNode);
+                calculateTotals();
+            });
+        }
+
+        if (removeBtn) {
+            removeBtn.addEventListener('click', function() {
+                queueProductDeletion(rowNode);
+            });
+        }
+    }
+
+    function addProductRow() {
+        if (!inlineProductRowTemplate || !billingTableBody || !addServiceRow) return;
+        if (addProductBtn && addProductBtn.disabled) {
+            showWarning('No products available in stock. Add stock in Product Management first.');
+            return;
+        }
+
+        if (!canAddNewProduct()) {
+            showWarning('Please fill all fields of the current new product row first.');
+            return;
+        }
+
+        const rowNode = inlineProductRowTemplate.content.firstElementChild.cloneNode(true);
+        rowNode.dataset.productDeleteToken = `prod-${++productRowCounter}`;
+        bindInlineProductRowEvents(rowNode);
+        billingTableBody.insertBefore(rowNode, addServiceRow);
+        toggleProductRowEditing(rowNode, true);
+        updateProductRow(rowNode);
+        calculateTotals();
+
+        const searchInput = rowNode.querySelector('.product-search-input');
+        if (searchInput) searchInput.focus();
+    }
+
+    function calculateTotals() {
+        let subtotal = 0;
+
+        document.querySelectorAll('[id^="service-row-"]').forEach((row) => {
+            if (row.style.display !== 'none') {
+                const partInput = row.querySelector('[name^="part_cost_"]');
+                const serviceInput = row.querySelector('[name^="service_charge_"]');
+                const partCost = parseFloat(partInput?.value || 0);
+                const serviceCost = parseFloat(serviceInput?.value || 0);
+                subtotal += partCost + serviceCost;
+            }
+        });
+
+        document.querySelectorAll('[name="new_part_cost[]"], [name="new_service_charge[]"]').forEach((input) => {
+            if (input.closest('tr') && input.closest('tr').style.display !== 'none') {
+                subtotal += parseFloat(input.value) || 0;
+            }
+        });
+
+        document.querySelectorAll('.product-sale-row-inline').forEach((row) => {
+            const select = row.querySelector('.product-select');
+            if (!select || !select.value) return;
+            const selectedOption = select.options[select.selectedIndex];
+            const unitPrice = parseFloat(selectedOption?.dataset?.price || 0);
+            const qty = parseInt(row.querySelector('.product-qty')?.value || '0', 10) || 0;
+            const serviceCharge = parseFloat(row.querySelector('.product-service-charge')?.value || 0) || 0;
+            subtotal += (unitPrice * qty) + serviceCharge;
+        });
+
+        const discount = parseFloat(document.getElementById('discount-input')?.value || 0) || 0;
+        const grandTotal = subtotal - discount;
+
+        const subtotalDisplay = document.getElementById('subtotal-display');
+        const grandTotalDisplay = document.getElementById('grand-total-display');
+        if (subtotalDisplay) subtotalDisplay.textContent = formatCurrency(subtotal);
+        if (grandTotalDisplay) grandTotalDisplay.textContent = formatCurrency(grandTotal);
+    }
+
+    if (editBtn) {
+        editBtn.addEventListener('click', function() {
+            setEditingState(true);
+        });
+    }
+
+    if (redoBtn) {
+        redoBtn.addEventListener('click', redoChanges);
+    }
+
+    if (vyaparEditBtn) {
+        vyaparEditBtn.addEventListener('click', function() {
+            openInvoiceEditing();
+        });
+    }
+
+    if (cancelInvoiceBtn) {
+        cancelInvoiceBtn.addEventListener('click', cancelInvoiceEditing);
+    }
+
+    if (addServiceBtn) {
+        addServiceBtn.addEventListener('click', function() {
+            if (!canAddNewService()) {
+                showWarning('Please fill all fields of the current new service row first.');
+                return;
+            }
+
+            newServiceCounter += 1;
+            const newRow = document.getElementById(`new-service-row-${newServiceCounter}`);
+            if (newRow && newServiceCounter <= 3) {
+                newRow.style.display = 'table-row';
+                if (newServiceCounter >= 3) {
+                    addServiceBtn.style.display = 'none';
+                }
+            }
+            calculateTotals();
+        });
+    }
+
+    if (addProductBtn) {
+        addProductBtn.addEventListener('click', addProductRow);
+    }
+
+    if (pendingUndoList) {
+        pendingUndoList.addEventListener('click', function(e) {
+            const undoBtn = e.target.closest('.undo-delete-btn');
+            if (!undoBtn) return;
+            const type = undoBtn.dataset.deleteType;
+            const key = undoBtn.dataset.deleteKey;
+            if (type === 'service') {
+                undoServiceDeletion(parseInt(key, 10));
+            } else if (type === 'product') {
+                undoProductDeletion(key);
+            }
+        });
+    }
+
+    if (undoAllBtn) {
+        undoAllBtn.addEventListener('click', undoAllPendingDeletions);
+    }
+
+    document.addEventListener('click', function(e) {
+        const deleteServiceBtn = e.target.closest('.delete-service-btn');
+        if (deleteServiceBtn) {
+            const serviceId = parseInt(deleteServiceBtn.dataset.serviceId, 10);
+            const row = document.getElementById(`service-row-${serviceId}`);
+            if (!Number.isFinite(serviceId) || !row) return;
+            queueServiceDeletion(serviceId, row);
+        }
+    });
+
+    document.addEventListener('input', function(e) {
+        if (e.target.type === 'number') {
+            calculateTotals();
+        }
+    });
+
+    setEditingState(false);
+    updateInvoiceControls();
+});
+</script>
+{% endblock %}

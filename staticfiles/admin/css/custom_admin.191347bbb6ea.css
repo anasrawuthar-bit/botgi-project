@@ -1,0 +1,304 @@
+:root {
+    --gi-bg: #f2f6fb;
+    --gi-surface: #ffffff;
+    --gi-text: #13233b;
+    --gi-muted: #5f6f85;
+    --gi-primary: #1754a6;
+    --gi-primary-strong: #113f7f;
+    --gi-accent: #f2a33a;
+    --gi-accent-strong: #d98d2b;
+    --gi-border: #d9e3f1;
+    --gi-shadow: 0 12px 28px rgba(16, 36, 67, 0.09);
+    --gi-radius: 12px;
+}
+
+html, body {
+    font-family: "Trebuchet MS", "Segoe UI", Tahoma, sans-serif;
+    color: var(--gi-text);
+    background:
+        radial-gradient(circle at 15% -10%, rgba(23, 84, 166, 0.09), transparent 45%),
+        radial-gradient(circle at 85% 0%, rgba(242, 163, 58, 0.13), transparent 32%),
+        var(--gi-bg);
+}
+
+#container {
+    min-height: 100vh;
+}
+
+#header {
+    background: linear-gradient(120deg, #0f2b52, #1d4f93 62%, #2363b7);
+    color: #fff;
+    border-bottom: 0;
+    box-shadow: 0 6px 20px rgba(8, 30, 62, 0.2);
+}
+
+#branding h1,
+#branding h1 a:link,
+#branding h1 a:visited {
+    color: #fff;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+}
+
+.brand-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.brand-chip {
+    display: inline-block;
+    width: fit-content;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    color: #e8f1ff;
+    border: 1px solid rgba(220, 234, 255, 0.35);
+    background: rgba(8, 24, 49, 0.24);
+}
+
+.admin-support {
+    color: #d5e5ff;
+    font-size: 12px;
+    margin-top: 3px;
+}
+
+#user-tools,
+#user-tools a,
+#user-tools a:link,
+#user-tools a:visited {
+    color: #e7f0ff;
+}
+
+#user-tools a:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+
+div.breadcrumbs {
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom: 1px solid var(--gi-border);
+    color: var(--gi-muted);
+    backdrop-filter: blur(4px);
+}
+
+#content {
+    padding: 24px;
+}
+
+.module,
+.inline-group {
+    background: var(--gi-surface);
+    border: 1px solid var(--gi-border);
+    border-radius: var(--gi-radius);
+    box-shadow: var(--gi-shadow);
+    margin-bottom: 18px;
+    overflow: hidden;
+}
+
+.module h2,
+.module caption,
+.inline-group h2 {
+    background: linear-gradient(180deg, #f7fbff, #edf4ff);
+    color: var(--gi-primary-strong);
+    border-bottom: 1px solid var(--gi-border);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.dashboard .module table th,
+.dashboard .module table td {
+    border-color: #e6edf8;
+}
+
+table#result_list {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #dde7f4;
+}
+
+#result_list thead th {
+    background: #eef4fd;
+    border-bottom: 1px solid #d4e1f3;
+    color: #1b365e;
+}
+
+#result_list tbody tr:nth-child(even) {
+    background: #fbfdff;
+}
+
+#result_list tbody tr:hover {
+    background: #eef5ff;
+}
+
+a:link,
+a:visited {
+    color: var(--gi-primary);
+}
+
+a:hover {
+    color: var(--gi-primary-strong);
+}
+
+.button,
+input[type=submit],
+input[type=button],
+.submit-row input,
+a.button {
+    background: linear-gradient(180deg, #f8b34f, var(--gi-accent));
+    border: 1px solid var(--gi-accent-strong);
+    color: #1f1303;
+    border-radius: 9px;
+    font-weight: 700;
+    box-shadow: 0 3px 10px rgba(165, 103, 20, 0.2);
+}
+
+.button:hover,
+input[type=submit]:hover,
+input[type=button]:hover,
+.submit-row input:hover,
+a.button:hover {
+    background: linear-gradient(180deg, #f9be68, #ee9d34);
+}
+
+.button.default,
+input[type=submit].default,
+.submit-row input.default {
+    background: linear-gradient(180deg, #2b6fcb, var(--gi-primary));
+    border-color: #1e5aa8;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(18, 67, 132, 0.28);
+}
+
+.button.default:hover,
+input[type=submit].default:hover,
+.submit-row input.default:hover {
+    background: linear-gradient(180deg, #3a7ddb, #2162b8);
+}
+
+input[type=text],
+input[type=password],
+input[type=email],
+input[type=url],
+input[type=number],
+textarea,
+select {
+    border: 1px solid #c9d7ea;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: #fff;
+    color: #122640;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+    border-color: #4f86d2;
+    box-shadow: 0 0 0 3px rgba(38, 108, 196, 0.16);
+}
+
+.submit-row {
+    border-top: 1px solid #dbe5f2;
+    background: linear-gradient(180deg, #fbfdff, #f2f7ff);
+    padding: 14px 18px;
+}
+
+ul.messagelist li {
+    border-radius: 10px;
+    border: 1px solid transparent;
+    box-shadow: 0 2px 8px rgba(16, 42, 81, 0.08);
+}
+
+ul.messagelist li.success {
+    background: #e8f8ef;
+    border-color: #b8e7cb;
+}
+
+ul.messagelist li.warning {
+    background: #fff6e7;
+    border-color: #ffdca5;
+}
+
+ul.messagelist li.error {
+    background: #ffecec;
+    border-color: #f7b8b8;
+}
+
+.paginator {
+    margin-top: 16px;
+}
+
+.paginator a,
+.paginator .this-page {
+    border-radius: 7px;
+    border: 1px solid #d4e2f5;
+    padding: 6px 10px;
+    background: #fff;
+}
+
+.paginator .this-page {
+    background: #e9f1ff;
+    border-color: #aac5ea;
+    color: #1a457f;
+    font-weight: 700;
+}
+
+/* Sidebar (newer Django admin) */
+#nav-sidebar {
+    background: #f7fbff;
+    border-right: 1px solid var(--gi-border);
+}
+
+#nav-sidebar th {
+    background: #edf5ff;
+    color: #1f4273;
+}
+
+#nav-sidebar a.current-model {
+    background: #e4efff;
+    color: #123a70;
+    font-weight: 700;
+    border-left: 3px solid #2c6ec9;
+}
+
+/* Login page */
+body.login {
+    background:
+        radial-gradient(circle at 14% 12%, rgba(23, 84, 166, 0.2), transparent 40%),
+        radial-gradient(circle at 85% -6%, rgba(242, 163, 58, 0.22), transparent 35%),
+        #eef4fc;
+}
+
+.login #container {
+    background: transparent;
+}
+
+.login #content {
+    background: #fff;
+    border: 1px solid var(--gi-border);
+    border-radius: 16px;
+    box-shadow: 0 18px 38px rgba(14, 44, 86, 0.18);
+    max-width: 430px;
+    margin-top: 32px;
+}
+
+.login #header {
+    border-radius: 16px 16px 0 0;
+}
+
+/* Mobile adjustments */
+@media (max-width: 1024px) {
+    #content {
+        padding: 16px;
+    }
+
+    #branding h1,
+    #branding h1 a:link,
+    #branding h1 a:visited {
+        font-size: 18px;
+    }
+}

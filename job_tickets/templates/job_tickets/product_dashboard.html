@@ -1,0 +1,350 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Inventory Products | Service Billing{% endblock %}
+
+{% block extra_css %}
+{% include "job_tickets/includes/inventory_page_styles.html" %}
+<style>
+  .inventory-products-shell .section-title,
+  .inventory-products-shell .card-box h5,
+  .inventory-products-shell table thead th {
+    font-family: "Space Grotesk", "DM Sans", sans-serif;
+  }
+
+  .inventory-products-shell .stat-card p {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.76rem;
+  }
+
+  .inventory-product-catalog {
+    border: 1px solid rgba(15, 42, 86, 0.08);
+    box-shadow: 0 18px 45px rgba(15, 42, 86, 0.08);
+  }
+
+  .inventory-product-catalog .table {
+    min-width: 980px;
+  }
+
+  .inventory-product-catalog thead th {
+    font-size: 0.88rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .inventory-product-catalog tbody td {
+    vertical-align: top;
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
+  }
+
+  .inventory-product-name {
+    color: #10284d;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .inventory-product-search .form-control {
+    min-width: 15rem;
+  }
+
+  .inventory-stock-badge {
+    min-width: 2.5rem;
+    display: inline-flex;
+    justify-content: center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-container inventory-products-shell" id="inventory-products-page">
+    <div class="row g-4 inventory-shell">
+        <div class="col-lg-3 col-xl-3">
+            {% include "job_tickets/_inventory_sidebar.html" %}
+        </div>
+        <div class="col-lg-9 col-xl-9">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <h1 class="section-title mb-1"><i class="fas fa-boxes-stacked me-2"></i>Inventory Products</h1>
+                    <p class="mb-0 text-muted">Manage stock items used in billing and inventory entries.</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal">
+                        <i class="fas fa-plus me-1"></i>Add New Product
+                    </button>
+                    {% if not from_inventory %}
+                    <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <p>Total Products</p>
+                        <h3>{{ total_products }}</h3>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <p>Out of Stock</p>
+                        <h3>{{ out_of_stock_count }}</h3>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <p>Reserved Alerts</p>
+                        <h3>{{ reserved_alert_count }}</h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-box h-100 inventory-product-catalog">
+                <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Product Catalog</h5>
+                    <form method="get" class="d-flex gap-2 inventory-product-search" data-async-form data-async-target="#inventory-products-page">
+                        <input type="text" name="q" class="form-control" placeholder="Search by name, category, brand..." value="{{ query }}">
+                        <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search"></i></button>
+                    </form>
+                </div>
+
+                <div class="table-responsive inventory-scroll-region">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Category</th>
+                                <th>Last Purchase From</th>
+                                <th>Last Invoice No</th>
+                                <th>Last Purchase Date</th>
+                                <th>Purchase Price</th>
+                                <th>Sales Price</th>
+                                <th>Reserved</th>
+                                <th>Stock</th>
+                                <th>History</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products %}
+                                <tr>
+                                    <td><span class="inventory-product-name">{{ product.name }}</span></td>
+                                    <td>{{ product.category|default:"-" }}</td>
+                                    <td>{{ product.latest_purchase_party|default:"-" }}</td>
+                                    <td>{{ product.latest_purchase_invoice|default:"-" }}</td>
+                                    <td>{{ product.latest_purchase_date|date:"Y-m-d"|default:"-" }}</td>
+                                    <td>{{ product.cost_price|floatformat:2 }}</td>
+                                    <td>{{ product.unit_price|floatformat:2 }}</td>
+                                    <td>
+                                        <form method="post" class="inventory-inline-stock-form" data-async-form data-async-target="#inventory-products-page" data-async-success="Reserved stock updated.">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="product_id" value="{{ product.id }}">
+                                            <input type="number" name="reserved_stock" class="form-control form-control-sm" min="0" step="1" value="{{ product.reserved_stock }}">
+                                            <button type="submit" name="update_reserved_stock_submit" class="btn btn-outline-secondary btn-sm" aria-label="Save reserved stock for {{ product.name }}">
+                                                <i class="fas fa-save"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        {% if product.stock_quantity == 0 %}
+                                            <span class="badge bg-danger inventory-stock-badge">{{ product.stock_quantity }}</span>
+                                        {% elif product.reserved_stock and product.stock_quantity <= product.reserved_stock %}
+                                            <span class="badge bg-warning text-dark inventory-stock-badge">{{ product.stock_quantity }}</span>
+                                        {% else %}
+                                            <span class="badge bg-success inventory-stock-badge">{{ product.stock_quantity }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline-primary btn-sm"
+                                            data-bs-toggle="collapse"
+                                            data-bs-target="#product-history-{{ product.id }}"
+                                            aria-expanded="false"
+                                            aria-controls="product-history-{{ product.id }}"
+                                        >
+                                            View
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="collapse" id="product-history-{{ product.id }}">
+                                    <td colspan="10" class="bg-light-subtle">
+                                        <div class="py-2">
+                                            <h6 class="mb-2">Transaction History</h6>
+                                            <div class="border rounded p-2 bg-white">
+                                                <div class="table-responsive inventory-scroll-region inventory-scroll-region--history">
+                                                    <table class="table table-sm table-striped mb-0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Status</th>
+                                                                <th>Date</th>
+                                                                <th>Invoice</th>
+                                                                <th>Party</th>
+                                                                <th>Qty</th>
+                                                                <th>Total</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for entry in product.combined_history %}
+                                                            <tr>
+                                                                <td>
+                                                                    {% if entry.entry_type == 'opening_stock' %}
+                                                                        <span class="badge bg-secondary-subtle text-secondary">Opening Stock</span>
+                                                                    {% elif entry.entry_type == 'purchase' %}
+                                                                        <span class="badge bg-primary-subtle text-primary">Purchase</span>
+                                                                    {% elif entry.entry_type == 'sale' %}
+                                                                        <span class="badge bg-success-subtle text-success">Sale</span>
+                                                                    {% elif entry.entry_type == 'sale_return' %}
+                                                                        <span class="badge bg-info-subtle text-info">Sales Return</span>
+                                                                    {% elif entry.entry_type == 'purchase_return' %}
+                                                                        <span class="badge bg-warning-subtle text-dark">Purchase Return</span>
+                                                                    {% else %}
+                                                                        <span class="badge bg-secondary-subtle text-secondary">{{ entry.entry_type|default:"-" }}</span>
+                                                                {% endif %}
+                                                                </td>
+                                                                <td>{{ entry.entry_date|date:"Y-m-d" }}</td>
+                                                                <td>{{ entry.invoice_number|default:"-" }}</td>
+                                                                <td>{{ entry.party.name|default:"-" }}</td>
+                                                                <td>{{ entry.quantity }}</td>
+                                                                <td>{{ entry.total_amount|floatformat:2 }}</td>
+                                                            </tr>
+                                                            {% empty %}
+                                                            <tr>
+                                                                <td colspan="6" class="text-center text-muted">No transaction history.</td>
+                                                            </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="10" class="text-center">No products found.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal fade quick-pop-modal" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="addProductModalLabel">
+                                <i class="fas fa-plus-square me-2"></i>Add New Product
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                {% if product_form.non_field_errors %}
+                                    <div class="alert alert-danger py-2">
+                                        {{ product_form.non_field_errors|striptags }}
+                                    </div>
+                                {% endif %}
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">{{ product_form.name.label }}</label>
+                                        {{ product_form.name }}
+                                        {% if product_form.name.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.name.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">{{ product_form.category.label }}</label>
+                                        {{ product_form.category }}
+                                        {% if product_form.category.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.category.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">{{ product_form.brand.label }}</label>
+                                        {{ product_form.brand }}
+                                        {% if product_form.brand.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.brand.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">{{ product_form.cost_price.label }}</label>
+                                        {{ product_form.cost_price }}
+                                        {% if product_form.cost_price.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.cost_price.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">{{ product_form.purchase_price_tax_mode.label }}</label>
+                                        {{ product_form.purchase_price_tax_mode }}
+                                        {% if product_form.purchase_price_tax_mode.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.purchase_price_tax_mode.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">{{ product_form.unit_price.label }}</label>
+                                        {{ product_form.unit_price }}
+                                        {% if product_form.unit_price.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.unit_price.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">{{ product_form.sales_price_tax_mode.label }}</label>
+                                        {{ product_form.sales_price_tax_mode }}
+                                        {% if product_form.sales_price_tax_mode.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.sales_price_tax_mode.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">{{ product_form.stock_quantity.label }}</label>
+                                        {{ product_form.stock_quantity }}
+                                        {% if product_form.stock_quantity.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.stock_quantity.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">{{ product_form.reserved_stock.label }}</label>
+                                        {{ product_form.reserved_stock }}
+                                        {% if product_form.reserved_stock.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.reserved_stock.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">{{ product_form.description.label }}</label>
+                                        {{ product_form.description }}
+                                        {% if product_form.description.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.description.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="add_product_submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Save Product
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if product_form.errors %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bootstrap === 'undefined') return;
+    const modalEl = document.getElementById('addProductModal');
+    if (!modalEl) return;
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+});
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Job Receipt - {{ job_ticket.job_code }}</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', serif;
+            font-size: 13px;
+            margin: 0;
+            padding: 0;
+        }
+        .receipt-container {
+            max-width: 620px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #000;
+            background: #fff;
+        }
+        .header-classic {
+            display: grid;
+            grid-template-columns: minmax(86px, 110px) 1fr minmax(130px, 150px);
+            column-gap: 14px;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #000;
+        }
+        .header-classic .logo {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 58px;
+        }
+        .header-classic .logo img {
+            max-width: 100px;
+            max-height: 58px;
+            height: auto;
+        }
+        .header-classic .info {
+            text-align: center;
+        }
+        .header-classic .info h3 {
+            margin: 0;
+            font-size: 1.4em;
+        }
+        .header-classic .info p {
+            margin: 1px 0;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .header-classic .code {
+            justify-self: end;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+        }
+        .header-classic .code small {
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            letter-spacing: 0.02em;
+        }
+        .header-classic .ticket-badge {
+            min-width: 118px;
+            max-width: 138px;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.35em;
+            font-weight: 700;
+            border: 1px solid #000;
+            padding: 4px 8px;
+            background: #fff4cc;
+            text-align: center;
+            line-height: 1.08;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .section {
+            margin-bottom: 14px;
+        }
+        .section h4 {
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+            font-size: 1.08em;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .details-grid p {
+            margin: 0;
+        }
+        .devices-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        .devices-table th, .devices-table td {
+            border: 1px solid #000;
+            padding: 6px;
+            vertical-align: top;
+        }
+        .devices-table th {
+            background-color: #f0f0f0;
+            text-align: left;
+        }
+        .terms-section {
+            margin-top: 16px;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .qr-box {
+            text-align: center;
+        }
+        .qr-box img {
+            max-width: 130px;
+            border: 1px solid #ddd;
+            padding: 3px;
+        }
+
+        @media print {
+            @page {
+                size: A5 portrait;
+                margin: 6mm;
+            }
+            .receipt-container {
+                width: 148mm;
+                max-width: none;
+                border: none;
+                padding: 8mm;
+                margin: 0;
+            }
+            .header-classic {
+                grid-template-columns: minmax(80px, 100px) 1fr minmax(118px, 136px);
+                column-gap: 12px;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <div class="header-classic">
+            <div class="logo">
+                {% if company.logo %}
+                    <img src="{{ company.logo.url }}" alt="{{ company.company_name }} Logo">
+                {% elif company.logo_url %}
+                    <img src="{{ company.logo_url }}" alt="{{ company.company_name }} Logo">
+                {% endif %}
+            </div>
+            <div class="info">
+                <h3>{{ company.company_name }}</h3>
+                {% if company.tagline %}<p>{{ company.tagline }}</p>{% endif %}
+                <p>Support: {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
+            </div>
+            <div class="code">
+                <small>Job Ticket</small>
+                <div class="ticket-badge">{{ job_ticket.job_code }}</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h4>Client & Job Details</h4>
+            <div class="details-grid">
+                <p><strong>Client:</strong> {{ job_ticket.customer_name }}</p>
+                <p><strong>Date:</strong> {{ job_ticket.created_at|date:"Y-m-d" }}</p>
+                <p><strong>Phone:</strong> {{ job_ticket.customer_phone }}</p>
+                <p><strong>Created By:</strong> {% if job_ticket.created_by %}{{ job_ticket.created_by.username }}{% else %}N/A{% endif %}</p>
+            </div>
+        </div>
+
+        {% if grouped_jobs|length > 1 %}
+            <div class="section">
+                <h4>Devices in this Submission</h4>
+                <table class="devices-table">
+                    <thead>
+                        <tr>
+                            <th>Job Code</th>
+                            <th>Device / Model</th>
+                            <th>Serial</th>
+                            <th>Reported Issue</th>
+                            <th>Items Kept</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for device in grouped_jobs %}
+                        <tr>
+                            <td>{{ device.job_code }}</td>
+                            <td><strong>{{ device.device_type }}</strong><br>{{ device.device_brand|default:"" }} {{ device.device_model|default:"" }}</td>
+                            <td>{{ device.device_serial|default:"-" }}</td>
+                            <td>{{ device.reported_issue }}</td>
+                            <td>{{ device.additional_items|default:"None" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="section">
+                <h4>Device Details</h4>
+                <div class="details-grid">
+                    <p><strong>Device:</strong> {{ job_ticket.device_type }} ({{ job_ticket.device_brand }})</p>
+                    <p><strong>Model:</strong> {{ job_ticket.device_model }}</p>
+                    <p><strong>Serial:</strong> {{ job_ticket.device_serial }}</p>
+                    <p><strong>Estimated Amount:</strong> &#8377;{{ estimated_amount|floatformat:2 }}</p>
+                </div>
+                <p style="margin-top:8px;"><strong>Reported Issue:</strong> {{ job_ticket.reported_issue }}</p>
+                <p><strong>Items Kept:</strong> {{ job_ticket.additional_items|default:"None" }}</p>
+            </div>
+        {% endif %}
+
+        <div class="section">
+            <p><strong>Estimated Delivery Date:</strong> {{ estimated_delivery|date:"Y-m-d" }}</p>
+        </div>
+
+        <div class="section qr-box">
+            <h4>Track Service Status</h4>
+            <p>Scan to check live job status and submit feedback after completion.</p>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ request.scheme }}://{{ request.get_host }}{% url 'qr_access' job_ticket.job_code %}" alt="QR Code">
+            <p style="font-size: 0.8em; margin-top: 6px;">{{ request.get_host }}/qr/{{ job_ticket.job_code }}/</p>
+        </div>
+
+        <div class="terms-section">
+            <h4><u>Terms and Conditions</u></h4>
+            <p>{{ company.terms_conditions|default:"Repair terms apply. Data backup is customer responsibility."|linebreaksbr }}</p>
+        </div>
+    </div>
+
+    <div class="text-center no-print" style="margin: 14px 0;">
+        <button type="button" onclick="return BotgiPrintHelper.startPrint();" style="padding: 10px 20px; font-size: 15px; cursor: pointer;">Print Receipt</button>
+    </div>
+    {% include "job_tickets/includes/print_flow_script.html" with autoprint=autoprint %}
+</body>
+</html>

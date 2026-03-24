@@ -1,0 +1,293 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+{% block title %}Vendor Dashboard{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h1 class="section-title mb-0"><i class="fas fa-truck-loading"></i> Vendor Dashboard</h1>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addVendorModal">
+                <i class="fas fa-plus-circle"></i> Add New Vendor
+            </button>
+            <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to Main Dashboard</a>
+        </div>
+    </div>
+
+    <p class="lead">Manage jobs currently out for specialized service.</p>
+    <hr>
+
+    <div class="card-box">
+        <h4 class="mb-3">Active Jobs by Vendor</h4>
+
+        {% for service in active_services_by_vendor %}
+            {% ifchanged service.vendor.company_name %}
+                {% if not forloop.first %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                {% endif %}
+                <div class="vendor-group mt-4">
+                    <h5><i class="fas fa-user-cog"></i> {{ service.vendor.company_name }}</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Job Code</th>
+                                    <th>Customer</th>
+                                    <th>Device</th>
+                                    <th>Date Sent</th>
+                                    <th style="width: 15%;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            {% endifchanged %}
+                                <tr>
+                                    <td><a href="{% url 'staff_job_detail' service.job_ticket.job_code %}">{{ service.job_ticket.job_code }}</a></td>
+                                    <td>{{ service.job_ticket.customer_name }}</td>
+                                    <td>{{ service.job_ticket.device_type }}</td>
+                                    <td>{{ service.sent_date|date:"Y-m-d" }}</td>
+                                    <td>
+                                        <button type="button" class="btn btn-success btn-sm w-100" data-bs-toggle="modal" data-bs-target="#returnModal{{ service.id }}">
+                                            <i class="fas fa-check"></i> Mark Returned
+                                        </button>
+                                    </td>
+                                </tr>
+
+                                <div class="modal fade" id="returnModal{{ service.id }}" tabindex="-1" aria-labelledby="returnModalLabel{{ service.id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="returnModalLabel{{ service.id }}">Mark Device Returned - {{ service.job_ticket.job_code }}</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <form method="post" action="{% url 'mark_service_returned' service.id %}">
+                                                {% csrf_token %}
+                                                <div class="modal-body">
+                                                    <p><strong>Job:</strong> {{ service.job_ticket.job_code }}</p>
+                                                    <p><strong>Customer:</strong> {{ service.job_ticket.customer_name }}</p>
+                                                    <p><strong>Device:</strong> {{ service.job_ticket.device_type }}</p>
+                                                    <p><strong>Vendor:</strong> {{ service.vendor.company_name }}</p>
+                                                    <hr>
+                                                    <p class="text-muted">Please enter the costs below (required):</p>
+
+                                                    <input type="hidden" name="specialized_service_id" value="{{ service.id }}">
+
+                                                    <div class="mb-3">
+                                                        <label for="vendor_cost_{{ service.id }}" class="form-label">Vendor Cost (Our Cost) *</label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text">&#8377;</span>
+                                                            <input type="number" class="form-control" id="vendor_cost_{{ service.id }}" name="vendor_cost" step="0.01" placeholder="e.g., 2500" required>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <label for="client_charge_{{ service.id }}" class="form-label">Client Charge *</label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text">&#8377;</span>
+                                                            <input type="number" class="form-control" id="client_charge_{{ service.id }}" name="client_charge" step="0.01" placeholder="e.g., 3500" required>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-success">
+                                                        <i class="fas fa-check"></i> Mark as Returned
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+            {% if forloop.last %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endif %}
+        {% empty %}
+            <p class="text-center">No jobs are currently out with vendors.</p>
+        {% endfor %}
+    </div>
+
+    <div class="card-box mb-4 mt-4">
+        <h4 class="mb-3">Vendor Summary</h4>
+        <div class="list-group">
+            {% for vendor in vendors %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                {{ vendor.company_name }}
+                <span class="badge bg-primary rounded-pill">{{ vendor.active_jobs_count }} Active Job(s)</span>
+            </div>
+            {% empty %}
+            <p>No vendors found. Please add vendors using the Add New Vendor button.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card-box mb-2">
+        <h4 class="mb-3"><i class="fas fa-truck-loading"></i> Existing Vendors</h4>
+        {% if vendors %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Company Name</th>
+                        <th>Contact Person</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Active Jobs</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vendor in vendors %}
+                    <tr>
+                        <td><strong>{{ vendor.company_name }}</strong></td>
+                        <td>{{ vendor.name|default:"-" }}</td>
+                        <td>{{ vendor.phone|default:"-" }}</td>
+                        <td>{{ vendor.email|default:"-" }}</td>
+                        <td>
+                            <span class="badge bg-primary">{{ vendor.active_jobs_count }} Active</span>
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <a href="{% url 'vendor_report_detail' vendor.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-chart-line"></i> Report
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editVendorModal{{ vendor.id }}">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteVendor({{ vendor.id }}, '{{ vendor.company_name|escapejs }}')">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </div>
+
+                            <div class="modal fade" id="editVendorModal{{ vendor.id }}" tabindex="-1" aria-labelledby="editVendorModalLabel{{ vendor.id }}" aria-hidden="true">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="editVendorModalLabel{{ vendor.id }}">Edit Vendor: {{ vendor.company_name }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <form method="post" action="{% url 'edit_vendor' vendor.id %}">
+                                            {% csrf_token %}
+                                            <div class="modal-body">
+                                                <div class="mb-3">
+                                                    <label for="company_name_{{ vendor.id }}" class="form-label">Company Name *</label>
+                                                    <input type="text" class="form-control" id="company_name_{{ vendor.id }}" name="company_name" value="{{ vendor.company_name }}" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="name_{{ vendor.id }}" class="form-label">Contact Person</label>
+                                                    <input type="text" class="form-control" id="name_{{ vendor.id }}" name="name" value="{{ vendor.name }}">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="phone_{{ vendor.id }}" class="form-label">Phone</label>
+                                                    <input type="text" class="form-control" id="phone_{{ vendor.id }}" name="phone" value="{{ vendor.phone }}">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="email_{{ vendor.id }}" class="form-label">Email</label>
+                                                    <input type="email" class="form-control" id="email_{{ vendor.id }}" name="email" value="{{ vendor.email }}">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="address_{{ vendor.id }}" class="form-label">Address</label>
+                                                    <textarea class="form-control" id="address_{{ vendor.id }}" name="address" rows="2">{{ vendor.address }}</textarea>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="specialties_{{ vendor.id }}" class="form-label">Specialties</label>
+                                                    <textarea class="form-control" id="specialties_{{ vendor.id }}" name="specialties" rows="2">{{ vendor.specialties }}</textarea>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-warning">
+                                                    <i class="fas fa-save"></i> Save Changes
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> No vendors found. Add your first vendor using the Add New Vendor button.
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="modal fade quick-pop-modal" id="addVendorModal" tabindex="-1" aria-labelledby="addVendorModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addVendorModalLabel"><i class="fas fa-plus-circle me-2"></i>Add New Vendor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="post">
+                    <div class="modal-body">
+                        {% csrf_token %}
+                        {% if vendor_form.non_field_errors %}
+                            <div class="alert alert-danger py-2">{{ vendor_form.non_field_errors|striptags }}</div>
+                        {% endif %}
+                        {% for field in vendor_form %}
+                            <div class="mb-3">
+                                <label class="form-label">{{ field.label }}</label>
+                                {{ field|add_class:"form-control form-control-sm" }}
+                                {% if field.errors %}
+                                    <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="add_vendor_submit" class="btn btn-primary btn-sm">
+                            <i class="fas fa-save"></i> Save Vendor
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function deleteVendor(vendorId, vendorName) {
+    if (!confirm(`Are you sure you want to delete vendor "${vendorName}"?\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{% url "delete_vendor" 0 %}'.replace('/0/', '/' + vendorId + '/');
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (csrfToken) {
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken.value;
+        form.appendChild(csrfInput);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+
+{% if vendor_form.errors %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bootstrap === 'undefined') return;
+    const modalEl = document.getElementById('addVendorModal');
+    if (!modalEl) return;
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+});
+</script>
+{% endif %}
+{% endblock %}

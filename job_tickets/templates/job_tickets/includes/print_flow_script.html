@@ -1,0 +1,180 @@
+<script>
+(function () {
+    const config = {
+        autoprint: {% if autoprint %}true{% else %}false{% endif %},
+        fallbackUrl: "{{ return_url|default:''|escapejs }}",
+    };
+
+    let printInProgress = false;
+    let navigationHandled = false;
+    let printDialogOpened = false;
+    let blurDuringPrint = false;
+    let printResetTimer = null;
+
+    function getSameOriginReferrer() {
+        if (!document.referrer) {
+            return '';
+        }
+
+        try {
+            const referrerUrl = new URL(document.referrer, window.location.href);
+            if (referrerUrl.origin === window.location.origin) {
+                return referrerUrl.toString();
+            }
+        } catch (error) {
+            return '';
+        }
+
+        return '';
+    }
+
+    function clearPrintReset() {
+        if (printResetTimer) {
+            window.clearTimeout(printResetTimer);
+            printResetTimer = null;
+        }
+    }
+
+    function schedulePrintReset() {
+        clearPrintReset();
+        printResetTimer = window.setTimeout(function () {
+            printInProgress = false;
+            printDialogOpened = false;
+            blurDuringPrint = false;
+        }, 45000);
+    }
+
+    function returnFromPrintPage() {
+        if (navigationHandled) {
+            return;
+        }
+
+        navigationHandled = true;
+
+        if (window.opener && !window.opener.closed) {
+            window.close();
+            window.setTimeout(function () {
+                if (!window.closed) {
+                    const referrerUrl = getSameOriginReferrer();
+                    if (referrerUrl) {
+                        window.location.replace(referrerUrl);
+                        return;
+                    }
+
+                    if (config.fallbackUrl) {
+                        window.location.replace(config.fallbackUrl);
+                    }
+                }
+            }, 150);
+            return;
+        }
+
+        const referrerUrl = getSameOriginReferrer();
+        if (referrerUrl) {
+            window.location.replace(referrerUrl);
+            return;
+        }
+
+        if (config.fallbackUrl) {
+            window.location.replace(config.fallbackUrl);
+            return;
+        }
+
+        if (window.history.length > 1) {
+            window.history.back();
+            return;
+        }
+
+        window.close();
+    }
+
+    function finishPrintFlow() {
+        if (!printInProgress) {
+            return;
+        }
+
+        printInProgress = false;
+        clearPrintReset();
+        window.setTimeout(returnFromPrintPage, 120);
+    }
+
+    function markPrintDialogOpened() {
+        if (!printInProgress) {
+            return;
+        }
+
+        printDialogOpened = true;
+    }
+
+    function startPrint() {
+        if (printInProgress) {
+            return false;
+        }
+
+        printInProgress = true;
+        navigationHandled = false;
+        printDialogOpened = false;
+        blurDuringPrint = false;
+        schedulePrintReset();
+
+        window.setTimeout(function () {
+            window.print();
+        }, 0);
+        return false;
+    }
+
+    window.BotgiPrintHelper = {
+        startPrint: startPrint,
+        returnFromPrintPage: returnFromPrintPage,
+    };
+
+    window.addEventListener('beforeprint', markPrintDialogOpened);
+    window.addEventListener('afterprint', finishPrintFlow);
+    window.addEventListener('blur', function () {
+        if (printInProgress) {
+            blurDuringPrint = true;
+        }
+    });
+    window.addEventListener('focus', function () {
+        if (printInProgress && (printDialogOpened || blurDuringPrint)) {
+            window.setTimeout(finishPrintFlow, 120);
+        }
+    });
+
+    if (window.matchMedia) {
+        const printMediaQuery = window.matchMedia('print');
+        const handlePrintMediaChange = function (event) {
+            if (!printInProgress) {
+                return;
+            }
+
+            if (event.matches) {
+                markPrintDialogOpened();
+                return;
+            }
+
+            window.setTimeout(finishPrintFlow, 120);
+        };
+
+        if (printMediaQuery.addEventListener) {
+            printMediaQuery.addEventListener('change', handlePrintMediaChange);
+        } else if (printMediaQuery.addListener) {
+            printMediaQuery.addListener(handlePrintMediaChange);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const triggers = document.querySelectorAll('[data-print-trigger]');
+        triggers.forEach(function (trigger) {
+            trigger.addEventListener('click', function (event) {
+                event.preventDefault();
+                startPrint();
+            });
+        });
+
+        if (config.autoprint) {
+            window.setTimeout(startPrint, 150);
+        }
+    });
+})();
+</script>

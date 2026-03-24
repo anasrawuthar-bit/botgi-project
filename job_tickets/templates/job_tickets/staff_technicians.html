@@ -1,0 +1,442 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+
+{% block title %}Technicians Management{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title mb-0"><i class="fas fa-users-cog"></i> Staff & Technician Management</h1>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                <i class="fas fa-plus-circle"></i> Add New User
+            </button>
+            <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-12">
+            <div class="card-box">
+                <h4 class="mb-3"><i class="fas fa-list"></i> Existing Users</h4>
+                {% if managed_users %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>ID</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Last Login</th>
+                                <th>Last Seen</th>
+                                <th>Last IP</th>
+                                <th>Last Device</th>
+                                <th>Session</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for member in managed_users %}
+                            <tr>
+                                <td><strong>{{ member.username }}</strong></td>
+                                <td>{{ member.display_unique_id|default:"-" }}</td>
+                                <td>{{ member.email|default:"-" }}</td>
+                                <td>
+                                    {% if member.is_staff %}
+                                        <span class="badge bg-info">Staff</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">Technician</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if member.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Disabled</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if member.latest_session_login_at %}
+                                        {{ member.latest_session_login_at|date:"M d, Y h:i A" }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if member.latest_session_last_activity_at %}
+                                        {{ member.latest_session_last_activity_at|date:"M d, Y h:i A" }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{{ member.latest_session_ip|default:"-" }}</td>
+                                <td>{{ member.latest_session_device|default:"-" }}</td>
+                                <td>
+                                    {% if member.active_session_count %}
+                                        <span class="badge bg-success">{{ member.active_session_count }} Active</span>
+                                    {% elif member.latest_session_status == 'expired' %}
+                                        <span class="badge bg-warning text-dark">Expired</span>
+                                    {% elif member.latest_session_status == 'logged_out' %}
+                                        <span class="badge bg-secondary">Logged Out</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group flex-wrap gap-1" role="group">
+                                        <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editUserModal{{ member.id }}">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#passwordUserModal{{ member.id }}">
+                                            <i class="fas fa-key"></i> Password
+                                        </button>
+                                        <form method="post" class="d-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="toggle_technician" value="{{ member.id }}">
+                                            {% if member.is_active %}
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-ban"></i> Disable
+                                            </button>
+                                            {% else %}
+                                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                                <i class="fas fa-check"></i> Enable
+                                            </button>
+                                            {% endif %}
+                                        </form>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteUser({{ member.id }}, '{{ member.username|escapejs }}')">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </div>
+
+                                    <div class="modal fade" id="editUserModal{{ member.id }}" tabindex="-1" aria-labelledby="editUserModalLabel{{ member.id }}" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="editUserModalLabel{{ member.id }}">Edit User: {{ member.username }}</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <form method="post" action="{% url 'edit_user' member.id %}">
+                                                    {% csrf_token %}
+                                                    <div class="modal-body">
+                                                        <div class="mb-3">
+                                                            <label for="username_{{ member.id }}" class="form-label">Username *</label>
+                                                            <input type="text" class="form-control" id="username_{{ member.id }}" name="username" value="{{ member.username }}" required>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label for="email_{{ member.id }}" class="form-label">Email</label>
+                                                            <input type="email" class="form-control" id="email_{{ member.id }}" name="email" value="{{ member.email }}">
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label for="unique_id_{{ member.id }}" class="form-label">Unique ID</label>
+                                                            <input type="text" class="form-control" id="unique_id_{{ member.id }}" name="unique_id" value="{{ member.display_unique_id }}">
+                                                            <small class="text-muted">Required for Technician role.</small>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label for="role_{{ member.id }}" class="form-label">Role</label>
+                                                            <select class="form-select" id="role_{{ member.id }}" name="role" required>
+                                                                <option value="technician" {% if not member.is_staff %}selected{% endif %}>Technician</option>
+                                                                <option value="staff" {% if member.is_staff %}selected{% endif %}>Staff</option>
+                                                            </select>
+                                                        </div>
+                                                        {% if staff_access_options or staff_report_access_options %}
+                                                        <div class="mb-3" data-staff-access-panel>
+                                                            <label class="form-label">Staff Access (Applies to Staff role only)</label>
+                                                            <div class="border rounded p-2">
+                                                                {% if staff_access_options %}
+                                                                <div class="fw-semibold small text-uppercase text-muted mb-2">General</div>
+                                                                {% for option in staff_access_options %}
+                                                                {% with option_key=option.key %}
+                                                                <div class="form-check">
+                                                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}" data-report-root
+                                                                        {% if member.staff_access_keys and option_key in member.staff_access_keys %}checked{% endif %}>
+                                                                    <label class="form-check-label" for="access_{{ option_key }}_{{ member.id }}">{{ option.label }}</label>
+                                                                </div>
+                                                                {% endwith %}
+                                                                {% endfor %}
+                                                                {% endif %}
+                                                                {% if staff_report_access_options %}
+                                                                <div class="fw-semibold small text-uppercase text-muted mt-3 mb-2">Reports</div>
+                                                                {% for option in staff_report_access_options %}
+                                                                {% if option.key == 'reports_dashboard' %}
+                                                                {% with option_key=option.key %}
+                                                                <div class="form-check">
+                                                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}"
+                                                                        {% if member.staff_access_keys and option_key in member.staff_access_keys %}checked{% endif %}>
+                                                                    <label class="form-check-label" for="access_{{ option_key }}_{{ member.id }}">{{ option.label }}</label>
+                                                                </div>
+                                                                {% endwith %}
+                                                                {% endif %}
+                                                                {% endfor %}
+                                                                <div class="ms-3 mt-2" data-report-subsection-group>
+                                                                    <div class="small text-muted mb-1">Report Sub-sections</div>
+                                                                    {% for option in staff_report_access_options %}
+                                                                    {% if option.key != 'reports_dashboard' %}
+                                                                    {% with option_key=option.key %}
+                                                                    <div class="form-check">
+                                                                        <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}" data-report-subsection
+                                                                            {% if member.staff_access_keys and option_key in member.staff_access_keys %}checked{% endif %}>
+                                                                        <label class="form-check-label" for="access_{{ option_key }}_{{ member.id }}">{{ option.label }}</label>
+                                                                    </div>
+                                                                    {% endwith %}
+                                                                    {% endif %}
+                                                                    {% endfor %}
+                                                                </div>
+                                                                {% endif %}
+                                                            </div>
+                                                            <small class="text-muted">Technicians Performance, Vendor Performance Report, and Financial Summary are sub-sections of Reports Dashboard. Enable Reports Dashboard to select them.</small>
+                                                        </div>
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-warning">
+                                                            <i class="fas fa-save"></i> Save Changes
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="modal fade" id="passwordUserModal{{ member.id }}" tabindex="-1" aria-labelledby="passwordUserModalLabel{{ member.id }}" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="passwordUserModalLabel{{ member.id }}">Change Password: {{ member.username }}</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <form method="post" action="{% url 'change_user_password' member.id %}">
+                                                    {% csrf_token %}
+                                                    <div class="modal-body">
+                                                        <div class="mb-3">
+                                                            <label for="new_password_{{ member.id }}" class="form-label">New Password *</label>
+                                                            <input type="password" class="form-control" id="new_password_{{ member.id }}" name="new_password" minlength="8" required>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label for="confirm_password_{{ member.id }}" class="form-label">Confirm Password *</label>
+                                                            <input type="password" class="form-control" id="confirm_password_{{ member.id }}" name="confirm_password" minlength="8" required>
+                                                        </div>
+                                                        <small class="text-muted">Use a strong password with at least 8 characters.</small>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-primary">
+                                                            <i class="fas fa-key"></i> Update Password
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> No users found. Add your first user using the Add New User button.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade quick-pop-modal" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addUserModalLabel"><i class="fas fa-plus-circle me-2"></i>Add New User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="post">
+                    <div class="modal-body">
+                        {% csrf_token %}
+                        {% if tech_form.non_field_errors %}
+                            <div class="alert alert-danger py-2">{{ tech_form.non_field_errors|striptags }}</div>
+                        {% endif %}
+                        {% for field in tech_form %}
+                            <div class="mb-3">
+                                <label class="form-label">{{ field.label }}</label>
+                                {{ field|add_class:"form-control form-control-sm" }}
+                                {% if field.errors %}
+                                    <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                        {% if staff_access_options or staff_report_access_options %}
+                        <div class="mb-3" data-staff-access-panel>
+                            <label class="form-label">Staff Access (Applies to Staff role only)</label>
+                            <div class="border rounded p-2">
+                                {% if staff_access_options %}
+                                <div class="fw-semibold small text-uppercase text-muted mb-2">General</div>
+                                {% for option in staff_access_options %}
+                                {% with option_key=option.key %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}" data-report-root
+                                        {% if selected_access_keys and option_key in selected_access_keys %}checked{% endif %}>
+                                    <label class="form-check-label" for="access_{{ option_key }}">{{ option.label }}</label>
+                                </div>
+                                {% endwith %}
+                                {% endfor %}
+                                {% endif %}
+                                {% if staff_report_access_options %}
+                                <div class="fw-semibold small text-uppercase text-muted mt-3 mb-2">Reports</div>
+                                {% for option in staff_report_access_options %}
+                                {% if option.key == 'reports_dashboard' %}
+                                {% with option_key=option.key %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}"
+                                        {% if selected_access_keys and option_key in selected_access_keys %}checked{% endif %}>
+                                    <label class="form-check-label" for="access_{{ option_key }}">{{ option.label }}</label>
+                                </div>
+                                {% endwith %}
+                                {% endif %}
+                                {% endfor %}
+                                <div class="ms-3 mt-2" data-report-subsection-group>
+                                    <div class="small text-muted mb-1">Report Sub-sections</div>
+                                    {% for option in staff_report_access_options %}
+                                    {% if option.key != 'reports_dashboard' %}
+                                    {% with option_key=option.key %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}" data-report-subsection
+                                            {% if selected_access_keys and option_key in selected_access_keys %}checked{% endif %}>
+                                        <label class="form-check-label" for="access_{{ option_key }}">{{ option.label }}</label>
+                                    </div>
+                                    {% endwith %}
+                                    {% endif %}
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <small class="text-muted">Technicians Performance, Vendor Performance Report, and Financial Summary are sub-sections of Reports Dashboard. Enable Reports Dashboard to select them.</small>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="add_technician_submit" class="btn btn-primary btn-sm">Create User</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if tech_form.errors %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bootstrap === 'undefined') return;
+    const modalEl = document.getElementById('addUserModal');
+    if (!modalEl) return;
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+});
+</script>
+{% endif %}
+
+<script>
+function deleteUser(userId, username) {
+    if (!confirm(`Are you sure you want to delete user "${username}"?\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{% url "delete_user" 0 %}'.replace('/0/', '/' + userId + '/');
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (csrfToken) {
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken.value;
+        form.appendChild(csrfInput);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const roleSelects = document.querySelectorAll('select[name="role"]');
+    roleSelects.forEach((select) => {
+        const container = select.closest('.modal-content') || select.closest('form') || document;
+        const panel = container.querySelector('[data-staff-access-panel]');
+        if (!panel) {
+            return;
+        }
+        const reportRoot = panel.querySelector('input[data-report-root]');
+        const reportSubsections = panel.querySelectorAll('input[data-report-subsection]');
+        const reportGroup = panel.querySelector('[data-report-subsection-group]');
+
+        const applyReportState = () => {
+            if (!reportRoot) {
+                return;
+            }
+            const enabled = reportRoot.checked && !reportRoot.disabled;
+            reportSubsections.forEach((input) => {
+                input.disabled = !enabled;
+                if (!enabled) {
+                    input.checked = false;
+                }
+            });
+            if (reportGroup) {
+                reportGroup.classList.toggle('opacity-50', !enabled);
+            }
+        };
+
+        const applyState = () => {
+            const isStaff = select.value === 'staff';
+            panel.classList.toggle('d-none', !isStaff);
+            panel.querySelectorAll('input, select, textarea, button').forEach((element) => {
+                element.disabled = !isStaff;
+            });
+            applyReportState();
+        };
+
+        select.addEventListener('change', applyState);
+        if (reportRoot) {
+            reportRoot.addEventListener('change', applyReportState);
+        }
+        applyState();
+    });
+
+    if (typeof bootstrap === 'undefined') {
+        return;
+    }
+
+    document.querySelectorAll('.modal').forEach((modal) => {
+        modal.addEventListener('shown.bs.modal', () => {
+            const select = modal.querySelector('select[name="role"]');
+            const panel = modal.querySelector('[data-staff-access-panel]');
+            if (!select || !panel) {
+                return;
+            }
+            const isStaff = select.value === 'staff';
+            panel.classList.toggle('d-none', !isStaff);
+            panel.querySelectorAll('input, select, textarea, button').forEach((element) => {
+                element.disabled = !isStaff;
+            });
+            const reportRoot = panel.querySelector('input[data-report-root]');
+            const reportSubsections = panel.querySelectorAll('input[data-report-subsection]');
+            const reportGroup = panel.querySelector('[data-report-subsection-group]');
+            if (reportRoot) {
+                const enabled = reportRoot.checked && !reportRoot.disabled;
+                reportSubsections.forEach((input) => {
+                    input.disabled = !enabled;
+                    if (!enabled) {
+                        input.checked = false;
+                    }
+                });
+                if (reportGroup) {
+                    reportGroup.classList.toggle('opacity-50', !enabled);
+                }
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

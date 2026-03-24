@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Active Workload Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 10pt; margin: 0; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { font-size: 18pt; margin: 0; }
+        .header p { margin: 0; font-size: 10pt; }
+        .technician-section { margin-top: 25px; border-top: 2px solid #ccc; padding-top: 10px; page-break-inside: avoid; }
+        .technician-section h2 { font-size: 14pt; color: #333; margin-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        .status-badge { display: inline-block; padding: 3px 6px; border-radius: 4px; font-size: 8pt; color: white; background-color: #007bff; }
+        .status-badge.repairing { background-color: #17a2b8; }
+        .status-badge.inspection { background-color: #ffc107; color: black; }
+        .status-badge.specialized { background-color: #6f42c1; }
+        .status-badge.returned { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Active Workload Report</h1>
+        <p>{{ company.company_name }}</p>
+        <p>Support: {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
+        <p>Date: {{ report_date|date:"Y-m-d H:i" }}</p>
+    </div>
+
+    {% for tech_name, jobs in grouped_jobs.items %}
+    <div class="technician-section">
+        <h2>Technician: {{ tech_name }} ({{ jobs|length }} Active Job{{ jobs|length|pluralize }})</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 15%;">Job Code</th>
+                    <th style="width: 25%;">Customer / Phone</th>
+                    <th style="width: 25%;">Device Details</th>
+                    <th style="width: 25%;">Reported Issue</th>
+                    <th style="width: 10%;">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td>{{ job.job_code }}</td>
+                    <td>
+                        {{ job.customer_name }}<br>
+                        <small>{{ job.customer_phone }}</small>
+                    </td>
+                    <td>
+                        {{ job.device_type }} - {{ job.device_brand }} {{ job.device_model }}<br>
+                        <small>S/N: {{ job.device_serial|default:"N/A" }}</small>
+                    </td>
+                    <td>{{ job.reported_issue|truncatewords:10 }}</td>
+                    <td>
+                        {% with s=job.status|slugify %}
+                            <span class="status-badge {{ s }}">
+                                {{ job.get_status_display }}
+                            </span>
+                        {% endwith %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% empty %}
+    <p>No active jobs found in the defined in-progress statuses.</p>
+    {% endfor %}
+
+    {% include "job_tickets/includes/print_flow_script.html" with autoprint=True %}
+</body>
+</html>

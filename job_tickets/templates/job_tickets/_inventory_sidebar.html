@@ -1,0 +1,27 @@
+<div class="inventory-sidebar sticky-lg-top">
+    <p class="inventory-sidebar-title mb-2">Inventory Module</p>
+    <p class="inventory-sidebar-subtitle mb-3">Stock, parties, and movement vouchers</p>
+    <div class="nav inventory-sidebar-nav flex-lg-column gap-2" aria-label="Inventory Navigation">
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_dashboard' %}active{% endif %}" href="{% url 'inventory_dashboard' %}">
+            <i class="fa-solid fa-chart-simple me-2"></i>Overview
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_product_dashboard' or request.resolver_match.url_name == 'product_dashboard' %}active{% endif %}" href="{% url 'inventory_product_dashboard' %}">
+            <i class="fa-solid fa-boxes-stacked me-2"></i>Products
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_party_dashboard' %}active{% endif %}" href="{% url 'inventory_party_dashboard' %}">
+            <i class="fa-solid fa-users me-2"></i>Parties
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_purchase_dashboard' %}active{% endif %}" href="{% url 'inventory_purchase_dashboard' %}">
+            <i class="fa-solid fa-cart-arrow-down me-2"></i>Purchase
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_purchase_return_dashboard' %}active{% endif %}" href="{% url 'inventory_purchase_return_dashboard' %}">
+            <i class="fa-solid fa-rotate-left me-2"></i>Purchase Return
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_sales_dashboard' %}active{% endif %}" href="{% url 'inventory_sales_dashboard' %}">
+            <i class="fa-solid fa-cart-shopping me-2"></i>Sales
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}" href="{% url 'inventory_sales_return_dashboard' %}">
+            <i class="fa-solid fa-rotate-right me-2"></i>Sales Return
+        </a>
+    </div>
+</div>

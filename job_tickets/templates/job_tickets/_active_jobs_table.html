@@ -1,0 +1,122 @@
+{% for job in active_jobs %}
+    <tr id="job-row-{{ job.job_code }}" class="job-summary-row" data-job-id="{{ job.id }}" style="cursor:pointer;">
+    <td>
+      {{ job.job_code }}
+      {% if job.is_new_assignment %}
+        <span class="badge bg-danger ms-2">NEW</span>
+      {% endif %}
+    </td>
+    <td>{{ job.customer_name }}</td>
+    <td>
+      {{ job.device_type }}{% if job.device_brand %} {{ job.device_brand }}{% endif %}{% if job.device_model %} {{ job.device_model }}{% endif %}
+    </td>
+
+    <!-- Status cell: uses readable badge classes -->
+    <td>
+      {% if job.status %}
+        {% with s=job.status %}
+          <span class="status-badge
+            {% if s == 'Completed' %} status-badge--completed
+            {% elif s == 'Closed' %} status-badge--closed
+            {% elif s == 'Ready for Pickup' or s == 'Ready for pickup' or s == 'Ready' %} status-badge--ready
+            {% elif s == 'Repairing' or s == 'Under Inspection' %} status-badge--repairing
+            {% elif s == 'Pending' or s == 'pending' %} status-badge--pending
+            {% else %} status-badge--default
+            {% endif %}">
+            {{ s }}
+          </span>
+        {% endwith %}
+      {% else %}
+        <span class="text-muted">—</span>
+      {% endif %}
+      {% if job.returned_from_vendor %}
+        <span class="badge bg-success ms-1">Returned from Vendor</span>
+      {% endif %}
+    </td>
+
+    <td style="text-align:right;">₹{{ job.part_total|default_if_none:0|floatformat:2 }}</td>
+    <td style="text-align:right;">₹{{ job.service_total|default_if_none:0|floatformat:2 }}</td>
+    <td style="text-align:right;">₹{{ job.total|default_if_none:0|floatformat:2 }}</td>
+
+    <td>
+      <a href="{% url 'job_detail_technician' job.job_code %}" class="btn btn-primary btn-sm">
+        <i class="fas fa-tools"></i> View
+      </a>
+
+      {% if job.is_new_assignment %}
+        <button type="button" 
+                class="btn btn-outline-success btn-sm ms-1 acknowledge-btn" 
+                data-job-code="{{ job.job_code }}"
+                data-job-row-id="job-row-{{ job.job_code }}">
+          Acknowledge
+        </button>
+        <form method="post" 
+              action="{% url 'technician_return_to_staff' job.job_code %}" 
+              class="d-inline return-to-staff-form"
+              data-job-code="{{ job.job_code }}"
+              style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" 
+                  class="btn btn-outline-danger btn-sm ms-1"
+                  onclick="return confirm('Return this job to staff for reassignment?');">
+            Return to Staff
+          </button>
+        </form>
+      {% endif %}
+
+      {% if job.assignments.count %}
+        {% with first_assignment=job.assignments.all.0 %}
+          {% if first_assignment.status == "pending" and first_assignment.technician.user.username == request.user.username %}
+            <button type="button" class="btn btn-success btn-sm quick-accept" data-assignment-id="{{ first_assignment.pk }}" style="margin-left:6px;">
+              Accept
+            </button>
+            <button type="button" class="btn btn-danger btn-sm quick-reject" data-assignment-id="{{ first_assignment.pk }}" style="margin-left:6px;">
+              Reject
+            </button>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+    </td>
+</tr>
+
+<!-- expandable details row -->
+<tr class="job-details-row" id="details-{{ job.id }}" style="display:none; background:#fbfbfb;">
+  <td colspan="8" style="padding:0;">
+    <div style="padding:12px;">
+      <strong>Service lines</strong>
+      <table class="table table-sm" style="margin-top:8px;">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th style="text-align:right;">Part Cost</th>
+            <th style="text-align:right;">Service Charge</th>
+            <th style="text-align:right;">Row Total</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          {% for log in job.service_logs.all %}
+              <tr>
+                <td>{{ log.description|default:"-" }}</td>
+                <td style="text-align:right;">₹{{ log.part_cost|default_if_none:0|floatformat:2 }}</td>
+                <td style="text-align:right;">₹{{ log.service_charge|default_if_none:0|floatformat:2 }}</td>
+                <td style="text-align:right;">₹{{ log.row_total|default_if_none:0|floatformat:2 }}</td>
+              </tr>
+          {% empty %}
+            <tr><td colspan="4">No service lines recorded for this job yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="margin-top:8px;">
+        <small class="text-muted">Created: {{ job.created_at|date:"Y-m-d H:i" }}</small>
+        {% if job.completed_on %} &nbsp; | &nbsp; <small class="text-muted">Completed: {{ job.completed_on|date:"Y-m-d H:i" }}</small>{% endif %}
+      </div>
+    </div>
+  </td>
+</tr>
+{% empty %}
+<tr>
+    <td colspan="8" class="text-center">No active jobs currently assigned to you.</td>
+</tr>
+{% endfor %}
+
