@@ -1,0 +1,523 @@
+{% extends "job_tickets/base.html" %}
+{% load static job_tickets_extras %}
+
+{% block title %}Financial Summary Report{% endblock %}
+
+{% block extra_css %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap');
+
+.financial-report {
+    font-family: 'Manrope', 'DM Sans', sans-serif;
+}
+
+.financial-report h1,
+.financial-report h2,
+.financial-report h3,
+.financial-report h4,
+.financial-report h5 {
+    font-family: 'Sora', 'Space Grotesk', sans-serif;
+    letter-spacing: -0.01em;
+}
+
+.financial-report .metric-card {
+    border: 1px solid #dbe4f2;
+    border-radius: 14px;
+    padding: 1rem;
+    height: 100%;
+    background: #fff;
+}
+
+.financial-report .metric-card .label {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #4d5f7f;
+}
+
+.financial-report .metric-card .value {
+    margin: 0.35rem 0 0;
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.financial-report .metric-card .note {
+    margin: 0.35rem 0 0;
+    font-size: 0.82rem;
+    color: #5f6778;
+}
+
+.financial-report .metric-card.metric-dark {
+    background: #102b52;
+    border-color: #102b52;
+    color: #fff;
+}
+
+.financial-report .metric-card.metric-dark .label,
+.financial-report .metric-card.metric-dark .note {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.financial-report .metric-card.metric-green {
+    background: #e8f8ee;
+    border-color: #bde8cc;
+}
+
+.financial-report .metric-card.metric-red {
+    background: #ffeff0;
+    border-color: #ffd0d4;
+}
+
+.financial-report .metric-card.metric-amber {
+    background: #fff7e6;
+    border-color: #ffe2a6;
+}
+
+.financial-report .section-title-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.financial-report .section-title-line h2 {
+    margin: 0;
+}
+
+.financial-report .table thead th {
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.financial-report .compact-list .list-group-item {
+    padding: 0.75rem 1rem;
+}
+
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    .financial-report {
+        font-size: 12px;
+    }
+
+    .financial-report .section-container,
+    .financial-report .metric-card,
+    .financial-report .card-box {
+        box-shadow: none !important;
+        border: 1px solid #ccd5e5 !important;
+        break-inside: avoid;
+    }
+
+    .financial-report .row {
+        break-inside: avoid;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-container financial-report">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h1 class="section-title mb-0"><i class="fas fa-chart-line me-2"></i>Financial Summary Report</h1>
+        <div class="d-flex gap-2 no-print">
+            <button type="button" onclick="return BotgiPrintHelper.startPrint();" class="btn btn-dark">
+                <i class="fas fa-print me-1"></i>Print Report
+            </button>
+            <a href="{% url 'print_monthly_summary_pdf' %}?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}" class="btn btn-outline-dark">
+                <i class="fas fa-file-pdf me-1"></i>PDF Layout
+            </a>
+            <a href="{% url 'export_monthly_summary_csv' %}?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}" class="btn btn-outline-primary">
+                <i class="fas fa-file-csv me-1"></i>Export CSV
+            </a>
+            <a href="{% url 'reports_dashboard' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back to Reports
+            </a>
+        </div>
+    </div>
+
+    <div class="card-box mb-4 no-print">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Quick Select</label>
+                <select id="date_preset" class="form-select">
+                    <option value="custom" {% if not preset %}selected{% endif %}>Custom Range</option>
+                    <option value="this_month" {% if preset == 'this_month' %}selected{% endif %}>This Month</option>
+                    <option value="last_month" {% if preset == 'last_month' %}selected{% endif %}>Last Month</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Start Date</label>
+                <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">End Date</label>
+                <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date }}" required>
+            </div>
+            <div class="col-md-3">
+                <input type="hidden" name="preset" id="preset_input" value="{{ preset }}">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter me-1"></i>Generate Report
+                </button>
+                <a href="{% url 'print_monthly_summary_report' %}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const preset = document.getElementById('date_preset');
+        const startDate = document.getElementById('start_date');
+        const endDate = document.getElementById('end_date');
+        const presetInput = document.getElementById('preset_input');
+        const today = new Date();
+        const pad = n => n < 10 ? '0' + n : n;
+
+        preset.addEventListener('change', function() {
+            let s = '';
+            let e = '';
+
+            if (this.value === 'this_month') {
+                s = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-01';
+                e = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+            } else if (this.value === 'last_month') {
+                const year = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+                const month = today.getMonth() === 0 ? 12 : today.getMonth();
+                const firstDay = year + '-' + pad(month) + '-01';
+                const lastDayDate = new Date(year, month, 0);
+                const lastDay = lastDayDate.getFullYear() + '-' + pad(lastDayDate.getMonth() + 1) + '-' + pad(lastDayDate.getDate());
+                s = firstDay;
+                e = lastDay;
+            }
+
+            if (s && e) {
+                startDate.value = s;
+                endDate.value = e;
+            }
+
+            presetInput.value = this.value;
+        });
+    });
+    </script>
+
+    <p class="lead mb-3">
+        Report Period:
+        {% if start_date and end_date %}
+            {{ start_date }} to {{ end_date }}
+        {% else %}
+            {{ current_report_date|date:"F Y" }}
+        {% endif %}
+    </p>
+    <hr>
+
+    <div class="section-title-line">
+        <i class="fas fa-tasks"></i>
+        <h2>Service Statistics</h2>
+    </div>
+    <div class="row g-3 mb-5">
+        <div class="col-md-3">
+            <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=created">
+                <div class="metric-card">
+                    <p class="label">Jobs Created</p>
+                    <p class="value">{{ jobs_created_count }}</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=finished">
+                <div class="metric-card metric-green">
+                    <p class="label">Jobs Finished</p>
+                    <p class="value">{{ jobs_finished_count }}</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=returned">
+                <div class="metric-card metric-amber">
+                    <p class="label">Jobs Returned</p>
+                    <p class="value">{{ jobs_returned_count }}</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=vendor">
+                <div class="metric-card metric-dark">
+                    <p class="label">Vendor Jobs</p>
+                    <p class="value">{{ vendor_jobs_count }}</p>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    {% if show_jobs %}
+    <div class="card-box mb-5">
+        <h4 class="mb-3">
+            <i class="fas fa-list me-1"></i>
+            {% if show_jobs == 'created' %}
+                Jobs Created
+            {% elif show_jobs == 'finished' %}
+                Jobs Finished
+            {% elif show_jobs == 'returned' %}
+                Jobs Returned
+            {% elif show_jobs == 'vendor' %}
+                Vendor Jobs
+            {% endif %}
+            {% if start_date and end_date %}({{ start_date }} to {{ end_date }}){% endif %}
+        </h4>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Job Code</th>
+                        <th>Customer</th>
+                        <th>Device</th>
+                        <th>Status</th>
+                        <th>Technician</th>
+                        <th>Date</th>
+                        {% if show_jobs == 'vendor' %}<th>Vendor</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in job_list %}
+                    <tr>
+                        <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
+                        <td>{{ job.customer_name }}</td>
+                        <td>{{ job.device_type }}</td>
+                        <td><span class="badge bg-secondary">{{ job.status }}</span></td>
+                        <td>{{ job.assigned_to.user.username|default:"N/A" }}</td>
+                        <td>
+                            {% if show_jobs == 'created' %}
+                                {{ job.created_at|date:"M d, Y" }}
+                            {% elif show_jobs == 'returned' %}
+                                {{ job.updated_at|date:"M d, Y" }}
+                            {% elif show_jobs == 'vendor' %}
+                                {{ job.specialized_service.returned_date|date:"M d, Y" }}
+                            {% else %}
+                                {{ job.updated_at|date:"M d, Y" }}
+                            {% endif %}
+                        </td>
+                        {% if show_jobs == 'vendor' %}
+                        <td>{{ job.specialized_service.vendor.company_name|default:"N/A" }}</td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if show_jobs == 'vendor' %}7{% else %}6{% endif %}" class="text-center">
+                            No jobs found for this category.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="text-center mt-3">
+            <a href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}" class="btn btn-secondary">
+                Back to Summary
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="section-title-line">
+        <i class="fas fa-sack-dollar"></i>
+        <h2>Financial Overview</h2>
+    </div>
+    <div class="row g-3 mb-5">
+        <div class="col-md-3">
+            <div class="metric-card metric-dark">
+                <p class="label">Total Revenue</p>
+                <p class="value">&#8377;{{ overall_revenue|floatformat:2 }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-red">
+                <p class="label">Total Expense</p>
+                <p class="value">&#8377;{{ overall_expense|floatformat:2 }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-amber">
+                <p class="label">Stock Units Sold</p>
+                <p class="value">{{ stock_sales_units }}</p>
+                <p class="note">Across {{ stock_sale_lines_count }} sale lines</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-green">
+                <p class="label">Overall Profit</p>
+                <p class="value">&#8377;{{ overall_profit|floatformat:2 }}</p>
+                <p class="note">Margin: {{ overall_margin|floatformat:2 }}%</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-box mb-5">
+        <h4 class="mb-3"><i class="fas fa-layer-group me-1"></i>Financial Blocks (Revenue / Expense / Profit)</h4>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="metric-card">
+                    <p class="label">Service Block</p>
+                    <p class="note mb-1">Revenue: <strong>&#8377;{{ service_revenue|floatformat:2 }}</strong></p>
+                    <p class="note mb-1">Expense: <strong>&#8377;{{ service_expense|floatformat:2 }}</strong></p>
+                    <p class="note mb-0">Profit: <strong>&#8377;{{ service_profit|floatformat:2 }}</strong></p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card metric-amber">
+                    <p class="label">Stock Sales Block</p>
+                    <p class="note mb-1">Revenue: <strong>&#8377;{{ stock_sales_income|floatformat:2 }}</strong></p>
+                    <p class="note mb-1">Expense (COGS): <strong>&#8377;{{ stock_sales_cogs|floatformat:2 }}</strong></p>
+                    <p class="note mb-0">Profit: <strong>&#8377;{{ stock_sales_profit|floatformat:2 }}</strong></p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card metric-red">
+                    <p class="label">Vendor Block</p>
+                    <p class="note mb-1">Revenue: <strong>&#8377;{{ vendor_revenue|floatformat:2 }}</strong></p>
+                    <p class="note mb-1">Expense: <strong>&#8377;{{ vendor_expense|floatformat:2 }}</strong></p>
+                    <p class="note mb-0">Profit: <strong>&#8377;{{ vendor_profit|floatformat:2 }}</strong></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-5">
+        <div class="col-md-6">
+            <div class="card-box h-100">
+                <h4><i class="fas fa-chart-pie me-1"></i>Service Breakdown</h4>
+                <hr>
+                <ul class="list-group list-group-flush compact-list">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Service Parts Revenue
+                        <span class="badge bg-primary rounded-pill">&#8377;{{ service_parts_revenue|floatformat:2 }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Service Labor Revenue
+                        <span class="badge bg-primary rounded-pill">&#8377;{{ service_labor_revenue|floatformat:2 }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Service Expense
+                        <span class="badge bg-danger rounded-pill">&#8377;{{ service_expense|floatformat:2 }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center fw-bold">
+                        Service Profit
+                        <span class="badge bg-success rounded-pill">&#8377;{{ service_profit|floatformat:2 }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card-box h-100">
+                <h4><i class="fas fa-industry me-1"></i>Vendor Analysis</h4>
+                <hr>
+                <ul class="list-group list-group-flush compact-list">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Vendor Jobs Returned
+                        <span class="badge bg-warning text-dark rounded-pill">{{ vendor_jobs_count }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Vendor Expense
+                        <span class="badge bg-danger rounded-pill">&#8377;{{ vendor_expense|floatformat:2 }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Vendor Revenue
+                        <span class="badge bg-success rounded-pill">&#8377;{{ vendor_revenue|floatformat:2 }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center fw-bold">
+                        Vendor Profit
+                        <span class="badge bg-info rounded-pill">&#8377;{{ vendor_profit|floatformat:2 }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-title-line">
+        <i class="fas fa-boxes-stacked"></i>
+        <h2>Stock Sales Information</h2>
+    </div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="metric-card">
+                <p class="label">Units Sold</p>
+                <p class="value">{{ stock_sales_units }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <p class="label">Sale Lines</p>
+                <p class="value">{{ stock_sale_lines_count }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <p class="label">Unique Products</p>
+                <p class="value">{{ stock_products_count }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <p class="label">Avg Sale Value</p>
+                <p class="value">&#8377;{{ stock_avg_sale_value|floatformat:2 }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-box mb-4">
+        <h4 class="mb-3"><i class="fas fa-table me-1"></i>Product-wise Stock Sales</h4>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>SKU</th>
+                        <th>Category</th>
+                        <th class="text-end">Units Sold</th>
+                        <th class="text-end">Sale Lines</th>
+                        <th class="text-end">Avg Unit Price</th>
+                        <th class="text-end">Revenue</th>
+                        <th class="text-end">COGS</th>
+                        <th class="text-end">Profit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in stock_products_breakdown %}
+                    <tr>
+                        <td><strong>{{ product.name }}</strong></td>
+                        <td>{{ product.sku }}</td>
+                        <td>{{ product.category }}</td>
+                        <td class="text-end">{{ product.units_sold }}</td>
+                        <td class="text-end">{{ product.sale_lines }}</td>
+                        <td class="text-end">&#8377;{{ product.average_unit_price|floatformat:2 }}</td>
+                        <td class="text-end"><strong>&#8377;{{ product.revenue|floatformat:2 }}</strong></td>
+                        <td class="text-end">&#8377;{{ product.cogs|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ product.profit|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center">
+                            No stock sale entries found for this period.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="text-center mt-4 no-print">
+        <a href="{% url 'reports_dashboard' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Reports
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% include "job_tickets/includes/print_flow_script.html" %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% comment %} Partial: service logs editable table form. Expects `job` and `service_logs` in context. {% endcomment %}
+<form method="post" id="service-logs-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_service_logs">
+    <table class="table table-striped mt-3" id="service-logs-table">
+        <thead>
+            <tr>
+                <th style="width:60%">Description and Barcode Number</th>
+                <th style="width:20%">Part Cost</th>
+                <th style="width:20%">Service Charge</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in service_logs %}
+            <tr id="service-log-{{ log.id }}">
+                <td>
+                    <input type="text" name="description_{{ log.id }}" value="{{ log.description }}" class="form-control">
+                    <div class="invalid-feedback" data-field="description_{{ log.id }}"></div>
+                </td>
+                <td>
+                    <input type="number" step="0.01" name="part_cost_{{ log.id }}" value="{{ log.part_cost|default_if_none:'' }}" class="form-control" placeholder="0.00">
+                    <div class="invalid-feedback" data-field="part_cost_{{ log.id }}"></div>
+                </td>
+                <td>
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="number" step="0.01" name="service_charge_{{ log.id }}" value="{{ log.service_charge|default_if_none:'' }}" class="form-control" placeholder="0.00">
+                        {% if not job.status in 'Ready for Pickup,Completed,Closed' and not job.vyapar_invoice_number %}
+                        <button type="button" class="btn btn-outline-danger btn-sm delete-log-btn" data-log-id="{{ log.id }}" data-delete-url="{% url 'technician_delete_service_log' log.id %}">Delete</button>
+                        {% endif %}
+                    </div>
+                    <div class="invalid-feedback" data-field="service_charge_{{ log.id }}"></div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary" id="save-service-logs"><i class="fas fa-save"></i> Save Service Logs</button>
+        <a href="{% url 'technician_dashboard' %}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>

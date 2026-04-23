@@ -1,0 +1,100 @@
+{% extends "job_tickets/base.html" %}
+{% block title %}Technician Report - {{ technician.user.username }}{% endblock %}
+
+{% block content %}
+{% now "Y-m-d H:i" as now %}
+<style>
+  .report-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+  .report-left { display:flex; align-items:center; gap:12px; }
+  .report-logo { height:64px; width:auto; }
+  .report-meta { color:#666; font-size:13px; }
+  .summary-table { width:100%; border-collapse:collapse; table-layout: fixed; }
+  .summary-table th, .summary-table td { border:1px solid #ddd; padding:8px; vertical-align:top; word-break:break-word; }
+  .summary-table thead th { background:#f8f9fa; font-weight:600; }
+  .jobno { width:10%; }
+  .customer { width:20%; }
+  .device { width:20%; }
+  .status { width:10%; }
+  .part, .serv, .disc, .total { width:10%; text-align:right; }
+  .totals { margin-top:14px; font-weight:700; }
+  .print-btn { padding:6px 10px; border:1px solid #777; background:#f7f7f7; cursor:pointer; border-radius:4px; }
+  .report-period { font-size:14px; margin-top:8px; font-weight:bold; }
+
+  @media print {
+    nav.navbar { display:none !important; }
+    .d-print-none { display:none !important; }
+    body { margin:10mm; }
+  }
+</style>
+
+<div class="report-header">
+  <div class="report-left">
+    {% if company.logo %}
+    <img src="{{ company.logo.url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo"/>
+    {% elif company.logo_url %}
+    <img src="{{ company.logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo"/>
+    {% endif %}
+    <div>
+      <h3 style="margin:0">Technician Report - {{ technician.user.username }}</h3>
+      <div class="report-meta">Generated: {{ now }}</div>
+
+      <div class="report-period">
+        {% if report_start_date and report_end_date %}
+            Reporting Period: {{ report_start_date }} to {{ report_end_date }}
+        {% else %}
+            Reporting Period: All Time Completed/Closed Jobs
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-print-none">
+    <button type="button" class="print-btn" onclick="return BotgiPrintHelper.startPrint();">Print</button>
+  </div>
+</div>
+
+<table class="summary-table" aria-label="Summary table">
+  <thead>
+    <tr>
+      <th class="jobno">Job No</th>
+      <th class="customer">Customer</th>
+      <th class="device">Device</th>
+      <th class="status">Status</th>
+      <th class="part">Part Cost</th>
+      <th class="serv">Service Charge</th>
+      <th class="disc">Discount</th>
+      <th class="total">Net Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td>{{ job.job_code }}</td>
+      <td class="customer">{{ job.customer_name }}</td>
+      <td class="device">
+        {{ job.device_type }}{% if job.device_brand %} {{ job.device_brand }}{% endif %}{% if job.device_model %} {{ job.device_model }}{% endif %}
+      </td>
+      <td class="status">{{ job.status }}</td>
+      <td class="part">&#8377;{{ job.part_total|default_if_none:0|floatformat:2 }}</td>
+      <td class="serv">&#8377;{{ job.service_total|default_if_none:0|floatformat:2 }}</td>
+      <td class="disc">&#8377;{{ job.discount_total|default_if_none:0|floatformat:2 }}</td>
+      <td class="total">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8">No completed/closed jobs found for this technician in the selected period.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals">
+  <p>Total Jobs Counted: {{ jobs|length }}</p>
+  <p>Total Parts Sales: &#8377;{{ total_parts|floatformat:2 }}</p>
+  <p>Total Service Sales: &#8377;{{ total_services|floatformat:2 }}</p>
+  <p>Total Discounts: &#8377;{{ total_discounts|floatformat:2 }}</p>
+  <p>Net Income: &#8377;{{ total_income|floatformat:2 }}</p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% include "job_tickets/includes/print_flow_script.html" %}
+{% endblock %}

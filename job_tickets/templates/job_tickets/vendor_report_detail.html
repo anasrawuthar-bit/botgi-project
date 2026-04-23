@@ -1,0 +1,91 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Vendor Report: {{ vendor.company_name }}{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="section-title mb-0">Complete Vendor Report</h1>
+            <p class="lead">Showing all jobs assigned to <strong>{{ vendor.company_name }}</strong></p>
+        </div>
+        <a href="{% url 'reports_dashboard' %}" class="btn btn-secondary no-print"><i class="fas fa-arrow-left"></i> Back to Reports</a>
+    </div>
+
+    <!-- Date Filter Form -->
+    <div class="card-box mb-4">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Start Date</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">End Date</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary">Filter Report</button>
+                <a href="{% url 'vendor_report_detail' vendor.id %}" class="btn btn-outline-secondary">Clear</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="card-box mb-4">
+        <h4 class="mb-3">Financial Summary{% if start_date and end_date %} ({{ start_date }} to {{ end_date }}){% endif %}</h4>
+        <div class="row text-center">
+            <div class="col">
+                <h5>{{ total_jobs }}</h5>
+                <p class="text-muted">Total Jobs Given</p>
+            </div>
+            <div class="col">
+                <h5 class="text-danger">₹{{ total_vendor_cost|floatformat:2 }}</h5>
+                <p class="text-muted">Total Our Cost</p>
+            </div>
+            <div class="col">
+                <h5 class="text-success">₹{{ total_client_charge|floatformat:2 }}</h5>
+                <p class="text-muted">Total Client Charges</p>
+            </div>
+            <div class="col">
+                <h5 class="text-primary">₹{{ total_profit|floatformat:2 }}</h5>
+                <p class="text-muted">Total Profit</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-box">
+        <h4 class="mb-3">Job History{% if start_date and end_date %} (Returned: {{ start_date }} to {{ end_date }}){% endif %}</h4>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Job Code</th>
+                        <th>Customer</th>
+                        <th>Status</th>
+                        <th>Date Sent</th>
+                        <th>Date Returned</th>
+                        <th class="text-end">Our Cost</th>
+                        <th class="text-end">Client Charge</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for service in services %}
+                    <tr>
+                        <td><a href="{% url 'staff_job_detail' service.job_ticket.job_code %}">{{ service.job_ticket.job_code }}</a></td>
+                        <td>{{ service.job_ticket.customer_name }}</td>
+                        <td><span class="badge bg-info">{{ service.get_status_display }}</span></td>
+                        <td>{{ service.sent_date|date:"d M Y" }}</td>
+                        <td>{{ service.returned_date|date:"d M Y"|default:"-" }}</td>
+                        <td class="text-end text-danger">₹{{ service.vendor_cost|floatformat:2|default:"0.00" }}</td>
+                        <td class="text-end text-success">₹{{ service.client_charge|floatformat:2|default:"0.00" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center">No jobs have been assigned to this vendor yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

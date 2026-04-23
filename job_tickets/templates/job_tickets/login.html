@@ -1,0 +1,274 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+
+{% block title %}Staff Login{% endblock %}
+
+{% block content %}
+<style>
+    /* Hide browser's default password reveal button - Chrome/Edge */
+    #password::-webkit-credentials-auto-fill-button,
+    #password::-webkit-caps-lock-indicator {
+        display: none !important;
+        -webkit-appearance: none !important;
+    }
+    
+    /* Hide browser's default password reveal button - Chrome 89+ */
+    #password::-webkit-strong-password-auto-fill-button,
+    #password::-webkit-credentials-auto-fill-button {
+        display: none !important;
+    }
+    
+    /* For Firefox */
+    #password::-ms-reveal {
+        display: none !important;
+    }
+    
+    /* Hide any browser-generated reveal buttons */
+    input[type="password"]::-webkit-inner-spin-button,
+    input[type="password"]::-webkit-outer-spin-button,
+    input[type="password"]::-webkit-credentials-auto-fill-button {
+        -webkit-appearance: none !important;
+        display: none !important;
+    }
+    
+    /* Ensure our custom toggle button is visible and properly styled */
+    #togglePassword {
+        border-left: none;
+        z-index: 10;
+        position: relative;
+        cursor: pointer;
+    }
+    
+    #togglePassword:hover {
+        background-color: #e9ecef;
+        border-color: #ced4da;
+    }
+    
+    #togglePassword:focus {
+        box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Style the input group to prevent overflow issues */
+    .input-group > #password {
+        padding-right: 45px; /* Make room for our button */
+    }
+
+    .session-kick-banner {
+        border: 1px solid #f1c97a;
+        background: linear-gradient(135deg, #fff7e2, #ffe9b8);
+        color: #6b4d00;
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        box-shadow: 0 10px 25px rgba(177, 129, 17, 0.12);
+    }
+
+    .session-kick-banner i {
+        color: #b7791f;
+    }
+</style>
+<div class="row justify-content-center">
+    <div class="col-md-5 col-lg-4">
+        <div class="section-container">
+            <h1 class="text-center mb-4">
+                <i class="fas fa-user-lock"></i> Staff & Technician Login
+            </h1>
+            {% if logout_notice %}
+                <div class="session-kick-banner d-flex align-items-start gap-3 mb-3" role="alert">
+                    <i class="fas fa-triangle-exclamation mt-1"></i>
+                    <div>
+                        <strong>
+                            {% if logout_reason == 'session_replaced' %}
+                                Signed Out From Another Device
+                            {% elif logout_reason == 'session_expired' %}
+                                Session Expired
+                            {% else %}
+                                Notice
+                            {% endif %}
+                        </strong>
+                        <div class="small mt-1">{{ logout_notice }}</div>
+                    </div>
+                </div>
+            {% endif %}
+            <form method="post" id="loginForm">
+                {% csrf_token %}
+                {% if next %}
+                    <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
+                
+                <div class="mb-3">
+                    <label for="username" class="form-label">
+                        <i class="fas fa-user"></i> Username:
+                    </label>
+                    <input 
+                        type="text" 
+                        name="username" 
+                        id="username" 
+                        class="form-control" 
+                        value="{{ username|default:'' }}" 
+                        autocomplete="username"
+                        placeholder="Enter your username"
+                        required
+                        autofocus
+                    >
+                </div>
+                
+                <div class="mb-3">
+                    <label for="password" class="form-label">
+                        <i class="fas fa-lock"></i> Password:
+                    </label>
+                    <div class="input-group">
+                        <input 
+                            type="password" 
+                            name="password" 
+                            id="password" 
+                            class="form-control" 
+                            autocomplete="current-password"
+                            placeholder="Enter your password"
+                            required
+                            data-1p-ignore
+                            data-lpignore="true"
+                        >
+                        <button 
+                            class="btn btn-outline-secondary" 
+                            type="button" 
+                            id="togglePassword"
+                            aria-label="Show password"
+                        >
+                            <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                {% if error %}
+                    <div class="alert alert-danger d-flex align-items-center" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <div>
+                            {{ error }}
+                            {% if attempts_left and not locked %}
+                                <br><small>Attempts remaining: {{ attempts_left }}</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+                
+                {% if locked %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-shield-alt"></i> <strong>Account Protection Active</strong><br>
+                        Multiple failed login attempts detected. Please wait before trying again.
+                    </div>
+                {% endif %}
+                
+                <button type="submit" class="btn btn-primary w-100 mt-3">
+                    <i class="fas fa-sign-in-alt"></i> Log In
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if logout_reason == 'session_replaced' %}
+<div class="modal fade" id="sessionReplacedModal" tabindex="-1" aria-labelledby="sessionReplacedModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-warning">
+            <div class="modal-header bg-warning-subtle">
+                <h5 class="modal-title" id="sessionReplacedModalLabel">
+                    <i class="fas fa-mobile-screen-button me-2"></i>Signed Out
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                This account was logged in on another device, so this session was closed automatically.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-warning" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('password');
+    const toggleIcon = document.getElementById('togglePasswordIcon');
+    const sessionReplacedModal = document.getElementById('sessionReplacedModal');
+    
+    // Disable browser's default password reveal button
+    if (passwordInput) {
+        // Set attribute to prevent browser from showing its own reveal button
+        passwordInput.setAttribute('data-browser-autofill', 'off');
+        
+        // Remove any browser-added reveal buttons after a short delay
+        setTimeout(function() {
+            // Force hide any browser-generated buttons with multiple methods
+            const styles = document.createElement('style');
+            styles.id = 'hide-browser-password-button';
+            styles.textContent = `
+                #password::-webkit-credentials-auto-fill-button,
+                #password::-webkit-strong-password-auto-fill-button,
+                #password::-webkit-caps-lock-indicator {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+            `;
+            if (!document.getElementById('hide-browser-password-button')) {
+                document.head.appendChild(styles);
+            }
+        }, 50);
+        
+        // Also try to hide it immediately
+        setTimeout(function() {
+            const styles2 = document.createElement('style');
+            styles2.textContent += `
+                input[type="password"]::-webkit-credentials-auto-fill-button {
+                    -webkit-appearance: none !important;
+                    display: none !important;
+                }
+            `;
+            document.head.appendChild(styles2);
+        }, 200);
+    }
+    
+    if (togglePassword && passwordInput) {
+        togglePassword.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            
+            // Toggle icon
+            if (type === 'text') {
+                toggleIcon.classList.remove('fa-eye');
+                toggleIcon.classList.add('fa-eye-slash');
+                togglePassword.setAttribute('aria-label', 'Hide password');
+            } else {
+                toggleIcon.classList.remove('fa-eye-slash');
+                toggleIcon.classList.add('fa-eye');
+                togglePassword.setAttribute('aria-label', 'Show password');
+            }
+            
+            // Refocus the input after toggle
+            passwordInput.focus();
+        });
+    }
+    
+    // Auto-focus on password field if username is already filled
+    const usernameInput = document.getElementById('username');
+    if (usernameInput && usernameInput.value && passwordInput) {
+        passwordInput.focus();
+    }
+
+    if (sessionReplacedModal && typeof bootstrap !== 'undefined') {
+        bootstrap.Modal.getOrCreateInstance(sessionReplacedModal).show();
+    }
+});
+</script>
+{% endblock %}

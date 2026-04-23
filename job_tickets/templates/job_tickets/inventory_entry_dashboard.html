@@ -1,0 +1,2507 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}{{ config.title }} | Service Billing{% endblock %}
+
+{% block extra_css %}
+{% include "job_tickets/includes/inventory_page_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="section-container" id="inventory-entry-page">
+    <div class="row g-4 inventory-shell" data-inventory-shell>
+        <div class="col-lg-3 col-xl-3 inventory-shell-sidebar-col">
+            {% include "job_tickets/_inventory_sidebar.html" %}
+        </div>
+        <div class="col-lg-9 col-xl-9 inventory-shell-main-col">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <h1 class="section-title mb-1"><i class="fas {{ config.icon }} me-2"></i>{{ config.title }}</h1>
+                    <p class="mb-0 text-muted">{{ config.description }}</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    {% if show_add_entry_button %}
+                    <button
+                        type="button"
+                        id="open-inventory-entry-btn"
+                        class="btn btn-primary btn-sm"
+                        data-bs-toggle="modal"
+                        data-bs-target="#addInventoryEntryModal"
+                        data-default-label="{{ config.submit_label }}"
+                        data-draft-label="Resume Draft Purchase"
+                    >
+                        <i class="fas fa-plus me-1"></i><span class="open-entry-btn-label">{{ config.submit_label }}</span>
+                    </button>
+                    {% endif %}
+                    <a href="{% url 'inventory_product_dashboard' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-boxes-stacked me-1"></i>Products
+                    </a>
+                    <a href="{% url 'inventory_dashboard' %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-chart-simple me-1"></i>Inventory Overview
+                    </a>
+                </div>
+            </div>
+
+            {% if not show_add_entry_button %}
+            <div class="alert alert-info py-2 mb-3">
+                Create return bills from the `Return` action in the Purchase or Sales register.
+            </div>
+            {% endif %}
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <p>Total Bills</p>
+                        <h3>{{ entry_count }}</h3>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <p>Total Quantity</p>
+                        <h3>{{ total_quantity }}</h3>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <p>Total Amount</p>
+                        <h3>&#8377;{{ total_amount|floatformat:2 }}</h3>
+                    </div>
+                </div>
+            </div>
+
+                <div class="card-box h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+                        <h5 class="mb-0"><i class="fas fa-list me-2"></i>{{ config.title }} Register</h5>
+                        <form method="get" class="d-flex gap-2" data-async-form data-async-target="#inventory-entry-page">
+                            <input type="text" name="q" class="form-control" placeholder="Search by invoice, job, party, product..." value="{{ query }}">
+                            <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search"></i></button>
+                        </form>
+                    </div>
+
+                <div class="table-responsive inventory-scroll-region">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Invoice No</th>
+                                <th>Job</th>
+                                <th>Party</th>
+                                <th>Items</th>
+                                <th>Qty</th>
+                                <th>Total</th>
+                                <th>User</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bill in register_rows %}
+                            <tr>
+                                <td>{{ bill.entry_date|date:"Y-m-d" }}</td>
+                                <td>{{ bill.invoice_display }}</td>
+                                <td>
+                                    {% if bill.job_ticket %}
+                                        <a href="{% url 'staff_job_detail' job_code=bill.job_code %}">
+                                            {{ bill.job_code }}
+                                        </a>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{{ bill.party.name }}</td>
+                                <td>{{ bill.item_label }}</td>
+                                <td>{{ bill.total_quantity }}</td>
+                                <td>&#8377;{{ bill.total_amount|floatformat:2 }}</td>
+                                <td>{{ bill.created_by.username|default:"-" }}</td>
+                                <td>
+                                    <div class="dropdown">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Bill actions">
+                                            <i class="fas fa-ellipsis-v"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            {% if entry_type != 'sale' or not bill.job_ticket %}
+                                            <li>
+                                                <button
+                                                    type="button"
+                                                    class="dropdown-item inventory-edit-btn"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#editInventoryEntryModal"
+                                                    data-bill-id="{{ bill.bill_id }}"
+                                                    data-entry-id="{{ bill.lines.0.id }}"
+                                                    data-entry-date="{{ bill.entry_date|date:'Y-m-d' }}"
+                                                    data-invoice-number="{{ bill.invoice_number|default:'' }}"
+                                                    data-invoice-key="{{ bill.bill_id }}"
+                                                    data-job-code="{{ bill.job_code }}"
+                                                    data-party-id="{{ bill.party_id }}"
+                                                    data-party-locked="{% if bill.job_ticket %}true{% else %}false{% endif %}"
+                                                    data-notes="{{ bill.notes|default:''|escapejs }}"
+                                                >
+                                                    <i class="fas fa-pen me-2"></i>Edit Bill
+                                                </button>
+                                            </li>
+                                            {% endif %}
+                                            {% if entry_type == 'sale' and bill.bill_id %}
+                                            <li>
+                                                <a href="{% url 'inventory_sales_print_bill_view' bill_id=bill.bill_id %}" class="dropdown-item">
+                                                    <i class="fas fa-print me-2"></i>Print
+                                                </a>
+                                            </li>
+                                            {% endif %}
+                                            {% if entry_type == 'purchase' %}
+                                            <li>
+                                                <a href="{% if bill.bill_id %}{% url 'inventory_purchase_return_dashboard' %}?source_bill_id={{ bill.bill_id }}{% else %}{% url 'inventory_purchase_return_dashboard' %}?source_invoice={{ bill.invoice_number|urlencode }}&source_party_id={{ bill.party_id }}{% endif %}" class="dropdown-item">
+                                                    <i class="fas fa-rotate-left me-2"></i>Return
+                                                </a>
+                                            </li>
+                                            {% elif entry_type == 'sale' %}
+                                            <li>
+                                                <a href="{% if bill.bill_id %}{% url 'inventory_sales_return_dashboard' %}?source_bill_id={{ bill.bill_id }}{% else %}{% url 'inventory_sales_return_dashboard' %}?source_invoice={{ bill.invoice_number|urlencode }}&source_party_id={{ bill.party_id }}{% endif %}" class="dropdown-item">
+                                                    <i class="fas fa-rotate-right me-2"></i>Return
+                                                </a>
+                                            </li>
+                                            {% endif %}
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="{{ register_empty_colspan }}" class="text-center">No bills found.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal fade quick-pop-modal" id="addInventoryEntryModal" tabindex="-1" aria-labelledby="addInventoryEntryModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="addInventoryEntryModalLabel">
+                                <i class="fas fa-file-circle-plus me-2"></i>{{ config.submit_label }}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="inventory_entry_submit" value="{{ entry_type }}">
+                                {% if entry_form.non_field_errors %}
+                                    <div class="alert alert-danger py-2">{{ entry_form.non_field_errors|striptags }}</div>
+                                {% endif %}
+                                {% if line_entry_error %}
+                                    <div class="alert alert-danger py-2">{{ line_entry_error }}</div>
+                                {% endif %}
+                                {% if source_bill %}
+                                    <div class="alert alert-warning py-2 mb-3">
+                                        Return against {{ source_bill.source_label }} invoice <strong>{{ source_bill.invoice_number }}</strong>
+                                        for <strong>{{ source_bill.party_name }}</strong>.
+                                        Select products and set quantities to return.
+                                    </div>
+                                {% endif %}
+                                {% if entry_type == 'purchase' %}
+                                    <div id="purchase-draft-alert" class="alert alert-warning py-2 mb-3 d-none">
+                                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                            <span id="purchase-draft-alert-text" class="small">Draft restored. Continue and save when ready.</span>
+                                            <button type="button" id="clear-purchase-draft-btn" class="btn btn-outline-danger btn-sm">
+                                                Discard Draft
+                                            </button>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                                <div class="alert alert-info py-2 mb-3">
+                                    Add one or more product lines. Select existing products from your product list.
+                                </div>
+
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">{{ entry_form.entry_date.label }}</label>
+                                        {{ entry_form.entry_date }}
+                                        {% if entry_form.entry_date.errors %}
+                                            <div class="text-danger small mt-1">{{ entry_form.entry_date.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Invoice Number</label>
+                                        {% if entry_type == 'sale' %}
+                                            <div class="d-none">{{ entry_form.invoice_number }}</div>
+                                            <input
+                                                type="text"
+                                                id="sale-invoice-preview"
+                                                class="form-control"
+                                                value="{{ sale_invoice_preview }}"
+                                                readonly
+                                                data-preview-url="{% url 'inventory_invoice_preview' %}"
+                                                data-fallback-preview="{{ sale_invoice_preview }}"
+                                            >
+                                            <div id="sale-invoice-preview-help" class="form-text">
+                                                Auto generated from the selected sale date.
+                                            </div>
+                                        {% else %}
+                                            {{ entry_form.invoice_number }}
+                                            {% if entry_form.invoice_number.errors %}
+                                                <div class="text-danger small mt-1">{{ entry_form.invoice_number.errors|striptags }}</div>
+                                            {% endif %}
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="d-flex justify-content-between align-items-center gap-2">
+                                            <label class="form-label mb-0">{{ entry_form.party.label }}</label>
+                                            {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                                                <button type="button" id="toggle-quick-party-btn" class="btn btn-link btn-sm text-decoration-none p-0">
+                                                    <i class="fas fa-plus me-1"></i>New {{ entry_form.party.label }}
+                                                </button>
+                                            {% endif %}
+                                        </div>
+                                        <div class="visually-hidden">{{ entry_form.party }}</div>
+                                        <input
+                                            type="text"
+                                            id="add-party-picker"
+                                            class="form-control"
+                                            list="add-party-options"
+                                            autocomplete="off"
+                                            placeholder="Type {{ entry_form.party.label|lower }} name or phone"
+                                        >
+                                        <datalist id="add-party-options"></datalist>
+                                        {% if entry_form.party.errors %}
+                                            <div class="text-danger small mt-1">{{ entry_form.party.errors|striptags }}</div>
+                                        {% endif %}
+                                        {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                                            <div id="quick-party-panel" class="card border-0 bg-light mt-2 d-none">
+                                                <div class="card-body p-3">
+                                                    <div class="row g-2">
+                                                        <div class="col-12">
+                                                            <label for="quick-party-name" class="form-label small mb-1">{{ entry_form.party.label }} Name</label>
+                                                            <input type="text" id="quick-party-name" class="form-control form-control-sm" placeholder="{{ entry_form.party.label }} name">
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label for="quick-party-phone" class="form-label small mb-1">Phone</label>
+                                                            <input type="text" id="quick-party-phone" class="form-control form-control-sm" placeholder="+91XXXXXXXXXX">
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label for="quick-party-gstin" class="form-label small mb-1">GSTIN</label>
+                                                            <input type="text" id="quick-party-gstin" class="form-control form-control-sm" placeholder="Optional GSTIN">
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <label for="quick-party-address" class="form-label small mb-1">Address</label>
+                                                            <textarea id="quick-party-address" class="form-control form-control-sm" rows="2" placeholder="Optional address"></textarea>
+                                                        </div>
+                                                    </div>
+                                                    <div id="quick-party-errors" class="alert alert-danger py-2 px-3 mt-3 mb-0 d-none"></div>
+                                                    <div class="d-flex justify-content-end gap-2 mt-3">
+                                                        <button type="button" id="cancel-quick-party-btn" class="btn btn-outline-secondary btn-sm">Cancel</button>
+                                                        <button type="button" id="save-quick-party-btn" class="btn btn-primary btn-sm">
+                                                            <i class="fas fa-save me-1"></i>Save {{ entry_form.party.label }}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                {% if source_bill_mode %}
+                                                    <th style="min-width: 90px;">Select</th>
+                                                {% endif %}
+                                                <th style="min-width: 170px;">Product</th>
+                                                <th style="min-width: 90px;">Qty</th>
+                                                <th style="min-width: 120px;">Rate</th>
+                                                <th style="min-width: 130px;">Amount (Excl Tax)</th>
+                                                <th style="min-width: 90px;">GST %</th>
+                                                <th style="min-width: 120px;">Tax Amount</th>
+                                                <th style="min-width: 150px;">Total Amount</th>
+                                                {% if not source_bill_mode %}
+                                                    <th style="min-width: 60px;">Action</th>
+                                                {% endif %}
+                                            </tr>
+                                        </thead>
+                                        <tbody id="inventory-lines-body">
+                                            {% if source_bill_mode %}
+                                                {% for line in source_bill_lines %}
+                                                <tr class="inventory-line-row source-prefill-row">
+                                                    <td class="text-center">
+                                                        <input type="checkbox" class="form-check-input inventory-line-include">
+                                                    </td>
+                                                    <td>
+                                                        <select name="line_product_id[]" class="form-select form-select-sm inventory-line-product">
+                                                            <option value="">Select product</option>
+                                                            <option
+                                                                value="{{ line.product_id }}"
+                                                                data-unit-price="{{ line.unit_price }}"
+                                                                data-cost-price="{{ line.unit_price }}"
+                                                                selected
+                                                            >
+                                                                {{ line.product_name }} (Bill Qty: {{ line.max_quantity }}, Stock: {{ line.product_stock }})
+                                                            </option>
+                                                        </select>
+                                                    </td>
+                                                    <td>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max="{{ line.max_quantity }}"
+                                                            step="1"
+                                                            name="line_quantity[]"
+                                                            class="form-control form-control-sm"
+                                                            value="1"
+                                                            data-max-qty="{{ line.max_quantity }}"
+                                                        >
+                                                    </td>
+                                                    <td>
+                                                        <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm" value="{{ line.unit_price|floatformat:2 }}">
+                                                    </td>
+                                                    <td class="text-end fw-semibold line-taxable-amount">0.00</td>
+                                                    <td>
+                                                        <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm" value="{{ line.gst_rate|floatformat:2 }}">
+                                                    </td>
+                                                    <td class="text-end fw-semibold line-gst-amount">0.00</td>
+                                                    <td>
+                                                        <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input" value="0.00">
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            {% else %}
+                                            <tr class="inventory-line-row">
+                                                <td>
+                                                    <div class="visually-hidden">
+                                                        <select name="line_product_id[]" class="form-select form-select-sm inventory-line-product">
+                                                            <option value="">Select product</option>
+                                                            {% for product in line_products %}
+                                                                <option
+                                                                    value="{{ product.id }}"
+                                                                    data-unit-price="{{ product.unit_price }}"
+                                                                    data-cost-price="{{ product.cost_price }}"
+                                                                >
+                                                                    {{ product.name }} (Stock: {{ product.stock_quantity }})
+                                                                </option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        class="form-control form-control-sm inventory-line-product-picker"
+                                                        autocomplete="off"
+                                                        placeholder="Type product name"
+                                                    >
+                                                    <datalist class="inventory-line-product-options"></datalist>
+                                                </td>
+                                                <td>
+                                                    <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm" value="1">
+                                                </td>
+                                                <td>
+                                                    <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm" value="0.00">
+                                                </td>
+                                                <td class="text-end fw-semibold line-taxable-amount">0.00</td>
+                                                <td>
+                                                    <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm" value="{{ default_gst_rate|floatformat:2 }}">
+                                                </td>
+                                                <td class="text-end fw-semibold line-gst-amount">0.00</td>
+                                                <td>
+                                                    <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input" value="0.00">
+                                                </td>
+                                                <td class="text-center">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {% if not source_bill_mode %}
+                                <div class="d-flex flex-wrap justify-content-end gap-2 mt-2">
+                                    {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                                    <button type="button" id="toggle-quick-product-btn" class="btn btn-outline-secondary btn-sm">
+                                        <i class="fas fa-box-open me-1"></i>New Product
+                                    </button>
+                                    {% endif %}
+                                    <button type="button" id="add-inventory-line-btn" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-plus me-1"></i>Add Product Line
+                                    </button>
+                                </div>
+                                {% endif %}
+
+                                {% if not source_bill_mode %}
+                                {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                                <div id="quick-product-panel" class="card border-0 bg-light mt-3 d-none">
+                                    <div class="card-body p-3">
+                                        <div class="row g-2">
+                                            <div class="col-md-6">
+                                                <label for="quick-product-name" class="form-label small mb-1">Product Name</label>
+                                                <input type="text" id="quick-product-name" class="form-control form-control-sm" placeholder="Product name">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label for="quick-product-category" class="form-label small mb-1">Category</label>
+                                                <input type="text" id="quick-product-category" class="form-control form-control-sm" placeholder="Optional">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label for="quick-product-brand" class="form-label small mb-1">Brand</label>
+                                                <input type="text" id="quick-product-brand" class="form-control form-control-sm" placeholder="Optional">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label for="quick-product-cost-price" class="form-label small mb-1">Purchase Price</label>
+                                                <input type="number" min="0" step="0.01" id="quick-product-cost-price" class="form-control form-control-sm" value="0.00" placeholder="0.00">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label for="quick-product-unit-price" class="form-label small mb-1">Sales Price</label>
+                                                <input type="number" min="0" step="0.01" id="quick-product-unit-price" class="form-control form-control-sm" value="0.00" placeholder="0.00">
+                                            </div>
+                                        </div>
+                                        <div id="quick-product-errors" class="alert alert-danger py-2 px-3 mt-3 mb-0 d-none"></div>
+                                        <div class="d-flex justify-content-end gap-2 mt-3">
+                                            <button type="button" id="cancel-quick-product-btn" class="btn btn-outline-secondary btn-sm">Cancel</button>
+                                            <button type="button" id="save-quick-product-btn" class="btn btn-primary btn-sm">
+                                                <i class="fas fa-save me-1"></i>Save Product
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {% endif %}
+
+                                <template id="inventory-line-template">
+                                    <tr class="inventory-line-row">
+                                        <td>
+                                            <div class="visually-hidden">
+                                                <select name="line_product_id[]" class="form-select form-select-sm inventory-line-product">
+                                                    <option value="">Select product</option>
+                                                    {% for product in line_products %}
+                                                        <option
+                                                            value="{{ product.id }}"
+                                                            data-unit-price="{{ product.unit_price }}"
+                                                            data-cost-price="{{ product.cost_price }}"
+                                                        >
+                                                            {{ product.name }} (Stock: {{ product.stock_quantity }})
+                                                        </option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                class="form-control form-control-sm inventory-line-product-picker"
+                                                autocomplete="off"
+                                                placeholder="Type product name"
+                                            >
+                                            <datalist class="inventory-line-product-options"></datalist>
+                                        </td>
+                                        <td>
+                                            <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm" value="1">
+                                        </td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm" value="0.00">
+                                        </td>
+                                        <td class="text-end fw-semibold line-taxable-amount">0.00</td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm" value="{{ default_gst_rate|floatformat:2 }}">
+                                        </td>
+                                        <td class="text-end fw-semibold line-gst-amount">0.00</td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input" value="0.00">
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+
+                                <div class="row g-3 mt-2">
+                                    <div class="col-lg-7">
+                                        <label class="form-label">Bill Note</label>
+                                        <textarea name="bill_notes" class="form-control form-control-sm" rows="3" placeholder="Optional note for this bill (appears on all bill lines)">{{ bill_notes_value }}</textarea>
+                                    </div>
+                                    <div class="col-lg-5">
+                                        <div class="card border-0 bg-light p-3 h-100">
+                                            <div class="mb-2">
+                                                <label class="form-label mb-1">Bill Discount</label>
+                                                <input type="number" min="0" step="0.01" name="bill_discount_amount" id="bill-discount-amount" class="form-control form-control-sm" value="{{ bill_discount_value }}">
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Subtotal (Excl Tax)</span>
+                                                <strong id="bill-subtotal">0.00</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Discount</span>
+                                                <strong id="bill-discount-view">0.00</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Total Tax</span>
+                                                <strong id="bill-tax-total">0.00</strong>
+                                            </div>
+                                            <hr class="my-2">
+                                            <div class="d-flex justify-content-between">
+                                                <span class="fw-semibold">Bill Total</span>
+                                                <strong id="bill-grand-total">0.00</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>{{ config.submit_label }}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal fade quick-pop-modal" id="editInventoryEntryModal" tabindex="-1" aria-labelledby="editInventoryEntryModalLabel" aria-hidden="true">
+                {% if register_is_grouped %}
+                <div class="modal-dialog modal-dialog-centered modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="editInventoryEntryModalLabel">
+                                <i class="fas fa-pen-to-square me-2"></i>Edit {{ config.title }} Bill
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="inventory_entry_edit_submit" value="{{ entry_type }}">
+                                <input type="hidden" name="entry_id" id="edit-entry-id">
+                                <input type="hidden" name="bill_id" id="edit-bill-id">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-4 d-none">
+                                        <label class="form-label">Internal Reference</label>
+                                        <input type="text" class="form-control" id="edit-entry-number" readonly>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Entry Date</label>
+                                        <input type="date" class="form-control" name="edit_entry_date" id="edit-entry-date" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Invoice Number</label>
+                                        <input type="text" class="form-control" name="edit_invoice_number" id="edit-bill-number" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Linked Job</label>
+                                        <input type="text" class="form-control" id="edit-job-code" readonly>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label">{{ config.party_label_singular }}</label>
+                                        <select class="form-select visually-hidden" name="edit_party_id" id="edit-party-id" required>
+                                            <option value="">Select {{ config.party_label_singular }}</option>
+                                            {% for party in edit_party_options %}
+                                                <option value="{{ party.id }}">{{ party.name }}{% if party.phone %} ({{ party.phone }}){% endif %}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            id="edit-party-picker"
+                                            class="form-control"
+                                            list="edit-party-options"
+                                            autocomplete="off"
+                                            placeholder="Type {{ config.party_label_singular|lower }} name or phone"
+                                        >
+                                        <datalist id="edit-party-options"></datalist>
+                                        <small id="edit-party-lock-note" class="text-muted d-none">
+                                            Party is fixed for this service-linked sales entry.
+                                        </small>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th style="min-width: 220px;">Product</th>
+                                                <th style="min-width: 90px;">Qty</th>
+                                                <th style="min-width: 120px;">Rate</th>
+                                                <th style="min-width: 130px;">Amount (Excl Tax)</th>
+                                                <th style="min-width: 90px;">GST %</th>
+                                                <th style="min-width: 120px;">Tax Amount</th>
+                                                <th style="min-width: 150px;">Total Amount</th>
+                                                <th style="min-width: 60px;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="edit-sale-lines-body"></tbody>
+                                    </table>
+                                </div>
+
+                                <div class="d-flex justify-content-end mt-2">
+                                    <button type="button" id="edit-sale-add-line-btn" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-plus me-1"></i>Add Product Line
+                                    </button>
+                                </div>
+
+                                <template id="edit-sale-line-template">
+                                    <tr class="edit-sale-line-row">
+                                        <td>
+                                            <input type="hidden" name="edit_line_entry_id[]" class="edit-sale-line-entry-id">
+                                            <select name="edit_line_product_id[]" class="form-select form-select-sm edit-sale-line-product">
+                                                <option value="">Select product</option>
+                                                {% for product in line_products %}
+                                                    <option
+                                                        value="{{ product.id }}"
+                                                        data-unit-price="{{ product.unit_price }}"
+                                                        data-cost-price="{{ product.cost_price }}"
+                                                    >
+                                                        {{ product.name }} (Stock: {{ product.stock_quantity }})
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="number" min="1" step="1" name="edit_line_quantity[]" class="form-control form-control-sm edit-sale-line-qty" value="1">
+                                        </td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" name="edit_line_unit_price[]" class="form-control form-control-sm edit-sale-line-rate" value="0.00">
+                                        </td>
+                                        <td class="text-end fw-semibold edit-sale-line-taxable">0.00</td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" name="edit_line_gst_rate[]" class="form-control form-control-sm edit-sale-line-gst" value="{{ default_gst_rate|floatformat:2 }}">
+                                        </td>
+                                        <td class="text-end fw-semibold edit-sale-line-tax">0.00</td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm edit-sale-line-total" value="0.00">
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-danger edit-sale-remove-line-btn">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+
+                                <div class="row g-3 mt-2">
+                                    <div class="col-lg-7">
+                                        <label class="form-label">Bill Note</label>
+                                        <textarea name="edit_bill_notes" id="edit-bill-notes" class="form-control form-control-sm" rows="3" placeholder="Optional note for this bill"></textarea>
+                                    </div>
+                                    <div class="col-lg-5">
+                                        <div class="card border-0 bg-light p-3 h-100">
+                                            <div class="mb-2">
+                                                <label class="form-label mb-1">Bill Discount</label>
+                                                <input type="number" min="0" step="0.01" name="edit_bill_discount_amount" id="edit-bill-discount-amount" class="form-control form-control-sm" value="0.00">
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Subtotal (Excl Tax)</span>
+                                                <strong id="edit-bill-subtotal">0.00</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Discount</span>
+                                                <strong id="edit-bill-discount-view">0.00</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Total Tax</span>
+                                                <strong id="edit-bill-tax-total">0.00</strong>
+                                            </div>
+                                            <hr class="my-2">
+                                            <div class="d-flex justify-content-between">
+                                                <span class="fw-semibold">Bill Total</span>
+                                                <strong id="edit-bill-grand-total">0.00</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-12">
+                                        <label class="form-label">Password Confirmation</label>
+                                        <input
+                                            type="password"
+                                            name="edit_password"
+                                            id="edit-password"
+                                            class="form-control form-control-sm"
+                                            placeholder="Enter your password to confirm bill update"
+                                            autocomplete="current-password"
+                                            required
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Update Bill
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="editInventoryEntryModalLabel">
+                                <i class="fas fa-pen-to-square me-2"></i>Edit {{ config.title }} Entry
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="inventory_entry_edit_submit" value="{{ entry_type }}">
+                                <input type="hidden" name="entry_id" id="edit-entry-id">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Voucher</label>
+                                        <input type="text" class="form-control" id="edit-entry-number" readonly>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Invoice Number</label>
+                                        <input type="text" class="form-control" name="edit_invoice_number" id="edit-bill-number" required>
+                                    </div>
+                                    {% if entry_type == 'sale_return' %}
+                                    <div class="col-md-6">
+                                        <label class="form-label">Linked Job</label>
+                                        <input type="text" class="form-control" id="edit-job-code" readonly>
+                                    </div>
+                                    {% endif %}
+                                    <div class="col-md-6">
+                                        <label class="form-label">{{ config.party_label_singular }}</label>
+                                        <select class="form-select visually-hidden" name="edit_party_id" id="edit-party-id" required>
+                                            <option value="">Select {{ config.party_label_singular }}</option>
+                                            {% for party in edit_party_options %}
+                                                <option value="{{ party.id }}">{{ party.name }}{% if party.phone %} ({{ party.phone }}){% endif %}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            id="edit-party-picker"
+                                            class="form-control"
+                                            list="edit-party-options"
+                                            autocomplete="off"
+                                            placeholder="Type {{ config.party_label_singular|lower }} name or phone"
+                                        >
+                                        <datalist id="edit-party-options"></datalist>
+                                        <small id="edit-party-lock-note" class="text-muted d-none">
+                                            Party is fixed for this service-linked sales entry.
+                                        </small>
+                                    </div>
+                                    {% if entry_type == 'purchase' or entry_type == 'purchase_return' %}
+                                    <div class="col-12">
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-striped align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th style="min-width: 220px;">Product</th>
+                                                        <th style="min-width: 90px;">Qty</th>
+                                                        <th style="min-width: 120px;">Rate</th>
+                                                        <th style="min-width: 130px;">Amount (Excl Tax)</th>
+                                                        <th style="min-width: 90px;">GST %</th>
+                                                        <th style="min-width: 120px;">Tax Amount</th>
+                                                        <th style="min-width: 150px;">Total Amount</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>
+                                                            <select name="edit_product_id" id="edit-product-id" class="form-select form-select-sm" required>
+                                                                <option value="">Select product</option>
+                                                                {% for product in line_products %}
+                                                                    <option
+                                                                        value="{{ product.id }}"
+                                                                        data-unit-price="{{ product.unit_price }}"
+                                                                        data-cost-price="{{ product.cost_price }}"
+                                                                    >
+                                                                        {{ product.name }} (Stock: {{ product.stock_quantity }})
+                                                                    </option>
+                                                                {% endfor %}
+                                                            </select>
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" min="1" step="1" name="edit_quantity" id="edit-quantity" class="form-control form-control-sm" required>
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm" name="edit_unit_price" id="edit-unit-price" required>
+                                                        </td>
+                                                        <td class="text-end fw-semibold" id="edit-taxable-amount">0.00</td>
+                                                        <td>
+                                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm" name="edit_gst_rate" id="edit-gst-rate" required>
+                                                        </td>
+                                                        <td class="text-end fw-semibold" id="edit-tax-amount">0.00</td>
+                                                        <td>
+                                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="edit-total-amount">
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    <div class="{% if entry_type == 'purchase' or entry_type == 'purchase_return' %}col-12{% else %}col-md-6{% endif %}">
+                                        <label class="form-label">Notes</label>
+                                        <textarea class="form-control" name="edit_notes" id="edit-notes" rows="2"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Update Entry
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ inventory_bill_payload|json_script:"inventory-bill-payload" }}
+
+{% if entry_form.errors or line_entry_error or auto_open_add_modal %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bootstrap === 'undefined') return;
+    const modalEl = document.getElementById('addInventoryEntryModal');
+    if (!modalEl) return;
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+});
+</script>
+{% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const entryType = "{{ entry_type }}";
+    const hasSourceBill = {{ source_bill_mode|yesno:"true,false" }};
+    const isPurchaseEntry = entryType === 'purchase';
+    const supportsQuickPartyAdd = entryType === 'purchase' || entryType === 'sale';
+    const quickPartyLabel = 'Party';
+    const quickPartyLabelLower = quickPartyLabel.toLowerCase();
+    const hasBoundEntryForm = {{ entry_form.is_bound|yesno:"true,false" }};
+    const hasLineEntryError = {{ line_entry_error|yesno:"true,false" }};
+    const defaultLineGstRate = "{{ default_gst_rate|floatformat:2 }}";
+    const lineBody = document.getElementById('inventory-lines-body');
+    const lineTemplate = document.getElementById('inventory-line-template');
+    const addLineBtn = document.getElementById('add-inventory-line-btn');
+    const addEntryForm = document.querySelector('#addInventoryEntryModal form');
+    const submitEntryBtn = addEntryForm ? addEntryForm.querySelector('button[type="submit"]') : null;
+    const billDiscountInput = document.getElementById('bill-discount-amount');
+    const billSubtotalEl = document.getElementById('bill-subtotal');
+    const billDiscountViewEl = document.getElementById('bill-discount-view');
+    const billTaxTotalEl = document.getElementById('bill-tax-total');
+    const billGrandTotalEl = document.getElementById('bill-grand-total');
+    const addEntryModal = document.getElementById('addInventoryEntryModal');
+    const openInventoryEntryBtn = document.getElementById('open-inventory-entry-btn');
+    const addEntryDateInput = addEntryModal ? addEntryModal.querySelector('input[name="entry_date"]') : null;
+    const addInvoiceInput = addEntryModal ? addEntryModal.querySelector('input[name="invoice_number"]') : null;
+    const saleInvoicePreviewInput = document.getElementById('sale-invoice-preview');
+    const saleInvoicePreviewHelp = document.getElementById('sale-invoice-preview-help');
+    const addBillNotesInput = addEntryModal ? addEntryModal.querySelector('textarea[name="bill_notes"]') : null;
+    const addPartyPickerInput = document.getElementById('add-party-picker');
+    const addPartyPickerList = document.getElementById('add-party-options');
+    const addPartySelect = addEntryModal ? addEntryModal.querySelector('select[name="party"]') : null;
+    const quickAddPartyUrl = "{% url 'inventory_quick_add_party' %}";
+    const invoicePreviewUrl = "{% url 'inventory_invoice_preview' %}";
+    const quickAddProductUrl = "{% url 'inventory_quick_add_product' %}";
+    const purchaseDraftAlert = document.getElementById('purchase-draft-alert');
+    const purchaseDraftAlertText = document.getElementById('purchase-draft-alert-text');
+    const clearPurchaseDraftBtn = document.getElementById('clear-purchase-draft-btn');
+    const toggleQuickPartyBtn = document.getElementById('toggle-quick-party-btn');
+    const quickPartyPanel = document.getElementById('quick-party-panel');
+    const quickPartyNameInput = document.getElementById('quick-party-name');
+    const quickPartyPhoneInput = document.getElementById('quick-party-phone');
+    const quickPartyGstinInput = document.getElementById('quick-party-gstin');
+    const quickPartyAddressInput = document.getElementById('quick-party-address');
+    const quickPartyErrors = document.getElementById('quick-party-errors');
+    const saveQuickPartyBtn = document.getElementById('save-quick-party-btn');
+    const cancelQuickPartyBtn = document.getElementById('cancel-quick-party-btn');
+    const toggleQuickProductBtn = document.getElementById('toggle-quick-product-btn');
+    const quickProductPanel = document.getElementById('quick-product-panel');
+    const quickProductNameInput = document.getElementById('quick-product-name');
+    const quickProductCategoryInput = document.getElementById('quick-product-category');
+    const quickProductBrandInput = document.getElementById('quick-product-brand');
+    const quickProductCostPriceInput = document.getElementById('quick-product-cost-price');
+    const quickProductUnitPriceInput = document.getElementById('quick-product-unit-price');
+    const quickProductErrors = document.getElementById('quick-product-errors');
+    const saveQuickProductBtn = document.getElementById('save-quick-product-btn');
+    const cancelQuickProductBtn = document.getElementById('cancel-quick-product-btn');
+    const purchaseDraftKey = `inventory-purchase-draft:${window.location.pathname}`;
+    const purchaseDraftSubmitKey = `inventory-purchase-draft-submit:${window.location.pathname}`;
+    const shouldHandlePurchaseDraft = isPurchaseEntry && !hasSourceBill;
+    const lineProductPickerControllers = new Set();
+    let lineProductPickerListIdCounter = 0;
+    if (addPartySelect) {
+        addPartySelect.removeAttribute('required');
+    }
+
+    function parseNumber(value) {
+        const parsed = parseFloat(value || '0');
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function renderMoney(cell, amount) {
+        if (!cell) return;
+        cell.textContent = amount.toFixed(2);
+    }
+
+    function round2(value) {
+        return Math.round((value + Number.EPSILON) * 100) / 100;
+    }
+
+    function normalizeText(value) {
+        return String(value || '').toLowerCase().trim();
+    }
+
+    function cleanPickerLabel(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function createSelectPickerController(pickerInput, pickerList, selectInput) {
+        if (!pickerInput || !pickerList || !selectInput) {
+            return {
+                addOption: function () {},
+                refreshOptions: function () {},
+                reset: function () {},
+                setEnabled: function () {},
+                setSelectedValue: function () {},
+            };
+        }
+
+        const allOptions = [];
+
+        function syncAllOptionsFromSelect() {
+            allOptions.length = 0;
+            Array.from(selectInput.options)
+                .map((option) => ({
+                    value: option.value,
+                    label: cleanPickerLabel(option.textContent),
+                    disabled: option.disabled,
+                }))
+                .filter((option) => option.value)
+                .forEach((option) => allOptions.push(option));
+            allOptions.sort((left, right) => left.label.localeCompare(right.label));
+        }
+
+        function renderSuggestions(queryText) {
+            const query = normalizeText(queryText);
+            const matches = allOptions.filter((option) => {
+                return !query || normalizeText(option.label).includes(query);
+            });
+
+            pickerList.innerHTML = '';
+            matches.slice(0, 100).forEach((optionData) => {
+                const item = document.createElement('option');
+                item.value = optionData.label;
+                pickerList.appendChild(item);
+            });
+            return matches;
+        }
+
+        function addOption(optionData) {
+            const value = String(optionData?.value || '');
+            if (!value) return;
+
+            let optionNode = Array.from(selectInput.options).find((option) => option.value === value);
+            if (!optionNode) {
+                optionNode = document.createElement('option');
+                selectInput.appendChild(optionNode);
+            }
+
+            optionNode.value = value;
+            optionNode.textContent = cleanPickerLabel(optionData.label || optionData.name || value);
+            optionNode.disabled = !!optionData.disabled;
+
+            const nextOption = {
+                value,
+                label: cleanPickerLabel(optionNode.textContent),
+                disabled: optionNode.disabled,
+            };
+            const existingIndex = allOptions.findIndex((option) => option.value === value);
+            if (existingIndex >= 0) {
+                allOptions.splice(existingIndex, 1, nextOption);
+            } else {
+                allOptions.push(nextOption);
+            }
+            allOptions.sort((left, right) => left.label.localeCompare(right.label));
+            renderSuggestions(pickerInput.value);
+        }
+
+        function setSelectedValueInternal(value, notify) {
+            const nextValue = value || '';
+            const changed = String(selectInput.value || '') !== String(nextValue);
+            selectInput.value = nextValue;
+            if (notify && changed) {
+                selectInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        function syncSelectFromPicker(isStrict) {
+            const rawText = pickerInput.value || '';
+            const query = normalizeText(rawText);
+            if (!query) {
+                setSelectedValueInternal('', true);
+                return;
+            }
+            const exactMatch = allOptions.find((option) => normalizeText(option.label) === query);
+            if (exactMatch) {
+                setSelectedValueInternal(exactMatch.value, true);
+                pickerInput.value = exactMatch.label;
+                return;
+            }
+            const partialMatches = allOptions.filter((option) => normalizeText(option.label).includes(query));
+            if (partialMatches.length === 1) {
+                setSelectedValueInternal(partialMatches[0].value, true);
+                if (isStrict) {
+                    pickerInput.value = partialMatches[0].label;
+                }
+                return;
+            }
+            setSelectedValueInternal('', true);
+        }
+
+        function reset() {
+            const selected = allOptions.find((option) => option.value === selectInput.value);
+            pickerInput.value = selected ? selected.label : '';
+            renderSuggestions(pickerInput.value);
+        }
+
+        function setEnabled(isEnabled) {
+            pickerInput.disabled = !isEnabled;
+            if (!isEnabled) {
+                renderSuggestions('');
+            }
+        }
+
+        function setSelectedValue(value) {
+            setSelectedValueInternal(value || '', false);
+            reset();
+        }
+
+        function refreshOptions() {
+            syncAllOptionsFromSelect();
+            reset();
+        }
+
+        pickerInput.addEventListener('input', function () {
+            renderSuggestions(pickerInput.value);
+            syncSelectFromPicker(false);
+        });
+        pickerInput.addEventListener('change', function () {
+            syncSelectFromPicker(true);
+            renderSuggestions(pickerInput.value);
+        });
+        pickerInput.addEventListener('blur', function () {
+            syncSelectFromPicker(true);
+        });
+        selectInput.addEventListener('change', function () {
+            reset();
+        });
+
+        syncAllOptionsFromSelect();
+        reset();
+        return { addOption, refreshOptions, reset, setEnabled, setSelectedValue };
+    }
+
+    function createPartyPickerController(pickerInput, pickerList, partySelect) {
+        return createSelectPickerController(pickerInput, pickerList, partySelect);
+    }
+
+    function getCsrfToken() {
+        const tokenInput = addEntryForm ? addEntryForm.querySelector('input[name="csrfmiddlewaretoken"]') : null;
+        return tokenInput ? tokenInput.value : '';
+    }
+
+    function showToastMessage(message, variant) {
+        if (typeof window.showToast === 'function') {
+            window.showToast(message, variant || 'success');
+        }
+    }
+
+    function setErrorMessages(container, errors) {
+        if (!container) return;
+        const messages = [];
+        if (Array.isArray(errors)) {
+            messages.push(...errors.filter(Boolean));
+        } else if (errors && typeof errors === 'object') {
+            Object.entries(errors).forEach(([fieldName, fieldErrors]) => {
+                (fieldErrors || []).forEach((errorMessage) => {
+                    const label = fieldName === '__all__'
+                        ? ''
+                        : `${fieldName.replace(/_/g, ' ').replace(/\b\w/g, (match) => match.toUpperCase())}: `;
+                    messages.push(`${label}${errorMessage}`);
+                });
+            });
+        }
+        if (!messages.length) {
+            container.classList.add('d-none');
+            container.replaceChildren();
+            return;
+        }
+        container.classList.remove('d-none');
+        const list = document.createElement('ul');
+        list.className = 'mb-0 ps-3';
+        messages.forEach((message) => {
+            const item = document.createElement('li');
+            item.textContent = message;
+            list.appendChild(item);
+        });
+        container.replaceChildren(list);
+    }
+
+    function togglePanel(panel, isVisible, triggerBtn, openLabel, closedLabel) {
+        if (!panel) return;
+        panel.classList.toggle('d-none', !isVisible);
+        if (triggerBtn) {
+            triggerBtn.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
+            if (openLabel && closedLabel) {
+                triggerBtn.innerHTML = isVisible ? openLabel : closedLabel;
+            }
+        }
+    }
+
+    function resetQuickPartyInputs() {
+        if (quickPartyNameInput) quickPartyNameInput.value = '';
+        if (quickPartyPhoneInput) quickPartyPhoneInput.value = '';
+        if (quickPartyGstinInput) quickPartyGstinInput.value = '';
+        if (quickPartyAddressInput) quickPartyAddressInput.value = '';
+        setErrorMessages(quickPartyErrors, []);
+    }
+
+    async function refreshSaleInvoicePreview() {
+        if (entryType !== 'sale' || !saleInvoicePreviewInput || !invoicePreviewUrl) return;
+
+        const previewUrl = new URL(invoicePreviewUrl, window.location.origin);
+        previewUrl.searchParams.set('entry_type', 'sale');
+        if (addEntryDateInput?.value) {
+            previewUrl.searchParams.set('entry_date', addEntryDateInput.value);
+        }
+
+        if (saleInvoicePreviewHelp) {
+            saleInvoicePreviewHelp.textContent = 'Checking next invoice number...';
+        }
+
+        try {
+            const response = await window.fetch(previewUrl.toString(), {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.error || 'Unable to fetch invoice number.');
+            }
+            saleInvoicePreviewInput.value = payload.invoice_number || saleInvoicePreviewInput.dataset.fallbackPreview || '';
+            saleInvoicePreviewInput.dataset.fallbackPreview = saleInvoicePreviewInput.value;
+            if (saleInvoicePreviewHelp) {
+                saleInvoicePreviewHelp.textContent = 'Auto generated from the selected sale date.';
+            }
+        } catch (error) {
+            saleInvoicePreviewInput.value = saleInvoicePreviewInput.dataset.fallbackPreview || saleInvoicePreviewInput.value;
+            if (saleInvoicePreviewHelp) {
+                saleInvoicePreviewHelp.textContent = 'Invoice number will be finalized automatically when you save.';
+            }
+        }
+    }
+
+    function resetQuickProductInputs() {
+        if (quickProductNameInput) quickProductNameInput.value = '';
+        if (quickProductCategoryInput) quickProductCategoryInput.value = '';
+        if (quickProductBrandInput) quickProductBrandInput.value = '';
+        if (quickProductCostPriceInput) quickProductCostPriceInput.value = '0.00';
+        if (quickProductUnitPriceInput) quickProductUnitPriceInput.value = '0.00';
+        setErrorMessages(quickProductErrors, []);
+    }
+
+    function buildProductOptionNode(productData) {
+        const option = document.createElement('option');
+        option.value = String(productData?.id || '');
+        option.textContent = productData?.label || productData?.name || '';
+        option.dataset.unitPrice = String(productData?.unit_price || '0.00');
+        option.dataset.costPrice = String(productData?.cost_price || '0.00');
+        return option;
+    }
+
+    function upsertProductOptionInSelect(select, productData) {
+        if (!select || !productData?.id) return null;
+        const value = String(productData.id);
+        let option = Array.from(select.options).find((item) => item.value === value);
+        if (!option) {
+            option = buildProductOptionNode(productData);
+            select.appendChild(option);
+        } else {
+            option.textContent = productData.label || productData.name || option.textContent;
+            option.dataset.unitPrice = String(productData.unit_price || '0.00');
+            option.dataset.costPrice = String(productData.cost_price || '0.00');
+        }
+        return option;
+    }
+
+    function upsertProductOptions(productData) {
+        if (!productData?.id) return;
+        const targets = [];
+        if (lineBody) {
+            targets.push(...lineBody.querySelectorAll('.inventory-line-product'));
+        }
+        const templateSelect = lineTemplate ? lineTemplate.content.querySelector('.inventory-line-product') : null;
+        if (templateSelect) {
+            targets.push(templateSelect);
+        }
+        targets.forEach((select) => upsertProductOptionInSelect(select, productData));
+        refreshLineProductPickers();
+    }
+
+    function isRowSelected(row) {
+        if (!hasSourceBill) return true;
+        const selector = row.querySelector('.inventory-line-include');
+        return selector ? selector.checked : true;
+    }
+
+    function recalculateSingleLine(row, source) {
+        const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+        const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+        const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
+        const totalInput = row.querySelector('.line-total-amount-input');
+        const taxableCell = row.querySelector('.line-taxable-amount');
+        const gstCell = row.querySelector('.line-gst-amount');
+
+        if (!isRowSelected(row)) {
+            renderMoney(taxableCell, 0);
+            renderMoney(gstCell, 0);
+            if (totalInput) {
+                totalInput.value = '0.00';
+            }
+            return {
+                rawAmount: 0,
+                gstRate: 0,
+            };
+        }
+
+        const quantity = Math.max(parseNumber(qtyInput?.value), 0);
+        const gstRate = Math.max(parseNumber(gstInput?.value), 0);
+        let unitPrice = Math.max(parseNumber(rateInput?.value), 0);
+
+        if (source === 'total' && totalInput) {
+            const targetTotal = Math.max(parseNumber(totalInput.value), 0);
+            if (quantity > 0) {
+                const divisor = 1 + (gstRate / 100);
+                const taxableFromTotal = divisor > 0 ? targetTotal / divisor : targetTotal;
+                unitPrice = taxableFromTotal / quantity;
+                if (rateInput) {
+                    rateInput.value = round2(unitPrice).toFixed(2);
+                }
+            } else if (rateInput) {
+                rateInput.value = '0.00';
+                unitPrice = 0;
+            }
+        }
+
+        const taxableAmount = round2(quantity * unitPrice);
+        const taxAmount = round2((taxableAmount * gstRate) / 100);
+        const lineTotal = round2(taxableAmount + taxAmount);
+
+        renderMoney(taxableCell, taxableAmount);
+        renderMoney(gstCell, taxAmount);
+        if (totalInput) {
+            totalInput.value = lineTotal.toFixed(2);
+        }
+
+        return {
+            rawAmount: taxableAmount,
+            gstRate,
+        };
+    }
+
+    function recalculateBill() {
+        const rows = Array.from(lineBody ? lineBody.querySelectorAll('.inventory-line-row') : []);
+        if (!rows.length) return;
+
+        const lineData = rows.map((row) => recalculateSingleLine(row, 'rate'));
+
+        const subtotal = round2(lineData.reduce((sum, item) => sum + item.rawAmount, 0));
+        const billDiscountRaw = Math.max(parseNumber(billDiscountInput?.value), 0);
+        const effectiveDiscount = round2(Math.min(billDiscountRaw, subtotal));
+
+        if (billDiscountInput) {
+            if (billDiscountRaw > subtotal + 0.0001) {
+                billDiscountInput.classList.add('is-invalid');
+            } else {
+                billDiscountInput.classList.remove('is-invalid');
+            }
+        }
+
+        let lineDiscounts = lineData.map(() => 0);
+        if (effectiveDiscount > 0 && subtotal > 0) {
+            lineDiscounts = lineData.map((item) => round2((effectiveDiscount * item.rawAmount) / subtotal));
+            let allocated = round2(lineDiscounts.reduce((sum, item) => sum + item, 0));
+            let diff = round2(effectiveDiscount - allocated);
+            const sortedIndexes = [...lineData.keys()].sort((a, b) => lineData[b].rawAmount - lineData[a].rawAmount);
+            while (Math.abs(diff) >= 0.01) {
+                let changed = false;
+                for (const idx of sortedIndexes) {
+                    if (diff > 0) {
+                        const capacity = round2(lineData[idx].rawAmount - lineDiscounts[idx]);
+                        if (capacity >= 0.01) {
+                            lineDiscounts[idx] = round2(lineDiscounts[idx] + 0.01);
+                            diff = round2(diff - 0.01);
+                            changed = true;
+                        }
+                    } else {
+                        if (lineDiscounts[idx] >= 0.01) {
+                            lineDiscounts[idx] = round2(lineDiscounts[idx] - 0.01);
+                            diff = round2(diff + 0.01);
+                            changed = true;
+                        }
+                    }
+                    if (Math.abs(diff) < 0.01) break;
+                }
+                if (!changed) break;
+            }
+        }
+
+        let totalTax = 0;
+        let grandTotal = 0;
+
+        lineData.forEach((item, idx) => {
+            const taxableAmount = round2(item.rawAmount - lineDiscounts[idx]);
+            const taxAmount = round2((taxableAmount * item.gstRate) / 100);
+            const totalAmount = round2(taxableAmount + taxAmount);
+            totalTax = round2(totalTax + taxAmount);
+            grandTotal = round2(grandTotal + totalAmount);
+        });
+
+        renderMoney(billSubtotalEl, subtotal);
+        renderMoney(billDiscountViewEl, effectiveDiscount);
+        renderMoney(billTaxTotalEl, totalTax);
+        renderMoney(billGrandTotalEl, grandTotal);
+        updateSubmitState();
+    }
+
+    function hasDuplicateProducts() {
+        const seen = new Set();
+        const rows = Array.from(lineBody ? lineBody.querySelectorAll('.inventory-line-row') : []);
+        for (const row of rows) {
+            if (!isRowSelected(row)) continue;
+            const productSelect = row.querySelector('.inventory-line-product');
+            const productId = (productSelect?.value || '').trim();
+            if (!productId) continue;
+            if (seen.has(productId)) return true;
+            seen.add(productId);
+        }
+        return false;
+    }
+
+    function markDuplicateRows() {
+        const seen = new Map();
+        const rows = Array.from(lineBody ? lineBody.querySelectorAll('.inventory-line-row') : []);
+        rows.forEach((row) => row.classList.remove('table-warning'));
+        rows.forEach((row) => {
+            if (!isRowSelected(row)) return;
+            const productSelect = row.querySelector('.inventory-line-product');
+            const productId = (productSelect?.value || '').trim();
+            if (!productId) return;
+            if (!seen.has(productId)) {
+                seen.set(productId, [row]);
+                return;
+            }
+            const grouped = seen.get(productId);
+            grouped.push(row);
+            grouped.forEach((dupRow) => dupRow.classList.add('table-warning'));
+        });
+    }
+
+    function hasIncompleteRow() {
+        const rows = Array.from(lineBody ? lineBody.querySelectorAll('.inventory-line-row') : []);
+        return rows.some((row) => {
+            if (!isRowSelected(row)) return false;
+            const productSelect = row.querySelector('.inventory-line-product');
+            const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+            const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+            const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
+            const productId = (productSelect?.value || '').trim();
+            const quantity = parseNumber(qtyInput?.value);
+            const unitPrice = parseNumber(rateInput?.value);
+            const gstRate = parseNumber(gstInput?.value);
+            const maxQty = parseNumber(qtyInput?.dataset?.maxQty);
+            const exceedsMax = maxQty > 0 && quantity > maxQty;
+            return !productId || quantity <= 0 || unitPrice < 0 || gstRate < 0 || exceedsMax;
+        });
+    }
+
+    function selectedRowCount() {
+        if (!hasSourceBill) return 1;
+        const rows = Array.from(lineBody ? lineBody.querySelectorAll('.inventory-line-row') : []);
+        return rows.filter((row) => isRowSelected(row)).length;
+    }
+
+    function updateSubmitState() {
+        if (!submitEntryBtn) return;
+        markDuplicateRows();
+        const hasDup = hasDuplicateProducts();
+        const hasEmpty = hasIncompleteRow();
+        const hasNoSelection = hasSourceBill && selectedRowCount() === 0;
+        const subtotal = parseNumber(billSubtotalEl?.textContent);
+        const billDiscountRaw = Math.max(parseNumber(billDiscountInput?.value), 0);
+        const invalidDiscount = billDiscountRaw > subtotal + 0.0001;
+        submitEntryBtn.disabled = hasDup || hasEmpty || invalidDiscount || hasNoSelection;
+        if (hasDup) {
+            submitEntryBtn.title = 'Duplicate product lines are not allowed.';
+        } else if (hasNoSelection) {
+            submitEntryBtn.title = 'Select at least one product to return.';
+        } else if (hasEmpty) {
+            submitEntryBtn.title = 'Complete all product lines before saving.';
+        } else if (invalidDiscount) {
+            submitEntryBtn.title = 'Bill discount cannot exceed subtotal.';
+        } else {
+            submitEntryBtn.title = '';
+        }
+    }
+
+    function suggestRateForLine(row) {
+        const select = row.querySelector('.inventory-line-product');
+        const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+        if (!select || !rateInput) return;
+
+        const option = select.options[select.selectedIndex];
+        const saleRate = parseFloat(option?.dataset?.unitPrice || '0');
+        const costRate = parseFloat(option?.dataset?.costPrice || '0');
+        const suggested = entryType === 'sale' || entryType === 'sale_return' ? saleRate : costRate;
+        if (!Number.isFinite(suggested)) return;
+
+        const currentRate = parseFloat(rateInput.value || '0');
+        if (!Number.isFinite(currentRate) || currentRate <= 0) {
+            rateInput.value = suggested.toFixed(2);
+        }
+        recalculateBill();
+    }
+
+    function initializeLineProductPicker(row) {
+        if (!row) return null;
+        if (row._lineProductPickerController) {
+            row._lineProductPickerController.refreshOptions();
+            return row._lineProductPickerController;
+        }
+
+        const pickerInput = row.querySelector('.inventory-line-product-picker');
+        const pickerList = row.querySelector('.inventory-line-product-options');
+        const select = row.querySelector('.inventory-line-product');
+        if (!pickerInput || !pickerList || !select) return null;
+
+        lineProductPickerListIdCounter += 1;
+        const listId = `inventory-line-product-options-${lineProductPickerListIdCounter}`;
+        pickerList.id = listId;
+        pickerInput.setAttribute('list', listId);
+
+        const controller = createSelectPickerController(pickerInput, pickerList, select);
+        row._lineProductPickerController = controller;
+        lineProductPickerControllers.add(controller);
+        return controller;
+    }
+
+    function destroyLineProductPicker(row) {
+        if (!row?._lineProductPickerController) return;
+        lineProductPickerControllers.delete(row._lineProductPickerController);
+        delete row._lineProductPickerController;
+    }
+
+    function refreshLineProductPickers() {
+        lineProductPickerControllers.forEach((controller) => controller.refreshOptions());
+    }
+
+    function attachLineEvents(row) {
+        const includeInput = row.querySelector('.inventory-line-include');
+        const select = row.querySelector('.inventory-line-product');
+        const removeBtn = row.querySelector('.remove-line-btn');
+        const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+        const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+        const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
+        const totalInput = row.querySelector('.line-total-amount-input');
+        initializeLineProductPicker(row);
+        if (includeInput) {
+            includeInput.addEventListener('change', function () {
+                recalculateBill();
+            });
+        }
+        if (select) {
+            select.addEventListener('change', function () {
+                suggestRateForLine(row);
+                recalculateBill();
+            });
+        }
+        [qtyInput, rateInput, gstInput].forEach((input) => {
+            if (!input) return;
+            input.addEventListener('input', function () {
+                recalculateBill();
+            });
+        });
+        if (totalInput) {
+            totalInput.addEventListener('input', function () {
+                recalculateSingleLine(row, 'total');
+                recalculateBill();
+            });
+        }
+        if (removeBtn) {
+            removeBtn.addEventListener('click', function () {
+                const rows = lineBody ? lineBody.querySelectorAll('.inventory-line-row') : [];
+                if (rows.length <= 1) {
+                    row.querySelectorAll('input').forEach((input) => {
+                        if (input.type === 'number') {
+                            if (input.name === 'line_quantity[]') {
+                                input.value = '1';
+                            } else if (input.name === 'line_gst_rate[]') {
+                                input.value = defaultLineGstRate;
+                            } else {
+                                input.value = '0.00';
+                            }
+                        } else {
+                            input.value = '';
+                        }
+                    });
+                    if (select) {
+                        select.value = '';
+                    }
+                    if (row._lineProductPickerController) {
+                        row._lineProductPickerController.reset();
+                    }
+                    recalculateBill();
+                    schedulePurchaseDraftSave();
+                    return;
+                }
+                destroyLineProductPicker(row);
+                row.remove();
+                recalculateBill();
+                schedulePurchaseDraftSave();
+            });
+        }
+    }
+
+    function getAddEntryRows() {
+        return Array.from(lineBody ? lineBody.querySelectorAll('.inventory-line-row') : []);
+    }
+
+    function createEditableLineRow() {
+        if (!lineTemplate || !lineBody) return null;
+        const clone = lineTemplate.content.firstElementChild.cloneNode(true);
+        lineBody.appendChild(clone);
+        attachLineEvents(clone);
+        return clone;
+    }
+
+    function ensureEditableLineRows(count) {
+        if (!lineBody) return [];
+        const targetCount = Math.max(count || 1, 1);
+        let rows = getAddEntryRows();
+        while (rows.length < targetCount) {
+            if (!createEditableLineRow()) {
+                break;
+            }
+            rows = getAddEntryRows();
+        }
+        while (rows.length > targetCount) {
+            destroyLineProductPicker(rows[rows.length - 1]);
+            rows[rows.length - 1].remove();
+            rows = getAddEntryRows();
+        }
+        return rows;
+    }
+
+    function resetLineRow(row) {
+        if (!row) return;
+        const productSelect = row.querySelector('.inventory-line-product');
+        const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+        const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+        const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
+        const totalInput = row.querySelector('.line-total-amount-input');
+        if (productSelect) productSelect.value = '';
+        if (row._lineProductPickerController) {
+            row._lineProductPickerController.reset();
+        }
+        if (qtyInput) qtyInput.value = '1';
+        if (rateInput) rateInput.value = '0.00';
+        if (gstInput) gstInput.value = defaultLineGstRate;
+        if (totalInput) totalInput.value = '0.00';
+    }
+
+    function draftLineHasMeaningfulContent(lineData) {
+        if (!lineData) return false;
+        return Boolean(
+            (lineData.product_id || '').trim()
+            || parseNumber(lineData.quantity) > 1
+            || parseNumber(lineData.unit_price) > 0
+            || Math.abs(parseNumber(lineData.gst_rate) - parseNumber(defaultLineGstRate)) > 0.0001
+        );
+    }
+
+    function collectPurchaseDraft() {
+        if (!shouldHandlePurchaseDraft || !addEntryForm) return null;
+        const draft = {
+            entry_date: addEntryDateInput ? addEntryDateInput.value : '',
+            invoice_number: addInvoiceInput ? addInvoiceInput.value.trim() : '',
+            party_id: addPartySelect ? String(addPartySelect.value || '').trim() : '',
+            bill_notes: addBillNotesInput ? addBillNotesInput.value.trim() : '',
+            bill_discount_amount: billDiscountInput ? billDiscountInput.value : '0.00',
+            lines: getAddEntryRows().map((row) => ({
+                product_id: (row.querySelector('.inventory-line-product')?.value || '').trim(),
+                quantity: row.querySelector('input[name="line_quantity[]"]')?.value || '1',
+                unit_price: row.querySelector('input[name="line_unit_price[]"]')?.value || '0.00',
+                gst_rate: row.querySelector('input[name="line_gst_rate[]"]')?.value || defaultLineGstRate,
+            })),
+        };
+        const hasMeaningfulContent = Boolean(
+            draft.invoice_number
+            || draft.party_id
+            || draft.bill_notes
+            || parseNumber(draft.bill_discount_amount) > 0
+            || draft.lines.some((line) => draftLineHasMeaningfulContent(line))
+        );
+        return hasMeaningfulContent ? draft : null;
+    }
+
+    function readPurchaseDraft() {
+        if (!shouldHandlePurchaseDraft) return null;
+        try {
+            const raw = window.localStorage.getItem(purchaseDraftKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function updatePurchaseDraftUi(isRestored) {
+        if (!shouldHandlePurchaseDraft) return;
+        const draft = readPurchaseDraft();
+        const labelNode = openInventoryEntryBtn ? openInventoryEntryBtn.querySelector('.open-entry-btn-label') : null;
+        const defaultLabel = openInventoryEntryBtn?.dataset?.defaultLabel || '{{ config.submit_label }}';
+        const draftLabel = openInventoryEntryBtn?.dataset?.draftLabel || 'Resume Draft Purchase';
+
+        if (openInventoryEntryBtn && labelNode) {
+            labelNode.textContent = draft ? draftLabel : defaultLabel;
+            openInventoryEntryBtn.classList.toggle('btn-warning', !!draft);
+            openInventoryEntryBtn.classList.toggle('btn-primary', !draft);
+        }
+
+        if (!purchaseDraftAlert) return;
+        if (!draft) {
+            purchaseDraftAlert.classList.add('d-none');
+            return;
+        }
+        purchaseDraftAlert.classList.toggle('d-none', !isRestored);
+        if (purchaseDraftAlertText && isRestored) {
+            purchaseDraftAlertText.textContent = 'Draft restored. Continue and save when ready.';
+        }
+    }
+
+    function savePurchaseDraft() {
+        if (!shouldHandlePurchaseDraft) return;
+        const draft = collectPurchaseDraft();
+        if (draft) {
+            window.localStorage.setItem(purchaseDraftKey, JSON.stringify(draft));
+        } else {
+            window.localStorage.removeItem(purchaseDraftKey);
+        }
+        updatePurchaseDraftUi(false);
+    }
+
+    function schedulePurchaseDraftSave() {
+        if (!shouldHandlePurchaseDraft) return;
+        window.clearTimeout(schedulePurchaseDraftSave.timerId);
+        schedulePurchaseDraftSave.timerId = window.setTimeout(savePurchaseDraft, 150);
+    }
+
+    function resetPurchaseEntryForm() {
+        if (!addEntryForm) return;
+        addEntryForm.reset();
+        ensureEditableLineRows(1).forEach((row) => resetLineRow(row));
+        if (addPartySelect) {
+            addPartySelect.value = '';
+        }
+        if (addPartyPickerInput) {
+            addPartyPickerInput.value = '';
+        }
+        if (typeof addPartyPickerController !== 'undefined') {
+            addPartyPickerController.reset();
+        }
+        resetQuickPartyInputs();
+        resetQuickProductInputs();
+        if (quickPartyPanel) quickPartyPanel.classList.add('d-none');
+        if (quickProductPanel) quickProductPanel.classList.add('d-none');
+        if (toggleQuickPartyBtn) toggleQuickPartyBtn.innerHTML = partyToggleOpenLabel;
+        if (toggleQuickProductBtn) toggleQuickProductBtn.innerHTML = productToggleOpenLabel;
+        recalculateBill();
+    }
+
+    function restorePurchaseDraft() {
+        if (!shouldHandlePurchaseDraft) return false;
+        const draft = readPurchaseDraft();
+        if (!draft || hasBoundEntryForm || hasLineEntryError) {
+            updatePurchaseDraftUi(false);
+            return false;
+        }
+
+        if (addEntryDateInput && draft.entry_date) {
+            addEntryDateInput.value = draft.entry_date;
+        }
+        if (addInvoiceInput) {
+            addInvoiceInput.value = draft.invoice_number || '';
+        }
+        if (addBillNotesInput) {
+            addBillNotesInput.value = draft.bill_notes || '';
+        }
+        if (billDiscountInput) {
+            billDiscountInput.value = draft.bill_discount_amount || '0.00';
+        }
+        if (addPartySelect) {
+            addPartySelect.value = draft.party_id || '';
+        }
+        if (typeof addPartyPickerController !== 'undefined') {
+            addPartyPickerController.setSelectedValue(draft.party_id || '');
+        }
+
+        const lines = draft.lines && draft.lines.length ? draft.lines : [{}];
+        const rows = ensureEditableLineRows(lines.length);
+        rows.forEach((row, index) => {
+            resetLineRow(row);
+            const lineData = lines[index] || {};
+            const productSelect = row.querySelector('.inventory-line-product');
+            const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+            const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+            const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
+            if (productSelect) productSelect.value = lineData.product_id || '';
+            if (row._lineProductPickerController) {
+                row._lineProductPickerController.setSelectedValue(lineData.product_id || '');
+            }
+            if (qtyInput) qtyInput.value = lineData.quantity || '1';
+            if (rateInput) rateInput.value = lineData.unit_price || '0.00';
+            if (gstInput) gstInput.value = lineData.gst_rate || defaultLineGstRate;
+        });
+        recalculateBill();
+        updatePurchaseDraftUi(true);
+        return true;
+    }
+
+    if (lineBody) {
+        lineBody.querySelectorAll('.inventory-line-row').forEach((row) => {
+            attachLineEvents(row);
+        });
+    }
+    if (addLineBtn && lineTemplate && lineBody) {
+        addLineBtn.addEventListener('click', function () {
+            if (hasIncompleteRow()) {
+                window.alert('Complete the current product row before adding another line.');
+                return;
+            }
+            createEditableLineRow();
+            recalculateBill();
+            schedulePurchaseDraftSave();
+        });
+    }
+    if (billDiscountInput) {
+        billDiscountInput.addEventListener('input', recalculateBill);
+    }
+
+    function stripUnselectedRowsBeforeSubmit() {
+        if (!hasSourceBill || !lineBody) return;
+        const rows = Array.from(lineBody.querySelectorAll('.inventory-line-row'));
+        rows.forEach((row) => {
+            if (isRowSelected(row)) return;
+            const productSelect = row.querySelector('.inventory-line-product');
+            const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+            const rateInput = row.querySelector('input[name="line_unit_price[]"]');
+            const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
+            if (productSelect && !productSelect.querySelector('option[value=""]')) {
+                const blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = '';
+                productSelect.prepend(blank);
+            }
+            if (productSelect) productSelect.value = '';
+            if (qtyInput) qtyInput.value = '';
+            if (rateInput) rateInput.value = '';
+            if (gstInput) gstInput.value = '';
+        });
+    }
+
+    if (addEntryForm) {
+        const ignoreDraftSelector = '#quick-party-panel, #quick-product-panel';
+        addEntryForm.addEventListener('input', function (event) {
+            if (event.target?.closest(ignoreDraftSelector)) return;
+            schedulePurchaseDraftSave();
+        });
+        addEntryForm.addEventListener('change', function (event) {
+            if (event.target?.closest(ignoreDraftSelector)) return;
+            schedulePurchaseDraftSave();
+        });
+        addEntryForm.addEventListener('submit', function (event) {
+            updateSubmitState();
+            if (addPartySelect && !addPartySelect.value) {
+                event.preventDefault();
+                window.alert('Select a valid {{ entry_form.party.label|lower }} from suggestions.');
+                if (addPartyPickerInput) {
+                    addPartyPickerInput.focus();
+                }
+                return;
+            }
+            if (hasSourceBill && selectedRowCount() === 0) {
+                event.preventDefault();
+                window.alert('Select at least one product to return.');
+                return;
+            }
+            if (hasDuplicateProducts()) {
+                event.preventDefault();
+                window.alert('Duplicate product lines are not allowed in the same bill.');
+                return;
+            }
+            if (hasIncompleteRow()) {
+                event.preventDefault();
+                window.alert('Complete all product lines before saving the bill.');
+                return;
+            }
+            recalculateBill();
+            const subtotal = parseNumber(billSubtotalEl?.textContent);
+            const billDiscount = Math.max(parseNumber(billDiscountInput?.value), 0);
+            if (billDiscount > subtotal + 0.0001) {
+                event.preventDefault();
+                if (billDiscountInput) {
+                    billDiscountInput.classList.add('is-invalid');
+                    billDiscountInput.focus();
+                }
+                return;
+            }
+            if (shouldHandlePurchaseDraft) {
+                savePurchaseDraft();
+                window.sessionStorage.setItem(purchaseDraftSubmitKey, '1');
+            }
+            stripUnselectedRowsBeforeSubmit();
+        });
+    }
+    recalculateBill();
+    const addPartyPickerController = createPartyPickerController(addPartyPickerInput, addPartyPickerList, addPartySelect);
+    const partyToggleOpenLabel = `<i class="fas fa-plus me-1"></i>New ${quickPartyLabel}`;
+    const partyToggleCloseLabel = '<i class="fas fa-xmark me-1"></i>Close';
+    const productToggleOpenLabel = '<i class="fas fa-box-open me-1"></i>New Product';
+    const productToggleCloseLabel = '<i class="fas fa-xmark me-1"></i>Close';
+
+    function focusProductIntoRow(productData) {
+        if (!productData?.id || !lineBody) return;
+        let targetRow = getAddEntryRows().find((row) => !(row.querySelector('.inventory-line-product')?.value || '').trim());
+        if (!targetRow) {
+            targetRow = createEditableLineRow();
+        }
+        const productSelect = targetRow ? targetRow.querySelector('.inventory-line-product') : null;
+        if (!productSelect) return;
+        if (targetRow._lineProductPickerController) {
+            targetRow._lineProductPickerController.setSelectedValue(String(productData.id));
+        } else {
+            productSelect.value = String(productData.id);
+        }
+        suggestRateForLine(targetRow);
+        recalculateBill();
+        schedulePurchaseDraftSave();
+    }
+
+    async function quickAddParty() {
+        if (!supportsQuickPartyAdd || !saveQuickPartyBtn || saveQuickPartyBtn.disabled) return;
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', getCsrfToken());
+        formData.append('name', quickPartyNameInput?.value.trim() || '');
+        formData.append('phone', quickPartyPhoneInput?.value.trim() || '');
+        formData.append('gstin', quickPartyGstinInput?.value.trim() || '');
+        formData.append('address', quickPartyAddressInput?.value.trim() || '');
+
+        saveQuickPartyBtn.disabled = true;
+        setErrorMessages(quickPartyErrors, []);
+        try {
+            const response = await window.fetch(quickAddPartyUrl, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) {
+                setErrorMessages(
+                    quickPartyErrors,
+                    payload.errors || [payload.error || `Unable to save ${quickPartyLabelLower}.`],
+                );
+                return;
+            }
+            addPartyPickerController.addOption({
+                value: String(payload.party.id),
+                label: payload.party.label,
+            });
+            addPartyPickerController.setSelectedValue(String(payload.party.id));
+            resetQuickPartyInputs();
+            togglePanel(quickPartyPanel, false, toggleQuickPartyBtn, partyToggleCloseLabel, partyToggleOpenLabel);
+            showToastMessage(`${quickPartyLabel} added to the list.`, 'success');
+            schedulePurchaseDraftSave();
+        } catch (error) {
+            setErrorMessages(quickPartyErrors, [`Unable to save ${quickPartyLabelLower} right now.`]);
+        } finally {
+            saveQuickPartyBtn.disabled = false;
+        }
+    }
+
+    async function quickAddProduct() {
+        if (!saveQuickProductBtn || saveQuickProductBtn.disabled) return;
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', getCsrfToken());
+        formData.append('name', quickProductNameInput?.value.trim() || '');
+        formData.append('category', quickProductCategoryInput?.value.trim() || '');
+        formData.append('brand', quickProductBrandInput?.value.trim() || '');
+        formData.append('cost_price', quickProductCostPriceInput?.value.trim() || '0');
+        formData.append('unit_price', quickProductUnitPriceInput?.value.trim() || '0');
+        formData.append('purchase_price_tax_mode', 'without_tax');
+        formData.append('sales_price_tax_mode', 'without_tax');
+
+        saveQuickProductBtn.disabled = true;
+        setErrorMessages(quickProductErrors, []);
+        try {
+            const response = await window.fetch(quickAddProductUrl, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) {
+                setErrorMessages(quickProductErrors, payload.errors || [payload.error || 'Unable to save product.']);
+                return;
+            }
+            upsertProductOptions(payload.product);
+            resetQuickProductInputs();
+            togglePanel(quickProductPanel, false, toggleQuickProductBtn, productToggleCloseLabel, productToggleOpenLabel);
+            focusProductIntoRow(payload.product);
+            showToastMessage('Product added to the list.', 'success');
+        } catch (error) {
+            setErrorMessages(quickProductErrors, ['Unable to save product right now.']);
+        } finally {
+            saveQuickProductBtn.disabled = false;
+        }
+    }
+
+    if (toggleQuickPartyBtn) {
+        toggleQuickPartyBtn.innerHTML = partyToggleOpenLabel;
+        toggleQuickPartyBtn.addEventListener('click', function () {
+            const isVisible = quickPartyPanel && !quickPartyPanel.classList.contains('d-none');
+            if (!isVisible) {
+                resetQuickPartyInputs();
+            }
+            togglePanel(quickPartyPanel, !isVisible, toggleQuickPartyBtn, partyToggleCloseLabel, partyToggleOpenLabel);
+            if (!isVisible && quickPartyNameInput) {
+                quickPartyNameInput.focus();
+            }
+        });
+    }
+    if (cancelQuickPartyBtn) {
+        cancelQuickPartyBtn.addEventListener('click', function () {
+            resetQuickPartyInputs();
+            togglePanel(quickPartyPanel, false, toggleQuickPartyBtn, partyToggleCloseLabel, partyToggleOpenLabel);
+        });
+    }
+    if (saveQuickPartyBtn) {
+        saveQuickPartyBtn.addEventListener('click', quickAddParty);
+    }
+    if (quickPartyPanel) {
+        quickPartyPanel.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA') {
+                event.preventDefault();
+                quickAddParty();
+            }
+        });
+    }
+
+    if (toggleQuickProductBtn) {
+        toggleQuickProductBtn.innerHTML = productToggleOpenLabel;
+        toggleQuickProductBtn.addEventListener('click', function () {
+            const isVisible = quickProductPanel && !quickProductPanel.classList.contains('d-none');
+            if (!isVisible) {
+                resetQuickProductInputs();
+            }
+            togglePanel(quickProductPanel, !isVisible, toggleQuickProductBtn, productToggleCloseLabel, productToggleOpenLabel);
+            if (!isVisible && quickProductNameInput) {
+                quickProductNameInput.focus();
+            }
+        });
+    }
+    if (cancelQuickProductBtn) {
+        cancelQuickProductBtn.addEventListener('click', function () {
+            resetQuickProductInputs();
+            togglePanel(quickProductPanel, false, toggleQuickProductBtn, productToggleCloseLabel, productToggleOpenLabel);
+        });
+    }
+    if (saveQuickProductBtn) {
+        saveQuickProductBtn.addEventListener('click', quickAddProduct);
+    }
+    if (quickProductPanel) {
+        quickProductPanel.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                quickAddProduct();
+            }
+        });
+    }
+
+    if (clearPurchaseDraftBtn) {
+        clearPurchaseDraftBtn.addEventListener('click', function () {
+            window.localStorage.removeItem(purchaseDraftKey);
+            window.sessionStorage.removeItem(purchaseDraftSubmitKey);
+            resetPurchaseEntryForm();
+            updatePurchaseDraftUi(false);
+        });
+    }
+
+    if (shouldHandlePurchaseDraft) {
+        const submitPending = window.sessionStorage.getItem(purchaseDraftSubmitKey) === '1';
+        if (submitPending) {
+            if (hasBoundEntryForm || hasLineEntryError) {
+                window.sessionStorage.removeItem(purchaseDraftSubmitKey);
+            } else {
+                window.localStorage.removeItem(purchaseDraftKey);
+                window.sessionStorage.removeItem(purchaseDraftSubmitKey);
+            }
+        }
+        updatePurchaseDraftUi(false);
+        window.addEventListener('beforeunload', savePurchaseDraft);
+    }
+    if (entryType === 'sale' && addEntryDateInput) {
+        addEntryDateInput.addEventListener('change', refreshSaleInvoicePreview);
+    }
+    if (addEntryModal) {
+        addEntryModal.addEventListener('show.bs.modal', function () {
+            addPartyPickerController.reset();
+            restorePurchaseDraft();
+            refreshSaleInvoicePreview();
+        });
+        addEntryModal.addEventListener('hidden.bs.modal', function () {
+            schedulePurchaseDraftSave();
+        });
+    }
+    refreshSaleInvoicePreview();
+
+    const editModal = document.getElementById('editInventoryEntryModal');
+    if (!editModal) return;
+
+    if (editModal.querySelector('#edit-sale-lines-body')) {
+        const payloadNode = document.getElementById('inventory-bill-payload');
+        let invoicePayloadMap = {};
+        if (payloadNode) {
+            try {
+                invoicePayloadMap = JSON.parse(payloadNode.textContent || '{}');
+            } catch (error) {
+                invoicePayloadMap = {};
+            }
+        }
+
+        const editEntryForm = editModal.querySelector('form');
+        const editEntryIdInput = editModal.querySelector('#edit-entry-id');
+        const editBillIdInput = editModal.querySelector('#edit-bill-id');
+        const editEntryNumberInput = editModal.querySelector('#edit-entry-number');
+        const editEntryDateInput = editModal.querySelector('#edit-entry-date');
+        const editInvoiceInput = editModal.querySelector('#edit-bill-number');
+        const editJobCodeInput = editModal.querySelector('#edit-job-code');
+        const editPartyInput = editModal.querySelector('#edit-party-id');
+        const editPartyPickerInput = editModal.querySelector('#edit-party-picker');
+        const editPartyPickerList = editModal.querySelector('#edit-party-options');
+        const editPartyLockNote = editModal.querySelector('#edit-party-lock-note');
+        const editBillNotesInput = editModal.querySelector('#edit-bill-notes');
+        const editBillDiscountInput = editModal.querySelector('#edit-bill-discount-amount');
+        const editPasswordInput = editModal.querySelector('#edit-password');
+        const editBillSubtotalEl = editModal.querySelector('#edit-bill-subtotal');
+        const editBillDiscountViewEl = editModal.querySelector('#edit-bill-discount-view');
+        const editBillTaxTotalEl = editModal.querySelector('#edit-bill-tax-total');
+        const editBillGrandTotalEl = editModal.querySelector('#edit-bill-grand-total');
+        const editLinesBody = editModal.querySelector('#edit-sale-lines-body');
+        const editLineTemplate = editModal.querySelector('#edit-sale-line-template');
+        const editAddLineBtn = editModal.querySelector('#edit-sale-add-line-btn');
+        let lockedPartyId = '';
+
+        if (editPartyInput) {
+            editPartyInput.removeAttribute('required');
+        }
+        const editPartyPickerController = createPartyPickerController(
+            editPartyPickerInput,
+            editPartyPickerList,
+            editPartyInput,
+        );
+
+        function getEditRows() {
+            return Array.from(editLinesBody ? editLinesBody.querySelectorAll('.edit-sale-line-row') : []);
+        }
+
+        function recalcEditLine(row, source) {
+            const qtyInput = row.querySelector('.edit-sale-line-qty');
+            const rateInput = row.querySelector('.edit-sale-line-rate');
+            const gstInput = row.querySelector('.edit-sale-line-gst');
+            const totalInput = row.querySelector('.edit-sale-line-total');
+            const taxableCell = row.querySelector('.edit-sale-line-taxable');
+            const taxCell = row.querySelector('.edit-sale-line-tax');
+
+            const quantity = Math.max(parseNumber(qtyInput?.value), 0);
+            const gstRate = Math.max(parseNumber(gstInput?.value), 0);
+            let unitPrice = Math.max(parseNumber(rateInput?.value), 0);
+
+            if (source === 'total' && totalInput) {
+                const targetTotal = Math.max(parseNumber(totalInput.value), 0);
+                if (quantity > 0) {
+                    const divisor = 1 + (gstRate / 100);
+                    unitPrice = (divisor > 0 ? targetTotal / divisor : targetTotal) / quantity;
+                    rateInput.value = round2(unitPrice).toFixed(2);
+                }
+            }
+
+            const taxableAmount = round2(quantity * unitPrice);
+            const taxAmount = round2((taxableAmount * gstRate) / 100);
+            const totalAmount = round2(taxableAmount + taxAmount);
+            renderMoney(taxableCell, taxableAmount);
+            renderMoney(taxCell, taxAmount);
+            if (totalInput) {
+                totalInput.value = totalAmount.toFixed(2);
+            }
+            return { rawAmount: taxableAmount, gstRate };
+        }
+
+        function recalcEditBill() {
+            const rows = getEditRows();
+            if (!rows.length) return;
+            const lineData = rows.map((row) => recalcEditLine(row, 'rate'));
+            const subtotal = round2(lineData.reduce((sum, item) => sum + item.rawAmount, 0));
+            const discountRaw = Math.max(parseNumber(editBillDiscountInput?.value), 0);
+            const discount = round2(Math.min(discountRaw, subtotal));
+            const totalTax = round2(
+                lineData.reduce((sum, item) => {
+                    const distributedDiscount = subtotal > 0 ? (discount * item.rawAmount) / subtotal : 0;
+                    const taxable = round2(item.rawAmount - distributedDiscount);
+                    return sum + round2((taxable * item.gstRate) / 100);
+                }, 0)
+            );
+            const grandTotal = round2(subtotal - discount + totalTax);
+            renderMoney(editBillSubtotalEl, subtotal);
+            renderMoney(editBillDiscountViewEl, discount);
+            renderMoney(editBillTaxTotalEl, totalTax);
+            renderMoney(editBillGrandTotalEl, grandTotal);
+            if (editBillDiscountInput) {
+                editBillDiscountInput.classList.toggle('is-invalid', discountRaw > subtotal + 0.0001);
+            }
+        }
+
+        function hasEditInvoiceDuplicateProducts() {
+            const seen = new Set();
+            return getEditRows().some((row) => {
+                const productId = (row.querySelector('.edit-sale-line-product')?.value || '').trim();
+                if (!productId) return false;
+                if (seen.has(productId)) return true;
+                seen.add(productId);
+                return false;
+            });
+        }
+
+        function hasEditInvoiceInvalidRows() {
+            return getEditRows().some((row) => {
+                const productId = (row.querySelector('.edit-sale-line-product')?.value || '').trim();
+                const qty = parseNumber(row.querySelector('.edit-sale-line-qty')?.value);
+                const rate = parseNumber(row.querySelector('.edit-sale-line-rate')?.value);
+                const gst = parseNumber(row.querySelector('.edit-sale-line-gst')?.value);
+                return !productId || qty <= 0 || rate < 0 || gst < 0;
+            });
+        }
+
+        function attachEditLineEvents(row) {
+            const productSelect = row.querySelector('.edit-sale-line-product');
+            const qtyInput = row.querySelector('.edit-sale-line-qty');
+            const rateInput = row.querySelector('.edit-sale-line-rate');
+            const gstInput = row.querySelector('.edit-sale-line-gst');
+            const totalInput = row.querySelector('.edit-sale-line-total');
+            const removeBtn = row.querySelector('.edit-sale-remove-line-btn');
+
+            [productSelect, qtyInput, rateInput, gstInput].forEach((input) => {
+                if (!input) return;
+                input.addEventListener('input', recalcEditBill);
+                input.addEventListener('change', recalcEditBill);
+            });
+            if (totalInput) {
+                totalInput.addEventListener('input', function () {
+                    recalcEditLine(row, 'total');
+                    recalcEditBill();
+                });
+            }
+            if (removeBtn) {
+                removeBtn.addEventListener('click', function () {
+                    if (getEditRows().length <= 1) return;
+                    row.remove();
+                    recalcEditBill();
+                });
+            }
+        }
+
+        function addEditLine(lineData) {
+            if (!editLineTemplate || !editLinesBody) return;
+            const clone = editLineTemplate.content.firstElementChild.cloneNode(true);
+            clone.querySelector('.edit-sale-line-entry-id').value = String(lineData?.entry_id || '');
+            clone.querySelector('.edit-sale-line-product').value = String(lineData?.product_id || '');
+            clone.querySelector('.edit-sale-line-qty').value = String(lineData?.quantity || '1');
+            clone.querySelector('.edit-sale-line-rate').value = String(lineData?.unit_price || '0.00');
+            clone.querySelector('.edit-sale-line-gst').value = String(lineData?.gst_rate || '{{ default_gst_rate|floatformat:2 }}');
+            clone.querySelector('.edit-sale-line-total').value = String(lineData?.total_amount || '0.00');
+            editLinesBody.appendChild(clone);
+            attachEditLineEvents(clone);
+            recalcEditLine(clone, 'rate');
+        }
+
+        function fillEditLines(lines) {
+            if (!editLinesBody) return;
+            editLinesBody.innerHTML = '';
+            (lines && lines.length ? lines : [{}]).forEach((line) => addEditLine(line));
+            recalcEditBill();
+        }
+
+        if (editAddLineBtn) {
+            editAddLineBtn.addEventListener('click', function () {
+                if (hasEditInvoiceInvalidRows()) {
+                    window.alert('Complete the current line before adding another.');
+                    return;
+                }
+                addEditLine({});
+                recalcEditBill();
+            });
+        }
+        if (editBillDiscountInput) {
+            editBillDiscountInput.addEventListener('input', recalcEditBill);
+        }
+
+        if (editEntryForm) {
+            editEntryForm.addEventListener('submit', function (event) {
+                if (!editPartyInput.value) {
+                    event.preventDefault();
+                    window.alert('Select a valid {{ config.party_label_singular|lower }} from suggestions.');
+                    return;
+                }
+                if (editPasswordInput && !editPasswordInput.value.trim()) {
+                    event.preventDefault();
+                    window.alert('Enter your password to confirm the bill update.');
+                    editPasswordInput.focus();
+                    return;
+                }
+                if (editPartyInput.dataset.locked === 'true' && lockedPartyId) {
+                    editPartyInput.value = lockedPartyId;
+                }
+                if (hasEditInvoiceDuplicateProducts()) {
+                    event.preventDefault();
+                    window.alert('Duplicate product lines are not allowed.');
+                    return;
+                }
+                if (hasEditInvoiceInvalidRows()) {
+                    event.preventDefault();
+                    window.alert('Complete all product lines before updating.');
+                    return;
+                }
+                const subtotal = parseNumber(editBillSubtotalEl?.textContent);
+                const discount = Math.max(parseNumber(editBillDiscountInput?.value), 0);
+                if (discount > subtotal + 0.0001) {
+                    event.preventDefault();
+                    window.alert('Bill discount cannot exceed subtotal.');
+                }
+            });
+        }
+
+        editModal.addEventListener('show.bs.modal', function (event) {
+            const trigger = event.relatedTarget;
+            if (!trigger) return;
+
+            const invoiceKey = trigger.getAttribute('data-invoice-key') || trigger.getAttribute('data-invoice-number') || '';
+            const payload = invoicePayloadMap[invoiceKey] || {};
+            const lines = payload.lines && payload.lines.length ? payload.lines : [{
+                entry_id: trigger.getAttribute('data-entry-id') || '',
+                product_id: trigger.getAttribute('data-product-id') || '',
+                quantity: trigger.getAttribute('data-quantity') || '1',
+                unit_price: trigger.getAttribute('data-unit-price') || '0.00',
+                gst_rate: trigger.getAttribute('data-gst-rate') || '{{ default_gst_rate|floatformat:2 }}',
+                total_amount: trigger.getAttribute('data-total-amount') || '0.00',
+            }];
+
+            editEntryIdInput.value = lines[0].entry_id || trigger.getAttribute('data-entry-id') || '';
+            if (editBillIdInput) {
+                editBillIdInput.value = String(payload.bill_id || trigger.getAttribute('data-bill-id') || '');
+            }
+            if (editEntryNumberInput) {
+                editEntryNumberInput.value = payload.bill_number || '';
+            }
+            editEntryDateInput.value = payload.entry_date || trigger.getAttribute('data-entry-date') || '';
+            editInvoiceInput.value = payload.invoice_number || trigger.getAttribute('data-invoice-number') || '';
+            editJobCodeInput.value = payload.job_code || trigger.getAttribute('data-job-code') || '-';
+            editBillNotesInput.value = payload.bill_notes || trigger.getAttribute('data-notes') || '';
+            editBillDiscountInput.value = payload.bill_discount_amount || '0.00';
+            if (editPasswordInput) {
+                editPasswordInput.value = '';
+            }
+
+            lockedPartyId = String(payload.party_id || trigger.getAttribute('data-party-id') || '');
+            editPartyPickerController.setSelectedValue(lockedPartyId);
+            const isPartyLocked = payload.party_locked || trigger.getAttribute('data-party-locked') === 'true';
+            editPartyInput.dataset.locked = isPartyLocked ? 'true' : 'false';
+            if (isPartyLocked) {
+                editPartyPickerInput.classList.add('bg-light');
+                editPartyPickerInput.title = 'Party is fixed for this service-linked sales entry.';
+                editPartyLockNote.classList.remove('d-none');
+                editPartyPickerController.setEnabled(false);
+            } else {
+                editPartyPickerInput.classList.remove('bg-light');
+                editPartyPickerInput.title = '';
+                editPartyLockNote.classList.add('d-none');
+                editPartyPickerController.setEnabled(true);
+            }
+
+            fillEditLines(lines);
+        });
+        return;
+    }
+
+    const editEntryIdInput = editModal.querySelector('#edit-entry-id');
+    const editEntryNumberInput = editModal.querySelector('#edit-entry-number');
+    const editInvoiceInput = editModal.querySelector('#edit-bill-number');
+    const editJobCodeInput = editModal.querySelector('#edit-job-code');
+    const editPartyInput = editModal.querySelector('#edit-party-id');
+    editPartyInput.removeAttribute('required');
+    const editPartyPickerInput = editModal.querySelector('#edit-party-picker');
+    const editPartyPickerList = editModal.querySelector('#edit-party-options');
+    const editPartyLockNote = editModal.querySelector('#edit-party-lock-note');
+    const editProductInput = editModal.querySelector('#edit-product-id');
+    const editQtyInput = editModal.querySelector('#edit-quantity');
+    const editUnitPriceInput = editModal.querySelector('#edit-unit-price');
+    const editGstRateInput = editModal.querySelector('#edit-gst-rate');
+    const editTaxableCell = editModal.querySelector('#edit-taxable-amount');
+    const editTaxCell = editModal.querySelector('#edit-tax-amount');
+    const editTotalInput = editModal.querySelector('#edit-total-amount');
+    const editNotesInput = editModal.querySelector('#edit-notes');
+    const editEntryForm = editModal.querySelector('form');
+    let lockedPartyId = '';
+    const editPartyPickerController = createPartyPickerController(editPartyPickerInput, editPartyPickerList, editPartyInput);
+
+    function recalculateEditEntry(source) {
+        if (!editQtyInput || !editUnitPriceInput || !editGstRateInput) return;
+
+        const quantity = Math.max(parseNumber(editQtyInput.value), 0);
+        const gstRate = Math.max(parseNumber(editGstRateInput.value), 0);
+        let unitPrice = Math.max(parseNumber(editUnitPriceInput.value), 0);
+
+        if (source === 'total' && editTotalInput) {
+            const targetTotal = Math.max(parseNumber(editTotalInput.value), 0);
+            if (quantity > 0) {
+                const divisor = 1 + (gstRate / 100);
+                const taxableFromTotal = divisor > 0 ? targetTotal / divisor : targetTotal;
+                unitPrice = taxableFromTotal / quantity;
+                editUnitPriceInput.value = round2(unitPrice).toFixed(2);
+            } else {
+                editUnitPriceInput.value = '0.00';
+                unitPrice = 0;
+            }
+        }
+
+        const taxableAmount = round2(quantity * unitPrice);
+        const taxAmount = round2((taxableAmount * gstRate) / 100);
+        const totalAmount = round2(taxableAmount + taxAmount);
+
+        if (editTaxableCell) editTaxableCell.textContent = taxableAmount.toFixed(2);
+        if (editTaxCell) editTaxCell.textContent = taxAmount.toFixed(2);
+        if (editTotalInput) editTotalInput.value = totalAmount.toFixed(2);
+    }
+
+    function suggestEditRate() {
+        if (!editProductInput || !editUnitPriceInput) return;
+        const option = editProductInput.options[editProductInput.selectedIndex];
+        const saleRate = parseFloat(option?.dataset?.unitPrice || '0');
+        const costRate = parseFloat(option?.dataset?.costPrice || '0');
+        const suggested = entryType === 'sale' || entryType === 'sale_return' ? saleRate : costRate;
+        if (!Number.isFinite(suggested)) return;
+
+        const currentRate = parseFloat(editUnitPriceInput.value || '0');
+        if (!Number.isFinite(currentRate) || currentRate <= 0) {
+            editUnitPriceInput.value = suggested.toFixed(2);
+        }
+    }
+
+    if (editProductInput) {
+        editProductInput.addEventListener('change', function () {
+            suggestEditRate();
+            recalculateEditEntry('rate');
+        });
+    }
+    [editQtyInput, editUnitPriceInput, editGstRateInput].forEach((input) => {
+        if (!input) return;
+        input.addEventListener('input', function () {
+            recalculateEditEntry('rate');
+        });
+    });
+    if (editTotalInput) {
+        editTotalInput.addEventListener('input', function () {
+            recalculateEditEntry('total');
+        });
+    }
+    if (editEntryForm) {
+        editEntryForm.addEventListener('submit', function (event) {
+            if (!editPartyInput.value) {
+                event.preventDefault();
+                window.alert('Select a valid {{ config.party_label_singular|lower }} from suggestions.');
+                if (editPartyPickerInput) {
+                    editPartyPickerInput.focus();
+                }
+                return;
+            }
+            if (editPartyInput.dataset.locked === 'true' && lockedPartyId) {
+                editPartyInput.value = lockedPartyId;
+            }
+        });
+    }
+
+    editModal.addEventListener('show.bs.modal', function (event) {
+        const trigger = event.relatedTarget;
+        if (!trigger) return;
+        editPartyPickerController.reset();
+
+        editEntryIdInput.value = trigger.getAttribute('data-entry-id') || '';
+        editEntryNumberInput.value = trigger.getAttribute('data-entry-number') || '';
+        editInvoiceInput.value = trigger.getAttribute('data-invoice-number') || '';
+        if (editJobCodeInput) {
+            editJobCodeInput.value = trigger.getAttribute('data-job-code') || '-';
+        }
+        lockedPartyId = trigger.getAttribute('data-party-id') || '';
+        editPartyPickerController.setSelectedValue(lockedPartyId);
+        const isPartyLocked = trigger.getAttribute('data-party-locked') === 'true';
+        editPartyInput.dataset.locked = isPartyLocked ? 'true' : 'false';
+        if (isPartyLocked) {
+            if (editPartyPickerInput) {
+                editPartyPickerInput.classList.add('bg-light');
+                editPartyPickerInput.title = 'Party is fixed for this service-linked sales entry.';
+            }
+            if (editPartyLockNote) {
+                editPartyLockNote.classList.remove('d-none');
+            }
+            editPartyPickerController.setEnabled(false);
+        } else {
+            if (editPartyPickerInput) {
+                editPartyPickerInput.classList.remove('bg-light');
+                editPartyPickerInput.title = '';
+            }
+            if (editPartyLockNote) {
+                editPartyLockNote.classList.add('d-none');
+            }
+            editPartyPickerController.setEnabled(true);
+        }
+        if (editProductInput) {
+            editProductInput.value = trigger.getAttribute('data-product-id') || '';
+        }
+        if (editQtyInput) {
+            editQtyInput.value = trigger.getAttribute('data-quantity') || '1';
+        }
+        if (editUnitPriceInput) {
+            editUnitPriceInput.value = trigger.getAttribute('data-unit-price') || '0.00';
+        }
+        if (editGstRateInput) {
+            editGstRateInput.value = trigger.getAttribute('data-gst-rate') || '0.00';
+        }
+        if (editTaxableCell) {
+            editTaxableCell.textContent = trigger.getAttribute('data-taxable-amount') || '0.00';
+        }
+        if (editTaxCell) {
+            editTaxCell.textContent = trigger.getAttribute('data-gst-amount') || '0.00';
+        }
+        if (editTotalInput) {
+            editTotalInput.value = trigger.getAttribute('data-total-amount') || '0.00';
+        }
+        editNotesInput.value = trigger.getAttribute('data-notes') || '';
+        recalculateEditEntry('rate');
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,300 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Job Status | {{ job_ticket.job_code }}{% endblock %}
+
+{% block content %}
+<style>
+.status-shell {
+    background: linear-gradient(135deg, #eef7ff, #fffef7);
+    border: 1px solid #dde8f4;
+}
+.status-pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.35rem 0.8rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+.status-progress {
+    height: 10px;
+    background: #dfe8f4;
+    border-radius: 999px;
+    overflow: hidden;
+}
+.status-progress > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #1d4ed8, #22c55e);
+}
+.status-card {
+    border: 1px solid #e4ebf5;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0.85rem 0.95rem;
+}
+.feedback-card {
+    border: 1px solid #dce8f5;
+    border-radius: 12px;
+}
+.score-rating-input {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px 0 16px;
+}
+.score-rating-input input[type="radio"] {
+    display: none;
+}
+.score-rating-input label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: #f8fafc;
+    color: #374151;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.score-rating-input label:hover {
+    background: #e0f2fe;
+    border-color: #0ea5e9;
+    color: #0f172a;
+}
+.score-rating-input input[type="radio"]:checked + label {
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.rating-display {
+    margin-top: 6px;
+    font-weight: 600;
+    color: #1f2937;
+}
+</style>
+
+<div class="section-container status-shell">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div>
+            <h2 class="mb-1">Service Status</h2>
+            <p class="mb-1 text-muted">Job Code: <strong>{{ job_ticket.job_code }}</strong></p>
+            <p class="mb-0 text-muted">Last Updated: {{ job_ticket.updated_at|date:"Y-m-d H:i" }}</p>
+        </div>
+        <div>
+            <span class="status-pill bg-info text-white">{{ job_ticket.status }}</span>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <div class="status-progress">
+            <span style="width:
+                {% if job_ticket.status == 'Pending' %}15%
+                {% elif job_ticket.status == 'Under Inspection' %}35%
+                {% elif job_ticket.status == 'Repairing' or job_ticket.status == 'Specialized Service' %}60%
+                {% elif job_ticket.status == 'Completed' or job_ticket.status == 'Ready for Pickup' %}85%
+                {% elif job_ticket.status == 'Closed' %}100%
+                {% else %}45%
+                {% endif %};"></span>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <div class="status-card h-100">
+                <h5 class="mb-2">Customer Details</h5>
+                <p class="mb-1"><strong>Name:</strong> {{ job_ticket.customer_name }}</p>
+                <p class="mb-0"><strong>Phone:</strong> {{ job_ticket.customer_phone }}</p>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="status-card h-100">
+                <h5 class="mb-2">Device Details</h5>
+                <p class="mb-1"><strong>Device:</strong> {{ job_ticket.device_type }}</p>
+                <p class="mb-1"><strong>Brand/Model:</strong> {{ job_ticket.device_brand|default:"N/A" }} {{ job_ticket.device_model|default:"" }}</p>
+                <p class="mb-0"><strong>Items Kept:</strong> {{ job_ticket.additional_items|default:"None" }}</p>
+            </div>
+        </div>
+    </div>
+
+    {% if job_ticket.technician_notes %}
+    <div class="alert alert-light border">
+        <h6 class="mb-1">Technician Notes</h6>
+        <p class="mb-0" style="white-space: pre-wrap;">{{ job_ticket.technician_notes }}</p>
+    </div>
+    {% endif %}
+
+    {% if checklist_schema %}
+    <div class="status-card mb-3">
+        <h5 class="mb-2">{{ checklist_title|default:"Inspection Checklist" }}</h5>
+        <p class="text-muted mb-2"><small>Read-only inspection summary</small></p>
+        {% if checklist_notes %}
+        <p class="text-muted mb-2">{{ checklist_notes }}</p>
+        {% endif %}
+        <div class="table-responsive">
+            <table class="table table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Checklist Item</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for field in checklist_schema %}
+                    <tr>
+                        <td>
+                            {{ field.label }}
+                            {% if field.required %}<span class="text-danger">*</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if field.type == 'checkbox' %}
+                                {% if field.value == '1' %}
+                                    <span class="badge bg-success">Verified</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Not Verified</span>
+                                {% endif %}
+                            {% elif field.value %}
+                                {{ field.value }}
+                            {% else %}
+                                <span class="text-muted">Pending</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if job_ticket.status == 'Ready for Pickup' or job_ticket.status == 'Completed' or job_ticket.status == 'Closed' %}
+    <div class="status-card mb-3">
+        <h5 class="mb-2">Billing Summary</h5>
+        <div class="table-responsive">
+            <table class="table table-striped mb-2">
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th>Part Cost</th>
+                        <th>Service Charge</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in service_logs %}
+                    <tr>
+                        <td>{{ log.description }}</td>
+                        <td>&#8377;{{ log.part_cost|floatformat:2 }}</td>
+                        <td>&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                    <tr class="fw-bold">
+                        <td colspan="2" class="text-end">Grand Total:</td>
+                        <td>&#8377;{{ grand_total|floatformat:2 }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if bill_available %}
+    <div class="alert alert-success">
+        <h5 class="mb-1"><i class="fas fa-file-invoice"></i> Final Bill Available</h5>
+        <p class="mb-2">Your service bill is ready.</p>
+        <a href="{% url 'client_bill_view' job_ticket.job_code %}" class="btn btn-success">
+            <i class="fas fa-download me-1"></i>View / Download Bill
+        </a>
+    </div>
+    {% endif %}
+
+    {% if can_give_feedback %}
+    <div class="card feedback-card mt-3">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-clipboard-check me-1"></i>Rate Your Experience</h5>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                <label class="form-label fw-bold">How would you rate our service? (1-10)</label>
+                <div class="score-rating-input">
+                    <input type="radio" name="rating" value="1" id="score1" data-label="Very Poor &#x1F621;" required>
+                    <label for="score1" title="1/10">1</label>
+                    <input type="radio" name="rating" value="2" id="score2" data-label="Poor &#x1F61E;">
+                    <label for="score2" title="2/10">2</label>
+                    <input type="radio" name="rating" value="3" id="score3" data-label="Bad &#x1F615;">
+                    <label for="score3" title="3/10">3</label>
+                    <input type="radio" name="rating" value="4" id="score4" data-label="Below Average &#x1F610;">
+                    <label for="score4" title="4/10">4</label>
+                    <input type="radio" name="rating" value="5" id="score5" data-label="Average &#x1F636;">
+                    <label for="score5" title="5/10">5</label>
+                    <input type="radio" name="rating" value="6" id="score6" data-label="Slightly Satisfied &#x1F642;">
+                    <label for="score6" title="6/10">6</label>
+                    <input type="radio" name="rating" value="7" id="score7" data-label="Satisfied &#x1F60A;">
+                    <label for="score7" title="7/10">7</label>
+                    <input type="radio" name="rating" value="8" id="score8" data-label="Good &#x1F603;">
+                    <label for="score8" title="8/10">8</label>
+                    <input type="radio" name="rating" value="9" id="score9" data-label="Very Good &#x1F604;">
+                    <label for="score9" title="9/10">9</label>
+                    <input type="radio" name="rating" value="10" id="score10" data-label="Excellent &#x1F929;">
+                    <label for="score10" title="10/10">10</label>
+                </div>
+                <div class="rating-display" id="ratingDisplay" aria-live="polite">Select a rating</div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Additional Comments (Optional)</label>
+                    <textarea name="comment" class="form-control" rows="4" placeholder="Share your experience with us..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="fas fa-paper-plane me-1"></i>Submit Feedback
+                </button>
+            </form>
+        </div>
+    </div>
+    {% elif job_ticket.feedback_rating %}
+    <div class="alert alert-info mt-3">
+            <h6 class="mb-1"><i class="fas fa-check-circle me-1"></i>Thank you for your feedback</h6>
+            <p class="mb-1">
+                You rated: <strong>{{ job_ticket.feedback_rating }}/10</strong>
+            </p>
+            {% if job_ticket.feedback_comment %}
+            <div class="mt-2">
+                <span class="fw-semibold d-block mb-1">Additional Comments</span>
+                <p class="mb-0" style="white-space: pre-wrap;">{{ job_ticket.feedback_comment }}</p>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <div class="text-center mt-4">
+        <a href="{% url 'client_login' %}" class="btn btn-primary me-2"><i class="fas fa-search me-1"></i>Track Another Job</a>
+        <a href="{% url 'home' %}" class="btn btn-secondary"><i class="fas fa-home me-1"></i>Home</a>
+    </div>
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const ratingInputs = document.querySelectorAll('input[name="rating"]');
+        const display = document.getElementById('ratingDisplay');
+        if (!ratingInputs.length || !display) return;
+
+        const setDisplay = (value, label) => {
+            if (!value) {
+                display.textContent = 'Select a rating';
+                return;
+            }
+            display.textContent = `${value} - ${label}`;
+        };
+
+        ratingInputs.forEach((input) => {
+            input.addEventListener('change', () => {
+                setDisplay(input.value, input.dataset.label || '');
+            });
+            if (input.checked) {
+                setDisplay(input.value, input.dataset.label || '');
+            }
+        });
+    });
+</script>
+{% endblock %}

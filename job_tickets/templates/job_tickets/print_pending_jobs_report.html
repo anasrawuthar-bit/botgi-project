@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pending Jobs Report</title>
+    <style>
+        body { font-family: 'Times New Roman', serif; font-size: 12px; }
+        .report-header { text-align: center; margin-bottom: 20px; }
+        .report-header h1 { margin: 0; font-size: 1.8em; }
+        .report-header p { margin: 2px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .no-print { display: none; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body>
+    <div class="report-header">
+        {% if company.logo %}
+            <img src="{{ company.logo.url }}" alt="{{ company.company_name }} Logo" style="max-width: 100px; margin-bottom: 10px;">
+        {% elif company.logo_url %}
+            <img src="{{ company.logo_url }}" alt="{{ company.company_name }} Logo" style="max-width: 100px; margin-bottom: 10px;">
+        {% endif %}
+        <h1>Pending Jobs Report</h1>
+        <p>{{ company.company_name }}</p>
+        <p>Support: {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
+        <p>Date: {{ report_date|date:"Y-m-d H:i" }}</p>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Job Code</th>
+                <th>Customer Name</th>
+                <th>Device Type</th>
+                <th>Reported Issue</th>
+                <th>Created At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in pending_jobs %}
+            <tr>
+                <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
+                <td>{{ job.customer_name }}</td>
+                <td>{{ job.device_type }}</td>
+                <td>{{ job.reported_issue }}</td>
+                <td>{{ job.created_at|date:"Y-m-d" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No pending jobs.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="text-center no-print mt-4">
+        <button type="button" onclick="return BotgiPrintHelper.startPrint();" class="btn btn-primary"><i class="fas fa-print"></i> Print Report</button>
+    </div>
+    {% include "job_tickets/includes/print_flow_script.html" %}
+</body>
+</html>

@@ -1,0 +1,1269 @@
+{% extends "job_tickets/base.html" %}
+{% load static %}
+{% load job_tickets_extras %}
+
+{% block title %}Staff Dashboard{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <div class="staff-head-shell mb-4">
+        <div>
+            <h1 class="mb-2 section-title">Staff Dashboard</h1>
+            <p class="mb-0 text-muted">Welcome, {{ username }}. Create tickets quickly, search fast, and run every queue
+                from one screen.</p>
+        </div>
+        <form method="get" class="staff-search-form">
+            <label for="staff-job-search" class="form-label fw-semibold mb-1">Search Job Tickets</label>
+            <div class="staff-search-shell">
+                <i class="fas fa-search text-muted"></i>
+                <input id="staff-job-search" type="text" name="q" class="form-control border-0 shadow-none"
+                    placeholder="Search by job code, customer name, or phone..." value="{{ query|default:'' }}">
+                <button type="submit" class="btn btn-primary btn-sm">Search</button>
+                {% if query %}
+                <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+
+    {% if query %}
+    <!-- Search Results Section -->
+    <div class="card-box mt-4 mb-4">
+        <h2 class="mb-3 section-title">
+            <i class="fas fa-search"></i> Search Results
+            <span class="badge bg-primary ms-2">{{ search_count }} job{{ search_count|pluralize }} found</span>
+        </h2>
+        {% if search_results %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Phone</th>
+                        <th>Job Code</th>
+                        <th>Customer Name</th>
+                        <th>Device</th>
+                        <th>Status</th>
+                        <th>Assigned To</th>
+                        <th>Created Date</th>
+                        <th>Total Amount</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in search_results %}
+                    <tr>
+                        <td>{{ job.customer_phone }}</td>
+                        <td>
+                            <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold">
+                                {{ job.job_code }}
+                            </a>
+                        </td>
+                        <td>{{ job.customer_name }}</td>
+                        <td>{{ job.device_type }}</td>
+                        <td>
+                            <span class="badge 
+                                {% if job.status == 'Completed' or job.status == 'Ready for Pickup' %}bg-success
+                                {% elif job.status == 'Pending' %}bg-warning
+                                {% elif job.status == 'Returned' %}bg-danger
+                                {% elif job.status == 'Closed' %}bg-secondary
+                                {% else %}bg-info{% endif %}">
+                                {{ job.status }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if job.assigned_to %}
+                            {{ job.assigned_to.user.username }}
+                            {% else %}
+                            <span class="text-muted">Unassigned</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ job.created_at|date:"Y-m-d" }}</td>
+                        <td>
+                            {% if job.total != None %}
+                            ₹{{ job.total|default:0|floatformat:2 }}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'staff_job_detail' job.job_code %}" class="btn btn-sm btn-primary">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> No jobs found matching "<strong>{{ query }}</strong>".
+            Try searching by job code, customer name, or phone number.
+        </div>
+        {% endif %}
+    </div>
+    <hr>
+    {% endif %}
+
+    <div class="card-box h-100 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h2 class="mb-0 section-title"><i class="fas fa-hourglass-start"></i> Pending Services</h2>
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal"
+                data-bs-target="#createJobTicketModal">
+                <i class="fas fa-file-invoice"></i> Create New Job Ticket
+            </button>
+        </div>
+        <div class="table-responsive sticky-header">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Phone</th>
+                        <th>Job Code</th>
+                        <th>Customer Name</th>
+                        <th>Device</th>
+                        <th>Assign to Technician</th>
+                        <th>Job Ticket</th>
+                    </tr>
+                </thead>
+                <tbody id="pending-jobs-body">
+                    {% for job in pending_jobs %}
+                    <tr>
+                        <td>{{ job.customer_phone }}</td>
+                        <td>
+                            <a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a>
+                            {% if job.is_new_assignment %}
+                            <span class="badge bg-danger ms-2">NEW</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ job.customer_name }}</td>
+                        <td>{{ job.device_type }}</td>
+                        <td>
+                            <form method="post" class="d-flex flex-wrap gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="job_code" value="{{ job.job_code }}">
+                                {{ assign_form.technician|add_class:"form-select" }}
+                                <button type="submit" name="assign_job_form_submit" class="btn btn-primary btn-sm"><i
+                                        class="fas fa-arrow-right"></i> Assign</button>
+                            </form>
+                        </td>
+                        <td>
+                            <a href="{% url 'job_creation_receipt_print' job_code=job.job_code %}"
+                                class="btn btn-primary btn-sm">
+                                <i class="fas fa-print"></i> Print Receipt
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center">No pending jobs at the moment.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="modal fade quick-pop-modal" id="createJobTicketModal" tabindex="-1"
+        aria-labelledby="createJobTicketModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createJobTicketModalLabel"><i
+                            class="fas fa-file-invoice me-2"></i>Create New Job Ticket</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form method="post" novalidate id="job-creation-form" 
+                        data-phone-lookup-url="{% url 'client_phone_lookup' %}" enctype="multipart/form-data"
+                        data-no-loader="true">
+                        {% csrf_token %}
+                        <input type="hidden" name="job_ticket_form_submit" value="true">
+
+                        <h5 class="mb-3 text-primary"><i class="fas fa-user"></i> Customer Information (Required)</h5>
+                        <div id="job-form-messages" class="mb-3"></div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="id_customer_phone" class="form-label fw-semibold">Customer Phone</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">+91</span>
+                                    <input type="text" name="customer_phone" id="id_customer_phone" class="form-control"
+                                        placeholder="98765 43210" autocomplete="off" inputmode="numeric" required>
+                                </div>
+                                <div id="customer-phone-error" class="small text-danger mt-1"></div>
+                                <!-- <div class="form-text">Enter 10 digits only. Spaces are shown for readability and removed before save.</div> -->
+                                <div id="phone-priority-info" class="small text-muted mt-2"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" name="customer_name" id="id_customer_name" class="form-control"
+                                        placeholder="Customer name" autocomplete="off" autocapitalize="words" required>
+                                    <label for="id_customer_name">Customer Name</label>
+                                </div>
+                                <div id="customer-name-error" class="small text-danger mt-1"></div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mt-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="number" step="0.01" name="estimated_amount" id="id_estimated_amount"
+                                        class="form-control" placeholder="Estimated amount">
+                                    <label for="id_estimated_amount">Estimated Amount</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="date" name="estimated_delivery" id="id_estimated_delivery"
+                                        class="form-control" placeholder="Estimated delivery">
+                                    <label for="id_estimated_delivery">Estimated Delivery</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <p class="small text-muted mb-2">Tip: Preset lists can be customized in Admin -> Job Field
+                            Presets.</p>
+
+                        <div id="device-forms-container"></div>
+
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button type="button" id="add-device-btn" class="btn btn-outline-secondary flex-grow-1">
+                                <i class="fas fa-plus-circle"></i> Add Device
+                            </button>
+                            <button type="submit" name="job_ticket_form_submit" class="btn btn-primary flex-grow-1">
+                                <i class="fas fa-save"></i> Create Job Ticket(s)
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <template id="device-form-template">
+        <div class="device-form-block card p-3 mb-3 border-secondary">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0 text-secondary"><i class="fas fa-laptop-code"></i> Device #<span
+                        class="device-index">1</span></h5>
+                <button type="button" class="btn btn-sm btn-outline-danger remove-device-btn">
+                    <i class="fas fa-times"></i> Remove
+                </button>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        <input type="text" name="device_forms[INDEX].device_type" class="form-control"
+                            placeholder="Device type" list="preset-device-type" data-device-field="device_type"
+                            required>
+                        <label>Device Type</label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        <input type="text" name="device_forms[INDEX].device_brand" class="form-control"
+                            placeholder="Device brand" list="preset-device-brand" data-device-field="device_brand"
+                            required>
+                        <label>Device Brand</label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        <input type="text" name="device_forms[INDEX].device_model" class="form-control"
+                            placeholder="Device model" required>
+                        <label>Device Model</label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        <input type="text" name="device_forms[INDEX].device_serial" class="form-control"
+                            placeholder="Device serial">
+                        <label>Device Serial</label>
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-floating">
+                        <textarea name="device_forms[INDEX].reported_issue" class="form-control"
+                            placeholder="Reported Issue" rows="3" data-device-field="reported_issue"
+                            required></textarea>
+                        <label>Reported Issue</label>
+                    </div>
+                    <div class="input-group input-group-sm mt-2 preset-picker" data-target-field="reported_issue"
+                        data-mode="append_unique">
+                        <select class="form-select preset-select">
+                            <option value="">Add saved issue...</option>
+                            {% for value in job_field_presets.reported_issue %}
+                            <option value="{{ value }}">{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-floating">
+                        <textarea name="device_forms[INDEX].additional_items" class="form-control"
+                            placeholder="Additional Items" rows="3" data-device-field="additional_items"></textarea>
+                        <label>Additional Items (e.g., Bag, Charger)</label>
+                    </div>
+                    <div class="input-group input-group-sm mt-2 preset-picker" data-target-field="additional_items"
+                        data-mode="append_unique">
+                        <select class="form-select preset-select">
+                            <option value="">Add saved item...</option>
+                            {% for value in job_field_presets.additional_items %}
+                            <option value="{{ value }}">{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label fw-semibold">Device Photos</label>
+                    <input type="file" name="device_forms[INDEX].device_photos" class="form-control" accept="image/*"
+                        capture="environment" multiple>
+                    <div class="form-text">Mobile il camera option varum. Select cheyyunna photos database-il save
+                        cheyyum.</div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-check form-switch pt-2">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                            name="device_forms[INDEX].is_under_warranty" id="warranty-INDEX">
+                        <label class="form-check-label" for="warranty-INDEX">Is under company warranty?</label>
+                    </div>
+                    <small class="text-muted">Turn this ON only when this repair is covered by your own service
+                        warranty. Keep OFF for normal paid jobs.</small>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-check form-switch pt-2">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                            name="device_forms[INDEX].requires_laptop_inspection_checklist" id="laptop-checklist-INDEX">
+                        <label class="form-check-label" for="laptop-checklist-INDEX">Require Laptop Inspection Checklist before completion?</label>
+                    </div>
+                    <small class="text-muted">Use this only for laptop jobs. If kept OFF, the technician can complete the ticket even without filling the checklist.</small>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <datalist id="preset-device-type">
+        {% for value in job_field_presets.device_type %}
+        <option value="{{ value }}"></option>
+        {% endfor %}
+    </datalist>
+    <datalist id="preset-device-brand">
+        {% for value in job_field_presets.device_brand %}
+        <option value="{{ value }}"></option>
+        {% endfor %}
+    </datalist>
+
+    <div class="card-box mt-4">
+        <h2 class="mb-3 section-title"><i class="fas fa-share-square"></i> Specialized Service - Awaiting Assignment
+        </h2>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Job Code</th>
+                        <th>Customer</th>
+                        <th>Device</th>
+                        <th>Reported Issue</th>
+                        <th>Assign Vendor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for service in awaiting_assignment_jobs %}
+                    <tr>
+                        <td><a href="{% url 'staff_job_detail' service.job_ticket.job_code %}">{{ service.job_ticket.job_code }}</a></td>
+                        <td>{{ service.job_ticket.customer_name }}</td>
+                        <td>{{ service.job_ticket.device_type }}</td>
+                        <td>{{ service.job_ticket.reported_issue|truncatewords:10 }}</td>
+                        <td>
+                            <form method="post">
+                                {% csrf_token %}
+                                {{ service.form.specialized_service_id }}
+                                <div class="mb-2">
+                                    {{ service.form.vendor|add_class:"form-select form-select-sm" }}
+                                </div>
+                                <button type="submit" name="assign_vendor_form_submit"
+                                    class="btn btn-primary btn-sm w-100">
+                                    <i class="fas fa-arrow-right"></i> Assign & Send
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center">No jobs are awaiting vendor assignment.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <!-- <div class="card-box mt-4">
+        <h2 class="mb-3 section-title"><i class="fas fa-truck-loading"></i> Jobs Currently with Vendors</h2>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Job Code</th>
+                        <th>Customer</th>
+                        <th>Assigned Vendor</th>
+                        <th>Date Sent</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for service in sent_to_vendor_jobs %}
+                    <tr>
+                        <td><a href="{% url 'staff_job_detail' service.job_ticket.job_code %}">{{ service.job_ticket.job_code }}</a></td>
+                        <td>{{ service.job_ticket.customer_name }}</td>
+                        <td><strong>{{ service.vendor.company_name }}</strong></td>
+                        <td>{{ service.sent_date|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            <form method="post" action="{% url 'mark_service_returned' service.id %}" onsubmit="return confirm('Are you sure this device has been returned from the vendor?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-success btn-sm">
+                                    <i class="fas fa-check"></i> Mark as Returned
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center">No jobs are currently out for specialized service.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    ``` -->
+
+    <hr class="my-5">
+
+    <h2 class="mb-3 section-title"><i class="fas fa-tasks"></i> Current Job Status Overview</h2>
+    <div class="accordion" id="jobStatusAccordion">
+
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="headingInProgress">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#collapseInProgress">
+                    In Progress Services <span class="badge badge-status badge-info ms-2">{{ in_progress_jobs_count }}</span>
+                </button>
+            </h2>
+            <div id="collapseInProgress" class="accordion-collapse collapse" data-bs-parent="#jobStatusAccordion">
+                <div class="accordion-body">
+                    {% if grouped_in_progress_jobs %}
+                    <div class="accordion" id="technicianAccordion">
+                        {% for technician_name, jobs in grouped_in_progress_jobs.items %}
+                        <div class="accordion-item mb-2">
+                            <h2 class="accordion-header" id="heading-tech-{{ forloop.counter }}">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapse-tech-{{ forloop.counter }}">
+                                    <i class="fas fa-user-cog me-2"></i> {{ technician_name }}
+                                    <span class="badge badge-status badge-success ms-auto">{{ jobs|length }}</span>
+                                </button>
+                            </h2>
+                            <div id="collapse-tech-{{ forloop.counter }}" class="accordion-collapse collapse"
+                                data-bs-parent="#technicianAccordion">
+                                <div class="accordion-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-striped table-hover mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Job Code</th>
+                                                    <th>Customer</th>
+                                                    <th>Device</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for job in jobs %}
+                                                <tr>
+                                                    <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
+                                                    <td>{{ job.customer_name }}</td>
+                                                    <td>{{ job.device_type }}</td>
+                                                    <td><span class="badge badge-status badge-info">{{ job.status }}</span></td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-center">No jobs currently in progress.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="headingCompleted">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#collapseCompleted">
+                    Completed Services <span class="badge badge-status badge-success ms-2">{{ completed_count }}</span>
+                </button>
+            </h2>
+            <div id="collapseCompleted" class="accordion-collapse collapse" data-bs-parent="#jobStatusAccordion">
+                <div class="accordion-body">
+                    <div class="table-responsive sticky-header">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Job Code</th>
+                                    <th>Customer Name</th>
+                                    <th>Device</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in completed_jobs %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a>
+                                        {% if job.is_new_assignment %}
+                                        <span class="badge bg-danger ms-2">NEW</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ job.customer_name }}</td>
+                                    <td>{{ job.device_type }}</td>
+                                    <td><span class="badge badge-status badge-success">{{ job.status }}</span></td>
+                                    <td>
+                                        <a href="{% url 'job_billing_staff' job.job_code %}"
+                                            class="btn btn-primary btn-sm me-2"><i class="fas fa-file-invoice"></i> View
+                                            Bill</a>
+                                        <a href="{% url 'mark_ready_for_pickup' job_code=job.job_code %}"
+                                            class="btn btn-success btn-sm"><i class="fas fa-hand-point-right"></i> Mark
+                                            Ready</a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center">No completed jobs yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="headingReturned">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#collapseReturned">
+                    <i class="fas fa-undo-alt me-2"></i> Returned Jobs <span
+                        class="badge badge-status badge-success ms-2">{{ returned_count }}</span>
+                </button>
+            </h2>
+            <div id="collapseReturned" class="accordion-collapse collapse" data-bs-parent="#jobStatusAccordion">
+                <div class="accordion-body">
+                    <div class="table-responsive sticky-header">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Job Code</th>
+                                    <th>Customer Name</th>
+                                    <th>Device</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in returned_jobs %}
+                                <tr>
+                                    <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
+                                    <td>{{ job.customer_name }}</td>
+                                    <td>{{ job.device_type }}</td>
+                                    <td><span class="badge badge-status badge-warning">{{ job.status }}</span></td>
+                                    <td>
+                                        <a href="{% url 'close_job' job.job_code %}?next={% url 'staff_dashboard' %}" class="btn btn-danger btn-sm">
+                                            <i class="fas fa-check-circle"></i> Mark as Closed
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center">No jobs marked as returned.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="headingReady">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#collapseReady">
+                    Ready for Pickup / Billing <span class="badge badge-status badge-success ms-2">{{ ready_count }}</span>
+                </button>
+            </h2>
+            <div id="collapseReady" class="accordion-collapse collapse" data-bs-parent="#jobStatusAccordion">
+                <div class="accordion-body">
+                    <div class="table-responsive sticky-header">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Job Code</th>
+                                    <th>Customer Name</th>
+                                    <th>Device</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in ready_for_pickup_jobs %}
+                                <tr>
+                                    <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
+                                    <td>{{ job.customer_name }}</td>
+                                    <td>{{ job.device_type }}</td>
+                                    <td><span class="badge badge-status badge-success">{{ job.status }}</span></td>
+                                    <td><a href="{% url 'job_billing_staff' job.job_code %}"
+                                            class="btn btn-primary btn-sm"><i class="fas fa-file-invoice"></i> View
+                                            Bill</a></td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center">No jobs ready for pickup.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // --- DJANGO CHANNELS / WEBSOCKET LIVE UPDATE (DISABLED - Django Channels removed) ---
+    /*
+    document.addEventListener('DOMContentLoaded', function() {
+        // Determine WebSocket protocol (wss for HTTPS, ws for HTTP)
+        var ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
+        
+        // Connect to the global staff updates endpoint
+        var jobStatusSocket = new WebSocket(
+            ws_scheme + '://' + window.location.host + '/ws/staff_updates/'
+        );
+    
+        jobStatusSocket.onopen = function(e) {
+            console.log("WebSocket connection established for Staff Dashboard.");
+        };
+    
+        jobStatusSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            
+            // Check for the job status update type
+            if (data.type === 'job_status_update') {
+                const jobCode = data.job_code;
+                const newStatus = data.status;
+                
+                console.log(`Live update received: Job ${jobCode} status changed to ${newStatus}. Reloading dashboard...`);
+    
+                // For the Staff Dashboard, a full reload is the simplest and most robust way 
+                // to update all interconnected lists (Pending, In Progress, Specialized, Counts, etc.).
+                window.location.reload();
+            }
+        };
+    
+        jobStatusSocket.onclose = function(e) {
+            console.error('Staff Dashboard WebSocket closed unexpectedly:', e);
+            // Optional: Implement a reconnection attempt here
+        };
+    
+        jobStatusSocket.onerror = function(e) {
+            console.error('Staff Dashboard WebSocket error:', e);
+        };
+    });
+    */
+
+    // staff_dashboard.html (Inside the final <script> block)
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const jobForm = document.getElementById('job-creation-form');
+        const createJobModalEl = document.getElementById('createJobTicketModal');
+        const createJobModal = window.bootstrap && createJobModalEl
+            ? window.bootstrap.Modal.getOrCreateInstance(createJobModalEl)
+            : null;
+        const messagesContainer = document.getElementById('job-form-messages');
+        const customerPhoneInput = document.getElementById('id_customer_phone');
+        const customerPhoneError = document.getElementById('customer-phone-error');
+        const customerNameInput = document.getElementById('id_customer_name');
+        const customerNameError = document.getElementById('customer-name-error');
+        const phoneInfoBox = document.getElementById('phone-priority-info');
+        const container = document.getElementById('device-forms-container');
+        const template = document.getElementById('device-form-template');
+        const addButton = document.getElementById('add-device-btn');
+        const pendingJobsBody = document.getElementById('pending-jobs-body');
+        const csrfToken = jobForm?.querySelector('[name=csrfmiddlewaretoken]')?.value || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+        const phoneLookupUrl = jobForm?.dataset?.phoneLookupUrl || '';
+        const shouldReopenCreateJobModal = {% if show_create_job_modal %}true{% else %}false{% endif %};
+    let formIndex = 0;
+    let phoneLookupTimer = null;
+
+    function parseIndianPhoneInput(rawValue) {
+        const trimmedValue = String(rawValue || '').trim();
+        const hasLetters = /[A-Za-z]/.test(trimmedValue);
+        const hasInvalidSymbols = /[^0-9+\s]/.test(trimmedValue);
+        const hasInvalidPlusPrefix = trimmedValue.startsWith('+') && !trimmedValue.startsWith('+91');
+        let digits = trimmedValue.replace(/\D/g, '');
+        if (digits.length > 10 && digits.startsWith('91')) {
+            digits = digits.slice(2);
+        }
+        digits = digits.slice(0, 10);
+        return {
+            digits,
+            hasLetters,
+            hasInvalidSymbols,
+            hasInvalidPlusPrefix,
+        };
+    }
+
+    function formatIndianPhoneDisplay(digits) {
+        const cleanDigits = String(digits || '').replace(/\D/g, '').slice(0, 10);
+        if (cleanDigits.length <= 5) {
+            return cleanDigits;
+        }
+        return `${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
+    }
+
+    function syncIndianPhoneInput(input) {
+        if (!input) return '';
+        const parsed = parseIndianPhoneInput(input.value);
+        input.value = formatIndianPhoneDisplay(parsed.digits);
+        return parsed.digits;
+    }
+
+    function validateIndianPhoneValue(rawValue, fieldLabel) {
+        const trimmedValue = String(rawValue || '').trim();
+        const parsed = parseIndianPhoneInput(trimmedValue);
+        if (!trimmedValue) {
+            return `${fieldLabel} is required.`;
+        }
+        if (parsed.hasLetters) {
+            return `${fieldLabel} can contain numbers only. Alphabets are not allowed.`;
+        }
+        if (parsed.hasInvalidSymbols) {
+            return `${fieldLabel} can contain numbers only. Symbols are not allowed.`;
+        }
+        if (parsed.hasInvalidPlusPrefix) {
+            return `${fieldLabel} must be an Indian number. Use +91 or enter 10 digits.`;
+        }
+        if (parsed.digits.length !== 10) {
+            return `${fieldLabel} must be exactly 10 digits.`;
+        }
+        return '';
+    }
+
+    function setInputError(input, errorElement, message) {
+        if (!input || !errorElement) return;
+        input.classList.add('is-invalid');
+        errorElement.textContent = message || '';
+    }
+
+    function clearInputError(input, errorElement) {
+        if (!input || !errorElement) return;
+        input.classList.remove('is-invalid');
+        errorElement.textContent = '';
+    }
+
+    function validateCustomerFields() {
+        let hasErrors = false;
+
+        if (customerNameInput) {
+            const name = (customerNameInput.value || '').trim();
+            if (!name) {
+                setInputError(customerNameInput, customerNameError, 'Customer Name is required.');
+                hasErrors = true;
+            } else {
+                clearInputError(customerNameInput, customerNameError);
+            }
+        }
+
+        if (customerPhoneInput) {
+            syncIndianPhoneInput(customerPhoneInput);
+            const phoneErrorMessage = validateIndianPhoneValue(customerPhoneInput.value, 'Customer Phone');
+            if (phoneErrorMessage) {
+                setInputError(customerPhoneInput, customerPhoneError, phoneErrorMessage);
+                hasErrors = true;
+            } else {
+                clearInputError(customerPhoneInput, customerPhoneError);
+            }
+        }
+
+        return hasErrors;
+    }
+
+    function focusFirstInvalidField() {
+        const invalidField = jobForm?.querySelector('.is-invalid');
+        if (invalidField && typeof invalidField.focus === 'function') {
+            invalidField.focus();
+        }
+    }
+
+    function renderPhonePriorityInfo(data) {
+        if (!phoneInfoBox) return;
+
+        if (!data || !data.phone) {
+            phoneInfoBox.className = 'small text-muted';
+            phoneInfoBox.textContent = 'Phone-based history appears here after entering the customer phone.';
+            return;
+        }
+
+        let text = `${data.total_jobs || 0} device(s) already serviced on this phone`;
+        if ((data.open_jobs || 0) > 0) {
+            text += `, ${data.open_jobs} open job(s)`;
+        }
+        if (data.exists && data.client_name) {
+            text += `. Saved client: ${data.client_name}`;
+        }
+        if (data.recent_jobs && data.recent_jobs.length) {
+            const latest = data.recent_jobs[0];
+            const recentDevices = [...new Set(data.recent_jobs.map(job => job.device_type).filter(Boolean))];
+            if (recentDevices.length) {
+                text += `. Devices: ${recentDevices.slice(0, 3).join(', ')}`;
+            }
+            text += `. Latest: ${latest.job_code} (${latest.status})`;
+        }
+
+        phoneInfoBox.className = (data.total_jobs || 0) > 0 ? 'small text-success fw-semibold' : 'small text-muted';
+        phoneInfoBox.textContent = text;
+    }
+
+    function updateCustomerNameFromLookup(data, lookupPhone) {
+        if (!customerNameInput) return;
+        const incomingName = (data && data.client_name ? data.client_name : '').trim();
+        if (!incomingName) return;
+        const activePhoneDigits = customerPhoneInput ? parseIndianPhoneInput(customerPhoneInput.value).digits : '';
+        if (lookupPhone && customerPhoneInput && lookupPhone !== activePhoneDigits) {
+            return;
+        }
+
+        const currentName = (customerNameInput.value || '').trim();
+        const userEdited = customerNameInput.dataset.userEdited === 'true';
+        if (!currentName || !userEdited) {
+            customerNameInput.value = incomingName;
+            customerNameInput.dataset.userEdited = 'false';
+            customerNameInput.dataset.autoFilled = 'true';
+        }
+    }
+
+    function resetCustomerNameFlags() {
+        if (!customerNameInput) return;
+        customerNameInput.dataset.userEdited = 'false';
+        customerNameInput.dataset.autoFilled = 'false';
+    }
+
+    async function fetchPhoneSnapshot(phone) {
+        const normalizedPhone = (phone || '').trim();
+        if (!phoneLookupUrl || !normalizedPhone) {
+            renderPhonePriorityInfo(null);
+            return;
+        }
+
+        try {
+            const lookupUrl = new URL(phoneLookupUrl, window.location.origin);
+            lookupUrl.searchParams.set('phone', normalizedPhone);
+            const response = await fetch(lookupUrl.toString(), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+
+            if (!response.ok) return;
+
+            const data = await response.json();
+            if (!data.ok) return;
+            renderPhonePriorityInfo(data);
+            updateCustomerNameFromLookup(data, normalizedPhone);
+        } catch (error) {
+            console.error('Phone lookup failed:', error);
+        }
+    }
+
+    function clearMessages() {
+        if (messagesContainer) {
+            messagesContainer.innerHTML = '';
+        }
+        clearInputError(customerPhoneInput, customerPhoneError);
+        clearInputError(customerNameInput, customerNameError);
+    }
+
+    function showMessage(type, text) {
+        if (!messagesContainer) return;
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} mb-2`;
+        alertDiv.textContent = text;
+        messagesContainer.appendChild(alertDiv);
+    }
+
+    function clearFieldErrors(formBlock) {
+        if (!formBlock) return;
+        formBlock.querySelectorAll('.validation-error').forEach(el => el.remove());
+        formBlock.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    }
+
+    function addFieldError(formBlock, fieldName, message) {
+        if (!formBlock) return;
+        const index = formBlock.dataset.index;
+        const input = formBlock.querySelector(`[name="device_forms[${index}].${fieldName}"]`);
+        if (!input) return;
+
+        const column = input.closest('.col-md-6, .col-md-12') || input.parentElement;
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'text-danger small fw-semibold validation-error mb-1';
+        errorDiv.textContent = message;
+
+        const formFloating = input.closest('.form-floating');
+        if (formFloating && formFloating.parentElement) {
+            formFloating.parentElement.insertBefore(errorDiv, formFloating);
+        } else if (column) {
+            column.insertBefore(errorDiv, column.firstChild);
+        } else {
+            input.insertAdjacentElement('beforebegin', errorDiv);
+        }
+
+        input.classList.add('is-invalid');
+    }
+
+    function applyPresetValue(button) {
+        const picker = button.closest('.preset-picker');
+        const formBlock = button.closest('.device-form-block');
+        if (!picker || !formBlock) return;
+
+        const presetSelect = picker.querySelector('.preset-select');
+        const selectedValue = (presetSelect?.value || '').trim();
+        if (!selectedValue) return;
+
+        const targetField = picker.dataset.targetField;
+        const mode = picker.dataset.mode || 'replace';
+        const targetInput = formBlock.querySelector(`[data-device-field="${targetField}"]`);
+        if (!targetInput) return;
+
+        if (mode === 'append' || mode === 'append_unique') {
+            const existingLines = targetInput.value
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean);
+            const existingSet = new Set(existingLines.map(line => line.toLowerCase()));
+            const incomingKey = selectedValue.toLowerCase();
+
+            if (mode === 'append_unique' && existingSet.has(incomingKey)) {
+                presetSelect.selectedIndex = 0;
+                targetInput.focus();
+                return;
+            }
+
+            targetInput.value = existingLines.length
+                ? `${existingLines.join('\n')}\n${selectedValue}`
+                : selectedValue;
+        } else {
+            targetInput.value = selectedValue;
+        }
+
+        presetSelect.selectedIndex = 0;
+        targetInput.focus();
+    }
+
+    function validateDevices() {
+        const errors = [];
+        const blocks = container ? container.querySelectorAll('.device-form-block') : [];
+        blocks.forEach((block, index) => {
+            block.dataset.index = index;
+            clearFieldErrors(block);
+
+            const requiredFields = [
+                { name: 'device_type', label: 'Device type' },
+                { name: 'device_brand', label: 'Device brand' },
+                { name: 'device_model', label: 'Device model' },
+                { name: 'reported_issue', label: 'Reported issue' },
+            ];
+
+            requiredFields.forEach(field => {
+                const input = block.querySelector(`[name="device_forms[${index}].${field.name}"]`);
+                if (input && !input.value.trim()) {
+                    errors.push({
+                        device_index: index,
+                        field: field.name,
+                        message: `${field.label} is required.`,
+                    });
+                }
+            });
+        });
+        return errors;
+    }
+
+    function resetDeviceForms() {
+        if (!container) return;
+        container.innerHTML = '';
+        formIndex = 0;
+        addDeviceForm(true);
+    }
+
+    function appendPendingJobs(jobs) {
+        if (!pendingJobsBody || !jobs || !jobs.length) return;
+        jobs.forEach(job => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${job.customer_phone || '-'}</td>
+                <td>
+                    <a href="${job.detail_url}">${job.job_code}</a>
+                </td>
+                <td>${job.customer_name}</td>
+                <td>${job.device_type}</td>
+                <td colspan="2">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="${job.detail_url}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                        <a href="${job.receipt_url}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-print"></i> Print Receipt
+                        </a>
+                    </div>
+                </td>
+            `;
+            pendingJobsBody.prepend(row);
+        });
+    }
+
+    async function handleSubmit(event) {
+        if (!jobForm) return;
+        event.preventDefault();
+        clearMessages();
+
+        const submitBtn = jobForm.querySelector('button[type="submit"]');
+        if (submitBtn.disabled) return;
+
+        // Client-side validation BEFORE showing loading state
+        const customerHasErrors = validateCustomerFields();
+        if (customerHasErrors) {
+            showMessage('error', 'Please fix the highlighted customer details.');
+            focusFirstInvalidField();
+            return;
+        }
+
+        const clientErrors = validateDevices();
+        if (clientErrors.length) {
+            showMessage('error', 'Please fill in the highlighted fields.');
+            clientErrors.forEach(err => {
+                const block = container.querySelectorAll('.device-form-block')[err.device_index];
+                if (block) addFieldError(block, err.field, err.message);
+            });
+            focusFirstInvalidField();
+            return;
+        }
+
+        // Only show loading after all client-side validation passes
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+
+        const formData = new FormData(jobForm);
+        if (customerPhoneInput) {
+            formData.set('customer_phone', parseIndianPhoneInput(customerPhoneInput.value).digits);
+        }
+
+        try {
+            const response = await fetch(jobForm.action || window.location.href, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-save"></i> Create Job Ticket(s)';
+                if (data.field_errors) {
+                    if (data.field_errors.customer_phone) {
+                        setInputError(customerPhoneInput, customerPhoneError, data.field_errors.customer_phone);
+                    }
+                    if (data.field_errors.customer_name) {
+                        setInputError(customerNameInput, customerNameError, data.field_errors.customer_name);
+                    }
+                }
+                (data.errors || []).forEach(err => {
+                    const block = container.querySelectorAll('.device-form-block')[err.device_index];
+                    if (block) addFieldError(block, err.field, err.message);
+                });
+                showMessage('error', data.message || 'Please review the highlighted fields.');
+                if (messagesContainer) {
+                    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+                focusFirstInvalidField();
+                return;
+            }
+
+            showMessage('success', data.message || 'Job ticket created successfully.');
+
+            if (data.job_codes && data.job_codes.length) {
+                const list = document.createElement('ul');
+                list.className = 'list-unstyled mb-0';
+                data.job_codes.forEach((code, index) => {
+                    const item = document.createElement('li');
+                    const receiptUrl = data.jobs && data.jobs[index] ? data.jobs[index].receipt_url : null;
+                    item.innerHTML = receiptUrl
+                        ? `<a href="${receiptUrl}">${code}</a>`
+                        : code;
+                    list.appendChild(item);
+                });
+                messagesContainer.appendChild(list);
+            }
+
+            if (data.redirect_url) {
+                const link = document.createElement('a');
+                link.href = data.redirect_url;
+                link.target = '_blank';
+                link.className = 'btn btn-sm btn-outline-secondary mt-2';
+                link.innerHTML = '<i class="fas fa-external-link-alt"></i> Open Success Page';
+                messagesContainer.appendChild(link);
+            }
+
+            appendPendingJobs(data.jobs);
+            jobForm.reset();
+            resetDeviceForms();
+            if (customerPhoneInput) {
+                customerPhoneInput.value = '';
+            }
+            renderPhonePriorityInfo(null);
+            resetCustomerNameFlags();
+        } catch (error) {
+            console.error('Job creation failed:', error);
+            showMessage('error', 'Something went wrong while creating the job ticket. Please try again.');
+        } finally {
+            // Re-enable submit button
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-save"></i> Create Job Ticket(s)';
+            }
+        }
+    }
+
+    function addDeviceForm(initial = false) {
+        if (!template || !container) return;
+
+        const clone = template.content.cloneNode(true);
+        const formBlock = clone.querySelector('.device-form-block');
+
+        // 1. Update the index placeholder text
+        formBlock.querySelector('.device-index').textContent = formIndex + 1;
+        formBlock.dataset.index = formIndex;
+
+        // 2. Update field names and IDs with the new index
+        clone.querySelectorAll('[name*="[INDEX]"], [for*="INDEX"]').forEach(el => {
+            if (el.name) el.name = el.name.replace('[INDEX]', `[${formIndex}]`);
+            if (el.id) el.id = el.id.replace('INDEX', formIndex);
+            if (el.htmlFor) el.htmlFor = el.htmlFor.replace('INDEX', formIndex);
+        });
+
+        // 3. Attach remove listener
+        formBlock.querySelector('.remove-device-btn').addEventListener('click', function () {
+            if (container.children.length > 1 || initial) {
+                formBlock.remove();
+                updateIndices();
+            } else {
+                alert("You must have at least one device in the job ticket.");
+            }
+        });
+
+        container.appendChild(clone);
+        formIndex++;
+    }
+
+    // Helper to re-index forms after a removal
+    function updateIndices() {
+        formIndex = 0;
+        if (!container) return;
+        container.querySelectorAll('.device-form-block').forEach(formBlock => {
+            formBlock.querySelector('.device-index').textContent = formIndex + 1;
+            formBlock.dataset.index = formIndex;
+
+            formBlock.querySelectorAll('[name*="["]').forEach(el => {
+                el.name = el.name.replace(/\[\d+\]/, `[${formIndex}]`);
+            });
+            formBlock.querySelectorAll('[id*="-"], [for*="-"]').forEach(el => {
+                if (el.id) el.id = el.id.replace(/-\d+/, `-${formIndex}`);
+                if (el.htmlFor) el.htmlFor = el.htmlFor.replace(/-\d+/, `-${formIndex}`);
+            });
+
+            formIndex++;
+        });
+    }
+
+    if (addButton) {
+        addButton.addEventListener('click', () => addDeviceForm(false));
+    }
+
+    if (jobForm) {
+        jobForm.addEventListener('submit', handleSubmit);
+    }
+
+    if (container) {
+        container.addEventListener('click', function (event) {
+            const applyButton = event.target.closest('.apply-preset-btn');
+            if (!applyButton) return;
+            applyPresetValue(applyButton);
+        });
+    }
+
+    if (customerPhoneInput) {
+        customerPhoneInput.addEventListener('input', function () {
+            const normalizedDigits = syncIndianPhoneInput(customerPhoneInput);
+            clearInputError(customerPhoneInput, customerPhoneError);
+            if (phoneLookupTimer) {
+                clearTimeout(phoneLookupTimer);
+            }
+            if (normalizedDigits.length === 10) {
+                phoneLookupTimer = setTimeout(() => {
+                    fetchPhoneSnapshot(normalizedDigits);
+                }, 300);
+            } else {
+                renderPhonePriorityInfo(null);
+            }
+        });
+        customerPhoneInput.addEventListener('blur', function () {
+            const phoneErrorMessage = validateIndianPhoneValue(customerPhoneInput.value, 'Customer Phone');
+            if (phoneErrorMessage) {
+                setInputError(customerPhoneInput, customerPhoneError, phoneErrorMessage);
+            } else {
+                clearInputError(customerPhoneInput, customerPhoneError);
+            }
+        });
+    }
+
+    if (customerNameInput) {
+        customerNameInput.addEventListener('input', function () {
+            const currentName = (customerNameInput.value || '').trim();
+            if (currentName) {
+                clearInputError(customerNameInput, customerNameError);
+            }
+            customerNameInput.dataset.userEdited = currentName ? 'true' : 'false';
+            if (!currentName) {
+                customerNameInput.dataset.autoFilled = 'false';
+            }
+        });
+    }
+
+    addDeviceForm(true);
+    renderPhonePriorityInfo(null);
+    resetCustomerNameFlags();
+    if (shouldReopenCreateJobModal && createJobModal) {
+        createJobModal.show();
+    }
+    // ---------------------------------------------------
+});
+
+</script>
+{% endblock %}

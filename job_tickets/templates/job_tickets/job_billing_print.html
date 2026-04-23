@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load job_tickets_extras %}
+    <meta charset="UTF-8">
+    <title>Invoice - {{ job.job_code }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11pt;
+            margin: 0;
+            padding: 0;
+            background: #fafafa;
+        }
+        .invoice-container {
+            max-width: 794px;
+            margin: 20px auto;
+            padding: 24px;
+            border: 1px solid #d6d6d6;
+            background: #fff;
+        }
+        .header-classic {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            align-items: center;
+            border-bottom: 2px solid #111;
+            padding-bottom: 10px;
+            margin-bottom: 18px;
+        }
+        .header-classic img {
+            max-width: 130px;
+            height: auto;
+        }
+        .header-classic .title {
+            text-align: right;
+        }
+        .header-classic .title h1 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+        .header-classic .title p {
+            margin: 2px 0;
+            font-size: 0.9em;
+            color: #444;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #e4e4e4;
+            padding-bottom: 12px;
+        }
+        .details-grid h4 {
+            margin: 0 0 8px;
+            font-size: 1.05em;
+        }
+        .details-grid p {
+            margin: 4px 0;
+            font-size: 0.95em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 9px;
+            text-align: left;
+        }
+        thead {
+            background-color: #f2f4f7;
+        }
+        .total-row td {
+            font-weight: bold;
+            background-color: #e9f8f0;
+            font-size: 1.05em;
+        }
+        .feedback-reminder {
+            margin-top: 16px;
+            border: 1px dashed #97a4b1;
+            border-radius: 8px;
+            padding: 10px;
+            background: #f8fbff;
+        }
+        .feedback-reminder h4 {
+            margin: 0 0 8px;
+            font-size: 1.02em;
+        }
+        .feedback-reminder p {
+            margin: 5px 0;
+            font-size: 0.92em;
+        }
+        .feedback-reminder .qr {
+            margin-top: 8px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .feedback-reminder img {
+            width: 92px;
+            height: 92px;
+            border: 1px solid #cdd6df;
+            border-radius: 6px;
+        }
+
+        .signature {
+            margin-top: 42px;
+            text-align: right;
+        }
+        .signature div {
+            display: inline-block;
+            width: 220px;
+            text-align: center;
+            border-top: 1px solid #000;
+            padding-top: 5px;
+            font-size: 0.9em;
+        }
+
+        @media print {
+            @page {
+                size: A4;
+                margin: 14mm;
+            }
+            .invoice-container {
+                border: none;
+                margin: 0;
+                padding: 0;
+                max-width: none;
+            }
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background: #fff;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice-container">
+        <div class="header-classic">
+            <div>
+                {% if company.logo %}
+                    <img src="{{ company.logo.url }}" alt="{{ company.company_name }} Logo">
+                {% elif company.logo_url %}
+                    <img src="{{ company.logo_url }}" alt="{{ company.company_name }} Logo">
+                {% endif %}
+            </div>
+            <div class="title">
+                <h1>{{ company.company_name }}</h1>
+                {% if company.tagline %}<p>{{ company.tagline }}</p>{% endif %}
+                <p>{{ company.address }} | {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
+                <p><strong>Job Code:</strong> {{ job.job_code }}</p>
+                <p><strong>Date:</strong> {{ job.updated_at|date:"Y-m-d" }}</p>
+                {% if job.vyapar_invoice_number %}
+                    <p><strong>Invoice No:</strong> {{ job.vyapar_invoice_number }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="details-grid">
+            <div>
+                <h4>Customer & Job</h4>
+                <p><strong>Customer:</strong> {{ job.customer_name }}</p>
+                <p><strong>Phone:</strong> {{ job.customer_phone }}</p>
+                <p><strong>Device:</strong> {{ job.device_type }} ({{ job.device_brand }} {{ job.device_model }})</p>
+                <p><strong>Serial:</strong> {{ job.device_serial|default:"N/A" }}</p>
+            </div>
+            <div>
+                <h4>Service Details</h4>
+                <p><strong>Technician ID:</strong> {{ technician_id|default:"N/A" }}</p>
+                <p><strong>Created By:</strong> {{ created_by_id|default:"N/A" }}</p>
+                <p><strong>Status:</strong> {{ job.status }}</p>
+                <p><strong>Issue:</strong> {{ job.reported_issue }}</p>
+            </div>
+        </div>
+
+        <div>
+            <h4>Service & Product Breakdown</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Service Description</th>
+                        <th style="text-align:right;">Part Cost</th>
+                        <th style="text-align:right;">Service Charge</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in service_logs %}
+                    <tr>
+                        <td>{{ log.description|default:"Service Performed"|display_service_description }}</td>
+                        <td style="text-align:right;">&#8377;{{ log.part_cost|floatformat:2 }}</td>
+                        <td style="text-align:right;">&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                    <tr>
+                        <td colspan="2" style="text-align:right;"><strong>Subtotal:</strong></td>
+                        <td style="text-align:right;"><strong>&#8377;{{ subtotal|floatformat:2 }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align:right;"><strong>Discount:</strong></td>
+                        <td style="text-align:right;"><strong>- &#8377;{{ discount|floatformat:2 }}</strong></td>
+                    </tr>
+                    <tr class="total-row">
+                        <td colspan="2" style="text-align:right;"><strong>Grand Total:</strong></td>
+                        <td style="text-align:right;"><strong>&#8377;{{ grand_total|floatformat:2 }}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="feedback-reminder">
+            <h4>Feedback Reminder</h4>
+            <p>Please share feedback after delivery to help us improve service quality.</p>
+            <p>Track and rate using Job Code <strong>{{ job.job_code }}</strong> and Phone <strong>{{ job.customer_phone }}</strong>.</p>
+            <div class="qr">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data={{ request.scheme }}://{{ request.get_host }}{% url 'qr_access' job.job_code %}" alt="Feedback QR">
+                <div>
+                    <p style="margin:0;">Scan to open status and feedback page.</p>
+                    <p style="margin:4px 0 0;">{{ request.get_host }}/qr/{{ job.job_code }}/</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="signature">
+            <div>Authorized Signature</div>
+        </div>
+    </div>
+
+    <div class="text-center no-print" style="margin: 16px 0;">
+        <button type="button" onclick="return BotgiPrintHelper.startPrint();" style="padding: 10px 18px; font-size: 15px; cursor: pointer;">Print This Invoice</button>
+    </div>
+    {% include "job_tickets/includes/print_flow_script.html" with autoprint=True %}
+</body>
+</html>

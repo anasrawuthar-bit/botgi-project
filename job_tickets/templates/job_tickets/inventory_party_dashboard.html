@@ -1,0 +1,944 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Party Master | Service Billing{% endblock %}
+
+{% block extra_css %}
+{% include "job_tickets/includes/inventory_page_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="section-container" id="inventory-party-page">
+    <div class="row g-4 inventory-shell" data-inventory-shell>
+        <div class="col-lg-3 col-xl-3 inventory-shell-sidebar-col">
+            {% include "job_tickets/_inventory_sidebar.html" %}
+        </div>
+        <div class="col-lg-9 col-xl-9 inventory-shell-main-col">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <h1 class="section-title mb-1"><i class="fas fa-users me-2"></i>Party Master</h1>
+                    <p class="mb-0 text-muted">Maintain supplier and customer master records used in purchase and sales billing.</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPartyModal">
+                        <i class="fas fa-user-plus me-1"></i>Add Party
+                    </button>
+                    <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-plus me-1"></i>New Purchase Entry
+                    </a>
+                </div>
+            </div>
+
+            <div class="card-box h-100">
+                <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                            <h5 class="mb-0"><i class="fas fa-list me-2"></i>Party Directory</h5>
+                            <span class="badge rounded-pill text-bg-secondary">{{ total_parties }}</span>
+                        </div>
+                        <p class="mb-0 small text-muted">Filter the bill history here and open any listed bill in the same page edit window.</p>
+                    </div>
+                    <form
+                        method="get"
+                        action="{% url 'inventory_party_dashboard' %}"
+                        class="row g-2 align-items-center"
+                        data-async-form
+                        data-async-target="#inventory-party-page"
+                    >
+                        <div class="col-12 col-xl-4">
+                            <input type="text" name="q" class="form-control" placeholder="Search by name, phone, GSTIN..." value="{{ query }}">
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-auto">
+                            <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-auto">
+                            <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search me-1"></i>Filter</button>
+                        </div>
+                        {% if query or start_date or end_date %}
+                        <div class="col-auto">
+                            <a href="{% url 'inventory_party_dashboard' %}" class="btn btn-outline-secondary">Clear</a>
+                        </div>
+                        {% endif %}
+                    </form>
+                </div>
+
+                {% if start_date or end_date %}
+                <div class="alert alert-info py-2 small mb-3">
+                    Showing bill history
+                    {% if start_date %}from <strong>{{ start_date }}</strong>{% endif %}
+                    {% if start_date and end_date %} to {% endif %}
+                    {% if end_date %}<strong>{{ end_date }}</strong>{% endif %}.
+                </div>
+                {% endif %}
+
+                <div class="inventory-scroll-pane">
+                    {% for party in parties %}
+                    <div class="border rounded p-3 mb-3">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                            <div>
+                                <h6 class="mb-1">{{ party.name }}</h6>
+                                <p class="mb-0 small text-muted">
+                                    {% if party.legal_name %}Legal: {{ party.legal_name }} | {% endif %}
+                                    Phone: {{ party.phone|default:"-" }} | GSTIN: {{ party.gstin|default:"-" }} | State Code: {{ party.state_code|default:"-" }}
+                                </p>
+                                <p class="mb-0 small text-muted">
+                                    GST Type: {{ party.get_gst_registration_type_display }} | City: {{ party.city|default:"-" }}{% if party.contact_person %} | Contact: {{ party.contact_person }}{% endif %}
+                                </p>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                {% if party.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                                <button
+                                    class="btn btn-outline-secondary btn-sm party-profile-edit-btn"
+                                    type="button"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editPartyModal"
+                                    data-party-id="{{ party.id }}"
+                                >
+                                    <i class="fas fa-user-pen me-1"></i>Edit Party
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#party-history-{{ party.id }}" aria-expanded="false" aria-controls="party-history-{{ party.id }}">
+                                    View Bills
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-2">
+                            <div class="col-md-6 col-xl-3">
+                                <div class="small bg-light rounded p-2">
+                                    <div class="text-muted">Purchase Bills</div>
+                                    <strong>{{ party.purchase_count }}</strong>
+                                    <div>&#8377;{{ party.purchase_amount|floatformat:2 }}</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-xl-3">
+                                <div class="small bg-light rounded p-2">
+                                    <div class="text-muted">Purchase Return Bills</div>
+                                    <strong>{{ party.purchase_return_count }}</strong>
+                                    <div>&#8377;{{ party.purchase_return_amount|floatformat:2 }}</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-xl-3">
+                                <div class="small bg-light rounded p-2">
+                                    <div class="text-muted">Sales Bills</div>
+                                    <strong>{{ party.sale_count }}</strong>
+                                    <div>&#8377;{{ party.sale_amount|floatformat:2 }}</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-xl-3">
+                                <div class="small bg-light rounded p-2">
+                                    <div class="text-muted">Sales Return Bills</div>
+                                    <strong>{{ party.sale_return_count }}</strong>
+                                    <div>&#8377;{{ party.sale_return_amount|floatformat:2 }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="collapse mt-3" id="party-history-{{ party.id }}">
+                            <h6 class="small text-muted mb-2">Bills</h6>
+                            <div class="border rounded p-2 h-100">
+                                <div class="table-responsive inventory-scroll-region inventory-scroll-region--history">
+                                    <table class="table table-sm table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Status</th>
+                                                <th>Date</th>
+                                                <th>Invoice</th>
+                                                <th>Items</th>
+                                                <th>Qty</th>
+                                                <th>Total</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for bill in party.combined_history %}
+                                            <tr>
+                                                <td>
+                                                    {% if bill.entry_type == 'purchase' %}
+                                                        <span class="badge bg-primary-subtle text-primary">Purchase</span>
+                                                    {% elif bill.entry_type == 'sale' %}
+                                                        <span class="badge bg-success-subtle text-success">Sale</span>
+                                                    {% elif bill.entry_type == 'sale_return' %}
+                                                        <span class="badge bg-info-subtle text-info">Sales Return</span>
+                                                    {% elif bill.entry_type == 'purchase_return' %}
+                                                        <span class="badge bg-warning-subtle text-dark">Purchase Return</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary-subtle text-secondary">{{ bill.entry_type|default:"-" }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ bill.entry_date|date:"Y-m-d" }}</td>
+                                                <td>{{ bill.invoice_display }}</td>
+                                                <td>{{ bill.item_label }}</td>
+                                                <td>{{ bill.total_quantity }}</td>
+                                                <td>&#8377;{{ bill.total_amount|floatformat:2 }}</td>
+                                                <td>
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-outline-primary btn-sm party-bill-edit-btn"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#editPartyBillModal"
+                                                        data-invoice-key="{{ bill.bill_id|default:bill.bill_key }}"
+                                                        data-entry-type="{{ bill.entry_type }}"
+                                                        data-entry-id="{{ bill.lines.0.id }}"
+                                                        data-bill-id="{{ bill.bill_id|default:'' }}"
+                                                    >
+                                                        <i class="fas fa-pen me-1"></i>Edit
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% empty %}
+                                            <tr>
+                                                <td colspan="7" class="text-center text-muted">No bills found for this filter.</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-muted">No parties found.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="modal fade quick-pop-modal" id="addPartyModal" tabindex="-1" aria-labelledby="addPartyModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="addPartyModalLabel"><i class="fas fa-user-plus me-2"></i>Add Party</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="tab" value="{{ active_tab }}">
+                                {% if party_form.non_field_errors %}
+                                    <div class="alert alert-danger py-2">{{ party_form.non_field_errors|striptags }}</div>
+                                {% endif %}
+                                <div class="row g-3">
+                                    {% for field in party_form %}
+                                        {% if field.name == 'is_active' %}
+                                        <div class="col-12">
+                                            <div class="form-check mt-2">
+                                                {{ field }}
+                                                <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                            </div>
+                                            {% if field.errors %}
+                                                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                                            {% endif %}
+                                        </div>
+                                        {% else %}
+                                        <div class="col-md-6">
+                                            <label class="form-label">{{ field.label }}</label>
+                                            {{ field }}
+                                            {% if field.errors %}
+                                                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="add_inventory_party_submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Save Party
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal fade quick-pop-modal" id="editPartyModal" tabindex="-1" aria-labelledby="editPartyModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <div>
+                                <h5 class="modal-title" id="editPartyModalLabel"><i class="fas fa-user-pen me-2"></i>Edit Party</h5>
+                                <p class="small text-muted mb-0" id="edit-party-modal-subtitle"></p>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="tab" value="{{ active_tab }}">
+                                <input type="hidden" name="edit_party_id" id="edit-party-id-input" value="{{ edit_party_modal_party_id }}">
+                                {% if edit_party_form.non_field_errors %}
+                                    <div class="alert alert-danger py-2">{{ edit_party_form.non_field_errors|striptags }}</div>
+                                {% endif %}
+                                <div class="row g-3">
+                                    {% for field in edit_party_form %}
+                                        {% if field.name == 'is_active' %}
+                                        <div class="col-12">
+                                            <div class="form-check mt-2">
+                                                {{ field }}
+                                                <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                            </div>
+                                            {% if field.errors %}
+                                                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                                            {% endif %}
+                                        </div>
+                                        {% else %}
+                                        <div class="col-md-6">
+                                            <label class="form-label">{{ field.label }}</label>
+                                            {{ field }}
+                                            {% if field.errors %}
+                                                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="edit_inventory_party_submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Update Party
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal fade quick-pop-modal" id="editPartyBillModal" tabindex="-1" aria-labelledby="editPartyBillModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <div>
+                                <h5 class="modal-title" id="editPartyBillModalLabel">
+                                    <i class="fas fa-pen-to-square me-2"></i>Edit Bill
+                                </h5>
+                                <p class="small text-muted mb-0" id="edit-party-bill-modal-subtitle"></p>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post" data-async-form data-async-target="#inventory-party-page" data-async-close-modal="#editPartyBillModal">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="inventory_entry_edit_submit" id="edit-party-bill-entry-type">
+                                <input type="hidden" name="entry_id" id="edit-party-entry-id">
+                                <input type="hidden" name="bill_id" id="edit-party-bill-id">
+                                <input type="hidden" name="tab" id="edit-party-bill-tab" value="{{ active_tab }}">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label">Bill Type</label>
+                                        <input type="text" class="form-control" id="edit-party-bill-type-label" readonly>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Entry Date</label>
+                                        <input type="date" class="form-control" name="edit_entry_date" id="edit-party-entry-date" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Invoice Number</label>
+                                        <input type="text" class="form-control" name="edit_invoice_number" id="edit-party-invoice-number" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Linked Job</label>
+                                        <input type="text" class="form-control" id="edit-party-job-code" readonly>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label" id="edit-party-bill-party-label">Party</label>
+                                        <select class="form-select" name="edit_party_id" id="edit-party-bill-party-id" required>
+                                            <option value="">Select party</option>
+                                        </select>
+                                        <small id="edit-party-bill-lock-note" class="text-muted d-none"></small>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th style="min-width: 220px;">Product</th>
+                                                <th style="min-width: 90px;">Qty</th>
+                                                <th style="min-width: 120px;">Rate</th>
+                                                <th style="min-width: 130px;">Amount (Excl Tax)</th>
+                                                <th style="min-width: 90px;">GST %</th>
+                                                <th style="min-width: 120px;">Tax Amount</th>
+                                                <th style="min-width: 150px;">Total Amount</th>
+                                                <th style="min-width: 60px;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="edit-party-bill-lines-body"></tbody>
+                                    </table>
+                                </div>
+
+                                <div class="d-flex justify-content-end mt-2">
+                                    <button type="button" id="edit-party-bill-add-line-btn" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-plus me-1"></i>Add Product Line
+                                    </button>
+                                </div>
+
+                                <template id="edit-party-bill-line-template">
+                                    <tr class="edit-party-bill-line-row">
+                                        <td>
+                                            <input type="hidden" name="edit_line_entry_id[]" class="edit-party-bill-line-entry-id">
+                                            <select name="edit_line_product_id[]" class="form-select form-select-sm edit-party-bill-line-product">
+                                                <option value="">Select product</option>
+                                                {% for product in line_products %}
+                                                    <option value="{{ product.id }}" data-unit-price="{{ product.unit_price }}" data-cost-price="{{ product.cost_price }}">
+                                                        {{ product.name }} (Stock: {{ product.stock_quantity }})
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="number" min="1" step="1" name="edit_line_quantity[]" class="form-control form-control-sm edit-party-bill-line-qty" value="1">
+                                        </td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" name="edit_line_unit_price[]" class="form-control form-control-sm edit-party-bill-line-rate" value="0.00">
+                                        </td>
+                                        <td class="text-end fw-semibold edit-party-bill-line-taxable">0.00</td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" name="edit_line_gst_rate[]" class="form-control form-control-sm edit-party-bill-line-gst" value="{{ default_gst_rate|floatformat:2 }}">
+                                        </td>
+                                        <td class="text-end fw-semibold edit-party-bill-line-tax">0.00</td>
+                                        <td>
+                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm edit-party-bill-line-total" value="0.00">
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-danger edit-party-bill-remove-line-btn">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+
+                                <div class="row g-3 mt-2">
+                                    <div class="col-lg-7">
+                                        <label class="form-label">Bill Note</label>
+                                        <textarea name="edit_bill_notes" id="edit-party-bill-notes" class="form-control form-control-sm" rows="3" placeholder="Optional note for this bill"></textarea>
+                                    </div>
+                                    <div class="col-lg-5">
+                                        <div class="card border-0 bg-light p-3 h-100">
+                                            <div class="mb-2">
+                                                <label class="form-label mb-1">Bill Discount</label>
+                                                <input type="number" min="0" step="0.01" name="edit_bill_discount_amount" id="edit-party-bill-discount-amount" class="form-control form-control-sm" value="0.00">
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Subtotal (Excl Tax)</span>
+                                                <strong id="edit-party-bill-subtotal">0.00</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Discount</span>
+                                                <strong id="edit-party-bill-discount-view">0.00</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between small">
+                                                <span>Total Tax</span>
+                                                <strong id="edit-party-bill-tax-total">0.00</strong>
+                                            </div>
+                                            <hr class="my-2">
+                                            <div class="d-flex justify-content-between">
+                                                <span class="fw-semibold">Bill Total</span>
+                                                <strong id="edit-party-bill-grand-total">0.00</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-12">
+                                        <label class="form-label">Password Confirmation</label>
+                                        <input type="password" name="edit_password" id="edit-party-bill-password" class="form-control form-control-sm" placeholder="Enter your password to confirm bill update" autocomplete="current-password" required>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="edit-party-bill-submit-btn">
+                                    <i class="fas fa-save me-1"></i>Update Bill
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            {{ inventory_party_bill_payload|json_script:"inventory-party-bill-payload" }}
+            {{ inventory_party_profile_payload|json_script:"inventory-party-profile-payload" }}
+            {{ inventory_party_edit_options|json_script:"inventory-party-edit-options" }}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const defaultGstRate = "{{ default_gst_rate|floatformat:2 }}";
+    const shouldOpenPartyModal = {{ party_form.errors|yesno:"true,false" }};
+    const shouldOpenEditPartyModal = {{ edit_party_form.errors|yesno:"true,false" }};
+
+    function parseNumber(value) {
+        const parsed = parseFloat(value || '0');
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function round2(value) {
+        return Math.round((value + Number.EPSILON) * 100) / 100;
+    }
+
+    function renderMoney(target, amount) {
+        if (target) {
+            target.textContent = amount.toFixed(2);
+        }
+    }
+
+    function currentPartyTab(page) {
+        return 'all';
+    }
+
+    function initPartyMasterPage() {
+        const page = document.getElementById('inventory-party-page');
+        if (!page || page.dataset.partyMasterBound === 'true') {
+            return;
+        }
+        page.dataset.partyMasterBound = 'true';
+
+        if (shouldOpenPartyModal && typeof bootstrap !== 'undefined') {
+            const addPartyModal = document.getElementById('addPartyModal');
+            if (addPartyModal) {
+                bootstrap.Modal.getOrCreateInstance(addPartyModal).show();
+            }
+        }
+        if (shouldOpenEditPartyModal && typeof bootstrap !== 'undefined') {
+            const editPartyModal = document.getElementById('editPartyModal');
+            if (editPartyModal) {
+                bootstrap.Modal.getOrCreateInstance(editPartyModal).show();
+            }
+        }
+
+        const editTabInput = page.querySelector('#edit-party-bill-tab');
+        if (editTabInput) {
+            editTabInput.value = currentPartyTab(page);
+        }
+
+        let partyProfileMap = {};
+        const partyProfileNode = document.getElementById('inventory-party-profile-payload');
+        if (partyProfileNode) {
+            try {
+                partyProfileMap = JSON.parse(partyProfileNode.textContent || '{}');
+            } catch (error) {
+                partyProfileMap = {};
+            }
+        }
+
+        const editPartyModal = document.getElementById('editPartyModal');
+        if (editPartyModal) {
+            const editPartyIdInput = editPartyModal.querySelector('#edit-party-id-input');
+            const editPartySubtitle = editPartyModal.querySelector('#edit-party-modal-subtitle');
+
+            function setEditPartyField(fieldName, value) {
+                const field = editPartyModal.querySelector('[name="edit-' + fieldName + '"]');
+                if (!field) {
+                    return;
+                }
+                if (field.type === 'checkbox') {
+                    field.checked = !!value;
+                } else {
+                    field.value = value == null ? '' : String(value);
+                }
+            }
+
+            function fillEditPartyForm(partyData) {
+                if (!partyData) {
+                    return;
+                }
+                if (editPartyIdInput) {
+                    editPartyIdInput.value = String(partyData.id || '');
+                }
+                if (editPartySubtitle) {
+                    editPartySubtitle.textContent = partyData.name || 'Update party profile details';
+                }
+                [
+                    'name',
+                    'legal_name',
+                    'contact_person',
+                    'gst_registration_type',
+                    'phone',
+                    'gstin',
+                    'state_code',
+                    'default_place_of_supply_state',
+                    'pan',
+                    'email',
+                    'address',
+                    'shipping_address',
+                    'city',
+                    'state',
+                    'country',
+                    'pincode',
+                    'opening_balance',
+                    'is_active'
+                ].forEach(function (fieldName) {
+                    setEditPartyField(fieldName, partyData[fieldName]);
+                });
+            }
+
+            editPartyModal.addEventListener('show.bs.modal', function (event) {
+                const trigger = event.relatedTarget;
+                if (!trigger) {
+                    if (editPartySubtitle && !editPartySubtitle.textContent.trim()) {
+                        editPartySubtitle.textContent = 'Update party profile details';
+                    }
+                    return;
+                }
+                const partyId = trigger.getAttribute('data-party-id') || '';
+                const partyData = partyProfileMap[partyId] || null;
+                fillEditPartyForm(partyData);
+            });
+        }
+
+        const modal = document.getElementById('editPartyBillModal');
+        if (!modal) {
+            return;
+        }
+
+        let payloadMap = {};
+        let partyOptionsMap = {};
+        const payloadNode = document.getElementById('inventory-party-bill-payload');
+        const optionsNode = document.getElementById('inventory-party-edit-options');
+        if (payloadNode) {
+            try {
+                payloadMap = JSON.parse(payloadNode.textContent || '{}');
+            } catch (error) {
+                payloadMap = {};
+            }
+        }
+        if (optionsNode) {
+            try {
+                partyOptionsMap = JSON.parse(optionsNode.textContent || '{}');
+            } catch (error) {
+                partyOptionsMap = {};
+            }
+        }
+
+        const form = modal.querySelector('form');
+        const entryTypeInput = modal.querySelector('#edit-party-bill-entry-type');
+        const entryIdInput = modal.querySelector('#edit-party-entry-id');
+        const billIdInput = modal.querySelector('#edit-party-bill-id');
+        const tabInput = modal.querySelector('#edit-party-bill-tab');
+        const modalTitle = modal.querySelector('#editPartyBillModalLabel');
+        const modalSubtitle = modal.querySelector('#edit-party-bill-modal-subtitle');
+        const typeLabelInput = modal.querySelector('#edit-party-bill-type-label');
+        const entryDateInput = modal.querySelector('#edit-party-entry-date');
+        const invoiceInput = modal.querySelector('#edit-party-invoice-number');
+        const jobCodeInput = modal.querySelector('#edit-party-job-code');
+        const partyLabel = modal.querySelector('#edit-party-bill-party-label');
+        const partySelect = modal.querySelector('#edit-party-bill-party-id');
+        const lockNote = modal.querySelector('#edit-party-bill-lock-note');
+        const notesInput = modal.querySelector('#edit-party-bill-notes');
+        const discountInput = modal.querySelector('#edit-party-bill-discount-amount');
+        const passwordInput = modal.querySelector('#edit-party-bill-password');
+        const subtotalEl = modal.querySelector('#edit-party-bill-subtotal');
+        const discountViewEl = modal.querySelector('#edit-party-bill-discount-view');
+        const taxTotalEl = modal.querySelector('#edit-party-bill-tax-total');
+        const grandTotalEl = modal.querySelector('#edit-party-bill-grand-total');
+        const linesBody = modal.querySelector('#edit-party-bill-lines-body');
+        const lineTemplate = modal.querySelector('#edit-party-bill-line-template');
+        const addLineBtn = modal.querySelector('#edit-party-bill-add-line-btn');
+        let activeEntryType = '';
+
+        function getRows() {
+            return Array.from(linesBody ? linesBody.querySelectorAll('.edit-party-bill-line-row') : []);
+        }
+
+        function populatePartyOptions(entryType, selectedId, isLocked, jobCode) {
+            const options = partyOptionsMap[entryType] || [];
+
+            if (partyLabel) {
+                partyLabel.textContent = 'Party';
+            }
+            if (partySelect) {
+                partySelect.innerHTML = '<option value="">Select party</option>';
+                options.forEach(function (optionData) {
+                    const option = document.createElement('option');
+                    option.value = String(optionData.id);
+                    option.textContent = optionData.label;
+                    partySelect.appendChild(option);
+                });
+                partySelect.value = String(selectedId || '');
+                partySelect.disabled = !!isLocked;
+            }
+            if (!lockNote) {
+                return;
+            }
+            if (isLocked && entryType === 'sale' && jobCode) {
+                lockNote.textContent = 'This sales bill is linked to job ' + jobCode + '. Review it here, but save updates from the job billing screen.';
+                lockNote.classList.remove('d-none');
+            } else if (isLocked) {
+                lockNote.textContent = 'This bill is linked and its party cannot be changed here.';
+                lockNote.classList.remove('d-none');
+            } else {
+                lockNote.textContent = '';
+                lockNote.classList.add('d-none');
+            }
+        }
+
+        function recalcLine(row, source) {
+            const qtyInput = row.querySelector('.edit-party-bill-line-qty');
+            const rateInput = row.querySelector('.edit-party-bill-line-rate');
+            const gstInput = row.querySelector('.edit-party-bill-line-gst');
+            const totalInput = row.querySelector('.edit-party-bill-line-total');
+            const taxableCell = row.querySelector('.edit-party-bill-line-taxable');
+            const taxCell = row.querySelector('.edit-party-bill-line-tax');
+
+            const quantity = Math.max(parseNumber(qtyInput ? qtyInput.value : 0), 0);
+            const gstRate = Math.max(parseNumber(gstInput ? gstInput.value : 0), 0);
+            let unitPrice = Math.max(parseNumber(rateInput ? rateInput.value : 0), 0);
+
+            if (source === 'total' && totalInput) {
+                const targetTotal = Math.max(parseNumber(totalInput.value), 0);
+                if (quantity > 0) {
+                    const divisor = 1 + (gstRate / 100);
+                    unitPrice = (divisor > 0 ? targetTotal / divisor : targetTotal) / quantity;
+                    if (rateInput) {
+                        rateInput.value = round2(unitPrice).toFixed(2);
+                    }
+                }
+            }
+
+            const taxableAmount = round2(quantity * unitPrice);
+            const taxAmount = round2((taxableAmount * gstRate) / 100);
+            const totalAmount = round2(taxableAmount + taxAmount);
+            renderMoney(taxableCell, taxableAmount);
+            renderMoney(taxCell, taxAmount);
+            if (totalInput) {
+                totalInput.value = totalAmount.toFixed(2);
+            }
+            return { rawAmount: taxableAmount, gstRate: gstRate };
+        }
+
+        function recalcBill() {
+            const rows = getRows();
+            if (!rows.length) {
+                return;
+            }
+            const lineData = rows.map(function (row) {
+                return recalcLine(row, 'rate');
+            });
+            const subtotal = round2(lineData.reduce(function (sum, item) {
+                return sum + item.rawAmount;
+            }, 0));
+            const discountRaw = Math.max(parseNumber(discountInput ? discountInput.value : 0), 0);
+            const discount = round2(Math.min(discountRaw, subtotal));
+            const totalTax = round2(lineData.reduce(function (sum, item) {
+                const distributedDiscount = subtotal > 0 ? (discount * item.rawAmount) / subtotal : 0;
+                const taxable = round2(item.rawAmount - distributedDiscount);
+                return sum + round2((taxable * item.gstRate) / 100);
+            }, 0));
+            const grandTotal = round2(subtotal - discount + totalTax);
+            renderMoney(subtotalEl, subtotal);
+            renderMoney(discountViewEl, discount);
+            renderMoney(taxTotalEl, totalTax);
+            renderMoney(grandTotalEl, grandTotal);
+            if (discountInput) {
+                discountInput.classList.toggle('is-invalid', discountRaw > subtotal + 0.0001);
+            }
+        }
+
+        function hasDuplicateProducts() {
+            const seen = new Set();
+            return getRows().some(function (row) {
+                const productId = ((row.querySelector('.edit-party-bill-line-product') || {}).value || '').trim();
+                if (!productId) {
+                    return false;
+                }
+                if (seen.has(productId)) {
+                    return true;
+                }
+                seen.add(productId);
+                return false;
+            });
+        }
+
+        function hasInvalidRows() {
+            return getRows().some(function (row) {
+                const productId = ((row.querySelector('.edit-party-bill-line-product') || {}).value || '').trim();
+                const qty = parseNumber((row.querySelector('.edit-party-bill-line-qty') || {}).value);
+                const rate = parseNumber((row.querySelector('.edit-party-bill-line-rate') || {}).value);
+                const gst = parseNumber((row.querySelector('.edit-party-bill-line-gst') || {}).value);
+                return !productId || qty <= 0 || rate < 0 || gst < 0;
+            });
+        }
+
+        function attachLineEvents(row) {
+            const productSelect = row.querySelector('.edit-party-bill-line-product');
+            const qtyInput = row.querySelector('.edit-party-bill-line-qty');
+            const rateInput = row.querySelector('.edit-party-bill-line-rate');
+            const gstInput = row.querySelector('.edit-party-bill-line-gst');
+            const totalInput = row.querySelector('.edit-party-bill-line-total');
+            const removeBtn = row.querySelector('.edit-party-bill-remove-line-btn');
+
+            [productSelect, qtyInput, rateInput, gstInput].forEach(function (input) {
+                if (!input) {
+                    return;
+                }
+                input.addEventListener('input', recalcBill);
+                input.addEventListener('change', recalcBill);
+            });
+
+            if (productSelect) {
+                productSelect.addEventListener('change', function () {
+                    const option = productSelect.options[productSelect.selectedIndex];
+                    const suggestedPrice = activeEntryType === 'sale' || activeEntryType === 'sale_return'
+                        ? parseNumber(option ? option.dataset.unitPrice : 0)
+                        : parseNumber(option ? option.dataset.costPrice : 0);
+                    if (rateInput && parseNumber(rateInput.value) <= 0 && suggestedPrice > 0) {
+                        rateInput.value = suggestedPrice.toFixed(2);
+                    }
+                    recalcBill();
+                });
+            }
+
+            if (totalInput) {
+                totalInput.addEventListener('input', function () {
+                    recalcLine(row, 'total');
+                    recalcBill();
+                });
+            }
+
+            if (removeBtn) {
+                removeBtn.addEventListener('click', function () {
+                    if (getRows().length <= 1) {
+                        return;
+                    }
+                    row.remove();
+                    recalcBill();
+                });
+            }
+        }
+
+        function addLine(lineData) {
+            if (!lineTemplate || !linesBody) {
+                return;
+            }
+            const clone = lineTemplate.content.firstElementChild.cloneNode(true);
+            clone.querySelector('.edit-party-bill-line-entry-id').value = String(lineData && lineData.entry_id ? lineData.entry_id : '');
+            clone.querySelector('.edit-party-bill-line-product').value = String(lineData && lineData.product_id ? lineData.product_id : '');
+            clone.querySelector('.edit-party-bill-line-qty').value = String(lineData && lineData.quantity ? lineData.quantity : '1');
+            clone.querySelector('.edit-party-bill-line-rate').value = String(lineData && lineData.unit_price ? lineData.unit_price : '0.00');
+            clone.querySelector('.edit-party-bill-line-gst').value = String(lineData && lineData.gst_rate ? lineData.gst_rate : defaultGstRate);
+            clone.querySelector('.edit-party-bill-line-total').value = String(lineData && lineData.total_amount ? lineData.total_amount : '0.00');
+            linesBody.appendChild(clone);
+            attachLineEvents(clone);
+            recalcLine(clone, 'rate');
+        }
+
+        function fillLines(lines) {
+            if (!linesBody) {
+                return;
+            }
+            linesBody.innerHTML = '';
+            (lines && lines.length ? lines : [{}]).forEach(function (line) {
+                addLine(line);
+            });
+            recalcBill();
+        }
+
+        if (addLineBtn) {
+            addLineBtn.addEventListener('click', function () {
+                if (hasInvalidRows()) {
+                    window.alert('Complete the current line before adding another.');
+                    return;
+                }
+                addLine({});
+                recalcBill();
+            });
+        }
+
+        if (discountInput) {
+            discountInput.addEventListener('input', recalcBill);
+        }
+
+        if (form) {
+            form.addEventListener('submit', function (event) {
+                const isPartyLocked = partySelect && partySelect.disabled;
+                if (!isPartyLocked && partySelect && !partySelect.value) {
+                    event.preventDefault();
+                    window.alert('Select a valid party before updating the bill.');
+                    return;
+                }
+                if (passwordInput && !passwordInput.value.trim()) {
+                    event.preventDefault();
+                    window.alert('Enter your password to confirm the bill update.');
+                    passwordInput.focus();
+                    return;
+                }
+                if (hasDuplicateProducts()) {
+                    event.preventDefault();
+                    window.alert('Duplicate product lines are not allowed.');
+                    return;
+                }
+                if (hasInvalidRows()) {
+                    event.preventDefault();
+                    window.alert('Complete all product lines before updating.');
+                    return;
+                }
+                const subtotal = parseNumber(subtotalEl ? subtotalEl.textContent : 0);
+                const discount = Math.max(parseNumber(discountInput ? discountInput.value : 0), 0);
+                if (discount > subtotal + 0.0001) {
+                    event.preventDefault();
+                    window.alert('Bill discount cannot exceed subtotal.');
+                    return;
+                }
+                if (tabInput) {
+                    tabInput.value = currentPartyTab(page);
+                }
+            });
+        }
+
+        modal.addEventListener('show.bs.modal', function (event) {
+            const trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+            const entryType = trigger.getAttribute('data-entry-type') || '';
+            const invoiceKey = trigger.getAttribute('data-invoice-key') || '';
+            const payload = payloadMap[invoiceKey] || {};
+            const lines = payload.lines && payload.lines.length ? payload.lines : [{
+                entry_id: trigger.getAttribute('data-entry-id') || '',
+                product_id: '',
+                quantity: '1',
+                unit_price: '0.00',
+                gst_rate: defaultGstRate,
+                total_amount: '0.00'
+            }];
+            const lockedParty = !!payload.party_locked;
+            const jobCode = payload.job_code || '-';
+            activeEntryType = payload.entry_type || entryType;
+
+            if (entryTypeInput) entryTypeInput.value = activeEntryType;
+            if (entryIdInput) entryIdInput.value = lines[0].entry_id || trigger.getAttribute('data-entry-id') || '';
+            if (billIdInput) billIdInput.value = String(payload.bill_id || trigger.getAttribute('data-bill-id') || '');
+            if (tabInput) tabInput.value = currentPartyTab(page);
+            if (modalTitle) modalTitle.innerHTML = '<i class="fas fa-pen-to-square me-2"></i>Edit ' + (payload.entry_type_label || 'Inventory') + ' Bill';
+            if (modalSubtitle) modalSubtitle.textContent = (payload.party_name || 'Selected party') + ' | ' + (payload.invoice_number || payload.bill_number || 'No invoice');
+            if (typeLabelInput) typeLabelInput.value = payload.entry_type_label || activeEntryType;
+            if (entryDateInput) entryDateInput.value = payload.entry_date || '';
+            if (invoiceInput) invoiceInput.value = payload.invoice_number || '';
+            if (jobCodeInput) jobCodeInput.value = jobCode;
+            if (notesInput) notesInput.value = payload.bill_notes || '';
+            if (discountInput) discountInput.value = payload.bill_discount_amount || '0.00';
+            if (passwordInput) passwordInput.value = '';
+
+            populatePartyOptions(activeEntryType, payload.party_id || '', lockedParty, jobCode);
+            fillLines(lines);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', initPartyMasterPage);
+    document.addEventListener('botgi:content-replaced', function (event) {
+        const detail = event.detail || {};
+        if (detail.targetSelector === '#inventory-party-page') {
+            initPartyMasterPage();
+        }
+    });
+}());
+</script>
+{% endblock %}

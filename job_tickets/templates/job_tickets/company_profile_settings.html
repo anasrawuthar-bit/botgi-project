@@ -1,0 +1,863 @@
+{% extends 'job_tickets/base.html' %}
+{% load static %}
+
+{% block title %}Company Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <!-- <h2 class="mb-4"><i class="fas fa-cog"></i> Company Settings</h2> -->
+
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <form id="company-settings-form" method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <input type="hidden" id="active-tab-input" name="active_tab" value="#company-info">
+                        {% if form.errors %}
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle me-1"></i>
+                            Please review the highlighted company profile fields and try again.
+                        </div>
+                        {% endif %}
+
+                        <div class="row g-4">
+                            <div class="col-lg-3">
+                                <div class="settings-sidebar sticky-lg-top">
+                                    <p class="sidebar-title mb-2">Categories</p>
+                                    <div class="nav nav-pills flex-lg-column gap-2 settings-nav" id="settings-category-nav" role="tablist" aria-orientation="vertical">
+                                        <button class="nav-link active" id="tab-company-info" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#company-info" aria-controls="company-info" aria-selected="true">
+                                            <i class="fas fa-building me-2"></i>Company Info
+                                        </button>
+                                        <button class="nav-link" id="tab-contact-details" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#contact-details" aria-controls="contact-details" aria-selected="false">
+                                            <i class="fas fa-address-card me-2"></i>Contact Details
+                                        </button>
+                                        <button class="nav-link" id="tab-legal-tax" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#legal-tax" aria-controls="legal-tax" aria-selected="false">
+                                            <i class="fas fa-file-invoice me-2"></i>Legal & Tax
+                                        </button>
+                                        <button class="nav-link" id="tab-bank-details" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#bank-details" aria-controls="bank-details" aria-selected="false">
+                                            <i class="fas fa-university me-2"></i>Bank Details
+                                        </button>
+                                        <button class="nav-link" id="tab-job-settings" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#job-settings" aria-controls="job-settings" aria-selected="false">
+                                            <i class="fas fa-ticket-alt me-2"></i>Bill/Ticket Configuration
+                                        </button>
+                                        <button class="nav-link" id="tab-billing-settings" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#billing-settings" aria-controls="billing-settings" aria-selected="false">
+                                            <i class="fas fa-rupee-sign me-2"></i>Billing & GST
+                                        </button>
+                                        <button class="nav-link" id="tab-terms-policies" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#terms-policies" aria-controls="terms-policies" aria-selected="false">
+                                            <i class="fas fa-file-contract me-2"></i>Terms & Policies
+                                        </button>
+                                        <button class="nav-link" id="tab-whatsapp-integration" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#whatsapp-integration" aria-controls="whatsapp-integration" aria-selected="false">
+                                            <i class="fab fa-whatsapp me-2"></i>WhatsApp Integration
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-lg-9">
+                                <div class="tab-content" id="settings-category-content">
+                                    <div class="tab-pane fade show active" id="company-info" role="tabpanel" aria-labelledby="tab-company-info" tabindex="0">
+                                        <h4 class="mb-3">Company Information</h4>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Company Name *</label>
+                                                {{ form.company_name }}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Tagline</label>
+                                                {{ form.tagline }}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Logo URL</label>
+                                                {{ form.logo_url }}
+                                                <small class="form-text text-muted">
+                                                    Upload your logo to an image hosting service (ImageKit, Imgur) and paste the URL here
+                                                </small>
+                                                {% if profile.logo_url %}
+                                                <div class="mt-2">
+                                                    <img src="{{ profile.logo_url }}" alt="Company Logo" style="max-height: 100px;" class="img-thumbnail">
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="contact-details" role="tabpanel" aria-labelledby="tab-contact-details" tabindex="0">
+                                        <h4 class="mb-3">Contact Information</h4>
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Address *</label>
+                                                {{ form.address }}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">City</label>
+                                                {{ form.city }}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">State</label>
+                                                {{ form.state }}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Pincode</label>
+                                                {{ form.pincode }}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Phone 1 *</label>
+                                                {{ form.phone1 }}
+                                                <small class="form-text text-muted">Primary company contact.</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Phone 2</label>
+                                                {{ form.phone2 }}
+                                                <small class="form-text text-muted">Alternative company contact.</small>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Email</label>
+                                                {{ form.email }}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Website</label>
+                                                {{ form.website }}
+                                                <small class="form-text text-muted">Use full URL (example: https://example.com)</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="legal-tax" role="tabpanel" aria-labelledby="tab-legal-tax" tabindex="0">
+                                        <h4 class="mb-3">Legal & Tax Information</h4>
+                                        <div class="alert alert-info">
+                                            <i class="fas fa-info-circle"></i> These details will appear on invoices and receipts
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Legal Name</label>
+                                                {{ form.legal_name }}
+                                                {% if form.legal_name.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.legal_name.errors|striptags }}</div>
+                                                {% endif %}
+                                                <small class="form-text text-muted">Registered business name for GST documents.</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">GSTIN (GST Number)</label>
+                                                {{ form.gstin }}
+                                                {% if form.gstin.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.gstin.errors|striptags }}</div>
+                                                {% endif %}
+                                                <small class="form-text text-muted">15-digit GST Identification Number</small>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">PAN</label>
+                                                {{ form.pan }}
+                                                {% if form.pan.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.pan.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">State Code</label>
+                                                {{ form.state_code }}
+                                                {% if form.state_code.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.state_code.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Registration Type</label>
+                                                {{ form.registration_type }}
+                                                {% if form.registration_type.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.registration_type.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Filing Frequency</label>
+                                                {{ form.filing_frequency }}
+                                                {% if form.filing_frequency.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.filing_frequency.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Turnover Band</label>
+                                                {{ form.annual_turnover_band }}
+                                                {% if form.annual_turnover_band.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.annual_turnover_band.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Default POS State</label>
+                                                {{ form.default_place_of_supply_state }}
+                                                {% if form.default_place_of_supply_state.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.default_place_of_supply_state.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="bank-details" role="tabpanel" aria-labelledby="tab-bank-details" tabindex="0">
+                                        <h4 class="mb-3">Bank Account Details</h4>
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle"></i> Bank details will be shown on invoices for customer payments
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Bank Name</label>
+                                                {{ form.bank_name }}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Branch</label>
+                                                {{ form.branch }}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Account Number</label>
+                                                {{ form.account_number }}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">IFSC Code</label>
+                                                {{ form.ifsc_code }}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">UPI ID</label>
+                                                {{ form.upi_id }}
+                                                <small class="form-text text-muted">For digital payments (e.g., yourname@paytm)</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="job-settings" role="tabpanel" aria-labelledby="tab-job-settings" tabindex="0">
+                                        <h4 class="mb-3">Bill/Ticket Configuration</h4>
+                                        <div class="alert alert-success">
+                                            <i class="fas fa-lightbulb"></i> Job codes will be generated as: <strong>{{ profile.job_code_prefix }}-YYMMDD-XXX</strong>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Job Code Prefix *</label>
+                                                {{ form.job_code_prefix }}
+                                                <small class="form-text text-muted">
+                                                    Short prefix for job codes (e.g., GI, SERV, TECH). Max 10 characters.
+                                                </small>
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-info">
+                                            <i class="fas fa-info-circle"></i> Invoice numbers will be auto-generated as: <strong>0001, 0002...</strong> (single continuous sequence for service + inventory sales)
+                                        </div>
+                                        <div class="alert alert-warning mt-3">
+                                            <i class="fas fa-exclamation-circle"></i> <strong>Important:</strong> Changing the job code prefix will only affect NEW job tickets. Existing tickets will keep their original codes.
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="billing-settings" role="tabpanel" aria-labelledby="tab-billing-settings" tabindex="0">
+                                        <h4 class="mb-3">Billing & GST Settings</h4>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <div class="form-check form-switch">
+                                                    {{ form.enable_gst }}
+                                                    <label class="form-check-label" for="{{ form.enable_gst.id_for_label }}">
+                                                        Enable GST on Invoices
+                                                    </label>
+                                                </div>
+                                                <small class="form-text text-muted">
+                                                    When enabled, GST will be calculated and shown on job receipts and invoices
+                                                </small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <div class="form-check form-switch">
+                                                    {{ form.qrmp_enabled }}
+                                                    <label class="form-check-label" for="{{ form.qrmp_enabled.id_for_label }}">
+                                                        {{ form.qrmp_enabled.label }}
+                                                    </label>
+                                                </div>
+                                                {% if form.qrmp_enabled.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.qrmp_enabled.errors|striptags }}</div>
+                                                {% endif %}
+                                                <small class="form-text text-muted">Use quarterly GST return filing where applicable.</small>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">GST Rate (%)</label>
+                                                {{ form.gst_rate }}
+                                                {% if form.gst_rate.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.gst_rate.errors|striptags }}</div>
+                                                {% endif %}
+                                                <small class="form-text text-muted">Standard GST rate in India is 18%</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <div class="form-check mt-4">
+                                                    {{ form.lut_bond_enabled }}
+                                                    <label class="form-check-label" for="{{ form.lut_bond_enabled.id_for_label }}">
+                                                        {{ form.lut_bond_enabled.label }}
+                                                    </label>
+                                                </div>
+                                                {% if form.lut_bond_enabled.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.lut_bond_enabled.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <div class="form-check form-switch">
+                                                    {{ form.e_invoice_applicable }}
+                                                    <label class="form-check-label" for="{{ form.e_invoice_applicable.id_for_label }}">
+                                                        {{ form.e_invoice_applicable.label }}
+                                                    </label>
+                                                </div>
+                                                {% if form.e_invoice_applicable.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.e_invoice_applicable.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <div class="form-check form-switch">
+                                                    {{ form.e_way_bill_enabled }}
+                                                    <label class="form-check-label" for="{{ form.e_way_bill_enabled.id_for_label }}">
+                                                        {{ form.e_way_bill_enabled.label }}
+                                                    </label>
+                                                </div>
+                                                {% if form.e_way_bill_enabled.errors %}
+                                                    <div class="text-danger small mt-1">{{ form.e_way_bill_enabled.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-secondary">
+                                            <i class="fas fa-file-invoice"></i> Service billing and inventory sales now share the same invoice sequence.
+                                        </div>
+                                        <div class="alert alert-info mt-3">
+                                            <i class="fas fa-info-circle"></i> GST will be calculated on the total amount (parts + service charges) when enabled
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="terms-policies" role="tabpanel" aria-labelledby="tab-terms-policies" tabindex="0">
+                                        <h4 class="mb-3">Terms & Conditions</h4>
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Terms & Conditions</label>
+                                                {{ form.terms_conditions }}
+                                                <small class="form-text text-muted">
+                                                    These terms will appear on job receipts and invoices
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="whatsapp-integration" role="tabpanel" aria-labelledby="tab-whatsapp-integration" tabindex="0">
+                                        <h4 class="mb-3">WhatsApp Cloud API</h4>
+                                        <div class="alert alert-primary">
+                                            <i class="fas fa-cloud"></i>
+                                            This setup talks directly to Meta's WhatsApp Cloud API. No Electron bridge, QR session, or linked-device relay is required anymore.
+                                        </div>
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            Business-initiated notifications usually need approved templates. The parameter order in the fields below should match your Meta template placeholders <strong>{{1}}, {{2}}, {{3}}</strong>.
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <div class="form-check form-switch">
+                                                    {{ whatsapp_form.is_enabled }}
+                                                    <label class="form-check-label" for="{{ whatsapp_form.is_enabled.id_for_label }}">
+                                                        Enable automatic WhatsApp notifications
+                                                    </label>
+                                                </div>
+                                                {% if whatsapp_form.is_enabled.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.is_enabled.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">API Version</label>
+                                                {{ whatsapp_form.api_version }}
+                                                {% if whatsapp_form.api_version.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.api_version.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Phone Number ID</label>
+                                                {{ whatsapp_form.phone_number_id }}
+                                                {% if whatsapp_form.phone_number_id.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.phone_number_id.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Default Country Code</label>
+                                                {{ whatsapp_form.default_country_code }}
+                                                {% if whatsapp_form.default_country_code.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.default_country_code.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Access Token</label>
+                                                {{ whatsapp_form.access_token }}
+                                                {% if whatsapp_form.access_token.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.access_token.errors|striptags }}</div>
+                                                {% endif %}
+                                                <small class="form-text text-muted">Use a permanent system user token for production.</small>
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Webhook Verify Token</label>
+                                                {{ whatsapp_form.webhook_verify_token }}
+                                                {% if whatsapp_form.webhook_verify_token.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.webhook_verify_token.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">App Secret (optional)</label>
+                                                {{ whatsapp_form.app_secret }}
+                                                {% if whatsapp_form.app_secret.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.app_secret.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-8 mb-3">
+                                                <label class="form-label">Public Site URL</label>
+                                                {{ whatsapp_form.public_site_url }}
+                                                {% if whatsapp_form.public_site_url.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.public_site_url.errors|striptags }}</div>
+                                                {% endif %}
+                                                <small class="form-text text-muted">Used for receipt and status links sent inside template parameters.</small>
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label class="form-label">Template Language Code</label>
+                                                {{ whatsapp_form.template_language_code }}
+                                                {% if whatsapp_form.template_language_code.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.template_language_code.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Webhook URL</label>
+                                                <input type="text" class="form-control" value="{{ whatsapp_webhook_url }}" readonly>
+                                                <small class="form-text text-muted">Add this URL in Meta Webhooks and subscribe to message status updates.</small>
+                                            </div>
+                                        </div>
+
+                                        <hr>
+                                        <h5 class="mb-3">Cloud API Status</h5>
+                                        <div class="row">
+                                            <div class="col-md-8 mb-3">
+                                                <div class="card h-100">
+                                                    <div class="card-body">
+                                                        <div class="d-flex align-items-center justify-content-between mb-2">
+                                                            <span class="fw-semibold">Connection Check</span>
+                                                            <span id="wa-cloud-status-badge" class="badge bg-secondary">Checking...</span>
+                                                        </div>
+                                                        <p id="wa-cloud-status-text" class="text-muted mb-3">Checking Cloud API configuration...</p>
+                                                        <button type="button" class="btn btn-outline-primary btn-sm" id="wa-refresh-status-btn">
+                                                            <i class="fas fa-sync-alt"></i> Check API
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <div class="card h-100">
+                                                    <div class="card-body">
+                                                        <p class="fw-semibold mb-2">Default Test Template</p>
+                                                        {{ whatsapp_form.test_template_name }}
+                                                        {% if whatsapp_form.test_template_name.errors %}
+                                                            <div class="text-danger small mt-1">{{ whatsapp_form.test_template_name.errors|striptags }}</div>
+                                                        {% endif %}
+                                                        <small class="form-text text-muted">Use <code>hello_world</code> while working with Meta test numbers.</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <hr>
+                                        <h5 class="mb-3">Automatic Events</h5>
+                                        <div class="row">
+                                            <div class="col-md-4 mb-2">
+                                                <div class="form-check">
+                                                    {{ whatsapp_form.notify_on_created }}
+                                                    <label class="form-check-label" for="{{ whatsapp_form.notify_on_created.id_for_label }}">
+                                                        Notify on ticket created
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4 mb-2">
+                                                <div class="form-check">
+                                                    {{ whatsapp_form.notify_on_completed }}
+                                                    <label class="form-check-label" for="{{ whatsapp_form.notify_on_completed.id_for_label }}">
+                                                        Notify on completed
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4 mb-2">
+                                                <div class="form-check">
+                                                    {{ whatsapp_form.notify_on_delivered }}
+                                                    <label class="form-check-label" for="{{ whatsapp_form.notify_on_delivered.id_for_label }}">
+                                                        Notify on delivered/closed
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <hr>
+                                        <h5 class="mb-3">Approved Template Mapping</h5>
+                                        <div class="row">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Created Template Name</label>
+                                                {{ whatsapp_form.created_template_name }}
+                                                {% if whatsapp_form.created_template_name.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.created_template_name.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Created Template Parameters</label>
+                                                {{ whatsapp_form.created_template }}
+                                            </div>
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Completed Template Name</label>
+                                                {{ whatsapp_form.completed_template_name }}
+                                                {% if whatsapp_form.completed_template_name.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.completed_template_name.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Completed Template Parameters</label>
+                                                {{ whatsapp_form.completed_template }}
+                                            </div>
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Delivered Template Name</label>
+                                                {{ whatsapp_form.delivered_template_name }}
+                                                {% if whatsapp_form.delivered_template_name.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.delivered_template_name.errors|striptags }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Delivered Template Parameters</label>
+                                                {{ whatsapp_form.delivered_template }}
+                                            </div>
+                                        </div>
+                                        <small class="form-text text-muted">
+                                            Available variables: {customer_name}, {job_code}, {status}, {status_link}, {receipt_link}, {device_type}, {device_brand}, {device_model}, {reported_issue}, {updated_at}, {estimated_delivery}
+                                        </small>
+
+                                        <hr>
+                                        <h5 class="mb-3">Send Test Message</h5>
+                                        <div class="row">
+                                            <div class="col-md-4 mb-3">
+                                                <label for="wa-test-phone" class="form-label">Phone</label>
+                                                <input type="text" id="wa-test-phone" class="form-control" placeholder="9876543210">
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label for="wa-test-template" class="form-label">Template Name</label>
+                                                <input type="text" id="wa-test-template" class="form-control" value="{{ whatsapp_form.instance.test_template_name|default:'hello_world' }}">
+                                            </div>
+                                            <div class="col-md-4 mb-3">
+                                                <label for="wa-test-message" class="form-label">Plain Text Message</label>
+                                                <input type="text" id="wa-test-message" class="form-control" value="Test message from BOTGI service desk.">
+                                            </div>
+                                            <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                                                <button type="button" class="btn btn-outline-success btn-sm" id="wa-template-test-btn">
+                                                    <i class="fab fa-whatsapp"></i> Send Template Test
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" id="wa-text-test-btn">
+                                                    <i class="far fa-comment-dots"></i> Send Text Test
+                                                </button>
+                                                <span id="wa-test-result" class="text-muted small"></span>
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 text-end">
+                                            <button type="submit" name="whatsapp_settings_submit" value="1" class="btn btn-success">
+                                                <i class="fas fa-save"></i> Save WhatsApp Settings
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save"></i> Save Company Settings
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.settings-sidebar {
+    background: #f8fbff;
+    border: 1px solid #d9e4f4;
+    border-radius: 12px;
+    padding: 0.8rem;
+    top: 1rem;
+}
+
+.sidebar-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5b6f8c;
+}
+
+.settings-nav .nav-link {
+    text-align: left;
+    background: #fff;
+    color: #2f4666;
+    border: 1px solid #d9e4f4;
+    font-weight: 600;
+    border-radius: 10px;
+}
+
+.settings-nav .nav-link:hover {
+    background: #eef4ff;
+    color: #173866;
+}
+
+.settings-nav .nav-link.active {
+    background: #102b52;
+    color: #fff;
+    border-color: #102b52;
+}
+
+.form-control, .form-select {
+    border-radius: 0.35rem;
+}
+
+.alert {
+    border-radius: 0.35rem;
+}
+
+@media (max-width: 991.98px) {
+    .settings-sidebar {
+        position: static !important;
+    }
+
+    .settings-nav {
+        flex-direction: row !important;
+        overflow-x: auto;
+        white-space: nowrap;
+        padding-bottom: 0.15rem;
+    }
+
+    .settings-nav .nav-link {
+        min-width: max-content;
+    }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bootstrap === 'undefined') return;
+
+    const buttonSelector = '#settings-category-nav button[data-bs-toggle="pill"]';
+    const buttons = Array.from(document.querySelectorAll(buttonSelector));
+    if (!buttons.length) return;
+
+    const storageKey = 'clientCompanySettingsActiveTab';
+    const activeTabInput = document.getElementById('active-tab-input');
+    const serverRequestedTab = "{{ initial_tab|default:'#company-info'|escapejs }}";
+
+    function syncActive(target) {
+        if (!target) return;
+        localStorage.setItem(storageKey, target);
+        if (activeTabInput) activeTabInput.value = target;
+    }
+
+    const targetToOpen = (serverRequestedTab && serverRequestedTab !== '#company-info')
+        ? serverRequestedTab
+        : localStorage.getItem(storageKey);
+
+    if (targetToOpen) {
+        const savedButton = document.querySelector(buttonSelector + '[data-bs-target="' + targetToOpen + '"]');
+        if (savedButton) {
+            bootstrap.Tab.getOrCreateInstance(savedButton).show();
+        }
+    }
+
+    buttons.forEach(function (button) {
+        button.addEventListener('shown.bs.tab', function (event) {
+            syncActive(event.target.getAttribute('data-bs-target'));
+        });
+    });
+
+    const form = document.getElementById('company-settings-form');
+    if (form) {
+        form.addEventListener('submit', function () {
+            const activeButton = document.querySelector('#settings-category-nav .nav-link.active');
+            if (activeButton) {
+                syncActive(activeButton.getAttribute('data-bs-target'));
+            }
+        });
+    }
+
+    const initialActive = document.querySelector('#settings-category-nav .nav-link.active');
+    if (initialActive) {
+        syncActive(initialActive.getAttribute('data-bs-target'));
+    }
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const statusBadge = document.getElementById('wa-cloud-status-badge');
+    const statusText = document.getElementById('wa-cloud-status-text');
+    const refreshBtn = document.getElementById('wa-refresh-status-btn');
+    const templateTestBtn = document.getElementById('wa-template-test-btn');
+    const textTestBtn = document.getElementById('wa-text-test-btn');
+    const testResult = document.getElementById('wa-test-result');
+    const testPhone = document.getElementById('wa-test-phone');
+    const testTemplate = document.getElementById('wa-test-template');
+    const testMessage = document.getElementById('wa-test-message');
+    const defaultCountryCodeInput = document.getElementById('{{ whatsapp_form.default_country_code.id_for_label }}');
+
+    function normalizePhone(phone) {
+        const digits = (phone || '').replace(/\D+/g, '');
+        if (!digits) return '';
+        if (digits.length >= 11) return digits;
+        const cc = ((defaultCountryCodeInput ? defaultCountryCodeInput.value : '') || '').replace(/\D+/g, '');
+        return cc ? `${cc}${digits}` : digits;
+    }
+
+    async function appRequest(url, options = {}) {
+        const requestOptions = Object.assign({}, options);
+        const headers = Object.assign({}, requestOptions.headers || {});
+        if (requestOptions.body && !headers['Content-Type']) {
+            headers['Content-Type'] = 'application/json';
+        }
+        if (requestOptions.method && requestOptions.method.toUpperCase() !== 'GET' && csrfToken && !headers['X-CSRFToken']) {
+            headers['X-CSRFToken'] = csrfToken;
+        }
+        headers['Accept'] = 'application/json';
+        requestOptions.headers = headers;
+        requestOptions.credentials = 'same-origin';
+
+        const response = await fetch(url, requestOptions);
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = {};
+        }
+
+        if (!response.ok || payload.ok === false) {
+            const message = payload.message || payload.error || `Request failed (${response.status})`;
+            throw new Error(message);
+        }
+
+        return payload;
+    }
+
+    function setStatusUi(state, text) {
+        if (!statusBadge || !statusText) return;
+        statusBadge.className = 'badge';
+        if (state === 'connected') {
+            statusBadge.classList.add('bg-success');
+            statusBadge.textContent = 'Ready';
+        } else if (state === 'incomplete') {
+            statusBadge.classList.add('bg-warning', 'text-dark');
+            statusBadge.textContent = 'Needs Setup';
+        } else if (state === 'offline') {
+            statusBadge.classList.add('bg-danger');
+            statusBadge.textContent = 'API Error';
+        } else {
+            statusBadge.classList.add('bg-secondary');
+            statusBadge.textContent = 'Unknown';
+        }
+        statusText.textContent = text || '';
+    }
+
+    async function fetchCloudStatus() {
+        if (!statusBadge || !statusText) return;
+        try {
+            const payload = await appRequest("{% url 'whatsapp_cloud_status_api' %}");
+            if (payload.ok) {
+                const profile = payload.profile || {};
+                const parts = [
+                    profile.display_phone_number,
+                    profile.verified_name,
+                    profile.quality_rating,
+                ].filter(Boolean);
+                setStatusUi('connected', parts.join(' | ') || 'Cloud API configuration looks ready.');
+            } else if (payload.missing && payload.missing.length) {
+                setStatusUi('incomplete', `Missing: ${payload.missing.join(', ')}`);
+            } else {
+                setStatusUi('offline', payload.error || 'Cloud API check failed.');
+            }
+        } catch (error) {
+            setStatusUi('offline', error.message || 'Cloud API status request failed.');
+        }
+    }
+
+    async function sendTestMessage(mode) {
+        if (!testPhone || !testResult) return;
+        const phone = (testPhone.value || '').trim();
+        const templateName = (testTemplate ? testTemplate.value : '').trim();
+        const message = (testMessage.value || '').trim();
+        if (!phone) {
+            testResult.textContent = 'Phone is required.';
+            testResult.className = 'ms-2 text-danger small';
+            return;
+        }
+
+        const target = normalizePhone(phone);
+        if (!target) {
+            testResult.textContent = 'Enter a valid phone number.';
+            testResult.className = 'ms-2 text-danger small';
+            return;
+        }
+
+        if (mode === 'text' && !message) {
+            testResult.textContent = 'Plain text message is required for text mode.';
+            testResult.className = 'ms-2 text-danger small';
+            return;
+        }
+
+        testResult.textContent = 'Sending...';
+        testResult.className = 'ms-2 text-muted small';
+        try {
+            const payload = await appRequest("{% url 'whatsapp_cloud_test_send_api' %}", {
+                method: 'POST',
+                body: JSON.stringify({
+                    phone: target,
+                    mode: mode,
+                    template_name: templateName,
+                    message: message,
+                }),
+            });
+            const messageId = payload.message_id ? ` (${payload.message_id})` : '';
+            testResult.textContent = `Test message sent${messageId}.`;
+            testResult.className = 'ms-2 text-success small';
+            fetchCloudStatus();
+        } catch (error) {
+            testResult.textContent = error.message || 'Request failed.';
+            testResult.className = 'ms-2 text-danger small';
+        }
+    }
+
+    if (refreshBtn) refreshBtn.addEventListener('click', fetchCloudStatus);
+    if (templateTestBtn) templateTestBtn.addEventListener('click', function () { sendTestMessage('template'); });
+    if (textTestBtn) textTestBtn.addEventListener('click', function () { sendTestMessage('text'); });
+
+    fetchCloudStatus();
+});
+</script>
+{% endblock %}

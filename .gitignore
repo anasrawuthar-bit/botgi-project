@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+desktop-shell/node_modules/
+desktop-shell/dist/
+desktop-shell/publish/

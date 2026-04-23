@@ -1,0 +1,224 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Financial Summary PDF Layout{% endblock %}
+
+{% block extra_css %}
+<style>
+@page {
+    size: A4;
+    margin: 12mm;
+}
+
+.pdf-report {
+    font-family: "Segoe UI", "DM Sans", sans-serif;
+    color: #111827;
+}
+
+.pdf-sheet {
+    max-width: 190mm;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #d6deeb;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+}
+
+.pdf-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+}
+
+.pdf-subtitle {
+    font-size: 0.9rem;
+    color: #475569;
+    margin-bottom: 0.8rem;
+}
+
+.pdf-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 1rem 0 0.4rem;
+    border-bottom: 1px solid #d6deeb;
+    padding-bottom: 0.2rem;
+}
+
+.pdf-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.pdf-table th,
+.pdf-table td {
+    border: 1px solid #d6deeb;
+    padding: 0.38rem 0.45rem;
+    vertical-align: middle;
+}
+
+.pdf-table th {
+    background: #f3f6fb;
+    font-weight: 700;
+}
+
+.text-end {
+    text-align: right;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-bottom: 0.8rem;
+}
+
+@media print {
+    .no-print,
+    .navbar,
+    .site-footer {
+        display: none !important;
+    }
+
+    .pdf-sheet {
+        border: none;
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
+        max-width: none;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pdf-report">
+    <div class="toolbar no-print">
+        <button type="button" class="btn btn-dark btn-sm" onclick="return BotgiPrintHelper.startPrint();">
+            <i class="fas fa-print me-1"></i>Print / Save PDF
+        </button>
+        <a href="{% url 'print_monthly_summary_report' %}?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i>Back to Report
+        </a>
+    </div>
+
+    <div class="pdf-sheet">
+        <div class="pdf-title">Financial Summary Report</div>
+        <div class="pdf-subtitle">Period: {{ start_date }} to {{ end_date }}</div>
+
+        <div class="pdf-section-title">Job Statistics</div>
+        <table class="pdf-table">
+            <tbody>
+                <tr>
+                    <th>Jobs Created</th>
+                    <td class="text-end">{{ jobs_created_count }}</td>
+                    <th>Jobs Finished</th>
+                    <td class="text-end">{{ jobs_finished_count }}</td>
+                </tr>
+                <tr>
+                    <th>Jobs Returned</th>
+                    <td class="text-end">{{ jobs_returned_count }}</td>
+                    <th>Vendor Jobs</th>
+                    <td class="text-end">{{ vendor_jobs_count }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="pdf-section-title">Financial Blocks</div>
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th>Block</th>
+                    <th class="text-end">Revenue</th>
+                    <th class="text-end">Expense</th>
+                    <th class="text-end">Profit</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Service</td>
+                    <td class="text-end">&#8377;{{ service_revenue|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ service_expense|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ service_profit|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Stock Sales</td>
+                    <td class="text-end">&#8377;{{ stock_sales_income|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ stock_sales_cogs|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ stock_sales_profit|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Vendor</td>
+                    <td class="text-end">&#8377;{{ vendor_revenue|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ vendor_expense|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ vendor_profit|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <th>Overall</th>
+                    <th class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</th>
+                    <th class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</th>
+                    <th class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</th>
+                </tr>
+            </tbody>
+        </table>
+        <p class="pdf-subtitle" style="margin-top:0.4rem;">Overall Margin: {{ overall_margin|floatformat:2 }}%</p>
+
+        <div class="pdf-section-title">Stock Sales Snapshot</div>
+        <table class="pdf-table">
+            <tbody>
+                <tr>
+                    <th>Units Sold</th>
+                    <td class="text-end">{{ stock_sales_units }}</td>
+                    <th>Sale Lines</th>
+                    <td class="text-end">{{ stock_sale_lines_count }}</td>
+                </tr>
+                <tr>
+                    <th>Unique Products</th>
+                    <td class="text-end">{{ stock_products_count }}</td>
+                    <th>Average Sale Value</th>
+                    <td class="text-end">&#8377;{{ stock_avg_sale_value|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="pdf-section-title">Product-wise Stock Sales</div>
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th class="text-end">Units</th>
+                    <th class="text-end">Revenue</th>
+                    <th class="text-end">COGS</th>
+                    <th class="text-end">Profit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in stock_products_breakdown %}
+                <tr>
+                    <td>{{ product.name }}</td>
+                    <td>{{ product.sku }}</td>
+                    <td>{{ product.category }}</td>
+                    <td class="text-end">{{ product.units_sold }}</td>
+                    <td class="text-end">&#8377;{{ product.revenue|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ product.cogs|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ product.profit|floatformat:2 }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center">No stock sales in this period.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% include "job_tickets/includes/print_flow_script.html" %}
+{% endblock %}

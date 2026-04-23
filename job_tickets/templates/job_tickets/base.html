@@ -1,0 +1,767 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Service Billing | GI Hostings{% endblock %}</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="icon" href="/static/img/logo.png">
+    {% block extra_css %}{% endblock %}
+
+    <style>
+        @media print {
+
+            .navbar,
+            footer,
+            .btn-secondary,
+            .btn-primary,
+            .section-container a.btn,
+            .btn-outline-secondary,
+            .btn-outline-primary {
+                display: none !important;
+            }
+
+            main.container {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                max-width: none !important;
+            }
+
+            .section-container {
+                box-shadow: none !important;
+                background: none !important;
+                border: none !important;
+            }
+
+            table {
+                page-break-inside: auto;
+            }
+
+            tr {
+                page-break-inside: avoid;
+                page-break-after: auto;
+            }
+
+            body {
+                color: #000;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            a::after {
+                content: " (" attr(href) ")";
+                font-size: 9pt;
+                word-break: break-all;
+            }
+        }
+
+    </style>
+</head>
+
+<body{% if user.is_authenticated %} class="sidebar-collapsed"{% endif %}
+    data-botgi-web-version="{{ release_info.web_version }}"
+    data-botgi-release-meta-url="{% url 'app_release_meta' %}"
+    data-botgi-release-poll-ms="{{ release_info.poll_interval_ms }}">
+    {% if user.is_authenticated %}
+    {# ── Mobile top strip with hamburger ────────────────────── #}
+    <div class="sidebar-topbar">
+        <button class="sidebar-toggle-btn" id="sidebarToggleBtn" type="button" aria-label="Open menu">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        <a class="sidebar-topbar-brand" href="{% url 'home' %}">
+            <img src="/static/img/logo.png" alt="Software Logo" class="brand-logo">
+            <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
+        </a>
+    </div>
+
+    {# ── Backdrop for mobile drawer ─────────────────────────── #}
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    {# ── Sidebar ────────────────────────────────────────────── #}
+    <aside class="app-sidebar" id="appSidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-brand-head">
+                <a href="{% url 'home' %}" class="sidebar-brand-link">
+                    <img src="/static/img/logo.png" alt="Software Logo" class="sidebar-brand-logo">
+                    <span class="sidebar-brand-copy">
+                        <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
+                        <small>Service Billing</small>
+                    </span>
+                </a>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <ul class="sidebar-menu">
+                {% if user.is_staff %}
+                {% if staff_access.staff_dashboard %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'staff_dashboard' %}active{% endif %}"
+                        href="{% url 'staff_dashboard' %}" title="Dashboard">
+                        <i class="fa-solid fa-table-columns"></i><span class="sidebar-link-label">Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'client_dashboard' %}active{% endif %}"
+                        href="{% url 'client_dashboard' %}" title="Clients">
+                        <i class="fa-solid fa-address-book"></i><span class="sidebar-link-label">Clients</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'vendor_dashboard' %}active{% endif %}"
+                        href="{% url 'vendor_dashboard' %}" title="Vendors">
+                        <i class="fa-solid fa-truck-loading"></i><span class="sidebar-link-label">Vendors</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if staff_access.inventory %}
+                <li>
+                    <a
+                        class="sidebar-link {% if request.resolver_match.url_name == 'inventory_dashboard' or request.resolver_match.url_name == 'inventory_product_dashboard' or request.resolver_match.url_name == 'product_dashboard' or request.resolver_match.url_name == 'inventory_party_dashboard' or request.resolver_match.url_name == 'inventory_purchase_dashboard' or request.resolver_match.url_name == 'inventory_purchase_return_dashboard' or request.resolver_match.url_name == 'inventory_sales_dashboard' or request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}"
+                        href="{% url 'inventory_dashboard' %}"
+                        title="Inventory">
+                        <i class="fa-solid fa-warehouse"></i><span class="sidebar-link-label">Inventory</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if staff_access.team_management %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'staff_technicians' or request.resolver_match.url_name == 'staff_technician_reports' %}active{% endif %}"
+                        href="{% url 'staff_technicians' %}" title="Team">
+                        <i class="fa-solid fa-users-gear"></i><span class="sidebar-link-label">Team</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if staff_access.reports_dashboard %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'reports_dashboard' %}active{% endif %}"
+                        href="{% url 'reports_dashboard' %}" title="Reports">
+                        <i class="fa-solid fa-chart-line"></i><span class="sidebar-link-label">Reports</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if staff_access.feedback_analytics %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'feedback_analytics' %}active{% endif %}"
+                        href="{% url 'feedback_analytics' %}" title="Feedback">
+                        <i class="fa-solid fa-star"></i><span class="sidebar-link-label">Feedback</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if staff_access.company_settings %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'company_profile_settings' %}active{% endif %}"
+                        href="{% url 'company_profile_settings' %}" title="Settings">
+                        <i class="fa-solid fa-gear"></i><span class="sidebar-link-label">Settings</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% else %}
+                {# Technician user #}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'technician_dashboard' %}active{% endif %}"
+                        href="{% url 'technician_dashboard' %}" title="Dashboard">
+                        <i class="fa-solid fa-screwdriver-wrench"></i><span class="sidebar-link-label">Dashboard</span>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-user-badge" title="{{ user.username }}">
+                <span class="sidebar-user-avatar">{{ user.username|make_list|first|upper }}</span>
+                <span class="sidebar-user-name">{{ user.username }}</span>
+            </div>
+            <a class="sidebar-logout-btn" href="{% url 'logout' %}" title="Logout">
+                <i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-logout-label">Logout</span>
+            </a>
+        </div>
+    </aside>
+    <button
+        class="sidebar-desktop-toggle sidebar-desktop-toggle-floating"
+        id="sidebarDesktopToggleBtn"
+        type="button"
+        aria-label="Expand sidebar"
+        aria-expanded="false"
+        title="Expand sidebar"
+    >
+        <i class="fa-solid fa-angles-right"></i>
+    </button>
+    {% else %}
+    {# ── Unauthenticated: slim guest top bar ────────────────── #}
+    <nav class="guest-topbar">
+        <div class="guest-topbar-inner">
+            <a class="guest-topbar-brand" href="{% url 'home' %}">
+                <img src="/static/img/logo.png" alt="Software Logo" class="brand-logo">
+                <span class="brand-copy">
+                    <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
+                    <small>Service Billing</small>
+                </span>
+            </a>
+            <div class="guest-topbar-actions">
+                <a class="guest-topbar-link" href="{% url 'client_login' %}">
+                    <i class="fa-solid fa-user-check"></i> Client Status
+                </a>
+                <a class="btn btn-primary btn-sm" href="{% url 'login' %}">
+                    <i class="fa-solid fa-user-lock me-1"></i> Staff Login
+                </a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <div class="app-layout {% if user.is_authenticated %}has-sidebar{% endif %}">
+        <main class="app-main">
+            <div class="container my-4 pb-4">
+                <div class="mb-3 d-none" data-auto-page-title>
+                    <h1 class="section-title mb-0" data-auto-page-title-text></h1>
+                </div>
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+
+        <footer class="site-footer">
+            <div class="container d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+                <p class="mb-0 fw-semibold">Service Billing by {{ platform.billing_author_name|default:"GI HOSTINGS" }}
+                </p>
+                <p class="mb-0">
+                    Support:
+                    <a href="tel:{{ platform.support_phone_href|default:'+919567227005' }}">{{ platform.support_phone|default:"+91 9567227005" }}</a>
+                    {% if platform.whatsapp_link %}
+                    | <a href="{{ platform.whatsapp_link }}" target="_blank" rel="noopener">WhatsApp</a>
+                    {% endif %}
+                    {% if platform.website %}
+                    | <a href="{{ platform.website }}" target="_blank" rel="noopener">{{ platform.website }}</a>
+                    {% else %}
+                    | <a href="https://gihostings.com" target="_blank" rel="noopener">https://gihostings.com</a>
+                    {% endif %}
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+    <script>
+        function syncAutoPageTitle() {
+            const container = document.querySelector('[data-auto-page-title]');
+            if (!container) {
+                return;
+            }
+
+            const textEl = container.querySelector('[data-auto-page-title-text]');
+            if (!textEl) {
+                return;
+            }
+
+            const titleText = (document.title || '').trim();
+            if (!titleText) {
+                container.classList.add('d-none');
+                return;
+            }
+
+            const main = document.querySelector('main.app-main');
+            if (main) {
+                const headings = main.querySelectorAll('h1, .section-title');
+                let hasOtherHeading = false;
+                headings.forEach((heading) => {
+                    if (container.contains(heading)) {
+                        return;
+                    }
+                    if (!heading.textContent || !heading.textContent.trim()) {
+                        return;
+                    }
+                    if (heading.closest('.modal, .offcanvas, .toast, .dropdown-menu, .popover, .tooltip')) {
+                        return;
+                    }
+                    hasOtherHeading = true;
+                });
+
+                if (hasOtherHeading) {
+                    container.classList.add('d-none');
+                    return;
+                }
+            }
+
+            textEl.textContent = titleText;
+            container.classList.remove('d-none');
+        }
+
+        function botgiHydrate(root) {
+            const scope = root || document;
+            const tts = [].slice.call(scope.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            const bs = window.bootstrap;
+            if (bs && bs.Tooltip) {
+                tts.forEach(el => bs.Tooltip.getOrCreateInstance(el));
+            }
+
+            scope.querySelectorAll('.search-expand-container').forEach(box => {
+                if (box.dataset.searchExpandBound === 'true') {
+                    return;
+                }
+                box.dataset.searchExpandBound = 'true';
+                box.addEventListener('click', () => {
+                    const input = box.querySelector('.search-expand-input');
+                    if (input) input.focus();
+                });
+            });
+
+            syncAutoPageTitle();
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            botgiHydrate(document);
+        });
+    </script>
+    <div aria-live="polite" aria-atomic="true" class="position-fixed top-0 end-0 p-3" style="z-index: 2000;">
+        <div id="toast-container"></div>
+    </div>
+    <div id="app-release-banner" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1995;" hidden>
+        <div class="card shadow border-0" style="width: min(360px, calc(100vw - 1.5rem));">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <p class="mb-1 fw-semibold">New update available</p>
+                        <p class="mb-2 text-muted small">
+                            A newer web build is live. Refresh to load the latest changes.
+                        </p>
+                        <p class="mb-0 small text-muted">
+                            Version:
+                            <span data-app-release-version>{{ release_info.web_version }}</span>
+                        </p>
+                    </div>
+                    <button type="button" class="btn-close" aria-label="Dismiss" data-app-release-dismiss></button>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-app-release-dismiss>Later</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-app-refresh>Refresh Now</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showToast(message, title = '', type = 'primary', timeout = 3000) {
+            const container = document.getElementById('toast-container');
+            if (!container) { alert(message); return; }
+            const toastId = 't' + Date.now();
+            const html = `
+        <div id="${toastId}" class="toast text-bg-${type} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">${title ? '<strong>' + title + '</strong><br/>' : ''}${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>`;
+            container.insertAdjacentHTML('beforeend', html);
+            const el = document.getElementById(toastId);
+            const Toast = window.bootstrap && window.bootstrap.Toast;
+            if (!Toast) { alert(message); return; }
+            const bs = new Toast(el, { delay: timeout });
+            bs.show();
+            el.addEventListener('hidden.bs.toast', () => el.remove());
+        }
+    </script>
+    <script src="{% static 'job_tickets/js/app-release-monitor.js' %}"></script>
+
+    <script>
+        (function () {
+            function buildFormRequest(form, submitter) {
+                const method = (form.getAttribute('method') || 'get').toUpperCase();
+                const action = form.getAttribute('action') || window.location.href;
+                const url = new URL(action, window.location.origin);
+                const formData = new FormData(form);
+
+                if (submitter && submitter.name && !formData.has(submitter.name)) {
+                    formData.append(submitter.name, submitter.value || '');
+                }
+
+                if (method === 'GET') {
+                    url.search = new URLSearchParams(formData).toString();
+                    return {
+                        method,
+                        url: url.toString(),
+                        fetchOptions: {
+                            method,
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-Botgi-Async': '1',
+                            },
+                        },
+                    };
+                }
+
+                return {
+                    method,
+                    url: url.toString(),
+                    fetchOptions: {
+                        method,
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-Botgi-Async': '1',
+                        },
+                        body: formData,
+                    },
+                };
+            }
+
+            function replaceAsyncTarget(html, targetSelector, sourceSelector) {
+                const parser = new DOMParser();
+                const nextDocument = parser.parseFromString(html, 'text/html');
+                const currentNode = document.querySelector(targetSelector);
+                const replacementNode = nextDocument.querySelector(sourceSelector || targetSelector);
+
+                if (!currentNode || !replacementNode) {
+                    return null;
+                }
+
+                currentNode.replaceWith(replacementNode);
+                if (nextDocument.title) {
+                    document.title = nextDocument.title;
+                }
+                if (window.htmx && typeof window.htmx.process === 'function') {
+                    window.htmx.process(replacementNode);
+                }
+                botgiHydrate(document);
+                document.dispatchEvent(new CustomEvent('botgi:content-replaced', {
+                    detail: {
+                        targetSelector,
+                        sourceSelector: sourceSelector || targetSelector,
+                    },
+                }));
+                return replacementNode;
+            }
+
+            async function hideAsyncModal(modalSelector) {
+                const Modal = window.bootstrap && window.bootstrap.Modal;
+                if (!modalSelector || !Modal) {
+                    return;
+                }
+
+                const modalEl = document.querySelector(modalSelector);
+                if (!modalEl) {
+                    return;
+                }
+
+                const modalInstance = Modal.getInstance(modalEl) || Modal.getOrCreateInstance(modalEl);
+                modalInstance.hide();
+                await new Promise((resolve) => window.setTimeout(resolve, 180));
+
+                document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('padding-right');
+            }
+
+            document.addEventListener('submit', async function (event) {
+                const form = event.target;
+                if (!(form instanceof HTMLFormElement) || !form.matches('form[data-async-form]')) {
+                    return;
+                }
+
+                event.preventDefault();
+                if (form.dataset.asyncBusy === 'true') {
+                    return;
+                }
+
+                const submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
+                const targetSelector = form.dataset.asyncTarget;
+                if (!targetSelector) {
+                    window.location.assign(form.getAttribute('action') || window.location.href);
+                    return;
+                }
+
+                const sourceSelector = form.dataset.asyncSource || targetSelector;
+                const successMessage = form.dataset.asyncSuccess || '';
+                const closeModalSelector = form.dataset.asyncCloseModal || '';
+                const request = buildFormRequest(form, submitter);
+
+                form.dataset.asyncBusy = 'true';
+                if (submitter) {
+                    submitter.dataset.originalDisabled = submitter.disabled ? 'true' : 'false';
+                    submitter.disabled = true;
+                }
+
+                try {
+                    const response = await window.fetch(request.url, request.fetchOptions);
+                    const responseType = response.headers.get('content-type') || '';
+                    let replacedNode = null;
+
+                    if (responseType.includes('application/json')) {
+                        const payload = await response.json();
+                        const toastType = payload.ok ? 'success' : 'danger';
+                        if (payload.message) {
+                            showToast(payload.message, '', toastType, 2400);
+                        }
+                        if (payload.ok && closeModalSelector) {
+                            await hideAsyncModal(closeModalSelector);
+                        }
+                        if (payload.reload_url) {
+                            const reloadResponse = await window.fetch(payload.reload_url, {
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'X-Botgi-Async': '1',
+                                },
+                            });
+                            const reloadHtml = await reloadResponse.text();
+                            replacedNode = replaceAsyncTarget(reloadHtml, targetSelector, sourceSelector);
+                            if (form.dataset.asyncPushUrl !== 'false') {
+                                window.history.replaceState({}, '', payload.reload_url);
+                            }
+                        }
+                        if (!payload.ok) {
+                            return;
+                        }
+                    } else {
+                        const html = await response.text();
+                        if (response.ok && closeModalSelector) {
+                            await hideAsyncModal(closeModalSelector);
+                        }
+                        replacedNode = replaceAsyncTarget(html, targetSelector, sourceSelector);
+
+                        if (!replacedNode) {
+                            window.location.assign(response.url || request.url);
+                            return;
+                        }
+
+                        if (form.dataset.asyncPushUrl !== 'false') {
+                            const nextUrl = response.url || request.url;
+                            if (nextUrl) {
+                                window.history.replaceState({}, '', nextUrl);
+                            }
+                        }
+
+                        if (successMessage && response.ok && request.method !== 'GET') {
+                            showToast(successMessage, '', 'success', 2200);
+                        }
+                    }
+
+                    if (!replacedNode) {
+                        window.location.assign(response.url || request.url);
+                        return;
+                    }
+                } catch (error) {
+                    showToast('Unable to update right now. Please try again.', '', 'danger', 2600);
+                } finally {
+                    form.dataset.asyncBusy = 'false';
+                    if (submitter && submitter.dataset.originalDisabled !== 'true') {
+                        submitter.disabled = false;
+                    }
+                }
+            });
+        }());
+    </script>
+
+    {% if messages %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const notifications = [
+                {% for message in messages %}
+            { text: "{{ message|escapejs }}", tags: "{{ message.tags|default:'info' }}" },
+            {% endfor %}
+        ];
+        const pageTitle = (document.title || '').split('|')[0].trim() || 'Notice';
+
+        notifications.forEach(function (item) {
+            const tags = (item.tags || '').toLowerCase();
+            let type = 'info';
+            if (tags.includes('success')) {
+                type = 'success';
+            } else if (tags.includes('error')) {
+                type = 'danger';
+            } else if (tags.includes('warning')) {
+                type = 'warning';
+            }
+            showToast(item.text, pageTitle, type, 2600);
+        });
+    });
+    </script>
+    {% endif %}
+
+    <script>
+        (function () {
+            var mobileToggleBtn = document.getElementById('sidebarToggleBtn');
+            var desktopToggleBtn = document.getElementById('sidebarDesktopToggleBtn');
+            var sidebar = document.getElementById('appSidebar');
+            var backdrop = document.getElementById('sidebarBackdrop');
+            var desktopSidebarStorageKey = 'appSidebarCollapsed';
+            if (!sidebar) return;
+
+            function isDesktopView() {
+                return window.matchMedia('(min-width: 768px)').matches;
+            }
+
+            function syncDesktopSidebarState(collapsed) {
+                document.body.classList.toggle('sidebar-collapsed', collapsed);
+                if (!desktopToggleBtn) return;
+
+                desktopToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                desktopToggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+                desktopToggleBtn.setAttribute('title', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+
+                var icon = desktopToggleBtn.querySelector('i');
+                if (icon) {
+                    icon.className = collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
+                }
+            }
+
+            function readStoredDesktopState() {
+                try {
+                    var storedValue = window.localStorage.getItem(desktopSidebarStorageKey);
+                    if (storedValue === null) {
+                        return true;
+                    }
+                    return storedValue === 'true';
+                } catch (error) {
+                    return document.body.classList.contains('sidebar-collapsed');
+                }
+            }
+
+            function persistDesktopSidebarState(collapsed) {
+                try {
+                    window.localStorage.setItem(desktopSidebarStorageKey, String(collapsed));
+                } catch (error) {
+                    return;
+                }
+            }
+
+            function openSidebar() {
+                document.body.classList.add('sidebar-open');
+            }
+
+            function closeSidebar() {
+                document.body.classList.remove('sidebar-open');
+            }
+
+            syncDesktopSidebarState(readStoredDesktopState());
+
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function () {
+                    if (document.body.classList.contains('sidebar-open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+            }
+
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function () {
+                    if (!isDesktopView()) return;
+                    var nextCollapsed = !document.body.classList.contains('sidebar-collapsed');
+                    syncDesktopSidebarState(nextCollapsed);
+                    persistDesktopSidebarState(nextCollapsed);
+                });
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener('click', closeSidebar);
+            }
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+                    closeSidebar();
+                }
+            });
+        }());
+    </script>
+
+    <script>
+        (function () {
+            var inventorySidebarStorageKey = 'inventoryModuleCollapsed';
+
+            function isInventoryDesktopView() {
+                return window.matchMedia('(min-width: 992px)').matches;
+            }
+
+            function getInventoryShells() {
+                return Array.prototype.slice.call(document.querySelectorAll('[data-inventory-shell]'));
+            }
+
+            function readInventorySidebarState() {
+                try {
+                    return window.localStorage.getItem(inventorySidebarStorageKey) === 'true';
+                } catch (error) {
+                    return false;
+                }
+            }
+
+            function persistInventorySidebarState(collapsed) {
+                try {
+                    window.localStorage.setItem(inventorySidebarStorageKey, String(collapsed));
+                } catch (error) {
+                    return;
+                }
+            }
+
+            function syncInventorySidebarState(collapsed) {
+                var shouldCollapse = isInventoryDesktopView() && collapsed;
+
+                getInventoryShells().forEach(function (shell) {
+                    shell.classList.toggle('inventory-shell-collapsed', shouldCollapse);
+
+                    var toggleBtn = shell.querySelector('[data-inventory-sidebar-toggle]');
+                    if (!toggleBtn) {
+                        return;
+                    }
+
+                    toggleBtn.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
+                    toggleBtn.setAttribute('aria-label', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
+                    toggleBtn.setAttribute('title', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
+
+                    var icon = toggleBtn.querySelector('i');
+                    if (icon) {
+                        icon.className = shouldCollapse ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
+                    }
+                });
+            }
+
+            function refreshInventoryShells() {
+                syncInventorySidebarState(readInventorySidebarState());
+            }
+
+            refreshInventoryShells();
+
+            document.addEventListener('click', function (event) {
+                var toggleBtn = event.target.closest('[data-inventory-sidebar-toggle]');
+                if (!toggleBtn) {
+                    return;
+                }
+
+                var shell = toggleBtn.closest('[data-inventory-shell]');
+                if (!shell || !isInventoryDesktopView()) {
+                    return;
+                }
+
+                var nextCollapsed = !shell.classList.contains('inventory-shell-collapsed');
+                syncInventorySidebarState(nextCollapsed);
+                persistInventorySidebarState(nextCollapsed);
+            });
+
+            window.addEventListener('resize', refreshInventoryShells);
+            document.addEventListener('botgi:content-replaced', function () {
+                window.setTimeout(refreshInventoryShells, 0);
+            });
+        }());
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+
+</html>

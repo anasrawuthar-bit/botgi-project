@@ -1,0 +1,664 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+
+{% block title %}Job Detail: {{ job.job_code }}{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title mb-0">Job Detail: {{ job.job_code }}</h1>
+        <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card-box h-100">
+                <h4 class="mb-3">Job Information</h4>
+                <table class="table table-bordered">
+                    <tbody>
+                        <tr>
+                            <th style="width: 30%;">Current Status</th>
+                            <td><span class="badge badge-status badge-info">{{ job.get_status_display }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>Assigned Technician</th>
+                            <td>
+                                {{ job.assigned_to.user.username|default:"Not Assigned" }}
+                                <button type="button" class="btn btn-warning btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#reassignModal">
+                                    <i class="fas fa-sync-alt"></i> Reassign
+                                </button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Technician Notes</th>
+                            <td>{{ job.technician_notes|linebreaksbr|default:"No notes yet." }}</td>
+                        </tr>
+                        <tr>
+                            <th>Created At</th>
+                            <td>{{ job.created_at|date:"Y-m-d H:i" }} by {{ job.created_by.username|default:"N/A" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Last Updated</th>
+                            <td>{{ job.updated_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                {% if related_jobs %}
+                <div class="card p-3 mb-4 mt-4 bg-light border-info">
+                    <h5 class="mb-3 text-info"><i class="fas fa-sitemap me-2"></i> Other Devices for this Customer</h5>
+                    <ul class="list-group list-group-flush">
+                        {% for related_job in related_jobs %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-0 px-0">
+                            <a href="{% url 'staff_job_detail' related_job.job_code %}" class="text-primary fw-bold">
+                                <strong>{{ related_job.job_code }}</strong> ({{ related_job.device_type }} - {{ related_job.device_model }})
+                            </a>
+                            <span class="badge badge-status 
+                                {% if related_job.status == 'Completed' %}bg-success
+                                {% elif related_job.status == 'Pending' %}bg-warning text-dark
+                                {% elif related_job.status == 'Under Inspection' or related_job.status == 'Repairing' %}bg-info
+                                {% elif related_job.status == 'Ready for Pickup' %}bg-primary
+                                {% else %}bg-secondary
+                                {% endif %}">
+                                {{ related_job.status }}
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <small class="text-muted mt-2">These devices were submitted at the same time by the customer.</small>
+                </div>
+                {% endif %}
+
+                <h4 class="mb-3 mt-4">Customer & Device Details</h4>
+                <table class="table table-bordered">
+                    <tbody>
+                        <tr>
+                            <th style="width: 30%;">Customer Name</th>
+                            <td>{{ job.customer_name }}</td>
+                        </tr>
+                        <tr>
+                            <th>Customer Phone</th>
+                            <td>{{ job.customer_phone }}</td>
+                        </tr>
+                        <tr>
+                            <th>Device</th>
+                            <td>{{ job.device_type }} - {{ job.device_brand }} {{ job.device_model }}</td>
+                        </tr>
+                        <tr>
+                            <th>Reported Issue</th>
+                            <td>{{ job.reported_issue|linebreaksbr }}</td>
+                        </tr>
+                        <tr>
+                            <th>Serial Number</th>
+                            <td>{{ job.device_serial|default:"N/A" }}</td>
+                        </tr>
+                         <tr>
+                            <th>Additional Items</th>
+                            <td>{{ job.additional_items|default:"None" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                {% with photos=job.photos.all %}
+                {% if photos %}
+                <h4 class="mb-3 mt-4">Device Photos</h4>
+                <div class="row g-3">
+                    {% for photo in photos %}
+                    <div class="col-6 col-md-4">
+                        <div class="card h-100 shadow-sm">
+                            <button type="button" class="btn p-0 border-0 bg-transparent job-photo-trigger" data-photo-url="{{ photo.image_url }}">
+                                <img src="{{ photo.image_url }}" alt="Device photo {{ forloop.counter }}" class="img-fluid rounded-top">
+                            </button>
+                            <div class="card-body py-2 d-flex justify-content-between align-items-center">
+                                <span class="small text-muted">Photo {{ forloop.counter }}</span>
+                                <form method="post" action="{% url 'staff_delete_job_photo' job.job_code photo.id %}" class="job-photo-delete-form">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete photo" aria-label="Delete photo">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endwith %}
+
+                {% if checklist_schema %}
+                <h4 class="mb-3 mt-4">Inspection Checklist</h4>
+                {% if checklist_notes %}
+                <p class="text-muted mb-2">{{ checklist_notes }}</p>
+                {% endif %}
+                <form method="post" class="mb-2" id="staff-checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_checklist">
+                    <div class="table-responsive">
+                        <table class="table table-bordered" id="staff-checklist-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 45%;">Field</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for field in checklist_schema %}
+                                <tr>
+                                    <td>
+                                        {{ field.label }}
+                                        {% if field.required %}<span class="text-danger">*</span>{% endif %}
+                                        {% if field.help_text %}
+                                        <div class="small text-muted mt-1">{{ field.help_text }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if field.type == 'textarea' %}
+                                            <textarea
+                                                class="form-control staff-checklist-input"
+                                                rows="2"
+                                                name="checklist_{{ field.key }}"
+                                                placeholder="{{ field.placeholder }}"
+                                                disabled
+                                            >{{ field.value }}</textarea>
+                                        {% elif field.type == 'select' %}
+                                            <select class="form-select staff-checklist-input" name="checklist_{{ field.key }}" disabled>
+                                                <option value="">-- Select --</option>
+                                                {% for option in field.options %}
+                                                    <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        {% elif field.type == 'checkbox' %}
+                                            <input type="hidden" name="checklist_{{ field.key }}" value="0" class="staff-checklist-input">
+                                            <div class="form-check mt-1">
+                                                <input
+                                                    class="form-check-input staff-checklist-input"
+                                                    type="checkbox"
+                                                    name="checklist_{{ field.key }}"
+                                                    id="staff_check_{{ field.key }}"
+                                                    value="1"
+                                                    {% if field.value == '1' %}checked{% endif %}
+                                                    disabled
+                                                >
+                                                <label class="form-check-label" for="staff_check_{{ field.key }}">
+                                                    Verified
+                                                </label>
+                                            </div>
+                                        {% else %}
+                                            <input
+                                                type="{% if field.type == 'number' %}number{% else %}text{% endif %}"
+                                                class="form-control staff-checklist-input"
+                                                name="checklist_{{ field.key }}"
+                                                value="{{ field.value }}"
+                                                placeholder="{{ field.placeholder }}"
+                                                {% if field.type == 'number' %}step="0.01"{% endif %}
+                                                disabled
+                                            >
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <small class="text-muted" id="staff-checklist-note">Checklist is read-only. Click Edit to modify. All updates are audit logged.</small>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="staff-checklist-edit-btn">
+                                <i class="fas fa-pen"></i> Edit
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="staff-checklist-cancel-btn">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-sm d-none" id="staff-checklist-save-btn">
+                                <i class="fas fa-save"></i> Save Checklist
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                {% endif %}
+
+
+                {% if specialized_service %}
+                <div class="mb-3 mt-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0 text-info">Specialized Service Details</h4>
+                        {% if not request.session.vendor_details_unlocked %}
+                        <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#vendorDetailsModal">
+                            <i class="fas fa-lock">Staff only view</i>
+                        </button>
+                        {% else %}
+                        <button type="button" class="btn btn-sm btn-success" onclick="lockVendorDetails()" id="lock-btn">
+                            <i class="fas fa-lock"></i> Lock Details (<span id="countdown">10</span>s)
+                        </button>
+                        {% endif %}
+                    </div>
+                    
+                    <div id="vendor-details-content">
+                        {% if request.session.vendor_details_unlocked %}
+                        <table class="table table-bordered mt-3">
+                            <tbody>
+                                <tr>
+                                    <th style="width: 30%;">Service Status</th>
+                                    <td><span class="badge badge-status badge-info">{{ specialized_service.get_status_display|default:"N/A" }}</span></td>
+                                </tr>
+                                <tr>
+                                    <th>Our Internal Cost</th>
+                                    <td class="text-danger fw-bold">₹{{ specialized_service.vendor_cost|floatformat:2|default:"0.00" }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Client Charge</th>
+                                    <td class="text-success fw-bold">₹{{ specialized_service.client_charge|floatformat:2|default:"0.00" }}</td>
+                                </tr>
+                                {% if specialized_service.sent_date %}
+                                <tr>
+                                    <th>Sent Date</th>
+                                    <td>{{ specialized_service.sent_date|date:"Y-m-d" }}</td>
+                                </tr>
+                                {% endif %}
+                                {% if specialized_service.returned_date %}
+                                <tr>
+                                    <th>Returned Date</th>
+                                    <td>{{ specialized_service.returned_date|date:"Y-m-d" }}</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <div class="alert alert-warning mt-3">
+                            <i class="fas fa-lock"></i> <strong>Protected Information</strong><br>
+                            enter the password to view.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+
+
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card-box mb-4">
+                <h4 class="mb-3">Billing Summary</h4>
+                <p class="mb-2"><strong>Sales Invoice No:</strong> {{ job.vyapar_invoice_number|default:"Not assigned yet" }}</p>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th class="text-end">Part</th>
+                            <th class="text-end">Service</th>
+                            <th class="text-end">Line Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in service_logs %}
+                        <tr>
+                            <td>{{ log.description }}</td>
+                            <td class="text-end">&#8377;{{ log.part_cost|floatformat:2 }}</td>
+                            <td class="text-end">&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                            <td class="text-end">&#8377;{{ log.part_cost|add:log.service_charge|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4">No service logs added yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3">Total Part Cost</td>
+                            <td class="text-end">&#8377;{{ total_parts_cost|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3">Total Service Charge</td>
+                            <td class="text-end">&#8377;{{ total_service_charges|floatformat:2 }}</td>
+                        </tr>
+                        <tr class="fw-bold">
+                            <td colspan="3">Subtotal</td>
+                            <td class="text-end">&#8377;{{ subtotal|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3">Discount</td>
+                            <td class="text-end text-danger">- &#8377;{{ discount_amount|floatformat:2 }}</td>
+                        </tr>
+                        <tr class="fw-bold fs-5 table-primary">
+                            <td colspan="3">Grand Total</td>
+                            <td class="text-end">&#8377;{{ grand_total|floatformat:2 }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            {% if job.feedback_rating %}
+            <div class="card-box mb-4">
+                <h4 class="mb-3"><i class="fas fa-clipboard-check text-primary"></i> Customer Feedback</h4>
+                <div class="mb-2">
+                    <strong>Rating:</strong> 
+                    {{ job.feedback_rating }}/10
+                </div>
+                {% if job.feedback_comment %}
+                <div class="mb-2">
+                    <strong>Comment:</strong>
+                    <p class="text-muted">{{ job.feedback_comment }}</p>
+                </div>
+                {% endif %}
+                <small class="text-muted">Submitted on {{ job.feedback_date|date:"M d, Y H:i" }}</small>
+            </div>
+            {% endif %}
+
+            <div class="card-box">
+                <h4 class="mb-3"><i class="fas fa-history"></i> Job History</h4>
+                <div class="history-log-container">
+                    <ul class="list-group list-group-flush">
+                        {% for log in history_logs %}
+                        <li class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <small class="text-muted">{{ log.timestamp|date:"d M Y, H:i" }}</small>
+                                <small class="text-muted">by {{ log.user.username|default:"System" }}</small>
+                            </div>
+                            <p class="mb-1"><strong>{{ log.get_action_display }}</strong></p>
+                            <small>{{ log.details }}</small>
+                        </li>
+                        {% empty %}
+                        <li class="list-group-item">No history found.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+
+</div>
+
+<div class="modal fade" id="photoPreviewModal" tabindex="-1" aria-labelledby="photoPreviewLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="photoPreviewLabel">Device Photo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <img id="photoPreviewImage" src="" alt="Device photo preview" class="img-fluid rounded">
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="reassignModal" tabindex="-1" aria-labelledby="reassignModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{% url 'job_reassign_staff' job.job_code %}">
+          {% csrf_token %}
+          <div class="modal-header">
+            <h5 class="modal-title" id="reassignModalLabel">Reassign Job {{ job.job_code }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Current Technician: <strong>{{ job.assigned_to.user.username|default:"Unassigned" }}</strong></p>
+            <div class="mb-3">
+                <label for="id_new_technician" class="form-label">Select New Technician:</label>
+                {% with reassign_form=ReassignTechnicianForm %}
+                    <select name="new_technician" id="id_new_technician" class="form-select" required>
+                        {% for tech in technician_list %}
+                            <option value="{{ tech.id }}" {% if tech == job.assigned_to %}selected{% endif %}>
+                                {{ tech.user.username }} ({{ tech.unique_id }})
+                            </option>
+                        {% endfor %}
+                        <option value="">--- Unassign Job ---</option>
+                    </select>
+                {% endwith %}
+                <input type="hidden" name="job_code" value="{{ job.job_code }}">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning">Confirm Reassignment</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Vendor Details Unlock Modal -->
+<div class="modal fade" id="vendorDetailsModal" tabindex="-1" aria-labelledby="vendorDetailsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="vendorDetailsModalLabel"><i class="fas fa-lock"></i> Unlock Vendor Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="unlock-vendor-form">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="text-muted">Enter password to view vendor information and costs:</p>
+          <div class="mb-3">
+            <label for="vendor_password" class="form-label">Password</label>
+            <input type="password" class="form-control" id="vendor_password" name="vendor_password" required autofocus>
+            <div id="password-error" class="text-danger mt-1" style="display: none;"></div>
+          </div>
+          <small class="text-muted">This information is sensitive and should not be visible to customers.</small>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning" id="unlock-btn">
+            <i class="fas fa-unlock"></i> Unlock
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function lockVendorDetails() {
+    fetch('{% url "lock_vendor_details" job.job_code %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ok) {
+            window.location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.location.reload();
+    });
+}
+
+function initStaffChecklistEditor() {
+    const form = document.getElementById('staff-checklist-form');
+    if (!form) return;
+
+    const editBtn = document.getElementById('staff-checklist-edit-btn');
+    const cancelBtn = document.getElementById('staff-checklist-cancel-btn');
+    const saveBtn = document.getElementById('staff-checklist-save-btn');
+    const noteEl = document.getElementById('staff-checklist-note');
+    const inputs = form.querySelectorAll('.staff-checklist-input');
+
+    function setEditMode(enabled) {
+        inputs.forEach((el) => {
+            el.disabled = !enabled;
+        });
+
+        if (enabled) {
+            editBtn.classList.add('d-none');
+            cancelBtn.classList.remove('d-none');
+            saveBtn.classList.remove('d-none');
+            if (noteEl) {
+                noteEl.textContent = 'Edit mode is ON. Click Save Checklist to update and audit log changes.';
+            }
+        } else {
+            editBtn.classList.remove('d-none');
+            cancelBtn.classList.add('d-none');
+            saveBtn.classList.add('d-none');
+            if (noteEl) {
+                noteEl.textContent = 'Checklist is read-only. Click Edit to modify. All updates are audit logged.';
+            }
+        }
+    }
+
+    editBtn.addEventListener('click', () => setEditMode(true));
+    cancelBtn.addEventListener('click', () => {
+        form.reset();
+        setEditMode(false);
+    });
+
+    setEditMode(false);
+}
+
+// Handle unlock form submission
+document.getElementById('unlock-vendor-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const password = document.getElementById('vendor_password').value;
+    const unlockBtn = document.getElementById('unlock-btn');
+    const errorDiv = document.getElementById('password-error');
+    
+    unlockBtn.disabled = true;
+    unlockBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Unlocking...';
+    errorDiv.style.display = 'none';
+    
+    const formData = new FormData();
+    formData.append('vendor_password', password);
+    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+    
+    fetch('{% url "unlock_vendor_details" job.job_code %}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ok) {
+            // Update the vendor details content
+            const content = document.getElementById('vendor-details-content');
+            content.innerHTML = `
+                <table class="table table-bordered mt-3">
+                    <tbody>
+                        <tr>
+                            <th style="width: 30%;">Service Status</th>
+                            <td><span class="badge badge-status badge-info">${data.status}</span></td>
+                        </tr>
+                        <tr>
+                            <th>Our Internal Cost</th>
+                            <td class="text-danger fw-bold">₹${data.vendor_cost.toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                            <th>Client Charge</th>
+                            <td class="text-success fw-bold">₹${data.client_charge.toFixed(2)}</td>
+                        </tr>
+                        ${data.sent_date ? `<tr><th>Sent Date</th><td>${data.sent_date}</td></tr>` : ''}
+                        ${data.returned_date ? `<tr><th>Returned Date</th><td>${data.returned_date}</td></tr>` : ''}
+                    </tbody>
+                </table>
+            `;
+            
+            // Update the unlock button to lock button with countdown
+            const unlockButton = document.querySelector('[data-bs-target="#vendorDetailsModal"]');
+            if (unlockButton) {
+                unlockButton.className = 'btn btn-sm btn-success';
+                unlockButton.innerHTML = '<i class="fas fa-lock"></i> Lock Details (<span id="countdown">10</span>s)';
+                unlockButton.removeAttribute('data-bs-toggle');
+                unlockButton.removeAttribute('data-bs-target');
+                unlockButton.onclick = lockVendorDetails;
+                unlockButton.id = 'lock-btn';
+                
+                // Start countdown
+                startCountdown();
+            }
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('vendorDetailsModal'));
+            modal.hide();
+        } else {
+            errorDiv.textContent = data.error || 'Incorrect password';
+            errorDiv.style.display = 'block';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        errorDiv.textContent = 'Network error. Please try again.';
+        errorDiv.style.display = 'block';
+    })
+    .finally(() => {
+        unlockBtn.disabled = false;
+        unlockBtn.innerHTML = '<i class="fas fa-unlock"></i> Unlock';
+    });
+});
+
+// Auto-relock countdown functionality
+let countdownTimer;
+let countdownSeconds = 10;
+
+function startCountdown() {
+    const countdownElement = document.getElementById('countdown');
+    if (!countdownElement) return;
+    
+    countdownSeconds = 10;
+    countdownElement.textContent = countdownSeconds;
+    
+    countdownTimer = setInterval(() => {
+        countdownSeconds--;
+        countdownElement.textContent = countdownSeconds;
+        
+        if (countdownSeconds <= 0) {
+            clearInterval(countdownTimer);
+            lockVendorDetails();
+        }
+    }, 1000);
+}
+
+// Start countdown when page loads if details are unlocked
+document.addEventListener('DOMContentLoaded', function() {
+    initStaffChecklistEditor();
+    const lockBtn = document.getElementById('lock-btn');
+    if (lockBtn) {
+        startCountdown();
+    }
+
+    const previewModalEl = document.getElementById('photoPreviewModal');
+    const previewImg = document.getElementById('photoPreviewImage');
+    document.querySelectorAll('.job-photo-trigger').forEach(button => {
+        button.addEventListener('click', () => {
+            if (!previewModalEl || !previewImg) return;
+            const photoUrl = button.dataset.photoUrl || '';
+            previewImg.src = photoUrl;
+            const modal = bootstrap.Modal.getOrCreateInstance(previewModalEl);
+            modal.show();
+        });
+    });
+
+    document.querySelectorAll('.job-photo-delete-form').forEach(form => {
+        form.addEventListener('submit', (event) => {
+            const ok = confirm('Delete this photo? This cannot be undone.');
+            if (!ok) {
+                event.preventDefault();
+            }
+        });
+    });
+});
+
+// Lock details when leaving page
+window.addEventListener('beforeunload', function() {
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+        // Lock details when leaving page
+        navigator.sendBeacon('{% url "lock_vendor_details" job.job_code %}', new FormData());
+    }
+});
+
+// Also lock on page visibility change (tab switch, minimize)
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden && countdownTimer) {
+        clearInterval(countdownTimer);
+        lockVendorDetails();
+    }
+});
+</script>
+{% endblock %}  

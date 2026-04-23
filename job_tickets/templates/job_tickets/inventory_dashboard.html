@@ -1,0 +1,231 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Inventory Dashboard | Service Billing{% endblock %}
+
+{% block extra_css %}
+{% include "job_tickets/includes/inventory_page_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="section-container">
+    <div class="row g-4 inventory-shell" data-inventory-shell>
+        <div class="col-lg-3 col-xl-3 inventory-shell-sidebar-col">
+            {% include "job_tickets/_inventory_sidebar.html" %}
+        </div>
+        <div class="col-lg-9 col-xl-9 inventory-shell-main-col">
+            <div class="inventory-hero card-box mb-4">
+                <div class="inventory-hero-copy">
+                    <p class="inventory-eyebrow mb-2">Inventory Control Center</p>
+                    <h1 class="inventory-hero-title mb-2"><i class="fas fa-warehouse me-2"></i>Inventory Dashboard</h1>
+                    <p class="inventory-hero-subtitle mb-3">Monitor stock movement, value, and risk products from one place.</p>
+                    <div class="inventory-hero-chips d-flex flex-wrap gap-2">
+                        <span class="inventory-chip"><i class="fas fa-users me-1"></i>{{ party_count }} Parties</span>
+                        <span class="inventory-chip"><i class="fas fa-boxes-stacked me-1"></i>{{ product_count }} Products</span>
+                        <span class="inventory-chip"><i class="fas fa-shield-halved me-1"></i>{{ reserved_alert_count }} Reserved Alerts</span>
+                    </div>
+                </div>
+                <div class="inventory-hero-actions d-flex flex-wrap gap-2">
+                    <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-primary btn-sm">
+                        <i class="fas fa-cart-arrow-down me-1"></i>New Purchase
+                    </a>
+                    <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-cart-shopping me-1"></i>New Sale
+                    </a>
+                    <a href="{% url 'inventory_product_dashboard' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-boxes-stacked me-1"></i>Products
+                    </a>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">Inventory Value</p>
+                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ inventory_value|floatformat:2 }}</h4>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">Purchase (Month)</p>
+                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ monthly_purchase_total|floatformat:2 }}</h4>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">Sales (Month)</p>
+                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ monthly_sales_total|floatformat:2 }}</h4>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">Net Stock Qty</p>
+                        <h4 class="inventory-kpi-value mb-0">{{ monthly_net_stock_qty }}</h4>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-box inventory-movement mb-4">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Monthly Movement Snapshot</h5>
+                    <span class="badge bg-light text-dark border">{% now "F Y" %}</span>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6 col-xl-3">
+                        <div class="inventory-movement-item h-100">
+                            <p class="inventory-movement-label mb-1">Stock In</p>
+                            <h6 class="mb-1">{{ monthly_stock_in_qty }} units</h6>
+                            <p class="mb-0 text-success">&#8377;{{ monthly_stock_in_amount|floatformat:2 }}</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <div class="inventory-movement-item h-100">
+                            <p class="inventory-movement-label mb-1">Stock Out</p>
+                            <h6 class="mb-1">{{ monthly_stock_out_qty }} units</h6>
+                            <p class="mb-0 text-danger">&#8377;{{ monthly_stock_out_amount|floatformat:2 }}</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <div class="inventory-movement-item h-100">
+                            <p class="inventory-movement-label mb-1">Sales Return</p>
+                            <h6 class="mb-1">{{ monthly_sales_return_qty }} units</h6>
+                            <p class="mb-0 text-muted">&#8377;{{ monthly_sales_return_total|floatformat:2 }}</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <div class="inventory-movement-item h-100">
+                            <p class="inventory-movement-label mb-1">Net Movement Value</p>
+                            <h6 class="mb-1 {% if monthly_net_amount >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                &#8377;{{ monthly_net_amount|floatformat:2 }}
+                            </h6>
+                            <p class="mb-0 text-muted">Purchase + Returns vs Sales + Purchase Returns</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4 inventory-action-grid">
+                <div class="col-md-6 col-xl-3">
+                    <a href="{% url 'inventory_product_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                        <h6><i class="fas fa-boxes-stacked me-2"></i>Product Master</h6>
+                        <p class="mb-0 text-muted small">Manage products, pricing, and stock levels.</p>
+                    </a>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <a href="{% url 'inventory_party_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                        <h6><i class="fas fa-users me-2"></i>Party Master</h6>
+                        <p class="mb-0 text-muted small">Maintain supplier and customer party records.</p>
+                    </a>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <a href="{% url 'inventory_purchase_return_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                        <h6><i class="fas fa-rotate-left me-2"></i>Purchase Return</h6>
+                        <p class="mb-0 text-muted small">Return stock to suppliers with traceable voucher.</p>
+                    </a>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <a href="{% url 'inventory_sales_return_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                        <h6><i class="fas fa-rotate-right me-2"></i>Sales Return</h6>
+                        <p class="mb-0 text-muted small">Capture customer returns and restore stock.</p>
+                    </a>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-xl-4">
+                    <div class="card-box inventory-watch-card h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="mb-0"><i class="fas fa-shield-halved me-2"></i>Reserved Stock Monitor</h5>
+                            <span class="badge bg-warning text-dark">{{ reserved_alert_count }}</span>
+                        </div>
+                        <p class="text-muted small mb-3">Products at or below their reserved stock level.</p>
+
+                        <div class="inventory-watchlist inventory-watchlist--scroll">
+                            {% for product in reserved_stock_products %}
+                            <div class="inventory-watch-item">
+                                <div>
+                                    <p class="inventory-watch-name mb-0">{{ product.name }}</p>
+                                    <p class="inventory-watch-meta mb-0">
+                                        {{ product.category|default:"General" }} | Reserved {{ product.reserved_stock }}
+                                    </p>
+                                </div>
+                                <div class="text-end">
+                                    {% if product.stock_quantity <= 0 %}
+                                        <span class="badge bg-danger">{{ product.stock_quantity }}</span>
+                                    {% else %}
+                                        <span class="badge bg-warning text-dark">{{ product.stock_quantity }}</span>
+                                    {% endif %}
+                                    <div class="small text-muted mt-1">Need {{ product.reserved_stock }}</div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="alert alert-success py-2 mb-0">
+                                No products are below reserved stock right now.
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <a href="{% url 'inventory_product_dashboard' %}" class="btn btn-outline-primary btn-sm w-100 mt-3">
+                            <i class="fas fa-boxes-stacked me-1"></i>Open Product Master
+                        </a>
+                    </div>
+                </div>
+
+                <div class="col-xl-8">
+                    <div class="card-box h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                            <h5 class="mb-0"><i class="fas fa-clock-rotate-left me-2"></i>Recent Inventory Entries</h5>
+                            <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-list me-1"></i>Open Registers
+                            </a>
+                        </div>
+                        <div class="table-responsive inventory-scroll-region inventory-scroll-region--compact">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Voucher</th>
+                                        <th>Invoice No</th>
+                                        <th>Type</th>
+                                        <th>Party</th>
+                                        <th>Product</th>
+                                        <th>Qty</th>
+                                        <th>Total</th>
+                                        <th>Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for entry in recent_entries %}
+                                    <tr>
+                                        <td>{{ entry.entry_date|date:"Y-m-d" }}</td>
+                                        <td><strong>{{ entry.entry_number }}</strong></td>
+                                        <td>{{ entry.invoice_number|default:"-" }}</td>
+                                        <td>
+                                            <span class="inv-entry-type inv-entry-type--{{ entry.entry_type }}">
+                                                {{ entry.get_entry_type_display }}
+                                            </span>
+                                        </td>
+                                        <td>{{ entry.party.name }}</td>
+                                        <td>{{ entry.product.name }}</td>
+                                        <td>{{ entry.quantity }}</td>
+                                        <td>&#8377;{{ entry.total_amount|floatformat:2 }}</td>
+                                        <td>
+                                            <span class="text-muted">{{ entry.stock_before }}</span>
+                                            <i class="fas fa-arrow-right mx-1 small text-muted"></i>
+                                            <strong>{{ entry.stock_after }}</strong>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="9" class="text-center">No inventory entries yet.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
