@@ -137,7 +137,7 @@ class AssignVendorForm(forms.Form):
 class ReturnVendorServiceForm(forms.Form):
     """Form for when device returns from vendor - requires cost fields"""
     vendor_cost = forms.DecimalField(
-        label="Vendor Cost (Our Cost)",
+        label="Vendor Bill Amount",
         required=True,
         widget=forms.NumberInput(attrs={'placeholder': 'e.g., 2500', 'step': '0.01'})
     )
@@ -587,6 +587,8 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
         model = WhatsAppIntegrationSettings
         fields = [
             'is_enabled',
+            'delivery_method',
+            'bridge_base_url',
             'api_version',
             'phone_number_id',
             'access_token',
@@ -599,15 +601,22 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'notify_on_created',
             'notify_on_completed',
             'notify_on_delivered',
+            'notify_on_feedback',
             'created_template_name',
             'created_template',
             'completed_template_name',
             'completed_template',
             'delivered_template_name',
             'delivered_template',
+            'estimate_template_name',
+            'estimate_template',
+            'feedback_template_name',
+            'feedback_template',
         ]
         widgets = {
             'is_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'delivery_method': forms.Select(attrs={'class': 'form-select'}),
+            'bridge_base_url': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'http://127.0.0.1:3001'}),
             'api_version': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'v23.0'}),
             'phone_number_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '123456789012345'}),
             'access_token': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'EAAG...'}),
@@ -620,18 +629,30 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'notify_on_created': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'notify_on_completed': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'notify_on_delivered': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'notify_on_feedback': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'created_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_created_update'}),
             'created_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'completed_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_completed_update'}),
             'completed_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'delivered_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_closed_update'}),
             'delivered_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
+            'estimate_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_estimate_update'}),
+            'estimate_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
+            'feedback_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_feedback_followup'}),
+            'feedback_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in ('api_version', 'template_language_code'):
+            self.fields[field_name].required = False
 
     def clean(self):
         cleaned_data = super().clean()
 
         text_fields = [
+            'delivery_method',
+            'bridge_base_url',
             'api_version',
             'phone_number_id',
             'access_token',
@@ -644,6 +665,8 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'created_template_name',
             'completed_template_name',
             'delivered_template_name',
+            'estimate_template_name',
+            'feedback_template_name',
         ]
         for field_name in text_fields:
             value = cleaned_data.get(field_name)
@@ -653,22 +676,37 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
         if not cleaned_data.get('is_enabled'):
             return cleaned_data
 
+        delivery_method = cleaned_data.get('delivery_method') or WhatsAppIntegrationSettings.DELIVERY_CLOUD_API
+
         required_fields = {
-            'api_version': 'API version is required when WhatsApp notifications are enabled.',
-            'phone_number_id': 'Phone Number ID is required when WhatsApp notifications are enabled.',
-            'access_token': 'Access token is required when WhatsApp notifications are enabled.',
             'public_site_url': 'Public Site URL is required so status and receipt links work correctly.',
-            'template_language_code': 'Template language code is required when WhatsApp notifications are enabled.',
         }
+        if delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE:
+            required_fields['bridge_base_url'] = 'Bridge Base URL is required when WhatsApp Bridge delivery is selected.'
+        else:
+            required_fields.update(
+                {
+                    'api_version': 'API version is required when WhatsApp Cloud API delivery is selected.',
+                    'phone_number_id': 'Phone Number ID is required when WhatsApp Cloud API delivery is selected.',
+                    'access_token': 'Access token is required when WhatsApp Cloud API delivery is selected.',
+                    'template_language_code': 'Template language code is required when WhatsApp Cloud API delivery is selected.',
+                }
+            )
+
         for field_name, error_message in required_fields.items():
             if not cleaned_data.get(field_name):
                 self.add_error(field_name, error_message)
 
-        if cleaned_data.get('notify_on_created') and not cleaned_data.get('created_template_name'):
-            self.add_error('created_template_name', 'Approved template name is required for created notifications.')
-        if cleaned_data.get('notify_on_completed') and not cleaned_data.get('completed_template_name'):
-            self.add_error('completed_template_name', 'Approved template name is required for completed notifications.')
-        if cleaned_data.get('notify_on_delivered') and not cleaned_data.get('delivered_template_name'):
-            self.add_error('delivered_template_name', 'Approved template name is required for delivered notifications.')
+        if delivery_method == WhatsAppIntegrationSettings.DELIVERY_CLOUD_API:
+            if cleaned_data.get('notify_on_created') and not cleaned_data.get('created_template_name'):
+                self.add_error('created_template_name', 'Approved template name is required for created notifications.')
+            if cleaned_data.get('notify_on_completed') and not cleaned_data.get('completed_template_name'):
+                self.add_error('completed_template_name', 'Approved template name is required for completed notifications.')
+            if cleaned_data.get('notify_on_delivered') and not cleaned_data.get('delivered_template_name'):
+                self.add_error('delivered_template_name', 'Approved template name is required for delivered notifications.')
+            if not cleaned_data.get('estimate_template_name'):
+                self.add_error('estimate_template_name', 'Approved template name is required for estimate messages.')
+            if cleaned_data.get('notify_on_feedback') and not cleaned_data.get('feedback_template_name'):
+                self.add_error('feedback_template_name', 'Approved template name is required for feedback follow-up messages.')
 
         return cleaned_data

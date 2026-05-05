@@ -6,3 +6,9 @@ __pycache__/
 desktop-shell/node_modules/
 desktop-shell/dist/
 desktop-shell/publish/
+.tmp_runserver_*
+whatsapp_bridge/node_modules/
+whatsapp_bridge/.wwebjs_auth/
+whatsapp_bridge/.wwebjs_cache/
+whatsapp_bridge/tokens/
+.tmp_whatsapp_bridge*

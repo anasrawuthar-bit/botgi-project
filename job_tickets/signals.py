@@ -58,6 +58,27 @@ def send_whatsapp_notifications_on_job_events(sender, instance, created, **kwarg
             elif instance.status == 'Closed':
                 events.append('delivered')
 
+        if instance.status == 'Closed':
+            closed_at = instance.closed_at or timezone.now()
+            updates = {}
+            if not instance.closed_at:
+                updates['closed_at'] = closed_at
+            if not instance.feedback_due_at:
+                updates['feedback_due_at'] = closed_at + timedelta(days=7)
+            if not instance.feedback_followup_enabled:
+                updates['feedback_followup_enabled'] = True
+            if updates:
+                sender.objects.filter(pk=instance.pk).update(**updates)
+        elif previous_status == 'Closed':
+            sender.objects.filter(pk=instance.pk).update(
+                feedback_due_at=None,
+                feedback_followup_enabled=False,
+                feedback_message_sent_at=None,
+                feedback_followup_status=JobTicket.FEEDBACK_PENDING,
+                feedback_followup_called_at=None,
+                feedback_followup_marked_by=None,
+            )
+
     if not events:
         return
 

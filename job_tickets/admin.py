@@ -38,6 +38,7 @@ from .models import (
     TechnicianProfile,
     UserSessionActivity,
     Vendor,
+    VendorPayment,
     WhatsAppIntegrationSettings,
     WhatsAppNotificationLog,
 )
@@ -876,6 +877,9 @@ class SpecializedServiceAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
         'vendor',
         'status',
         'vendor_cost',
+        'vendor_discount_amount',
+        'vendor_paid_amount',
+        'vendor_balance_amount',
         'client_charge',
         'sent_date',
         'returned_date',
@@ -886,6 +890,39 @@ class SpecializedServiceAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
     readonly_fields = ('sent_date', 'returned_date')
     list_select_related = ('job_ticket', 'vendor')
     list_per_page = 75
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop('delete_selected', None)
+        return actions
+
+
+@admin.register(VendorPayment)
+class VendorPaymentAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
+    staff_can_delete = False
+
+    list_display = (
+        'vendor',
+        'specialized_service',
+        'payment_date',
+        'payment_method',
+        'amount',
+        'balance_before',
+        'balance_after',
+        'created_by',
+        'created_at',
+    )
+    list_filter = ('payment_method', 'payment_date', 'vendor')
+    search_fields = (
+        'vendor__company_name',
+        'specialized_service__job_ticket__job_code',
+        'reference_no',
+        'notes',
+    )
+    raw_id_fields = ('vendor', 'specialized_service', 'created_by')
+    readonly_fields = ('created_at',)
+    list_select_related = ('vendor', 'specialized_service__job_ticket', 'created_by')
+    list_per_page = 100
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -1048,36 +1085,54 @@ class WhatsAppIntegrationSettingsAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
 
     list_display = (
         'is_enabled',
+        'delivery_method',
         'phone_number_id',
         'template_language_code',
+        'bridge_base_url',
         'public_site_url',
         'default_country_code',
         'notify_on_created',
         'notify_on_completed',
         'notify_on_delivered',
+        'notify_on_feedback',
         'updated_at',
     )
     fieldsets = (
         (
-            "Cloud API",
+            "Delivery",
             {
                 'fields': (
                     'is_enabled',
+                    'delivery_method',
+                    'public_site_url',
+                    'default_country_code',
+                )
+            },
+        ),
+        (
+            "Cloud API",
+            {
+                'fields': (
                     'api_version',
                     'phone_number_id',
                     'access_token',
                     'webhook_verify_token',
                     'app_secret',
-                    'public_site_url',
-                    'default_country_code',
                     'template_language_code',
                     'test_template_name',
                 )
             },
         ),
-        ("Events", {'fields': ('notify_on_created', 'notify_on_completed', 'notify_on_delivered')}),
-        ("Template Names", {'fields': ('created_template_name', 'completed_template_name', 'delivered_template_name')}),
-        ("Template Parameter Maps", {'fields': ('created_template', 'completed_template', 'delivered_template')}),
+        ("WhatsApp Bridge", {'fields': ('bridge_base_url',)}),
+        ("Events", {'fields': ('notify_on_created', 'notify_on_completed', 'notify_on_delivered', 'notify_on_feedback')}),
+        (
+            "Template Names",
+            {'fields': ('created_template_name', 'completed_template_name', 'delivered_template_name', 'estimate_template_name', 'feedback_template_name')},
+        ),
+        (
+            "Template Parameter Maps",
+            {'fields': ('created_template', 'completed_template', 'delivered_template', 'estimate_template', 'feedback_template')},
+        ),
     )
 
     def has_add_permission(self, request):

@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import re
+import time
 from typing import Any
 
 import requests
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 RECEIPT_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24
 GRAPH_API_BASE_URL = 'https://graph.facebook.com'
 DEFAULT_API_TIMEOUT = 15
+DEFAULT_BRIDGE_TIMEOUT = 20
 DEFAULT_TEMPLATE_LANGUAGE_CODE = 'en_US'
 DEFAULT_GRAPH_API_VERSION = 'v23.0'
 PLACEHOLDER_PATTERN = re.compile(r'{([a-zA-Z_][a-zA-Z0-9_]*)}')
@@ -185,6 +187,69 @@ def _cloud_api_request(
     }
 
 
+def _bridge_base_url(settings_obj: WhatsAppIntegrationSettings) -> str:
+    raw_url = (settings_obj.bridge_base_url or '').strip()
+    if not raw_url:
+        return ''
+    if raw_url.startswith('http://') or raw_url.startswith('https://'):
+        return raw_url.rstrip('/')
+    return f"http://{raw_url}".rstrip('/')
+
+
+def _bridge_api_request(
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    settings_obj: WhatsAppIntegrationSettings | None = None,
+) -> dict[str, Any]:
+    settings_obj = settings_obj or _settings()
+    base_url = _bridge_base_url(settings_obj)
+    if not base_url:
+        return {
+            'ok': False,
+            'status': 400,
+            'error': 'WhatsApp bridge base URL is missing.',
+            'data': None,
+        }
+
+    try:
+        response = requests.request(
+            method.upper(),
+            f"{base_url}/{path.lstrip('/')}",
+            json=payload,
+            timeout=DEFAULT_BRIDGE_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        return {
+            'ok': False,
+            'status': None,
+            'error': str(exc),
+            'data': None,
+        }
+
+    try:
+        data = response.json()
+    except ValueError:
+        data = {'raw': response.text}
+
+    payload_ok = data.get('ok') if isinstance(data, dict) else None
+    ok = response.ok and payload_ok is not False
+    error_message = ''
+    if not ok:
+        if isinstance(data, dict):
+            error_message = data.get('message') or data.get('error') or json.dumps(data, default=str)
+        else:
+            error_message = response.text
+
+    return {
+        'ok': ok,
+        'status': response.status_code,
+        'error': error_message,
+        'data': data,
+    }
+
+
 def _extract_graph_message_id(data: Any) -> str:
     if not isinstance(data, dict):
         return ''
@@ -193,6 +258,22 @@ def _extract_graph_message_id(data: Any) -> str:
         first_message = messages[0] or {}
         if isinstance(first_message, dict):
             return (first_message.get('id') or '').strip()
+    return ''
+
+
+def _extract_bridge_message_id(data: Any) -> str:
+    if not isinstance(data, dict):
+        return ''
+    for key in ('messageId', 'message_id', 'id'):
+        value = data.get(key)
+        if value:
+            return str(value).strip()
+    delivery = data.get('delivery')
+    if isinstance(delivery, dict):
+        for key in ('messageId', 'message_id', 'id'):
+            value = delivery.get(key)
+            if value:
+                return str(value).strip()
     return ''
 
 
@@ -221,6 +302,64 @@ def get_cloud_status() -> dict[str, Any]:
         result['data']['configured'] = True
         result['data']['missing'] = []
     return result
+
+
+def get_bridge_status() -> dict[str, Any]:
+    settings_obj = _settings()
+    from .whatsapp_bridge_manager import bridge_process_snapshot, ensure_bridge_running
+
+    process_info = ensure_bridge_running(settings_obj)
+    result = _bridge_api_request('GET', '/api/session/status', settings_obj=settings_obj)
+    if not isinstance(result.get('data'), dict):
+        result['data'] = {}
+    result['data']['configured'] = bool(_bridge_base_url(settings_obj))
+    result['data']['baseUrl'] = _bridge_base_url(settings_obj)
+    result['data']['process'] = process_info or bridge_process_snapshot(settings_obj)
+    return result
+
+
+def restart_bridge_session() -> dict[str, Any]:
+    settings_obj = _settings()
+    from .whatsapp_bridge_manager import can_manage_bridge, restart_bridge
+
+    if can_manage_bridge(settings_obj):
+        process_result = restart_bridge(settings_obj)
+        if not process_result.get('ok'):
+            return {
+                'ok': False,
+                'status': None,
+                'error': process_result.get('error') or 'Failed to restart WhatsApp bridge process.',
+                'data': process_result,
+            }
+        time.sleep(1)
+        status_result = _bridge_api_request('GET', '/api/session/status', settings_obj=settings_obj)
+        if not isinstance(status_result.get('data'), dict):
+            status_result['data'] = {}
+        status_result['data']['process'] = process_result.get('process') or {}
+        status_result['ok'] = True
+        return status_result
+
+    return _bridge_api_request('POST', '/api/session/restart')
+
+
+def logout_bridge_session() -> dict[str, Any]:
+    settings_obj = _settings()
+    result = _bridge_api_request('POST', '/api/session/logout', settings_obj=settings_obj)
+    if result.get('ok'):
+        return result
+
+    from .whatsapp_bridge_manager import can_manage_bridge, restart_bridge
+
+    if not can_manage_bridge(settings_obj):
+        return result
+
+    process_result = restart_bridge(settings_obj, clear_session=True)
+    return {
+        'ok': bool(process_result.get('ok')),
+        'status': result.get('status'),
+        'error': '' if process_result.get('ok') else (process_result.get('error') or result.get('error', '')),
+        'data': process_result,
+    }
 
 
 def send_cloud_text_message(phone_number: str, message: str) -> dict[str, Any]:
@@ -275,41 +414,121 @@ def send_cloud_template_message(
     if not template_name:
         return {'ok': False, 'status': 400, 'error': 'Template name is required.', 'data': None}
 
-    template_payload: dict[str, Any] = {
-        'name': template_name,
-        'language': {'code': language_code or DEFAULT_TEMPLATE_LANGUAGE_CODE},
-    }
-    if body_parameters:
-        template_payload['components'] = [{'type': 'body', 'parameters': body_parameters}]
-    if button_url_suffix:
-        components = template_payload.setdefault('components', [])
-        components.append(
-            {
-                'type': 'button',
-                'sub_type': 'url',
-                'index': str(button_index),
-                'parameters': [
-                    {
-                        'type': 'text',
-                        'text': button_url_suffix,
-                    }
-                ],
-            }
+    def build_template_payload(current_language_code: str, current_button_url_suffix: str = '') -> dict[str, Any]:
+        template_payload: dict[str, Any] = {
+            'name': template_name,
+            'language': {'code': current_language_code or DEFAULT_TEMPLATE_LANGUAGE_CODE},
+        }
+        if body_parameters:
+            template_payload['components'] = [{'type': 'body', 'parameters': body_parameters}]
+        if current_button_url_suffix:
+            components = template_payload.setdefault('components', [])
+            components.append(
+                {
+                    'type': 'button',
+                    'sub_type': 'url',
+                    'index': str(button_index),
+                    'parameters': [
+                        {
+                            'type': 'text',
+                            'text': current_button_url_suffix,
+                        }
+                    ],
+                }
+            )
+        return template_payload
+
+    def send_once(current_language_code: str, current_button_url_suffix: str = '') -> dict[str, Any]:
+        result = _cloud_api_request(
+            'POST',
+            f"{phone_number_id}/messages",
+            payload={
+                'messaging_product': 'whatsapp',
+                'to': target,
+                'type': 'template',
+                'template': build_template_payload(current_language_code, current_button_url_suffix),
+            },
+            settings_obj=settings_obj,
+        )
+        result['message_id'] = _extract_graph_message_id(result.get('data'))
+        return result
+
+    def error_text(result: dict[str, Any]) -> str:
+        parts: list[str] = []
+        if result.get('error'):
+            parts.append(str(result['error']))
+        data = result.get('data')
+        if isinstance(data, dict):
+            error_payload = data.get('error')
+            if isinstance(error_payload, dict):
+                for key in ('message', 'type', 'code'):
+                    value = error_payload.get(key)
+                    if value not in (None, ''):
+                        parts.append(str(value))
+                error_data = error_payload.get('error_data')
+                if isinstance(error_data, dict):
+                    details = error_data.get('details')
+                    if details:
+                        parts.append(str(details))
+        return ' '.join(parts).strip().lower()
+
+    def is_translation_missing(result: dict[str, Any]) -> bool:
+        if result.get('ok'):
+            return False
+        return 'template name' in error_text(result) and 'does not exist in' in error_text(result)
+
+    def is_button_mismatch(result: dict[str, Any]) -> bool:
+        if result.get('ok'):
+            return False
+        text = error_text(result)
+        if 'button' not in text:
+            return False
+        return any(
+            token in text
+            for token in (
+                'localizable_params',
+                'parameter',
+                'component',
+                'sub_type',
+                'buttons',
+            )
         )
 
-    result = _cloud_api_request(
-        'POST',
-        f"{phone_number_id}/messages",
-        payload={
-            'messaging_product': 'whatsapp',
-            'to': target,
-            'type': 'template',
-            'template': template_payload,
-        },
-        settings_obj=settings_obj,
-    )
-    result['message_id'] = _extract_graph_message_id(result.get('data'))
-    return result
+    candidate_language_codes: list[str] = []
+    for candidate in (
+        language_code,
+        language_code.split('_', 1)[0] if '_' in language_code else '',
+        DEFAULT_TEMPLATE_LANGUAGE_CODE if language_code == 'en' else '',
+    ):
+        candidate = (candidate or '').strip()
+        if candidate and candidate not in candidate_language_codes:
+            candidate_language_codes.append(candidate)
+
+    last_result: dict[str, Any] | None = None
+    for index, candidate_language_code in enumerate(candidate_language_codes):
+        result = send_once(candidate_language_code, button_url_suffix)
+        if result.get('ok'):
+            return result
+
+        last_result = result
+        has_more_languages = index < len(candidate_language_codes) - 1
+        if is_translation_missing(result) and has_more_languages:
+            continue
+
+        if button_url_suffix and is_button_mismatch(result):
+            retry_without_button = send_once(candidate_language_code, '')
+            if retry_without_button.get('ok'):
+                return retry_without_button
+
+            last_result = retry_without_button
+            if is_translation_missing(retry_without_button) and has_more_languages:
+                continue
+            return retry_without_button
+
+        if not is_translation_missing(result) or not has_more_languages:
+            return result
+
+    return last_result or send_once(language_code, button_url_suffix)
 
 
 def send_cloud_document_message(
@@ -346,6 +565,59 @@ def send_cloud_document_message(
         settings_obj=settings_obj,
     )
     result['message_id'] = _extract_graph_message_id(result.get('data'))
+    return result
+
+
+def send_bridge_text_message(phone_number: str, message: str) -> dict[str, Any]:
+    settings_obj = _settings()
+    target = _phone_to_international(phone_number, settings_obj.default_country_code)
+    message = (message or '').strip()
+
+    if not target:
+        return {'ok': False, 'status': 400, 'error': 'Invalid target phone number.', 'data': None}
+    if not message:
+        return {'ok': False, 'status': 400, 'error': 'Message is required.', 'data': None}
+
+    result = _bridge_api_request(
+        'POST',
+        '/api/messages/send',
+        payload={
+            'to': target,
+            'message': message,
+        },
+        settings_obj=settings_obj,
+    )
+    result['message_id'] = _extract_bridge_message_id(result.get('data'))
+    return result
+
+
+def send_bridge_document_message(
+    phone_number: str,
+    pdf_url: str,
+    caption: str = '',
+    filename: str = 'job-ticket.pdf',
+) -> dict[str, Any]:
+    settings_obj = _settings()
+    target = _phone_to_international(phone_number, settings_obj.default_country_code)
+    pdf_url = (pdf_url or '').strip()
+
+    if not target:
+        return {'ok': False, 'status': 400, 'error': 'Invalid target phone number.', 'data': None}
+    if not pdf_url:
+        return {'ok': False, 'status': 400, 'error': 'Document URL is required.', 'data': None}
+
+    result = _bridge_api_request(
+        'POST',
+        '/api/messages/send-pdf',
+        payload={
+            'to': target,
+            'pdf_url': pdf_url,
+            'caption': caption or '',
+            'filename': filename or 'job-ticket.pdf',
+        },
+        settings_obj=settings_obj,
+    )
+    result['message_id'] = _extract_bridge_message_id(result.get('data'))
     return result
 
 
@@ -535,6 +807,10 @@ def _template_for_event(settings_obj: WhatsAppIntegrationSettings, event_type: s
         return settings_obj.created_template
     if event_type == MessageQueue.EVENT_COMPLETED:
         return settings_obj.completed_template
+    if event_type == MessageQueue.EVENT_ESTIMATE:
+        return settings_obj.estimate_template
+    if event_type == MessageQueue.EVENT_FEEDBACK:
+        return settings_obj.feedback_template
     return settings_obj.delivered_template
 
 
@@ -545,6 +821,10 @@ def _template_name_for_event(settings_obj: WhatsAppIntegrationSettings, event_ty
         return (settings_obj.completed_template_name or '').strip()
     if event_type == MessageQueue.EVENT_DELIVERED:
         return (settings_obj.delivered_template_name or '').strip()
+    if event_type == MessageQueue.EVENT_ESTIMATE:
+        return (settings_obj.estimate_template_name or '').strip()
+    if event_type == MessageQueue.EVENT_FEEDBACK:
+        return (settings_obj.feedback_template_name or '').strip()
     return ''
 
 
@@ -562,6 +842,8 @@ def _message_context(job: JobTicket, settings_obj: WhatsAppIntegrationSettings) 
         'receipt_link': _build_receipt_link(settings_obj, job),
         'updated_at': timezone.localtime(job.updated_at).strftime('%d-%m-%Y %I:%M %p'),
         'estimated_delivery': job.estimated_delivery.strftime('%d-%m-%Y') if job.estimated_delivery else '-',
+        'estimated_amount': f"Rs {job.estimated_amount:.2f}" if job.estimated_amount is not None else '-',
+        'estimation_note': (job.estimation_note or '').strip() or '-',
     }
 
 
@@ -618,8 +900,29 @@ def _deliver_template_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
     )
 
 
+def _deliver_bridge_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
+    if queue.pdf_url:
+        return (
+            send_bridge_document_message(queue.target_phone, queue.pdf_url, queue.caption, queue.filename),
+            'whatsapp-bridge-document',
+        )
+    return (
+        send_bridge_text_message(queue.target_phone, queue.message),
+        'whatsapp-bridge-text',
+    )
+
+
 def _deliver_message_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
-    if queue.event_type in {MessageQueue.EVENT_CREATED, MessageQueue.EVENT_COMPLETED, MessageQueue.EVENT_DELIVERED}:
+    settings_obj = _settings()
+    if settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE:
+        return _deliver_bridge_queue(queue)
+    if queue.event_type in {
+        MessageQueue.EVENT_CREATED,
+        MessageQueue.EVENT_COMPLETED,
+        MessageQueue.EVENT_DELIVERED,
+        MessageQueue.EVENT_ESTIMATE,
+        MessageQueue.EVENT_FEEDBACK,
+    }:
         return _deliver_template_queue(queue)
     if queue.pdf_url:
         return (
@@ -663,11 +966,17 @@ def _dispatch_message_queue_after_commit(queue_id: int) -> None:
             )
     except Exception:
         logger.exception('Failed to dispatch WhatsApp message queue %s', queue_id)
+        settings_obj = _settings()
+        transport = (
+            'whatsapp-bridge'
+            if settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE
+            else 'whatsapp-cloud-api'
+        )
         update_message_queue_status(
             queue_id,
             MessageQueue.STATUS_FAILED,
             error_message='Unexpected error while sending WhatsApp message.',
-            transport='whatsapp-cloud-api',
+            transport=transport,
         )
 
 
@@ -680,7 +989,20 @@ def _should_send(settings_obj: WhatsAppIntegrationSettings, event_type: str) -> 
         return settings_obj.notify_on_completed
     if event_type == MessageQueue.EVENT_DELIVERED:
         return settings_obj.notify_on_delivered
+    if event_type == MessageQueue.EVENT_FEEDBACK:
+        return settings_obj.notify_on_feedback
     return False
+
+
+def queue_job_whatsapp_message(job: JobTicket, event_type: str) -> dict[str, Any]:
+    settings_obj = _settings()
+    message = _render_message(_template_for_event(settings_obj, event_type), job, settings_obj)
+    return create_message_queue(
+        job.customer_phone,
+        job=job,
+        event_type=event_type,
+        message=message,
+    )
 
 
 def _map_webhook_status(status_value: str) -> str | None:
@@ -759,18 +1081,13 @@ def send_job_whatsapp_notification(job: JobTicket, event_type: str) -> dict[str,
     if not _should_send(settings_obj, event_type):
         return {'ok': False, 'skipped': True, 'reason': 'Event disabled or integration not enabled.'}
 
+    is_cloud_delivery = settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_CLOUD_API
     template_name = _template_name_for_event(settings_obj, event_type)
-    if not template_name:
+    if is_cloud_delivery and not template_name:
         return {
             'ok': False,
             'skipped': True,
             'reason': 'Approved WhatsApp template name is missing for this event.',
         }
 
-    message = _render_message(_template_for_event(settings_obj, event_type), job, settings_obj)
-    return create_message_queue(
-        job.customer_phone,
-        job=job,
-        event_type=event_type,
-        message=message,
-    )
+    return queue_job_whatsapp_message(job, event_type)

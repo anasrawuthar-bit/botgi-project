@@ -397,6 +397,23 @@ class InventoryEntry(models.Model):
 
 
 class JobTicket(models.Model):
+    FEEDBACK_PENDING = 'pending'
+    FEEDBACK_MESSAGE_SENT = 'message_sent'
+    FEEDBACK_RECEIVED = 'received'
+    FEEDBACK_CALLED_HAPPY = 'called_happy'
+    FEEDBACK_CALLED_ISSUE = 'called_issue'
+    FEEDBACK_NO_ANSWER = 'no_answer'
+    FEEDBACK_CALL_LATER = 'call_later'
+    FEEDBACK_FOLLOWUP_CHOICES = [
+        (FEEDBACK_PENDING, 'Pending'),
+        (FEEDBACK_MESSAGE_SENT, 'Message Sent'),
+        (FEEDBACK_RECEIVED, 'Feedback Received'),
+        (FEEDBACK_CALLED_HAPPY, 'Called - Happy'),
+        (FEEDBACK_CALLED_ISSUE, 'Called - Issue'),
+        (FEEDBACK_NO_ANSWER, 'No Answer'),
+        (FEEDBACK_CALL_LATER, 'Call Later'),
+    ]
+
     STATUS_CHOICES = [
         ('Pending', 'Pending'),
         ('Under Inspection', 'Under Inspection'),
@@ -433,6 +450,7 @@ class JobTicket(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
 
     # Re-entry option
     original_job_ticket = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
@@ -457,6 +475,7 @@ class JobTicket(models.Model):
     is_under_warranty = models.BooleanField(default=False, help_text="Check if this job is under company warranty.")
 
     estimated_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    estimation_note = models.TextField(blank=True, help_text="Customer-facing estimation/callback note.")
     estimated_delivery = models.DateField(null=True, blank=True)
     
     vyapar_invoice_number = models.CharField(max_length=50, blank=True, null=True)
@@ -476,6 +495,37 @@ class JobTicket(models.Model):
     )
     feedback_comment = models.TextField(blank=True, help_text="Customer feedback comment")
     feedback_date = models.DateTimeField(null=True, blank=True, help_text="When feedback was submitted")
+    feedback_due_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="When the post-service feedback follow-up becomes due.",
+    )
+    feedback_followup_enabled = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Enabled when this job should enter the 7-day feedback follow-up queue.",
+    )
+    feedback_message_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the 7-day feedback WhatsApp was queued/sent.",
+    )
+    feedback_followup_status = models.CharField(
+        max_length=30,
+        choices=FEEDBACK_FOLLOWUP_CHOICES,
+        default=FEEDBACK_PENDING,
+        db_index=True,
+    )
+    feedback_followup_note = models.TextField(blank=True)
+    feedback_followup_called_at = models.DateTimeField(null=True, blank=True)
+    feedback_followup_marked_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='marked_feedback_followups',
+    )
 
     def __str__(self):
         return f"Job Code: {self.job_code} - {self.customer_name}"
@@ -495,12 +545,29 @@ class JobTicket(models.Model):
             elif vendor_service.status == 'Sent to Vendor':
                 return None
         
+        if self.status == 'Closed' and self.closed_at:
+            return self.closed_at
+
         # For regular jobs, use the updated_at (completion/closure date)
         return self.updated_at
     
     def is_vendor_job(self):
         """Check if this job was sent to a vendor"""
         return hasattr(self, 'specialized_service') and self.specialized_service is not None
+
+    @property
+    def has_feedback_followup_due(self):
+        return bool(
+            self.status == 'Closed'
+            and self.feedback_followup_enabled
+            and self.feedback_due_at
+            and self.feedback_due_at <= timezone.now()
+            and not self.feedback_rating
+            and self.feedback_followup_status not in {
+                self.FEEDBACK_RECEIVED,
+                self.FEEDBACK_CALLED_HAPPY,
+            }
+        )
 
     # Helper: return the active (accepted) assignment or None
     def active_assignment(self):
@@ -521,6 +588,40 @@ class JobTicket(models.Model):
             self.assigned_to = None
             self.status = 'Pending'
             self.save(update_fields=['assigned_to', 'status', 'updated_at'])
+
+
+class JobReminder(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_DONE = 'done'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_DONE, 'Done'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
+    job_ticket = models.ForeignKey(JobTicket, on_delete=models.CASCADE, related_name='reminders')
+    due_at = models.DateTimeField(db_index=True)
+    purpose = models.CharField(max_length=120, default='Customer callback')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    last_prompted_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='job_reminders')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['due_at', 'id']
+        indexes = [
+            models.Index(fields=['status', 'due_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.job_ticket.job_code} reminder at {self.due_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def is_due(self):
+        return self.status == self.STATUS_PENDING and self.due_at <= timezone.now()
 
 
 class JobTicketPhoto(models.Model):
@@ -735,6 +836,24 @@ class SpecializedService(models.Model):
     
     # Financials
     vendor_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="The amount we pay the vendor.")
+    vendor_discount_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Discount or adjustment received from the vendor.",
+    )
+    vendor_paid_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Amount already paid to the vendor.",
+    )
+    vendor_balance_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Remaining amount payable to the vendor after discount and paid amount.",
+    )
     client_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="The amount we charge the client for this service.")
     
     # Tracking
@@ -742,8 +861,56 @@ class SpecializedService(models.Model):
     returned_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, help_text="Internal notes about this specialized service.")
 
+    @property
+    def vendor_net_payable(self):
+        vendor_cost = self.vendor_cost or Decimal('0.00')
+        discount = self.vendor_discount_amount or Decimal('0.00')
+        payable = vendor_cost - discount
+        return payable if payable > Decimal('0.00') else Decimal('0.00')
+
+    @property
+    def vendor_payment_status(self):
+        if not self.vendor_cost:
+            return 'Not Entered'
+        if (self.vendor_balance_amount or Decimal('0.00')) <= Decimal('0.00'):
+            return 'Paid'
+        if (self.vendor_paid_amount or Decimal('0.00')) > Decimal('0.00'):
+            return 'Part Paid'
+        return 'Balance Due'
+
     def __str__(self):
         return f"{self.job_ticket.job_code} -> {self.vendor.company_name if self.vendor else 'Unassigned'}"
+
+
+class VendorPayment(models.Model):
+    METHOD_CASH = 'cash'
+    METHOD_TRANSFER = 'transfer'
+    METHOD_CHOICES = [
+        (METHOD_CASH, 'Cash'),
+        (METHOD_TRANSFER, 'Transfer'),
+    ]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='payments')
+    specialized_service = models.ForeignKey(
+        SpecializedService,
+        on_delete=models.CASCADE,
+        related_name='payment_transactions',
+    )
+    payment_date = models.DateField(default=timezone.localdate)
+    payment_method = models.CharField(max_length=20, choices=METHOD_CHOICES, default=METHOD_CASH)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    balance_before = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    balance_after = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    reference_no = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='vendor_payments_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-payment_date', '-created_at']
+
+    def __str__(self):
+        return f"{self.vendor.company_name} payment {self.amount} on {self.payment_date}"
 
 
 class DailyJobCodeSequence(models.Model):
@@ -915,7 +1082,25 @@ class PlatformSettings(models.Model):
 
 
 class WhatsAppIntegrationSettings(models.Model):
-    """Configuration for Meta WhatsApp Cloud API integration."""
+    """Configuration for WhatsApp delivery through Cloud API or local QR bridge."""
+
+    DELIVERY_CLOUD_API = 'cloud_api'
+    DELIVERY_BRIDGE = 'bridge'
+    DELIVERY_METHOD_CHOICES = [
+        (DELIVERY_CLOUD_API, 'WhatsApp Cloud API'),
+        (DELIVERY_BRIDGE, 'WhatsApp Bridge (QR Login)'),
+    ]
+
+    delivery_method = models.CharField(
+        max_length=20,
+        choices=DELIVERY_METHOD_CHOICES,
+        default=DELIVERY_CLOUD_API,
+        help_text="Choose how automatic WhatsApp notifications are sent.",
+    )
+    bridge_base_url = models.URLField(
+        default='http://127.0.0.1:3001',
+        help_text="Base URL of the local WhatsApp bridge service used for QR login delivery.",
+    )
 
     api_version = models.CharField(
         max_length=16,
@@ -969,6 +1154,7 @@ class WhatsAppIntegrationSettings(models.Model):
     notify_on_created = models.BooleanField(default=True)
     notify_on_completed = models.BooleanField(default=True)
     notify_on_delivered = models.BooleanField(default=True)
+    notify_on_feedback = models.BooleanField(default=True)
     created_template_name = models.CharField(
         max_length=100,
         blank=True,
@@ -1008,6 +1194,32 @@ class WhatsAppIntegrationSettings(models.Model):
             "Please share your feedback here: {status_link}"
         )
     )
+    estimate_template_name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Approved template name used for manual estimate messages.",
+    )
+    estimate_template = models.TextField(
+        default=(
+            "Hello {customer_name}, estimate for ticket {job_code} is {estimated_amount}.\n"
+            "Device: {device_brand} {device_model} ({device_type})\n"
+            "Note: {estimation_note}\n"
+            "Status: {status}\n"
+            "Track status: {status_link}"
+        )
+    )
+    feedback_template_name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Approved template name used for 7-day feedback follow-up messages.",
+    )
+    feedback_template = models.TextField(
+        default=(
+            "Hello {customer_name}, your ticket {job_code} was closed 7 days ago.\n"
+            "Please share your service feedback here: {status_link}"
+        ),
+        blank=True,
+    )
     created_pdf_caption_template = models.TextField(
         default="Job Ticket {job_code}",
         blank=True,
@@ -1033,6 +1245,8 @@ class WhatsAppNotificationLog(models.Model):
         ('created', 'Created'),
         ('completed', 'Completed'),
         ('delivered', 'Delivered'),
+        ('estimate', 'Estimate'),
+        ('feedback', 'Feedback'),
         ('manual', 'Manual'),
     ]
 
@@ -1081,11 +1295,15 @@ class MessageQueue(models.Model):
     EVENT_CREATED = 'created'
     EVENT_COMPLETED = 'completed'
     EVENT_DELIVERED = 'delivered'
+    EVENT_ESTIMATE = 'estimate'
+    EVENT_FEEDBACK = 'feedback'
     EVENT_MANUAL = 'manual'
     EVENT_CHOICES = [
         (EVENT_CREATED, 'Created'),
         (EVENT_COMPLETED, 'Completed'),
         (EVENT_DELIVERED, 'Delivered'),
+        (EVENT_ESTIMATE, 'Estimate'),
+        (EVENT_FEEDBACK, 'Feedback'),
         (EVENT_MANUAL, 'Manual'),
     ]
 

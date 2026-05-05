@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),
-    DJANGO_ALLOWED_HOSTS=(list, ['127.0.0.1', 'localhost', '192.168.1.4:8000']),
+    DJANGO_ALLOWED_HOSTS=(list, ['*']),
     DJANGO_CSRF_TRUSTED_ORIGINS=(list, []),
     DJANGO_SECURE_SSL_REDIRECT=(bool, False),
 )
@@ -55,6 +55,7 @@ SECURE_SSL_REDIRECT = env.bool('DJANGO_SECURE_SSL_REDIRECT', default=False)
 PUBLIC_BASE_URL = env('PUBLIC_BASE_URL', default='')
 WEB_RELEASE_VERSION = env('WEB_RELEASE_VERSION', default='dev')
 WEB_RELEASE_POLL_INTERVAL_SECONDS = env.int('WEB_RELEASE_POLL_INTERVAL_SECONDS', default=300)
+WHATSAPP_BRIDGE_AUTO_START = env.bool('WHATSAPP_BRIDGE_AUTO_START', default=True)
 
 
 # Application definition
@@ -89,14 +90,18 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SESSION_IDLE_TIMEOUT_SECONDS = 60 * 60 * 24 * 7  # 7 days of inactivity
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+_secure_cookies_default = SECURE_SSL_REDIRECT or PUBLIC_BASE_URL.strip().lower().startswith('https://')
+SESSION_COOKIE_SECURE = env.bool('DJANGO_SESSION_COOKIE_SECURE', default=_secure_cookies_default)
+CSRF_COOKIE_SECURE = env.bool('DJANGO_CSRF_COOKIE_SECURE', default=_secure_cookies_default)
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = SESSION_IDLE_TIMEOUT_SECONDS
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
 
 # Cache for rate limiting
 CACHES = {

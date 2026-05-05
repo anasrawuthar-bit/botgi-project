@@ -84,9 +84,7 @@ def reports_dashboard(request):
 
     # 2d. Expense Calculations
     vendor_services_in_period = SpecializedService.objects.filter(job_ticket__in=monthly_finished_jobs)
-    monthly_vendor_expense = vendor_services_in_period.aggregate(
-        total=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0.00'))
-    )['total']
+    monthly_vendor_expense = sum_vendor_net_cost(vendor_services_in_period)
 
     # Subtract job-level discounts from total income
     monthly_total_discounts = _sum_job_discounts(monthly_finished_jobs)
@@ -177,7 +175,7 @@ def reports_dashboard(request):
         total_jobs_given=Count('services', filter=Q(
             services__job_ticket__in=vendor_finished_jobs
         )),
-        total_vendor_cost=Coalesce(Sum('services__vendor_cost', filter=Q(
+        total_vendor_cost=Coalesce(Sum(vendor_net_cost_expression('services__'), filter=Q(
             services__job_ticket__in=vendor_finished_jobs
         ), output_field=DecimalField()), Decimal('0.00')),
         total_client_charge=Coalesce(Sum('services__client_charge', filter=Q(
@@ -320,7 +318,7 @@ def reports_chart_data(request):
         total_income = _net_amount_after_discount(parts_total + service_total, discount_total)
 
         vendor_qs = SpecializedService.objects.filter(job_ticket__in=jobs_qs)
-        vendor_expense = vendor_qs.aggregate(total=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0.00')))['total']
+        vendor_expense = sum_vendor_net_cost(vendor_qs)
 
         monthly.append({
             'label': month_start.strftime('%Y-%m'),
@@ -355,7 +353,7 @@ def reports_chart_data(request):
         total_income = _net_amount_after_discount(parts_total + service_total, discount_total)
 
         vendor_qs = SpecializedService.objects.filter(job_ticket__in=jobs_qs)
-        vendor_expense = vendor_qs.aggregate(total=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0.00')))['total']
+        vendor_expense = sum_vendor_net_cost(vendor_qs)
 
         yearly.append({
             'year': yr,

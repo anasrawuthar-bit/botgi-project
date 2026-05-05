@@ -7,8 +7,12 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from .models import WhatsAppIntegrationSettings
 from .whatsapp_service import (
+    get_bridge_status,
     get_cloud_status,
+    logout_bridge_session,
     process_whatsapp_webhook_payload,
+    restart_bridge_session,
+    send_bridge_text_message,
     send_cloud_template_message,
     send_cloud_text_message,
     verify_whatsapp_webhook_signature,
@@ -86,6 +90,99 @@ def whatsapp_cloud_test_send_api(request):
             )
         result = send_cloud_template_message(phone, template_name, settings_obj.template_language_code)
 
+    status_code = 200 if result.get('ok') else 503
+    return JsonResponse(
+        {
+            'ok': bool(result.get('ok')),
+            'api_status_code': result.get('status'),
+            'message_id': result.get('message_id', ''),
+            'response': result.get('data') or {},
+            'error': result.get('error', ''),
+        },
+        status=status_code,
+    )
+
+
+@login_required
+@require_GET
+def whatsapp_bridge_status_api(request):
+    if not request.user.is_staff:
+        return _forbidden_json()
+
+    result = get_bridge_status()
+    bridge_payload = result.get('data') or {}
+    if not isinstance(bridge_payload, dict):
+        bridge_payload = {'raw': bridge_payload}
+
+    return JsonResponse(
+        {
+            'ok': True,
+            'bridge_ok': bool(result.get('ok')),
+            'api_status_code': result.get('status'),
+            'bridge': bridge_payload,
+            'error': result.get('error', ''),
+        }
+    )
+
+
+@login_required
+@require_POST
+def whatsapp_bridge_restart_api(request):
+    if not request.user.is_staff:
+        return _forbidden_json()
+
+    result = restart_bridge_session()
+    status_code = 200 if result.get('ok') else 503
+    return JsonResponse(
+        {
+            'ok': bool(result.get('ok')),
+            'api_status_code': result.get('status'),
+            'response': result.get('data') or {},
+            'error': result.get('error', ''),
+        },
+        status=status_code,
+    )
+
+
+@login_required
+@require_POST
+def whatsapp_bridge_logout_api(request):
+    if not request.user.is_staff:
+        return _forbidden_json()
+
+    result = logout_bridge_session()
+    status_code = 200 if result.get('ok') else 503
+    return JsonResponse(
+        {
+            'ok': bool(result.get('ok')),
+            'api_status_code': result.get('status'),
+            'response': result.get('data') or {},
+            'error': result.get('error', ''),
+        },
+        status=status_code,
+    )
+
+
+@login_required
+@require_POST
+def whatsapp_bridge_test_send_api(request):
+    if not request.user.is_staff:
+        return _forbidden_json()
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'invalid_payload', 'message': 'Invalid JSON payload.'}, status=400)
+
+    phone = (payload.get('phone') or '').strip()
+    message = (payload.get('message') or '').strip()
+
+    if not phone:
+        return JsonResponse({'ok': False, 'error': 'missing_phone', 'message': 'Phone is required.'}, status=400)
+    if not message:
+        return JsonResponse({'ok': False, 'error': 'missing_message', 'message': 'Message is required.'}, status=400)
+
+    result = send_bridge_text_message(phone, message)
     status_code = 200 if result.get('ok') else 503
     return JsonResponse(
         {

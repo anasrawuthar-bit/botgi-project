@@ -4,6 +4,42 @@
 
 {% block title %}Staff Dashboard{% endblock %}
 
+{% block extra_css %}
+<style>
+    .camera-preview-shell {
+        aspect-ratio: 4 / 3;
+        background: #111827;
+        overflow: hidden;
+    }
+
+    .camera-preview {
+        height: 100%;
+        object-fit: cover;
+        width: 100%;
+    }
+
+    .captured-photo-item {
+        position: relative;
+    }
+
+    .captured-photo-thumb {
+        height: 72px;
+        object-fit: cover;
+        width: 72px;
+    }
+
+    .captured-photo-remove {
+        height: 22px;
+        line-height: 1;
+        padding: 0;
+        position: absolute;
+        right: 3px;
+        top: 3px;
+        width: 22px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="section-container">
     <div class="staff-head-shell mb-4">
@@ -105,6 +141,66 @@
     </div>
     <hr>
     {% endif %}
+
+    <div class="card-box h-100 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h2 class="mb-0 section-title">
+                <i class="fas fa-bell"></i> Reminder Alerts
+                <span class="badge bg-primary ms-2">{{ reminder_alert_count }}</span>
+                {% if due_reminder_count %}
+                <span class="badge bg-danger ms-1">{{ due_reminder_count }} Due</span>
+                {% endif %}
+            </h2>
+        </div>
+        <div class="table-responsive sticky-header">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Due Time</th>
+                        <th>Job Code</th>
+                        <th>Customer</th>
+                        <th>Device</th>
+                        <th>Estimate</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for reminder in reminder_alerts %}
+                    <tr class="{% if reminder.is_due %}table-warning{% endif %}">
+                        <td>{{ reminder.due_at|date:"d M Y, h:i A" }}</td>
+                        <td><a href="{% url 'staff_job_detail' reminder.job_ticket.job_code %}">{{ reminder.job_ticket.job_code }}</a></td>
+                        <td>{{ reminder.job_ticket.customer_name }}<br><span class="text-muted small">{{ reminder.job_ticket.customer_phone }}</span></td>
+                        <td>{{ reminder.job_ticket.device_type }} {{ reminder.job_ticket.device_brand }} {{ reminder.job_ticket.device_model }}</td>
+                        <td>
+                            {% if reminder.job_ticket.estimated_amount %}
+                                &#8377;{{ reminder.job_ticket.estimated_amount|floatformat:2 }}
+                            {% else %}
+                                <span class="text-muted">Not set</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if reminder.is_due %}
+                                <span class="badge bg-danger">Due</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Scheduled</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'staff_job_detail' reminder.job_ticket.job_code %}" class="btn btn-sm btn-primary">
+                                <i class="fas fa-eye"></i> Open
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center">No reminder alerts.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <div class="card-box h-100 mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -221,6 +317,20 @@
                             </div>
                         </div>
 
+                        <div class="row g-3 mt-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold mb-1">Reminder After</label>
+                                <div class="input-group">
+                                    <input type="number" name="reminder_hours" id="id_reminder_hours"
+                                        class="form-control" min="0" max="24" placeholder="Hour" inputmode="numeric">
+                                    <span class="input-group-text">hr</span>
+                                    <input type="number" name="reminder_minutes" id="id_reminder_minutes"
+                                        class="form-control" min="0" max="60" placeholder="Minute" inputmode="numeric">
+                                    <span class="input-group-text">min</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <hr class="my-4">
                         <p class="small text-muted mb-2">Tip: Preset lists can be customized in Admin -> Job Field
                             Presets.</p>
@@ -318,10 +428,46 @@
                 </div>
                 <div class="col-md-12">
                     <label class="form-label fw-semibold">Device Photos</label>
-                    <input type="file" name="device_forms[INDEX].device_photos" class="form-control" accept="image/*"
-                        capture="environment" multiple>
-                    <div class="form-text">Mobile il camera option varum. Select cheyyunna photos database-il save
-                        cheyyum.</div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <input type="file" name="device_forms[INDEX].device_photos" id="camera-photo-INDEX"
+                                class="d-none camera-photo-input" accept="image/*" multiple data-photo-kind="camera">
+                            <button type="button" class="btn btn-outline-primary w-100 photo-trigger-btn"
+                                data-photo-target="camera">
+                                <i class="fas fa-camera"></i> Open Camera
+                            </button>
+                            <div class="small text-muted mt-1 photo-status" data-photo-status="camera">
+                                No camera photo selected
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="file" name="device_forms[INDEX].device_photos" id="gallery-photos-INDEX"
+                                class="d-none photo-input" accept="image/*" multiple data-photo-kind="gallery">
+                            <button type="button" class="btn btn-outline-secondary w-100 photo-trigger-btn"
+                                data-photo-target="gallery">
+                                <i class="fas fa-images"></i> Choose Photos
+                            </button>
+                            <div class="small text-muted mt-1 photo-status" data-photo-status="gallery">
+                                No photos selected
+                            </div>
+                        </div>
+                    </div>
+                    <div class="camera-panel border rounded p-2 mt-2 d-none">
+                        <div class="camera-preview-shell rounded">
+                            <video class="camera-preview" autoplay muted playsinline></video>
+                        </div>
+                        <canvas class="camera-canvas d-none"></canvas>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <button type="button" class="btn btn-primary btn-sm capture-photo-btn">
+                                <i class="fas fa-camera-retro"></i> Capture Photo
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm stop-camera-btn">
+                                <i class="fas fa-stop"></i> Stop Camera
+                            </button>
+                        </div>
+                        <div class="camera-error text-danger small mt-2 d-none"></div>
+                    </div>
+                    <div class="captured-photo-strip d-flex flex-wrap gap-2 mt-2"></div>
                 </div>
                 <div class="col-md-12">
                     <div class="form-check form-switch pt-2">
@@ -582,9 +728,15 @@
                                     <td>{{ job.device_type }}</td>
                                     <td><span class="badge badge-status badge-warning">{{ job.status }}</span></td>
                                     <td>
-                                        <a href="{% url 'close_job' job.job_code %}?next={% url 'staff_dashboard' %}" class="btn btn-danger btn-sm">
+                                        <button type="button"
+                                            class="btn btn-danger btn-sm close-job-modal-btn"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#dashboardCloseJobModal"
+                                            data-job-code="{{ job.job_code }}"
+                                            data-close-url="{% url 'close_job' job.job_code %}"
+                                            data-next-url="{% url 'staff_dashboard' %}">
                                             <i class="fas fa-check-circle"></i> Mark as Closed
-                                        </a>
+                                        </button>
                                     </td>
                                 </tr>
                                 {% empty %}
@@ -644,6 +796,32 @@
     </div>
 
 </div>
+
+<div class="modal fade" id="dashboardCloseJobModal" tabindex="-1" aria-labelledby="dashboardCloseJobModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" id="dashboard-close-job-form">
+                {% csrf_token %}
+                <input type="hidden" name="next" id="dashboard-close-next" value="{% url 'staff_dashboard' %}">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="dashboardCloseJobModalLabel">Close Job</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Close this job now?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-check-circle"></i> Confirm Close
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div id="reminder-prompt-stack" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;"></div>
 
 <script>
     // --- DJANGO CHANNELS / WEBSOCKET LIVE UPDATE (DISABLED - Django Channels removed) ---
@@ -711,6 +889,9 @@
         const shouldReopenCreateJobModal = {% if show_create_job_modal %}true{% else %}false{% endif %};
     let formIndex = 0;
     let phoneLookupTimer = null;
+    let activeCameraBlock = null;
+    const cameraStreams = new WeakMap();
+    const capturedPhotoFiles = new WeakMap();
 
     function parseIndianPhoneInput(rawValue) {
         const trimmedValue = String(rawValue || '').trim();
@@ -974,6 +1155,235 @@
         targetInput.focus();
     }
 
+    function getCameraInput(formBlock) {
+        return formBlock ? formBlock.querySelector('[data-photo-kind="camera"]') : null;
+    }
+
+    function getCapturedPhotos(formBlock) {
+        const input = getCameraInput(formBlock);
+        return input ? capturedPhotoFiles.get(input) || [] : [];
+    }
+
+    function setCameraError(formBlock, message) {
+        const errorBox = formBlock?.querySelector('.camera-error');
+        if (!errorBox) return;
+        errorBox.textContent = message || '';
+        errorBox.classList.toggle('d-none', !message);
+    }
+
+    function updateCameraPhotoStatus(formBlock) {
+        const status = formBlock?.querySelector('[data-photo-status="camera"]');
+        if (!status) return;
+
+        const photos = getCapturedPhotos(formBlock);
+        if (!photos.length) {
+            status.textContent = 'No camera photo selected';
+            return;
+        }
+        status.textContent = photos.length === 1 ? photos[0].name : `${photos.length} camera photos selected`;
+    }
+
+    function renderCapturedPhotos(formBlock) {
+        const strip = formBlock?.querySelector('.captured-photo-strip');
+        if (!strip) return;
+
+        strip.innerHTML = '';
+        getCapturedPhotos(formBlock).forEach((photo, index) => {
+            const item = document.createElement('div');
+            item.className = 'captured-photo-item';
+            item.innerHTML = `
+                <img src="${photo.url}" class="captured-photo-thumb rounded border" alt="Captured photo ${index + 1}">
+                <button type="button" class="btn btn-danger btn-sm captured-photo-remove" data-photo-index="${index}" aria-label="Remove captured photo">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            strip.appendChild(item);
+        });
+    }
+
+    function stopCamera(formBlock, hidePanel = true) {
+        if (!formBlock) return;
+
+        const stream = cameraStreams.get(formBlock);
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            cameraStreams.delete(formBlock);
+        }
+
+        const video = formBlock.querySelector('.camera-preview');
+        if (video) {
+            video.pause();
+            video.srcObject = null;
+        }
+
+        if (hidePanel) {
+            formBlock.querySelector('.camera-panel')?.classList.add('d-none');
+        }
+
+        if (activeCameraBlock === formBlock) {
+            activeCameraBlock = null;
+        }
+    }
+
+    function stopAllCameras() {
+        if (!container) return;
+        container.querySelectorAll('.device-form-block').forEach(formBlock => stopCamera(formBlock));
+    }
+
+    async function openCamera(button) {
+        const formBlock = button.closest('.device-form-block');
+        if (!formBlock) return;
+
+        const cameraPanel = formBlock.querySelector('.camera-panel');
+        const video = formBlock.querySelector('.camera-preview');
+        if (!cameraPanel || !video) return;
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            cameraPanel.classList.remove('d-none');
+            setCameraError(formBlock, 'Camera access is not available in this browser. Use Choose Photos.');
+            return;
+        }
+
+        if (activeCameraBlock && activeCameraBlock !== formBlock) {
+            stopCamera(activeCameraBlock);
+        }
+
+        stopCamera(formBlock, false);
+        cameraPanel.classList.remove('d-none');
+        setCameraError(formBlock, 'Starting camera...');
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: { facingMode: { ideal: 'environment' } },
+            });
+            cameraStreams.set(formBlock, stream);
+            activeCameraBlock = formBlock;
+            video.srcObject = stream;
+            await video.play();
+            setCameraError(formBlock, '');
+        } catch (error) {
+            console.error('Camera access failed:', error);
+            setCameraError(formBlock, 'Camera permission denied or unavailable. Use Choose Photos if needed.');
+        }
+    }
+
+    function capturePhoto(button) {
+        const formBlock = button.closest('.device-form-block');
+        const video = formBlock?.querySelector('.camera-preview');
+        const canvas = formBlock?.querySelector('.camera-canvas');
+        const input = getCameraInput(formBlock);
+        if (!formBlock || !video || !canvas || !input) return;
+
+        if (!video.videoWidth || !video.videoHeight) {
+            setCameraError(formBlock, 'Camera is still loading. Try again.');
+            return;
+        }
+
+        button.disabled = true;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob((blob) => {
+            button.disabled = false;
+            if (!blob) {
+                setCameraError(formBlock, 'Could not capture this photo. Try again.');
+                return;
+            }
+
+            const photos = capturedPhotoFiles.get(input) || [];
+            photos.push({
+                blob,
+                name: `device-photo-${Date.now()}-${photos.length + 1}.jpg`,
+                url: URL.createObjectURL(blob),
+            });
+            capturedPhotoFiles.set(input, photos);
+            updateCameraPhotoStatus(formBlock);
+            renderCapturedPhotos(formBlock);
+            setCameraError(formBlock, '');
+        }, 'image/jpeg', 0.9);
+    }
+
+    function removeCapturedPhoto(button) {
+        const formBlock = button.closest('.device-form-block');
+        const input = getCameraInput(formBlock);
+        if (!formBlock || !input) return;
+
+        const index = Number(button.dataset.photoIndex);
+        const photos = capturedPhotoFiles.get(input) || [];
+        const removed = photos.splice(index, 1)[0];
+        if (removed?.url) {
+            URL.revokeObjectURL(removed.url);
+        }
+
+        capturedPhotoFiles.set(input, photos);
+        updateCameraPhotoStatus(formBlock);
+        renderCapturedPhotos(formBlock);
+    }
+
+    function clearCapturedPhotos(formBlock) {
+        const input = getCameraInput(formBlock);
+        if (!input) return;
+
+        (capturedPhotoFiles.get(input) || []).forEach(photo => {
+            if (photo.url) URL.revokeObjectURL(photo.url);
+        });
+        capturedPhotoFiles.delete(input);
+        updateCameraPhotoStatus(formBlock);
+        renderCapturedPhotos(formBlock);
+    }
+
+    function appendCapturedPhotos(formData) {
+        if (!container) return;
+        container.querySelectorAll('.device-form-block').forEach(formBlock => {
+            const input = getCameraInput(formBlock);
+            if (!input || !input.name) return;
+
+            (capturedPhotoFiles.get(input) || []).forEach(photo => {
+                formData.append(input.name, photo.blob, photo.name);
+            });
+        });
+    }
+
+    function triggerPhotoInput(button) {
+        const formBlock = button.closest('.device-form-block');
+        if (!formBlock) return;
+
+        const targetKind = button.dataset.photoTarget;
+        if (targetKind === 'camera') {
+            openCamera(button);
+            return;
+        }
+
+        const photoInput = formBlock.querySelector(`[data-photo-kind="${targetKind}"]`);
+        if (photoInput) {
+            photoInput.click();
+        }
+    }
+
+    function updatePhotoStatus(input) {
+        const formBlock = input.closest('.device-form-block');
+        if (!formBlock) return;
+
+        const kind = input.dataset.photoKind;
+        if (kind === 'camera') {
+            updateCameraPhotoStatus(formBlock);
+            return;
+        }
+
+        const status = formBlock.querySelector(`[data-photo-status="${kind}"]`);
+        if (!status) return;
+
+        const fileCount = input.files ? input.files.length : 0;
+        if (!fileCount) {
+            status.textContent = kind === 'camera' ? 'No camera photo selected' : 'No photos selected';
+            return;
+        }
+
+        status.textContent = fileCount === 1 ? input.files[0].name : `${fileCount} photos selected`;
+    }
+
     function validateDevices() {
         const errors = [];
         const blocks = container ? container.querySelectorAll('.device-form-block') : [];
@@ -1004,6 +1414,10 @@
 
     function resetDeviceForms() {
         if (!container) return;
+        container.querySelectorAll('.device-form-block').forEach(formBlock => {
+            stopCamera(formBlock);
+            clearCapturedPhotos(formBlock);
+        });
         container.innerHTML = '';
         formIndex = 0;
         addDeviceForm(true);
@@ -1067,6 +1481,7 @@
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
 
         const formData = new FormData(jobForm);
+        appendCapturedPhotos(formData);
         if (customerPhoneInput) {
             formData.set('customer_phone', parseIndianPhoneInput(customerPhoneInput.value).digits);
         }
@@ -1171,6 +1586,8 @@
         // 3. Attach remove listener
         formBlock.querySelector('.remove-device-btn').addEventListener('click', function () {
             if (container.children.length > 1 || initial) {
+                stopCamera(formBlock);
+                clearCapturedPhotos(formBlock);
                 formBlock.remove();
                 updateIndices();
             } else {
@@ -1210,11 +1627,47 @@
         jobForm.addEventListener('submit', handleSubmit);
     }
 
+    if (createJobModalEl) {
+        createJobModalEl.addEventListener('hidden.bs.modal', stopAllCameras);
+    }
+    window.addEventListener('beforeunload', stopAllCameras);
+
     if (container) {
         container.addEventListener('click', function (event) {
+            const photoButton = event.target.closest('.photo-trigger-btn');
+            if (photoButton) {
+                triggerPhotoInput(photoButton);
+                return;
+            }
+
+            const captureButton = event.target.closest('.capture-photo-btn');
+            if (captureButton) {
+                capturePhoto(captureButton);
+                return;
+            }
+
+            const stopCameraButton = event.target.closest('.stop-camera-btn');
+            if (stopCameraButton) {
+                stopCamera(stopCameraButton.closest('.device-form-block'));
+                return;
+            }
+
+            const removePhotoButton = event.target.closest('.captured-photo-remove');
+            if (removePhotoButton) {
+                removeCapturedPhoto(removePhotoButton);
+                return;
+            }
+
             const applyButton = event.target.closest('.apply-preset-btn');
             if (!applyButton) return;
             applyPresetValue(applyButton);
+        });
+
+        container.addEventListener('change', function (event) {
+            const photoInput = event.target.closest('.photo-input');
+            if (photoInput) {
+                updatePhotoStatus(photoInput);
+            }
         });
     }
 
@@ -1265,5 +1718,81 @@
     // ---------------------------------------------------
 });
 
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const closeJobForm = document.getElementById('dashboard-close-job-form');
+    const closeJobTitle = document.getElementById('dashboardCloseJobModalLabel');
+    const closeJobNext = document.getElementById('dashboard-close-next');
+    document.querySelectorAll('.close-job-modal-btn').forEach((button) => {
+        button.addEventListener('click', function () {
+            if (closeJobForm) {
+                closeJobForm.action = this.dataset.closeUrl || '';
+            }
+            if (closeJobTitle) {
+                closeJobTitle.textContent = `Close Job ${this.dataset.jobCode || ''}`;
+            }
+            if (closeJobNext) {
+                closeJobNext.value = this.dataset.nextUrl || "{% url 'staff_dashboard' %}";
+            }
+        });
+    });
+
+    const stack = document.getElementById('reminder-prompt-stack');
+    const reminderUrl = "{% url 'due_job_reminders_api' %}";
+
+    function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value || '';
+        return div.innerHTML;
+    }
+
+    function showReminderPrompt(reminder) {
+        if (!stack || !reminder) return;
+        const toastId = `reminder-toast-${reminder.id}`;
+        if (document.getElementById(toastId)) return;
+        const item = document.createElement('div');
+        item.id = toastId;
+        item.className = 'toast show border-0 shadow mb-2';
+        item.setAttribute('role', 'alert');
+        item.innerHTML = `
+            <div class="toast-header bg-warning text-dark">
+                <i class="fas fa-bell me-2"></i>
+                <strong class="me-auto">Reminder Due</strong>
+                <small>${escapeHtml(reminder.due_at)}</small>
+                <button type="button" class="btn-close ms-2" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                <div class="fw-semibold">${escapeHtml(reminder.job_code)} - ${escapeHtml(reminder.customer_name)}</div>
+                <div class="small text-muted mb-2">${escapeHtml(reminder.device)} | ${escapeHtml(reminder.customer_phone)}</div>
+                <a href="${escapeHtml(reminder.url)}" class="btn btn-sm btn-primary">
+                    <i class="fas fa-eye"></i> Open Job
+                </a>
+            </div>
+        `;
+        const closeBtn = item.querySelector('.btn-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => item.remove());
+        }
+        stack.appendChild(item);
+    }
+
+    async function pollDueReminders() {
+        try {
+            const response = await fetch(reminderUrl, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            if (!data.ok || !data.reminders) return;
+            data.reminders.forEach(showReminderPrompt);
+        } catch (error) {
+            console.error('Reminder check failed:', error);
+        }
+    }
+
+    window.setTimeout(pollDueReminders, 3000);
+    window.setInterval(pollDueReminders, 60000);
+});
 </script>
 {% endblock %}

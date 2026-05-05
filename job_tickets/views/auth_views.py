@@ -26,8 +26,9 @@ def login_view(request):
         logout_notice_level = 'secondary'
 
     if request.user.is_authenticated:
-        if next_url:
-            return redirect(next_url)
+        permitted_next_url = _get_permitted_next_url(request.user, next_url)
+        if permitted_next_url:
+            return redirect(permitted_next_url)
         return _get_post_login_redirect(request.user)
 
     if request.method == 'POST':
@@ -53,8 +54,9 @@ def login_view(request):
             cache.delete(cache_key)
             login(request, user)
             request.session.set_expiry(settings.SESSION_IDLE_TIMEOUT_SECONDS)
-            if next_url:
-                return redirect(next_url)
+            permitted_next_url = _get_permitted_next_url(user, next_url)
+            if permitted_next_url:
+                return redirect(permitted_next_url)
             return _get_post_login_redirect(user)
         else:
             # Increment failed attempts

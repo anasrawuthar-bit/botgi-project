@@ -35,6 +35,7 @@ urlpatterns = [
     path('staff/vendors/', views.vendor_dashboard, name='vendor_dashboard'),
     path('staff/vendors/<int:vendor_id>/edit/', views.edit_vendor, name='edit_vendor'),
     path('staff/vendors/<int:vendor_id>/delete/', views.delete_vendor, name='delete_vendor'),
+    path('staff/vendors/<int:vendor_id>/payment/', views.record_vendor_payment, name='record_vendor_payment'),
     path('job-created/<str:job_code>/', views.job_creation_success, name='job_creation_success'),
     path('staff/billing/<str:job_code>/', views.job_billing_staff, name='job_billing_staff'),
     path('staff/reports/', views.reports_dashboard, name='reports_dashboard'), 
@@ -96,6 +97,10 @@ urlpatterns = [
     path('api/mobile/reports/summary/', views.mobile_api_reports_summary, name='mobile_api_reports_summary'),
     path('api/whatsapp/cloud/status/', whatsapp_views.whatsapp_cloud_status_api, name='whatsapp_cloud_status_api'),
     path('api/whatsapp/cloud/test-send/', whatsapp_views.whatsapp_cloud_test_send_api, name='whatsapp_cloud_test_send_api'),
+    path('api/whatsapp/bridge/status/', whatsapp_views.whatsapp_bridge_status_api, name='whatsapp_bridge_status_api'),
+    path('api/whatsapp/bridge/restart/', whatsapp_views.whatsapp_bridge_restart_api, name='whatsapp_bridge_restart_api'),
+    path('api/whatsapp/bridge/logout/', whatsapp_views.whatsapp_bridge_logout_api, name='whatsapp_bridge_logout_api'),
+    path('api/whatsapp/bridge/test-send/', whatsapp_views.whatsapp_bridge_test_send_api, name='whatsapp_bridge_test_send_api'),
     path('api/whatsapp/webhook/', whatsapp_views.whatsapp_cloud_webhook_api, name='whatsapp_cloud_webhook_api'),
 
     # from chatgpt
@@ -112,6 +117,8 @@ urlpatterns = [
     path('staff/job/<str:job_code>/photos/<int:photo_id>/delete/', views.staff_delete_job_photo, name='staff_delete_job_photo'),
     path('staff/job/<str:job_code>/unlock-vendor-details/', views.unlock_vendor_details, name='unlock_vendor_details'),
     path('staff/job/<str:job_code>/lock-vendor-details/', views.lock_vendor_details, name='lock_vendor_details'),
+    path('staff/job/<str:job_code>/feedback-followup/', views.update_feedback_followup, name='update_feedback_followup'),
+    path('api/job-reminders/due/', views.due_job_reminders_api, name='due_job_reminders_api'),
     path('api/all-jobs/', views.api_all_jobs, name='api_all_jobs'),
     path('staff/reports/active-workload/print/', views.print_active_workload_report, name='print_active_workload_report'),
     path('staff/job/<str:job_code>/reassign/', views.job_reassign_staff, name='job_reassign_staff'),

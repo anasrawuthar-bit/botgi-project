@@ -352,18 +352,10 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="whatsapp-integration" role="tabpanel" aria-labelledby="tab-whatsapp-integration" tabindex="0">
-                                        <h4 class="mb-3">WhatsApp Cloud API</h4>
-                                        <div class="alert alert-primary">
-                                            <i class="fas fa-cloud"></i>
-                                            This setup talks directly to Meta's WhatsApp Cloud API. No Electron bridge, QR session, or linked-device relay is required anymore.
-                                        </div>
-                                        <div class="alert alert-warning">
-                                            <i class="fas fa-exclamation-triangle"></i>
-                                            Business-initiated notifications usually need approved templates. The parameter order in the fields below should match your Meta template placeholders <strong>{{1}}, {{2}}, {{3}}</strong>.
-                                        </div>
+                                        <h4 class="mb-3">WhatsApp Integration</h4>
 
                                         <div class="row">
-                                            <div class="col-md-12 mb-3">
+                                            <div class="col-md-4 mb-3">
                                                 <div class="form-check form-switch">
                                                     {{ whatsapp_form.is_enabled }}
                                                     <label class="form-check-label" for="{{ whatsapp_form.is_enabled.id_for_label }}">
@@ -374,21 +366,11 @@
                                                     <div class="text-danger small mt-1">{{ whatsapp_form.is_enabled.errors|striptags }}</div>
                                                 {% endif %}
                                             </div>
-                                        </div>
-
-                                        <div class="row">
                                             <div class="col-md-4 mb-3">
-                                                <label class="form-label">API Version</label>
-                                                {{ whatsapp_form.api_version }}
-                                                {% if whatsapp_form.api_version.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.api_version.errors|striptags }}</div>
-                                                {% endif %}
-                                            </div>
-                                            <div class="col-md-4 mb-3">
-                                                <label class="form-label">Phone Number ID</label>
-                                                {{ whatsapp_form.phone_number_id }}
-                                                {% if whatsapp_form.phone_number_id.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.phone_number_id.errors|striptags }}</div>
+                                                <label class="form-label">Automatic Delivery Method</label>
+                                                {{ whatsapp_form.delivery_method }}
+                                                {% if whatsapp_form.delivery_method.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.delivery_method.errors|striptags }}</div>
                                                 {% endif %}
                                             </div>
                                             <div class="col-md-4 mb-3">
@@ -399,88 +381,183 @@
                                                 {% endif %}
                                             </div>
                                         </div>
+                                        {{ whatsapp_form.public_site_url.as_hidden }}
+                                        {{ whatsapp_form.bridge_base_url.as_hidden }}
 
-                                        <div class="row">
-                                            <div class="col-md-12 mb-3">
-                                                <label class="form-label">Access Token</label>
-                                                {{ whatsapp_form.access_token }}
-                                                {% if whatsapp_form.access_token.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.access_token.errors|striptags }}</div>
-                                                {% endif %}
-                                                <small class="form-text text-muted">Use a permanent system user token for production.</small>
+                                        <div data-wa-method-section="cloud_api">
+                                            <hr>
+                                            <h5 class="mb-3">Cloud API Credentials</h5>
+                                            <div class="row">
+                                                <div class="col-md-4 mb-3">
+                                                    <label class="form-label">API Version</label>
+                                                    {{ whatsapp_form.api_version }}
+                                                    {% if whatsapp_form.api_version.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.api_version.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="col-md-4 mb-3">
+                                                    <label class="form-label">Phone Number ID</label>
+                                                    {{ whatsapp_form.phone_number_id }}
+                                                    {% if whatsapp_form.phone_number_id.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.phone_number_id.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="col-md-4 mb-3">
+                                                    <label class="form-label">Template Language Code</label>
+                                                    {{ whatsapp_form.template_language_code }}
+                                                    {% if whatsapp_form.template_language_code.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.template_language_code.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        <div class="row">
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label">Webhook Verify Token</label>
-                                                {{ whatsapp_form.webhook_verify_token }}
-                                                {% if whatsapp_form.webhook_verify_token.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.webhook_verify_token.errors|striptags }}</div>
-                                                {% endif %}
+                                            <div class="row">
+                                                <div class="col-md-12 mb-3">
+                                                    <label class="form-label">Access Token</label>
+                                                    {{ whatsapp_form.access_token }}
+                                                    {% if whatsapp_form.access_token.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.access_token.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
                                             </div>
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label">App Secret (optional)</label>
-                                                {{ whatsapp_form.app_secret }}
-                                                {% if whatsapp_form.app_secret.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.app_secret.errors|striptags }}</div>
-                                                {% endif %}
-                                            </div>
-                                        </div>
 
-                                        <div class="row">
-                                            <div class="col-md-8 mb-3">
-                                                <label class="form-label">Public Site URL</label>
-                                                {{ whatsapp_form.public_site_url }}
-                                                {% if whatsapp_form.public_site_url.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.public_site_url.errors|striptags }}</div>
-                                                {% endif %}
-                                                <small class="form-text text-muted">Used for receipt and status links sent inside template parameters.</small>
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">Webhook Verify Token</label>
+                                                    {{ whatsapp_form.webhook_verify_token }}
+                                                    {% if whatsapp_form.webhook_verify_token.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.webhook_verify_token.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">App Secret</label>
+                                                    {{ whatsapp_form.app_secret }}
+                                                    {% if whatsapp_form.app_secret.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.app_secret.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
                                             </div>
-                                            <div class="col-md-4 mb-3">
-                                                <label class="form-label">Template Language Code</label>
-                                                {{ whatsapp_form.template_language_code }}
-                                                {% if whatsapp_form.template_language_code.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.template_language_code.errors|striptags }}</div>
-                                                {% endif %}
-                                            </div>
-                                        </div>
 
-                                        <div class="row">
-                                            <div class="col-md-12 mb-3">
-                                                <label class="form-label">Webhook URL</label>
-                                                <input type="text" class="form-control" value="{{ whatsapp_webhook_url }}" readonly>
-                                                <small class="form-text text-muted">Add this URL in Meta Webhooks and subscribe to message status updates.</small>
+                                            <div class="row">
+                                                <div class="col-md-12 mb-3">
+                                                    <label class="form-label">Webhook URL</label>
+                                                    <input type="text" class="form-control" value="{{ whatsapp_webhook_url }}" readonly>
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        <hr>
-                                        <h5 class="mb-3">Cloud API Status</h5>
-                                        <div class="row">
-                                            <div class="col-md-8 mb-3">
-                                                <div class="card h-100">
-                                                    <div class="card-body">
-                                                        <div class="d-flex align-items-center justify-content-between mb-2">
-                                                            <span class="fw-semibold">Connection Check</span>
-                                                            <span id="wa-cloud-status-badge" class="badge bg-secondary">Checking...</span>
+                                            <hr>
+                                            <h5 class="mb-3">Cloud API Status</h5>
+                                            <div class="row">
+                                                <div class="col-md-8 mb-3">
+                                                    <div class="card h-100">
+                                                        <div class="card-body">
+                                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                                <span class="fw-semibold">Connection Check</span>
+                                                                <span id="wa-cloud-status-badge" class="badge bg-secondary">Checking...</span>
+                                                            </div>
+                                                            <p id="wa-cloud-status-text" class="text-muted mb-3">Checking Cloud API configuration...</p>
+                                                            <p id="wa-cloud-status-help" class="small text-muted mb-3"></p>
+                                                            <button type="button" class="btn btn-outline-primary btn-sm" id="wa-refresh-status-btn">
+                                                                <i class="fas fa-sync-alt"></i> Check API
+                                                            </button>
                                                         </div>
-                                                        <p id="wa-cloud-status-text" class="text-muted mb-3">Checking Cloud API configuration...</p>
-                                                        <button type="button" class="btn btn-outline-primary btn-sm" id="wa-refresh-status-btn">
-                                                            <i class="fas fa-sync-alt"></i> Check API
-                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-4 mb-3">
+                                                    <div class="card h-100">
+                                                        <div class="card-body">
+                                                            <p class="fw-semibold mb-2">Default Test Template</p>
+                                                            {{ whatsapp_form.test_template_name }}
+                                                            {% if whatsapp_form.test_template_name.errors %}
+                                                                <div class="text-danger small mt-1">{{ whatsapp_form.test_template_name.errors|striptags }}</div>
+                                                            {% endif %}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="col-md-4 mb-3">
-                                                <div class="card h-100">
-                                                    <div class="card-body">
-                                                        <p class="fw-semibold mb-2">Default Test Template</p>
-                                                        {{ whatsapp_form.test_template_name }}
-                                                        {% if whatsapp_form.test_template_name.errors %}
-                                                            <div class="text-danger small mt-1">{{ whatsapp_form.test_template_name.errors|striptags }}</div>
-                                                        {% endif %}
-                                                        <small class="form-text text-muted">Use <code>hello_world</code> while working with Meta test numbers.</small>
+
+                                            <hr>
+                                            <h5 class="mb-3">Cloud Test Message</h5>
+                                            <div class="row">
+                                                <div class="col-md-4 mb-3">
+                                                    <label for="wa-cloud-test-phone" class="form-label">Phone</label>
+                                                    <input type="text" id="wa-cloud-test-phone" class="form-control" placeholder="9876543210">
+                                                </div>
+                                                <div class="col-md-4 mb-3">
+                                                    <label for="wa-cloud-test-template" class="form-label">Template Name</label>
+                                                    <input type="text" id="wa-cloud-test-template" class="form-control" value="{{ whatsapp_form.instance.test_template_name|default:'hello_world' }}">
+                                                </div>
+                                                <div class="col-md-4 mb-3">
+                                                    <label for="wa-cloud-test-message" class="form-label">Plain Text Message</label>
+                                                    <input type="text" id="wa-cloud-test-message" class="form-control" value="Test message from BOTGI service desk.">
+                                                </div>
+                                                <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                                                    <button type="button" class="btn btn-outline-success btn-sm" id="wa-template-test-btn">
+                                                        <i class="fab fa-whatsapp"></i> Send Template Test
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" id="wa-text-test-btn">
+                                                        <i class="far fa-comment-dots"></i> Send Text Test
+                                                    </button>
+                                                    <span id="wa-cloud-test-result" class="text-muted small"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div data-wa-method-section="bridge">
+                                            <hr>
+                                            <h5 class="mb-3">Bridge QR Login</h5>
+                                            <div class="row">
+                                                <div class="col-lg-7 mb-3">
+                                                    <div class="card h-100">
+                                                        <div class="card-body">
+                                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                                <span class="fw-semibold">Bridge Session</span>
+                                                                <span id="wa-bridge-status-badge" class="badge bg-secondary">Checking...</span>
+                                                            </div>
+                                                            <p id="wa-bridge-status-text" class="text-muted mb-3">Checking local WhatsApp bridge...</p>
+                                                            <p id="wa-bridge-status-help" class="small text-muted mb-3"></p>
+                                                            <div class="d-flex flex-wrap gap-2">
+                                                                <button type="button" class="btn btn-outline-primary btn-sm" id="wa-bridge-refresh-btn">
+                                                                    <i class="fas fa-sync-alt"></i> Refresh QR
+                                                                </button>
+                                                                <button type="button" class="btn btn-outline-warning btn-sm" id="wa-bridge-restart-btn">
+                                                                    <i class="fas fa-redo"></i> Restart Bridge Session
+                                                                </button>
+                                                                <button type="button" class="btn btn-outline-danger btn-sm" id="wa-bridge-logout-btn">
+                                                                    <i class="fas fa-sign-out-alt"></i> Logout Session
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                     </div>
+                                                </div>
+                                                <div class="col-lg-5 mb-3">
+                                                    <div class="card h-100">
+                                                        <div class="card-body text-center">
+                                                            <div id="wa-bridge-qr-empty" class="text-muted small py-4">
+                                                                QR code will appear here.
+                                                            </div>
+                                                            <img id="wa-bridge-qr-img" src="" alt="WhatsApp bridge QR code" class="img-fluid border rounded d-none" style="max-width: 320px;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <hr>
+                                            <h5 class="mb-3">Bridge Test Message</h5>
+                                            <div class="row">
+                                                <div class="col-md-5 mb-3">
+                                                    <label for="wa-bridge-test-phone" class="form-label">Phone</label>
+                                                    <input type="text" id="wa-bridge-test-phone" class="form-control" placeholder="9876543210">
+                                                </div>
+                                                <div class="col-md-7 mb-3">
+                                                    <label for="wa-bridge-test-message" class="form-label">Message</label>
+                                                    <input type="text" id="wa-bridge-test-message" class="form-control" value="Test message from BOTGI service desk.">
+                                                </div>
+                                                <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" id="wa-bridge-test-btn">
+                                                        <i class="fas fa-qrcode"></i> Send Bridge Test
+                                                    </button>
+                                                    <span id="wa-bridge-test-result" class="text-muted small"></span>
                                                 </div>
                                             </div>
                                         </div>
@@ -512,12 +589,20 @@
                                                     </label>
                                                 </div>
                                             </div>
+                                            <div class="col-md-4 mb-2">
+                                                <div class="form-check">
+                                                    {{ whatsapp_form.notify_on_feedback }}
+                                                    <label class="form-check-label" for="{{ whatsapp_form.notify_on_feedback.id_for_label }}">
+                                                        Notify for feedback follow-up
+                                                    </label>
+                                                </div>
+                                            </div>
                                         </div>
 
                                         <hr>
-                                        <h5 class="mb-3">Approved Template Mapping</h5>
+                                        <h5 class="mb-3">Templates</h5>
                                         <div class="row">
-                                            <div class="col-md-12 mb-3">
+                                            <div class="col-md-12 mb-3" data-wa-cloud-only>
                                                 <label class="form-label">Created Template Name</label>
                                                 {{ whatsapp_form.created_template_name }}
                                                 {% if whatsapp_form.created_template_name.errors %}
@@ -525,10 +610,10 @@
                                                 {% endif %}
                                             </div>
                                             <div class="col-md-12 mb-3">
-                                                <label class="form-label">Created Template Parameters</label>
+                                                <label class="form-label">Created Message</label>
                                                 {{ whatsapp_form.created_template }}
                                             </div>
-                                            <div class="col-md-12 mb-3">
+                                            <div class="col-md-12 mb-3" data-wa-cloud-only>
                                                 <label class="form-label">Completed Template Name</label>
                                                 {{ whatsapp_form.completed_template_name }}
                                                 {% if whatsapp_form.completed_template_name.errors %}
@@ -536,10 +621,10 @@
                                                 {% endif %}
                                             </div>
                                             <div class="col-md-12 mb-3">
-                                                <label class="form-label">Completed Template Parameters</label>
+                                                <label class="form-label">Completed Message</label>
                                                 {{ whatsapp_form.completed_template }}
                                             </div>
-                                            <div class="col-md-12 mb-3">
+                                            <div class="col-md-12 mb-3" data-wa-cloud-only>
                                                 <label class="form-label">Delivered Template Name</label>
                                                 {{ whatsapp_form.delivered_template_name }}
                                                 {% if whatsapp_form.delivered_template_name.errors %}
@@ -547,37 +632,30 @@
                                                 {% endif %}
                                             </div>
                                             <div class="col-md-12 mb-3">
-                                                <label class="form-label">Delivered Template Parameters</label>
+                                                <label class="form-label">Delivered Message</label>
                                                 {{ whatsapp_form.delivered_template }}
                                             </div>
-                                        </div>
-                                        <small class="form-text text-muted">
-                                            Available variables: {customer_name}, {job_code}, {status}, {status_link}, {receipt_link}, {device_type}, {device_brand}, {device_model}, {reported_issue}, {updated_at}, {estimated_delivery}
-                                        </small>
-
-                                        <hr>
-                                        <h5 class="mb-3">Send Test Message</h5>
-                                        <div class="row">
-                                            <div class="col-md-4 mb-3">
-                                                <label for="wa-test-phone" class="form-label">Phone</label>
-                                                <input type="text" id="wa-test-phone" class="form-control" placeholder="9876543210">
+                                            <div class="col-md-12 mb-3" data-wa-cloud-only>
+                                                <label class="form-label">Estimate Template Name</label>
+                                                {{ whatsapp_form.estimate_template_name }}
+                                                {% if whatsapp_form.estimate_template_name.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.estimate_template_name.errors|striptags }}</div>
+                                                {% endif %}
                                             </div>
-                                            <div class="col-md-4 mb-3">
-                                                <label for="wa-test-template" class="form-label">Template Name</label>
-                                                <input type="text" id="wa-test-template" class="form-control" value="{{ whatsapp_form.instance.test_template_name|default:'hello_world' }}">
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Estimate Message</label>
+                                                {{ whatsapp_form.estimate_template }}
                                             </div>
-                                            <div class="col-md-4 mb-3">
-                                                <label for="wa-test-message" class="form-label">Plain Text Message</label>
-                                                <input type="text" id="wa-test-message" class="form-control" value="Test message from BOTGI service desk.">
+                                            <div class="col-md-12 mb-3" data-wa-cloud-only>
+                                                <label class="form-label">Feedback Template Name</label>
+                                                {{ whatsapp_form.feedback_template_name }}
+                                                {% if whatsapp_form.feedback_template_name.errors %}
+                                                    <div class="text-danger small mt-1">{{ whatsapp_form.feedback_template_name.errors|striptags }}</div>
+                                                {% endif %}
                                             </div>
-                                            <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
-                                                <button type="button" class="btn btn-outline-success btn-sm" id="wa-template-test-btn">
-                                                    <i class="fab fa-whatsapp"></i> Send Template Test
-                                                </button>
-                                                <button type="button" class="btn btn-outline-secondary btn-sm" id="wa-text-test-btn">
-                                                    <i class="far fa-comment-dots"></i> Send Text Test
-                                                </button>
-                                                <span id="wa-test-result" class="text-muted small"></span>
+                                            <div class="col-md-12 mb-3">
+                                                <label class="form-label">Feedback Message</label>
+                                                {{ whatsapp_form.feedback_template }}
                                             </div>
                                         </div>
 
@@ -591,11 +669,13 @@
                             </div>
                         </div>
 
-                        <hr class="my-4">
-                        <div class="text-end">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="fas fa-save"></i> Save Company Settings
-                            </button>
+                        <div id="company-settings-save-bar">
+                            <hr class="my-4">
+                            <div class="text-end">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <i class="fas fa-save"></i> Save Company Settings
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -679,10 +759,17 @@ document.addEventListener('DOMContentLoaded', function () {
     const activeTabInput = document.getElementById('active-tab-input');
     const serverRequestedTab = "{{ initial_tab|default:'#company-info'|escapejs }}";
 
+    function syncCompanySaveBar(target) {
+        const saveBar = document.getElementById('company-settings-save-bar');
+        if (!saveBar) return;
+        saveBar.classList.toggle('d-none', target === '#whatsapp-integration');
+    }
+
     function syncActive(target) {
         if (!target) return;
         localStorage.setItem(storageKey, target);
         if (activeTabInput) activeTabInput.value = target;
+        syncCompanySaveBar(target);
     }
 
     const targetToOpen = (serverRequestedTab && serverRequestedTab !== '#company-info')
@@ -718,16 +805,52 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const deliveryMethodSelect = document.getElementById('{{ whatsapp_form.delivery_method.id_for_label }}');
+    const methodSections = Array.from(document.querySelectorAll('[data-wa-method-section]'));
+    const cloudOnlyFields = Array.from(document.querySelectorAll('[data-wa-cloud-only]'));
     const statusBadge = document.getElementById('wa-cloud-status-badge');
     const statusText = document.getElementById('wa-cloud-status-text');
+    const statusHelp = document.getElementById('wa-cloud-status-help');
     const refreshBtn = document.getElementById('wa-refresh-status-btn');
     const templateTestBtn = document.getElementById('wa-template-test-btn');
     const textTestBtn = document.getElementById('wa-text-test-btn');
-    const testResult = document.getElementById('wa-test-result');
-    const testPhone = document.getElementById('wa-test-phone');
-    const testTemplate = document.getElementById('wa-test-template');
-    const testMessage = document.getElementById('wa-test-message');
+    const cloudTestResult = document.getElementById('wa-cloud-test-result');
+    const cloudTestPhone = document.getElementById('wa-cloud-test-phone');
+    const cloudTestTemplate = document.getElementById('wa-cloud-test-template');
+    const cloudTestMessage = document.getElementById('wa-cloud-test-message');
     const defaultCountryCodeInput = document.getElementById('{{ whatsapp_form.default_country_code.id_for_label }}');
+    const bridgeStatusBadge = document.getElementById('wa-bridge-status-badge');
+    const bridgeStatusText = document.getElementById('wa-bridge-status-text');
+    const bridgeStatusHelp = document.getElementById('wa-bridge-status-help');
+    const bridgeQrImg = document.getElementById('wa-bridge-qr-img');
+    const bridgeQrEmpty = document.getElementById('wa-bridge-qr-empty');
+    const bridgeRefreshBtn = document.getElementById('wa-bridge-refresh-btn');
+    const bridgeRestartBtn = document.getElementById('wa-bridge-restart-btn');
+    const bridgeLogoutBtn = document.getElementById('wa-bridge-logout-btn');
+    const bridgeTestBtn = document.getElementById('wa-bridge-test-btn');
+    const bridgeTestResult = document.getElementById('wa-bridge-test-result');
+    const bridgeTestPhone = document.getElementById('wa-bridge-test-phone');
+    const bridgeTestMessage = document.getElementById('wa-bridge-test-message');
+
+    function currentDeliveryMethod() {
+        return deliveryMethodSelect ? deliveryMethodSelect.value : 'cloud_api';
+    }
+
+    function syncWhatsappMethodUi() {
+        const method = currentDeliveryMethod();
+        methodSections.forEach(function (section) {
+            section.classList.toggle('d-none', section.dataset.waMethodSection !== method);
+        });
+        cloudOnlyFields.forEach(function (field) {
+            field.classList.toggle('d-none', method !== 'cloud_api');
+        });
+
+        if (method === 'bridge') {
+            fetchBridgeStatus();
+        } else {
+            fetchCloudStatus();
+        }
+    }
 
     function normalizePhone(phone) {
         const digits = (phone || '').replace(/\D+/g, '');
@@ -766,23 +889,82 @@ document.addEventListener('DOMContentLoaded', function () {
         return payload;
     }
 
+    function setStatusHelp(text, className) {
+        if (!statusHelp) return;
+        statusHelp.className = `small mb-3 ${className || 'text-muted'}`;
+        statusHelp.textContent = text || '';
+    }
+
+    function isExpiredTokenError(message) {
+        const normalized = (message || '').toLowerCase();
+        return normalized.includes('session has expired')
+            || normalized.includes('error validating access token')
+            || normalized.includes('authentication error')
+            || (normalized.includes('access token') && normalized.includes('expired'));
+    }
+
     function setStatusUi(state, text) {
         if (!statusBadge || !statusText) return;
         statusBadge.className = 'badge';
         if (state === 'connected') {
             statusBadge.classList.add('bg-success');
             statusBadge.textContent = 'Ready';
+            setStatusHelp('Cloud API is reachable. Save settings only when you change Meta credentials or template mapping.', 'text-muted');
         } else if (state === 'incomplete') {
             statusBadge.classList.add('bg-warning', 'text-dark');
             statusBadge.textContent = 'Needs Setup';
+            setStatusHelp('Fill the missing fields, save the form, then run Check API again.', 'text-muted');
+        } else if (state === 'token-expired') {
+            statusBadge.classList.add('bg-warning', 'text-dark');
+            statusBadge.textContent = 'Token Expired';
+            setStatusHelp('The stored Meta access token has expired. Paste a fresh permanent access token from Meta API Setup and save this page.', 'text-warning');
         } else if (state === 'offline') {
             statusBadge.classList.add('bg-danger');
             statusBadge.textContent = 'API Error';
+            setStatusHelp('Cloud API request failed. Recheck token, phone number ID, template language, and approved template names.', 'text-danger');
         } else {
             statusBadge.classList.add('bg-secondary');
             statusBadge.textContent = 'Unknown';
+            setStatusHelp('', 'text-muted');
         }
         statusText.textContent = text || '';
+    }
+
+    function setBridgeQr(src) {
+        if (!bridgeQrImg || !bridgeQrEmpty) return;
+        if (src) {
+            bridgeQrImg.src = src;
+            bridgeQrImg.classList.remove('d-none');
+            bridgeQrEmpty.classList.add('d-none');
+        } else {
+            bridgeQrImg.removeAttribute('src');
+            bridgeQrImg.classList.add('d-none');
+            bridgeQrEmpty.classList.remove('d-none');
+        }
+    }
+
+    function setBridgeUi(state, text, helpText, qrDataUrl) {
+        if (!bridgeStatusBadge || !bridgeStatusText) return;
+        bridgeStatusBadge.className = 'badge';
+        if (state === 'connected') {
+            bridgeStatusBadge.classList.add('bg-success');
+            bridgeStatusBadge.textContent = 'Ready';
+        } else if (state === 'qr') {
+            bridgeStatusBadge.classList.add('bg-warning', 'text-dark');
+            bridgeStatusBadge.textContent = 'Scan QR';
+        } else if (state === 'starting') {
+            bridgeStatusBadge.classList.add('bg-info', 'text-dark');
+            bridgeStatusBadge.textContent = 'Starting';
+        } else {
+            bridgeStatusBadge.classList.add('bg-danger');
+            bridgeStatusBadge.textContent = 'Offline';
+        }
+        bridgeStatusText.textContent = text || '';
+        if (bridgeStatusHelp) {
+            bridgeStatusHelp.textContent = helpText || '';
+            bridgeStatusHelp.className = `small mb-3 ${state === 'offline' ? 'text-danger' : 'text-muted'}`;
+        }
+        setBridgeQr(qrDataUrl || '');
     }
 
     async function fetchCloudStatus() {
@@ -800,39 +982,106 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (payload.missing && payload.missing.length) {
                 setStatusUi('incomplete', `Missing: ${payload.missing.join(', ')}`);
             } else {
-                setStatusUi('offline', payload.error || 'Cloud API check failed.');
+                const errorMessage = payload.error || 'Cloud API check failed.';
+                setStatusUi(isExpiredTokenError(errorMessage) ? 'token-expired' : 'offline', errorMessage);
             }
         } catch (error) {
-            setStatusUi('offline', error.message || 'Cloud API status request failed.');
+            const errorMessage = error.message || 'Cloud API status request failed.';
+            setStatusUi(isExpiredTokenError(errorMessage) ? 'token-expired' : 'offline', errorMessage);
         }
     }
 
-    async function sendTestMessage(mode) {
-        if (!testPhone || !testResult) return;
-        const phone = (testPhone.value || '').trim();
-        const templateName = (testTemplate ? testTemplate.value : '').trim();
-        const message = (testMessage.value || '').trim();
+    async function fetchBridgeStatus() {
+        if (!bridgeStatusBadge || !bridgeStatusText) return;
+        try {
+            const payload = await appRequest("{% url 'whatsapp_bridge_status_api' %}");
+            const bridge = payload.bridge || {};
+            if (payload.bridge_ok && bridge.connected) {
+                setBridgeUi(
+                    'connected',
+                    `Bridge connected (${bridge.clientId || 'default'}). Automatic bridge messages can be sent now.`,
+                    '',
+                    ''
+                );
+            } else if (payload.bridge_ok && bridge.qrAvailable && bridge.qrDataUrl) {
+                setBridgeUi(
+                    'qr',
+                    'Scan this QR in WhatsApp > Linked devices.',
+                    bridge.lastError || '',
+                    bridge.qrDataUrl
+                );
+            } else if (payload.bridge_ok) {
+                const status = bridge.status || (bridge.initializing ? 'initializing' : 'waiting');
+                setBridgeUi(
+                    bridge.initializing ? 'starting' : 'qr',
+                    `Bridge is ${status}. QR will appear when WhatsApp Web requests login.`,
+                    bridge.lastError || 'Keep the bridge process running with npm start inside whatsapp_bridge.',
+                    ''
+                );
+            } else {
+                setBridgeUi(
+                    'offline',
+                    payload.error || 'Bridge is not reachable.',
+                    'Start it with: cd whatsapp_bridge && npm start',
+                    ''
+                );
+            }
+        } catch (error) {
+            setBridgeUi(
+                'offline',
+                error.message || 'Bridge status request failed.',
+                'Start it with: cd whatsapp_bridge && npm start',
+                ''
+            );
+        }
+    }
+
+    async function runBridgeAction(url, button, pendingText) {
+        if (button) button.disabled = true;
+        if (bridgeStatusText && pendingText) bridgeStatusText.textContent = pendingText;
+        try {
+            await appRequest(url, { method: 'POST', body: JSON.stringify({}) });
+            await fetchBridgeStatus();
+        } catch (error) {
+            setBridgeUi('offline', error.message || 'Bridge action failed.', 'Confirm the bridge is running.', '');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    function setTestResult(resultElement, text, className) {
+        if (!resultElement) return;
+        resultElement.textContent = text || '';
+        resultElement.className = className || 'text-muted small';
+    }
+
+    async function sendCloudTestMessage(mode) {
+        if (!cloudTestPhone || !cloudTestResult) return;
+        const phone = (cloudTestPhone.value || '').trim();
+        const templateName = (cloudTestTemplate ? cloudTestTemplate.value : '').trim();
+        const message = (cloudTestMessage ? cloudTestMessage.value : '').trim();
         if (!phone) {
-            testResult.textContent = 'Phone is required.';
-            testResult.className = 'ms-2 text-danger small';
+            setTestResult(cloudTestResult, 'Phone is required.', 'text-danger small');
             return;
         }
 
         const target = normalizePhone(phone);
         if (!target) {
-            testResult.textContent = 'Enter a valid phone number.';
-            testResult.className = 'ms-2 text-danger small';
+            setTestResult(cloudTestResult, 'Enter a valid phone number.', 'text-danger small');
+            return;
+        }
+
+        if (mode === 'template' && !templateName) {
+            setTestResult(cloudTestResult, 'Template name is required.', 'text-danger small');
             return;
         }
 
         if (mode === 'text' && !message) {
-            testResult.textContent = 'Plain text message is required for text mode.';
-            testResult.className = 'ms-2 text-danger small';
+            setTestResult(cloudTestResult, 'Message is required.', 'text-danger small');
             return;
         }
 
-        testResult.textContent = 'Sending...';
-        testResult.className = 'ms-2 text-muted small';
+        setTestResult(cloudTestResult, 'Sending...', 'text-muted small');
         try {
             const payload = await appRequest("{% url 'whatsapp_cloud_test_send_api' %}", {
                 method: 'POST',
@@ -844,20 +1093,74 @@ document.addEventListener('DOMContentLoaded', function () {
                 }),
             });
             const messageId = payload.message_id ? ` (${payload.message_id})` : '';
-            testResult.textContent = `Test message sent${messageId}.`;
-            testResult.className = 'ms-2 text-success small';
+            setTestResult(cloudTestResult, `Cloud test sent${messageId}.`, 'text-success small');
             fetchCloudStatus();
         } catch (error) {
-            testResult.textContent = error.message || 'Request failed.';
-            testResult.className = 'ms-2 text-danger small';
+            setTestResult(cloudTestResult, error.message || 'Request failed.', 'text-danger small');
+        }
+    }
+
+    async function sendBridgeTestMessage() {
+        if (!bridgeTestPhone || !bridgeTestResult) return;
+        const phone = (bridgeTestPhone.value || '').trim();
+        const message = (bridgeTestMessage ? bridgeTestMessage.value : '').trim();
+        if (!phone) {
+            setTestResult(bridgeTestResult, 'Phone is required.', 'text-danger small');
+            return;
+        }
+
+        const target = normalizePhone(phone);
+        if (!target) {
+            setTestResult(bridgeTestResult, 'Enter a valid phone number.', 'text-danger small');
+            return;
+        }
+
+        if (!message) {
+            setTestResult(bridgeTestResult, 'Message is required.', 'text-danger small');
+            return;
+        }
+
+        setTestResult(bridgeTestResult, 'Sending...', 'text-muted small');
+        try {
+            const payload = await appRequest("{% url 'whatsapp_bridge_test_send_api' %}", {
+                method: 'POST',
+                body: JSON.stringify({
+                    phone: target,
+                    message: message,
+                }),
+            });
+            const messageId = payload.message_id ? ` (${payload.message_id})` : '';
+            setTestResult(bridgeTestResult, `Bridge test sent${messageId}.`, 'text-success small');
+            fetchBridgeStatus();
+        } catch (error) {
+            setTestResult(bridgeTestResult, error.message || 'Request failed.', 'text-danger small');
         }
     }
 
     if (refreshBtn) refreshBtn.addEventListener('click', fetchCloudStatus);
-    if (templateTestBtn) templateTestBtn.addEventListener('click', function () { sendTestMessage('template'); });
-    if (textTestBtn) textTestBtn.addEventListener('click', function () { sendTestMessage('text'); });
-
-    fetchCloudStatus();
+    if (templateTestBtn) templateTestBtn.addEventListener('click', function () { sendCloudTestMessage('template'); });
+    if (textTestBtn) textTestBtn.addEventListener('click', function () { sendCloudTestMessage('text'); });
+    if (bridgeTestBtn) bridgeTestBtn.addEventListener('click', sendBridgeTestMessage);
+    if (bridgeRefreshBtn) bridgeRefreshBtn.addEventListener('click', fetchBridgeStatus);
+    if (bridgeRestartBtn) {
+        bridgeRestartBtn.addEventListener('click', function () {
+            runBridgeAction("{% url 'whatsapp_bridge_restart_api' %}", bridgeRestartBtn, 'Restarting bridge session...');
+        });
+    }
+    if (bridgeLogoutBtn) {
+        bridgeLogoutBtn.addEventListener('click', function () {
+            runBridgeAction("{% url 'whatsapp_bridge_logout_api' %}", bridgeLogoutBtn, 'Logging out bridge session...');
+        });
+    }
+    if (deliveryMethodSelect) {
+        deliveryMethodSelect.addEventListener('change', syncWhatsappMethodUi);
+    }
+    syncWhatsappMethodUi();
+    window.setInterval(function () {
+        if (currentDeliveryMethod() === 'bridge') {
+            fetchBridgeStatus();
+        }
+    }, 5000);
 });
 </script>
 {% endblock %}

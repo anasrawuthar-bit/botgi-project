@@ -8,6 +8,11 @@ def feedback_analytics(request):
     if denied:
         return denied
 
+    from .staff_views import _auto_send_due_feedback_messages, _prepare_feedback_followups
+
+    _auto_send_due_feedback_messages()
+    _prepare_feedback_followups()
+
     start_date = (request.GET.get('start_date') or '').strip()
     end_date = (request.GET.get('end_date') or '').strip()
     selected_rating_raw = (request.GET.get('rating') or '').strip()
@@ -139,6 +144,65 @@ def feedback_analytics(request):
     if clear_technician_params:
         clear_technician_url = f"{clear_technician_url}?{urlencode(clear_technician_params)}"
 
+    feedback_done_statuses = [
+        JobTicket.FEEDBACK_RECEIVED,
+        JobTicket.FEEDBACK_CALLED_HAPPY,
+    ]
+    feedback_followup_jobs = list(
+        JobTicket.objects.filter(
+            status='Closed',
+            feedback_followup_enabled=True,
+            feedback_due_at__lte=timezone.now(),
+            feedback_rating__isnull=True,
+        )
+        .exclude(feedback_followup_status__in=feedback_done_statuses)
+        .select_related('assigned_to__user', 'feedback_followup_marked_by')
+        .order_by('feedback_due_at', 'id')[:100]
+    )
+    feedback_followup_count = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_enabled=True,
+        feedback_due_at__lte=timezone.now(),
+        feedback_rating__isnull=True,
+    ).exclude(feedback_followup_status__in=feedback_done_statuses).count()
+    feedback_message_sent_count = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_enabled=True,
+        feedback_due_at__lte=timezone.now(),
+        feedback_rating__isnull=True,
+        feedback_message_sent_at__isnull=False,
+    ).exclude(feedback_followup_status__in=feedback_done_statuses).count()
+    feedback_call_later_count = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_enabled=True,
+        feedback_due_at__lte=timezone.now(),
+        feedback_rating__isnull=True,
+        feedback_followup_status=JobTicket.FEEDBACK_CALL_LATER,
+    ).count()
+    feedback_no_answer_count = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_enabled=True,
+        feedback_due_at__lte=timezone.now(),
+        feedback_rating__isnull=True,
+        feedback_followup_status=JobTicket.FEEDBACK_NO_ANSWER,
+    ).count()
+    feedback_issue_count = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_enabled=True,
+        feedback_followup_status=JobTicket.FEEDBACK_CALLED_ISSUE,
+    ).count()
+    feedback_received_count = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
+    ).count()
+    feedback_followup_history = list(
+        JobTicket.objects.filter(status='Closed')
+        .filter(Q(feedback_followup_enabled=True) | Q(feedback_rating__isnull=False))
+        .exclude(feedback_followup_status=JobTicket.FEEDBACK_PENDING)
+        .select_related('feedback_followup_marked_by')
+        .order_by('-feedback_followup_called_at', '-feedback_date', '-updated_at')[:30]
+    )
+
     context = {
         'total_feedback': total_feedback,
         'avg_rating': round(avg_rating, 2),
@@ -152,6 +216,14 @@ def feedback_analytics(request):
         'end_date': end_date,
         'clear_rating_url': clear_rating_url,
         'clear_technician_url': clear_technician_url,
+        'feedback_followup_jobs': feedback_followup_jobs,
+        'feedback_followup_count': feedback_followup_count,
+        'feedback_message_sent_count': feedback_message_sent_count,
+        'feedback_call_later_count': feedback_call_later_count,
+        'feedback_no_answer_count': feedback_no_answer_count,
+        'feedback_issue_count': feedback_issue_count,
+        'feedback_received_count': feedback_received_count,
+        'feedback_followup_history': feedback_followup_history,
     }
     return render(request, 'job_tickets/feedback_analytics.html', context)
 
@@ -171,7 +243,18 @@ def company_profile_settings(request):
 
         if 'whatsapp_settings_submit' in request.POST:
             form = CompanyProfileForm(instance=profile)
-            whatsapp_form = WhatsAppIntegrationSettingsForm(request.POST, instance=whatsapp_settings)
+            whatsapp_post = request.POST.copy()
+            if not (whatsapp_post.get('public_site_url') or '').strip():
+                whatsapp_post['public_site_url'] = (
+                    whatsapp_settings.public_site_url
+                    or request.build_absolute_uri('/').rstrip('/')
+                )
+            if not (whatsapp_post.get('bridge_base_url') or '').strip():
+                whatsapp_post['bridge_base_url'] = (
+                    whatsapp_settings.bridge_base_url
+                    or 'http://127.0.0.1:3001'
+                )
+            whatsapp_form = WhatsAppIntegrationSettingsForm(whatsapp_post, instance=whatsapp_settings)
             if whatsapp_form.is_valid():
                 whatsapp_form.save()
                 messages.success(request, 'WhatsApp integration settings updated successfully.')
@@ -197,6 +280,7 @@ def company_profile_settings(request):
         'profile': profile,
         'whatsapp_form': whatsapp_form,
         'initial_tab': initial_tab,
+        'wa_recommended_public_site_url': request.build_absolute_uri('/').rstrip('/'),
         'whatsapp_webhook_url': request.build_absolute_uri(reverse('whatsapp_cloud_webhook_api')),
     }
     return render(request, 'job_tickets/company_profile_settings.html', context)

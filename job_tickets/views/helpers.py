@@ -15,7 +15,7 @@ from ..access_control import (
     user_has_staff_access,
 )
 from datetime import datetime, timedelta, date
-from django.db.models import Max, Q, Sum, Count, F, DecimalField, Value, OuterRef, Subquery, IntegerField
+from django.db.models import Max, Q, Sum, Count, F, DecimalField, Value, OuterRef, Subquery, IntegerField, ExpressionWrapper
 from ..models import (
     Assignment,
     Client,
@@ -26,9 +26,11 @@ from ..models import (
     InventoryEntry,
     InventoryParty,
     JobFieldPreset,
+    JobReminder,
     JobTicket,
     JobTicketPhoto,
     JobTicketLog,
+    MessageQueue,
     Product,
     ProductSale,
     ServiceLog,
@@ -36,6 +38,7 @@ from ..models import (
     TechnicianProfile,
     UserSessionActivity,
     Vendor,
+    VendorPayment,
     WhatsAppIntegrationSettings,
 )
 from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset
@@ -76,6 +79,29 @@ JOB_PRESET_FIELDS = ('device_type', 'device_brand', 'reported_issue', 'additiona
 MOBILE_JWT_EXP_SECONDS = 60 * 60 * 24 * 7  # 7 days
 MOBILE_JWT_ALGORITHM = 'HS256'
 CHECKLIST_FIELD_TYPES = {'text', 'textarea', 'number', 'select', 'checkbox'}
+MONEY_OUTPUT_FIELD = DecimalField(max_digits=12, decimal_places=2)
+
+
+def vendor_net_cost_expression(prefix=''):
+    cost_field = f'{prefix}vendor_cost'
+    discount_field = f'{prefix}vendor_discount_amount'
+    return ExpressionWrapper(
+        Coalesce(F(cost_field), Value(Decimal('0.00')), output_field=MONEY_OUTPUT_FIELD)
+        - Coalesce(F(discount_field), Value(Decimal('0.00')), output_field=MONEY_OUTPUT_FIELD),
+        output_field=MONEY_OUTPUT_FIELD,
+    )
+
+
+def sum_vendor_net_cost(queryset, prefix=''):
+    return queryset.aggregate(
+        total=Coalesce(
+            Sum(vendor_net_cost_expression(prefix), output_field=MONEY_OUTPUT_FIELD),
+            Value(Decimal('0.00')),
+            output_field=MONEY_OUTPUT_FIELD,
+        )
+    )['total']
+
+
 DEFAULT_LAPTOP_CHECKLIST_SCHEMA = [
     {
         'key': 'ports_condition',
@@ -784,9 +810,7 @@ def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, 
     stock_sales_profit = stock_sales['total_profit']
 
     vendor_services_in_period = SpecializedService.objects.filter(job_ticket__in=monthly_finished_jobs)
-    vendor_expense = vendor_services_in_period.aggregate(
-        total=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0.00'))
-    )['total']
+    vendor_expense = sum_vendor_net_cost(vendor_services_in_period)
     vendor_revenue = vendor_services_in_period.aggregate(
         total=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0.00'))
     )['total']
@@ -1153,6 +1177,41 @@ def _get_safe_next_url(request):
             return ''
         return next_url
     return ''
+
+
+def _get_permitted_next_url(user, next_url):
+    if not next_url or not user or not getattr(user, "is_authenticated", False):
+        return ''
+
+    candidate_path = urlsplit(next_url).path or '/'
+    access = get_staff_access(user)
+    is_technician = bool(getattr(user, "is_superuser", False) or user.groups.filter(name='Technicians').exists())
+
+    guarded_prefixes = (
+        ('/staff-dashboard/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/staff/clients/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/staff/vendors/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/job-created/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/staff/billing/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/staff/job/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/staff/job-archive/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/api/job-status/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/api/client-phone-lookup/', bool(getattr(user, 'is_staff', False) and access.get('staff_dashboard'))),
+        ('/staff/inventory/', bool(getattr(user, 'is_staff', False) and access.get('inventory'))),
+        ('/staff/products/', bool(getattr(user, 'is_staff', False) and access.get('inventory'))),
+        ('/staff/technicians/', bool(getattr(user, 'is_staff', False) and access.get('team_management'))),
+        ('/staff/reports/', bool(getattr(user, 'is_staff', False) and access.get('reports_dashboard'))),
+        ('/staff/feedback-analytics/', bool(getattr(user, 'is_staff', False) and access.get('feedback_analytics'))),
+        ('/staff/company-profile/', bool(getattr(user, 'is_staff', False) and access.get('company_settings'))),
+        ('/technician-dashboard/', is_technician),
+        ('/technician/', is_technician),
+    )
+
+    for prefix, allowed in guarded_prefixes:
+        if candidate_path.startswith(prefix):
+            return next_url if allowed else ''
+
+    return next_url
 
 def _summarize_user_agent(user_agent):
     user_agent = (user_agent or '').lower()

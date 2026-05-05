@@ -1,10 +1,11 @@
+import asyncio
 from datetime import datetime, timedelta, timezone as dt_timezone
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -18,6 +19,13 @@ class SessionSecurityMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        try:
+            return self._handle_request(request)
+        except asyncio.CancelledError:
+            # Daphne/ASGI raises this when the browser cancels a request.
+            return HttpResponse(status=499)
+
+    def _handle_request(self, request):
         if not request.user.is_authenticated:
             return self.get_response(request)
 

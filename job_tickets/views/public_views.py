@@ -68,7 +68,14 @@ def client_status(request, job_code):
             job_ticket.feedback_rating = int(feedback_form.cleaned_data['rating'])
             job_ticket.feedback_comment = feedback_form.cleaned_data['comment']
             job_ticket.feedback_date = timezone.now()
-            job_ticket.save()
+            job_ticket.feedback_followup_status = JobTicket.FEEDBACK_RECEIVED
+            job_ticket.save(update_fields=[
+                'feedback_rating',
+                'feedback_comment',
+                'feedback_date',
+                'feedback_followup_status',
+                'updated_at',
+            ])
             
             JobTicketLog.objects.create(
                 job_ticket=job_ticket,

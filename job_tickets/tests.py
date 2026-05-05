@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -15,7 +16,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .admin import InventoryEntryAdmin, JobTicketAdmin
+from .access_control import apply_staff_access
 from .admin_roles import ROLE_SUPER_ADMIN
+from .middleware import SessionSecurityMiddleware
 from .forms import (
     AssignJobForm,
     ClientForm,
@@ -31,13 +34,18 @@ from .models import (
     InventoryBill,
     InventoryEntry,
     InventoryParty,
+    JobReminder,
     JobTicket,
+    JobTicketLog,
     MessageQueue,
     Product,
     ProductSale,
     ServiceLog,
+    SpecializedService,
     TechnicianProfile,
     UserSessionActivity,
+    Vendor,
+    VendorPayment,
     WhatsAppIntegrationSettings,
 )
 from .phone_utils import normalize_indian_phone
@@ -160,12 +168,25 @@ class SessionSecurityTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='session-user', password='StrongPass123!')
 
-    def test_secure_cookie_settings_are_enabled(self):
+    def test_cookie_settings_keep_local_http_login_working(self):
         self.assertTrue(settings.SESSION_COOKIE_HTTPONLY)
         self.assertTrue(settings.CSRF_COOKIE_HTTPONLY)
         self.assertEqual(settings.SESSION_COOKIE_SAMESITE, 'Lax')
         self.assertEqual(settings.CSRF_COOKIE_SAMESITE, 'Lax')
         self.assertEqual(settings.SESSION_COOKIE_AGE, settings.SESSION_IDLE_TIMEOUT_SECONDS)
+        self.assertFalse(settings.SECURE_SSL_REDIRECT)
+        self.assertEqual(settings.PUBLIC_BASE_URL, '')
+        self.assertFalse(settings.SESSION_COOKIE_SECURE)
+        self.assertFalse(settings.CSRF_COOKIE_SECURE)
+
+    def test_login_page_sets_non_secure_csrf_cookie_for_local_http(self):
+        csrf_client = DjangoTestClient(enforce_csrf_checks=True)
+
+        response = csrf_client.get(reverse('login'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(settings.CSRF_COOKIE_NAME, response.cookies)
+        self.assertFalse(response.cookies[settings.CSRF_COOKIE_NAME]['secure'])
 
     def test_successful_login_creates_session_activity(self):
         response = self.client.post(
@@ -183,6 +204,8 @@ class SessionSecurityTests(TestCase):
         self.assertIsNotNone(activity.last_activity_at)
         self.assertEqual(activity.ip_address, '192.168.1.55')
         self.assertEqual(activity.device_label, 'Chrome on Windows')
+        self.assertIn(settings.SESSION_COOKIE_NAME, response.cookies)
+        self.assertFalse(response.cookies[settings.SESSION_COOKIE_NAME]['secure'])
 
     def test_logout_marks_session_as_logged_out(self):
         self.client.login(username='session-user', password='StrongPass123!')
@@ -209,6 +232,25 @@ class SessionSecurityTests(TestCase):
         activity = UserSessionActivity.objects.get(user=self.user)
         self.assertEqual(activity.status, UserSessionActivity.STATUS_EXPIRED)
         self.assertEqual(activity.logout_reason, UserSessionActivity.STATUS_EXPIRED)
+
+    def test_staff_dashboard_redirects_to_custom_login_url_when_logged_out(self):
+        response = self.client.get(reverse('staff_dashboard'))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(f"{reverse('login')}?next="))
+        self.assertNotIn('/accounts/login/', response.url)
+
+    def test_session_middleware_treats_cancelled_request_as_client_abort(self):
+        def cancelled_response(_request):
+            raise asyncio.CancelledError()
+
+        request = RequestFactory().get('/staff/vendors/')
+        request.user = Mock(is_authenticated=False)
+        middleware = SessionSecurityMiddleware(cancelled_response)
+
+        response = middleware(request)
+
+        self.assertEqual(response.status_code, 499)
 
     def test_login_ignores_unresolved_next_url(self):
         response = self.client.post(
@@ -238,6 +280,23 @@ class SessionSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, valid_next)
+
+    def test_login_falls_back_to_allowed_page_when_next_url_requires_missing_access(self):
+        limited_user = User.objects.create_user(username='limited-staff', password='StrongPass123!', is_staff=True)
+        apply_staff_access(limited_user, {'inventory'})
+
+        response = self.client.post(
+            reverse('login'),
+            {
+                'username': 'limited-staff',
+                'password': 'StrongPass123!',
+                'next': reverse('staff_dashboard'),
+            },
+            REMOTE_ADDR='192.168.1.55',
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('inventory_dashboard'))
 
     def test_second_login_invalidates_previous_active_session(self):
         first_client = DjangoTestClient()
@@ -476,6 +535,456 @@ class TechnicianAssignmentAndChecklistTests(TestCase):
         technician_ids = [tech.id for tech in captured['context']['technician_list']]
         self.assertIn(self.technician.id, technician_ids)
         self.assertNotIn(self.staff_profile.id, technician_ids)
+
+    def test_staff_can_update_job_status_from_detail(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-009',
+            customer_name='Status Customer',
+            customer_phone='9876543219',
+            device_type='Laptop',
+            device_brand='Dell',
+            device_model='Latitude',
+            reported_issue='Status update needed',
+            status='Pending',
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('staff_job_detail', args=[job.job_code]),
+            {'action': 'update_status', 'status': 'Completed'},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'Completed')
+        self.assertTrue(
+            JobTicketLog.objects.filter(
+                job_ticket=job,
+                action='STATUS',
+                details__icontains="Staff changed status",
+            ).exists()
+        )
+
+    def test_close_job_saves_current_close_timestamp(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-016',
+            customer_name='Close Success',
+            customer_phone='9876543226',
+            device_type='Laptop',
+            device_brand='HP',
+            device_model='EliteBook',
+            reported_issue='Close job',
+            status='Ready for Pickup',
+        )
+        self.client.force_login(self.staff_user)
+        today = timezone.localdate()
+
+        response = self.client.post(
+            reverse('close_job', args=[job.job_code]),
+            {
+                'next': reverse('staff_dashboard'),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'Closed')
+        self.assertIsNotNone(job.closed_at)
+        self.assertEqual(timezone.localtime(job.closed_at).date(), today)
+
+    def test_staff_billing_can_update_service_description(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-015',
+            customer_name='Description Customer',
+            customer_phone='9876543225',
+            device_type='Laptop',
+            device_brand='Dell',
+            device_model='Vostro',
+            reported_issue='Description edit',
+            status='Completed',
+        )
+        service_log = ServiceLog.objects.create(
+            job_ticket=job,
+            description='Old service description',
+            part_cost=Decimal('100.00'),
+            service_charge=Decimal('200.00'),
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('job_billing_staff', args=[job.job_code]),
+            {
+                'update_amounts_submit': '1',
+                f'description_{service_log.id}': 'Updated service description',
+                f'part_cost_{service_log.id}': '100.00',
+                f'service_charge_{service_log.id}': '200.00',
+                'discount_amount': '0.00',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        service_log.refresh_from_db()
+        self.assertEqual(service_log.description, 'Updated service description')
+
+    def test_staff_dashboard_job_create_can_schedule_reminder(self):
+        self.client.force_login(self.staff_user)
+        before = timezone.now()
+
+        response = self.client.post(
+            reverse('staff_dashboard'),
+            {
+                'job_ticket_form_submit': '1',
+                'customer_name': 'Reminder Customer',
+                'customer_phone': '9876543229',
+                'estimated_amount': '',
+                'estimated_delivery': '',
+                'reminder_hours': '1',
+                'reminder_minutes': '30',
+                'device_forms[0].device_type': 'Laptop',
+                'device_forms[0].device_brand': 'Dell',
+                'device_forms[0].device_model': 'Latitude',
+                'device_forms[0].device_serial': '',
+                'device_forms[0].reported_issue': 'Estimate callback',
+                'device_forms[0].additional_items': '',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        job = JobTicket.objects.get(customer_name='Reminder Customer')
+        reminder = JobReminder.objects.get(job_ticket=job)
+        self.assertEqual(reminder.status, JobReminder.STATUS_PENDING)
+        self.assertGreaterEqual(reminder.due_at, before + timedelta(hours=1, minutes=30))
+        self.assertLessEqual(reminder.due_at, timezone.now() + timedelta(hours=1, minutes=31))
+
+    def test_due_reminders_api_prompts_once_per_cooldown(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-012',
+            customer_name='Due Reminder Customer',
+            customer_phone='9876543222',
+            device_type='Laptop',
+            device_brand='Acer',
+            device_model='Swift',
+            reported_issue='Call with estimate',
+        )
+        reminder = JobReminder.objects.create(
+            job_ticket=job,
+            due_at=timezone.now() - timedelta(minutes=2),
+            created_by=self.staff_user,
+        )
+        self.client.force_login(self.staff_user)
+
+        first_response = self.client.get(reverse('due_job_reminders_api'))
+
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+        self.assertTrue(first_payload['ok'])
+        self.assertEqual(first_payload['count'], 1)
+        self.assertEqual(first_payload['reminders'][0]['job_code'], job.job_code)
+        reminder.refresh_from_db()
+        self.assertIsNotNone(reminder.last_prompted_at)
+
+        second_response = self.client.get(reverse('due_job_reminders_api'))
+
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.json()['count'], 0)
+
+    def test_staff_can_save_estimation_note_from_job_detail(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-013',
+            customer_name='Estimate Customer',
+            customer_phone='9876543223',
+            device_type='Laptop',
+            device_brand='HP',
+            device_model='Pavilion',
+            reported_issue='Estimate needed',
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('staff_job_detail', args=[job.job_code]),
+            {
+                'action': 'save_estimation',
+                'estimated_amount': '1850.50',
+                'estimation_note': 'Motherboard cleaning and OS service.',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.estimated_amount, Decimal('1850.50'))
+        self.assertEqual(job.estimation_note, 'Motherboard cleaning and OS service.')
+        self.assertTrue(
+            JobTicketLog.objects.filter(
+                job_ticket=job,
+                action='NOTE',
+                details__icontains='estimate note updated',
+            ).exists()
+        )
+
+    @patch('job_tickets.whatsapp_service.requests.request')
+    def test_send_estimation_whatsapp_marks_active_reminder_done(self, mock_request):
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'messages': [{'id': 'wamid.estimate123'}]}
+        mock_request.return_value = mock_response
+
+        settings_obj = WhatsAppIntegrationSettings.get_settings()
+        settings_obj.delivery_method = WhatsAppIntegrationSettings.DELIVERY_CLOUD_API
+        settings_obj.phone_number_id = '123456789012345'
+        settings_obj.access_token = 'token-123'
+        settings_obj.estimate_template_name = 'job_estimate_update'
+        settings_obj.estimate_template = 'Hello {customer_name}, estimate for {job_code} is {estimated_amount}. Note: {estimation_note}'
+        settings_obj.save()
+
+        job = JobTicket.objects.create(
+            job_code='GI-260407-014',
+            customer_name='WhatsApp Estimate',
+            customer_phone='9876543224',
+            device_type='Laptop',
+            device_brand='Lenovo',
+            device_model='IdeaPad',
+            reported_issue='Send estimate',
+        )
+        reminder = JobReminder.objects.create(
+            job_ticket=job,
+            due_at=timezone.now() - timedelta(minutes=5),
+            created_by=self.staff_user,
+        )
+        self.client.force_login(self.staff_user)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse('staff_job_detail', args=[job.job_code]),
+                {
+                    'action': 'send_estimation_whatsapp',
+                    'estimated_amount': '2400',
+                    'estimation_note': 'Display cable replacement.',
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        reminder.refresh_from_db()
+        self.assertEqual(job.estimated_amount, Decimal('2400.00'))
+        self.assertEqual(reminder.status, JobReminder.STATUS_DONE)
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_ESTIMATE)
+        self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
+        self.assertIn('estimate for GI-260407-014 is Rs 2400.00', queue.message)
+        self.assertEqual(queue.bridge_message_id, 'wamid.estimate123')
+        payload = mock_request.call_args.kwargs['json']
+        self.assertEqual(payload['template']['name'], 'job_estimate_update')
+        parameters = payload['template']['components'][0]['parameters']
+        self.assertEqual(parameters[0]['text'], 'WhatsApp Estimate')
+        self.assertEqual(parameters[2]['text'], 'Rs 2400.00')
+        self.assertEqual(parameters[3]['text'], 'Display cable replacement.')
+
+    def test_vendor_return_records_bill_as_balance_without_initial_payment(self):
+        vendor = Vendor.objects.create(company_name='Board Lab', name='Ravi')
+        job = JobTicket.objects.create(
+            job_code='GI-260407-010',
+            customer_name='Vendor Customer',
+            customer_phone='9876543220',
+            device_type='Laptop',
+            device_brand='HP',
+            device_model='EliteBook',
+            reported_issue='Board repair',
+            status='Specialized Service',
+        )
+        service = SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=vendor,
+            status='Sent to Vendor',
+            sent_date=timezone.now(),
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('mark_service_returned', args=[service.id]),
+            {
+                'vendor_cost': '2500.00',
+                'client_charge': '3500.00',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        service.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(service.status, 'Returned from Vendor')
+        self.assertEqual(service.vendor_cost, Decimal('2500.00'))
+        self.assertEqual(service.vendor_discount_amount, Decimal('0.00'))
+        self.assertEqual(service.vendor_paid_amount, Decimal('0.00'))
+        self.assertEqual(service.vendor_balance_amount, Decimal('2500.00'))
+        self.assertEqual(service.vendor_net_payable, Decimal('2500.00'))
+        self.assertEqual(service.vendor_payment_status, 'Balance Due')
+        self.assertEqual(job.status, 'Repairing')
+        self.assertFalse(VendorPayment.objects.filter(specialized_service=service).exists())
+        self.assertTrue(
+            ServiceLog.objects.filter(
+                job_ticket=job,
+                description='Specialized Service - Board Lab',
+                service_charge=Decimal('3500.00'),
+            ).exists()
+        )
+
+    def test_vendor_partial_payment_transaction_updates_balance(self):
+        vendor = Vendor.objects.create(company_name='Chip Works', name='Meera')
+        job = JobTicket.objects.create(
+            job_code='GI-260407-011',
+            customer_name='Payment Customer',
+            customer_phone='9876543221',
+            device_type='Laptop',
+            device_brand='Lenovo',
+            device_model='ThinkPad',
+            reported_issue='Chip repair',
+            status='Repairing',
+        )
+        service = SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('3000.00'),
+            vendor_discount_amount=Decimal('500.00'),
+            vendor_paid_amount=Decimal('1000.00'),
+            vendor_balance_amount=Decimal('1500.00'),
+            client_charge=Decimal('4200.00'),
+            sent_date=timezone.now(),
+            returned_date=timezone.now(),
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('record_vendor_payment', args=[vendor.id]),
+            {
+                'payment_scope': 'single',
+                'specialized_service_id': str(service.id),
+                'payment_amount': '700.00',
+                'payment_method': VendorPayment.METHOD_TRANSFER,
+                'payment_date': timezone.localdate().strftime('%Y-%m-%d'),
+                'reference_no': 'TXN-77',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        service.refresh_from_db()
+        self.assertEqual(service.vendor_paid_amount, Decimal('1700.00'))
+        self.assertEqual(service.vendor_balance_amount, Decimal('800.00'))
+        payment = VendorPayment.objects.get(reference_no='TXN-77')
+        self.assertEqual(payment.amount, Decimal('700.00'))
+        self.assertEqual(payment.balance_before, Decimal('1500.00'))
+        self.assertEqual(payment.balance_after, Decimal('800.00'))
+        self.assertEqual(payment.payment_method, VendorPayment.METHOD_TRANSFER)
+
+    def test_vendor_bulk_payment_auto_allocates_oldest_balances(self):
+        vendor = Vendor.objects.create(company_name='Bulk Pay Lab', name='Faisal')
+        old_job = JobTicket.objects.create(
+            job_code='GI-260407-015',
+            customer_name='Old Balance',
+            customer_phone='9876543225',
+            device_type='Laptop',
+            device_brand='Dell',
+            device_model='Latitude',
+            reported_issue='Board repair',
+            status='Repairing',
+        )
+        new_job = JobTicket.objects.create(
+            job_code='GI-260407-016',
+            customer_name='New Balance',
+            customer_phone='9876543226',
+            device_type='Mobile',
+            device_brand='Apple',
+            device_model='iPhone',
+            reported_issue='Display repair',
+            status='Repairing',
+        )
+        old_service = SpecializedService.objects.create(
+            job_ticket=old_job,
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('100.00'),
+            vendor_paid_amount=Decimal('0.00'),
+            vendor_balance_amount=Decimal('100.00'),
+            client_charge=Decimal('180.00'),
+            returned_date=timezone.now() - timedelta(days=2),
+        )
+        new_service = SpecializedService.objects.create(
+            job_ticket=new_job,
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('150.00'),
+            vendor_paid_amount=Decimal('0.00'),
+            vendor_balance_amount=Decimal('150.00'),
+            client_charge=Decimal('250.00'),
+            returned_date=timezone.now() - timedelta(days=1),
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('record_vendor_payment', args=[vendor.id]),
+            {
+                'payment_scope': 'bulk',
+                'payment_amount': '180.00',
+                'payment_method': VendorPayment.METHOD_CASH,
+                'payment_date': timezone.localdate().strftime('%Y-%m-%d'),
+                'reference_no': 'BULK-01',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        old_service.refresh_from_db()
+        new_service.refresh_from_db()
+        self.assertEqual(old_service.vendor_paid_amount, Decimal('100.00'))
+        self.assertEqual(old_service.vendor_balance_amount, Decimal('0.00'))
+        self.assertEqual(new_service.vendor_paid_amount, Decimal('80.00'))
+        self.assertEqual(new_service.vendor_balance_amount, Decimal('70.00'))
+
+        payments = list(VendorPayment.objects.filter(reference_no='BULK-01').order_by('id'))
+        self.assertEqual(len(payments), 2)
+        self.assertEqual(payments[0].specialized_service, old_service)
+        self.assertEqual(payments[0].amount, Decimal('100.00'))
+        self.assertEqual(payments[0].balance_after, Decimal('0.00'))
+        self.assertEqual(payments[1].specialized_service, new_service)
+        self.assertEqual(payments[1].amount, Decimal('80.00'))
+        self.assertEqual(payments[1].balance_after, Decimal('70.00'))
+
+    def test_vendor_job_billing_lines_can_be_deleted_from_staff_billing(self):
+        vendor = Vendor.objects.create(company_name='No Delete Lab', name='Arun')
+        job = JobTicket.objects.create(
+            job_code='GI-260407-017',
+            customer_name='Vendor Delete Guard',
+            customer_phone='9876543227',
+            device_type='Laptop',
+            device_brand='Dell',
+            device_model='Inspiron',
+            reported_issue='Vendor line guard',
+            status='Repairing',
+        )
+        SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('1000.00'),
+            client_charge=Decimal('1500.00'),
+            returned_date=timezone.now(),
+        )
+        service_log = ServiceLog.objects.create(
+            job_ticket=job,
+            description='Specialized Service - No Delete Lab',
+            part_cost=Decimal('0.00'),
+            service_charge=Decimal('1500.00'),
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('job_billing_staff', args=[job.job_code]),
+            {
+                'update_amounts_submit': '1',
+                'delete_service_ids[]': [str(service_log.id)],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ServiceLog.objects.filter(id=service_log.id).exists())
 
     def test_laptop_job_can_be_completed_without_checklist_when_toggle_is_off(self):
         job = JobTicket.objects.create(
@@ -739,6 +1248,8 @@ class WhatsAppCloudApiTests(TestCase):
         form = WhatsAppIntegrationSettingsForm(
             data={
                 'is_enabled': 'on',
+                'delivery_method': WhatsAppIntegrationSettings.DELIVERY_CLOUD_API,
+                'bridge_base_url': 'http://127.0.0.1:3001',
                 'api_version': '',
                 'phone_number_id': '',
                 'access_token': '',
@@ -757,6 +1268,8 @@ class WhatsAppCloudApiTests(TestCase):
                 'completed_template': 'Hello {customer_name}',
                 'delivered_template_name': '',
                 'delivered_template': 'Hello {customer_name}',
+                'estimate_template_name': '',
+                'estimate_template': 'Estimate {estimated_amount}',
             },
             instance=self.settings_obj,
         )
@@ -768,6 +1281,39 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertIn('template_language_code', form.errors)
         self.assertIn('created_template_name', form.errors)
         self.assertIn('delivered_template_name', form.errors)
+        self.assertIn('estimate_template_name', form.errors)
+
+    def test_bridge_settings_do_not_require_cloud_credentials_or_template_names(self):
+        form = WhatsAppIntegrationSettingsForm(
+            data={
+                'is_enabled': 'on',
+                'delivery_method': WhatsAppIntegrationSettings.DELIVERY_BRIDGE,
+                'bridge_base_url': 'http://127.0.0.1:3001',
+                'api_version': '',
+                'phone_number_id': '',
+                'access_token': '',
+                'webhook_verify_token': '',
+                'app_secret': '',
+                'public_site_url': 'https://example.com',
+                'default_country_code': '91',
+                'template_language_code': '',
+                'test_template_name': '',
+                'notify_on_created': 'on',
+                'notify_on_completed': 'on',
+                'notify_on_delivered': 'on',
+                'created_template_name': '',
+                'created_template': 'Hello {customer_name}, ticket {job_code}',
+                'completed_template_name': '',
+                'completed_template': 'Completed {job_code}',
+                'delivered_template_name': '',
+                'delivered_template': 'Closed {job_code}',
+                'estimate_template_name': '',
+                'estimate_template': 'Estimate {estimated_amount}',
+            },
+            instance=self.settings_obj,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
 
     @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
     @patch('job_tickets.whatsapp_service.requests.request')
@@ -818,6 +1364,169 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertEqual(button_component['type'], 'button')
         self.assertEqual(button_component['sub_type'], 'url')
         self.assertEqual(button_component['parameters'][0]['text'], f'{job.job_code}/')
+
+    @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
+    @patch('job_tickets.whatsapp_service.requests.request')
+    def test_job_notification_uses_bridge_rendered_template_delivery(self, mock_request, _mock_on_commit):
+        job = JobTicket.objects.create(
+            job_code='GI-260420-304',
+            customer_name='Nikhil',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            device_brand='Acer',
+            device_model='Aspire',
+            reported_issue='Keyboard issue',
+        )
+
+        self.settings_obj.is_enabled = True
+        self.settings_obj.delivery_method = WhatsAppIntegrationSettings.DELIVERY_BRIDGE
+        self.settings_obj.bridge_base_url = 'http://127.0.0.1:3001'
+        self.settings_obj.public_site_url = 'https://botgi.example.com'
+        self.settings_obj.default_country_code = '91'
+        self.settings_obj.notify_on_created = True
+        self.settings_obj.created_template_name = ''
+        self.settings_obj.created_template = 'Hello {customer_name}, ticket {job_code}. Receipt: {receipt_link}'
+        self.settings_obj.save()
+
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'ok': True,
+            'messageId': 'bridge-msg-123',
+            'delivery': {'messageId': 'bridge-msg-123'},
+        }
+        mock_request.return_value = mock_response
+
+        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_CREATED)
+
+        self.assertTrue(result['ok'])
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
+        self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
+        self.assertEqual(queue.transport, 'whatsapp-bridge-text')
+        self.assertEqual(queue.bridge_message_id, 'bridge-msg-123')
+
+        self.assertEqual(mock_request.call_args.args[0], 'POST')
+        self.assertEqual(mock_request.call_args.args[1], 'http://127.0.0.1:3001/api/messages/send')
+        payload = mock_request.call_args.kwargs['json']
+        self.assertEqual(payload['to'], '919876543210')
+        self.assertIn('Hello Nikhil, ticket GI-260420-304.', payload['message'])
+        self.assertIn('/client-receipt/', payload['message'])
+
+    @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
+    @patch('job_tickets.whatsapp_service.requests.request')
+    def test_job_notification_retries_base_language_when_translation_missing(self, mock_request, _mock_on_commit):
+        job = JobTicket.objects.create(
+            job_code='GI-260420-302',
+            customer_name='Arun',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            device_brand='HP',
+            device_model='Pavilion',
+            reported_issue='No display',
+        )
+
+        self.settings_obj.is_enabled = True
+        self.settings_obj.api_version = 'v23.0'
+        self.settings_obj.phone_number_id = '123456789012345'
+        self.settings_obj.access_token = 'token-123'
+        self.settings_obj.public_site_url = 'https://botgi.example.com'
+        self.settings_obj.template_language_code = 'en_US'
+        self.settings_obj.notify_on_created = True
+        self.settings_obj.created_template_name = 'job_created_update'
+        self.settings_obj.created_template = 'Hello {customer_name}, ticket {job_code}. Receipt: {receipt_link}'
+        self.settings_obj.save()
+
+        translation_missing_response = Mock()
+        translation_missing_response.ok = False
+        translation_missing_response.status_code = 404
+        translation_missing_response.json.return_value = {
+            'error': {
+                'message': '(#132001) Template name does not exist in the translation',
+                'type': 'OAuthException',
+                'code': 132001,
+                'error_data': {
+                    'details': 'template name (job_created_update) does not exist in en_US',
+                },
+            }
+        }
+
+        success_response = Mock()
+        success_response.ok = True
+        success_response.status_code = 200
+        success_response.json.return_value = {'messages': [{'id': 'wamid.HBgM456'}]}
+        mock_request.side_effect = [translation_missing_response, success_response]
+
+        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_CREATED)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(mock_request.call_count, 2)
+        first_payload = mock_request.call_args_list[0].kwargs['json']
+        second_payload = mock_request.call_args_list[1].kwargs['json']
+        self.assertEqual(first_payload['template']['language']['code'], 'en_US')
+        self.assertEqual(second_payload['template']['language']['code'], 'en')
+
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
+        self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
+        self.assertEqual(queue.bridge_message_id, 'wamid.HBgM456')
+
+    @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
+    @patch('job_tickets.whatsapp_service.requests.request')
+    def test_job_notification_retries_without_button_when_template_has_no_url_button(self, mock_request, _mock_on_commit):
+        job = JobTicket.objects.create(
+            job_code='GI-260420-303',
+            customer_name='Rahul',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            device_brand='Lenovo',
+            device_model='IdeaPad',
+            reported_issue='Charging issue',
+        )
+
+        self.settings_obj.is_enabled = True
+        self.settings_obj.api_version = 'v23.0'
+        self.settings_obj.phone_number_id = '123456789012345'
+        self.settings_obj.access_token = 'token-123'
+        self.settings_obj.public_site_url = 'https://botgi.example.com'
+        self.settings_obj.template_language_code = 'en'
+        self.settings_obj.notify_on_created = True
+        self.settings_obj.created_template_name = 'job_created_update'
+        self.settings_obj.created_template = 'Hello {customer_name}, ticket {job_code}. Receipt: {receipt_link}'
+        self.settings_obj.save()
+
+        button_error_response = Mock()
+        button_error_response.ok = False
+        button_error_response.status_code = 400
+        button_error_response.json.return_value = {
+            'error': {
+                'message': '(#132000) Number of parameters does not match the expected number of params',
+                'type': 'OAuthException',
+                'code': 132000,
+                'error_data': {
+                    'details': 'button component expects 0 localizable_params',
+                },
+            }
+        }
+
+        success_response = Mock()
+        success_response.ok = True
+        success_response.status_code = 200
+        success_response.json.return_value = {'messages': [{'id': 'wamid.HBgM789'}]}
+        mock_request.side_effect = [button_error_response, success_response]
+
+        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_CREATED)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(mock_request.call_count, 2)
+        first_components = mock_request.call_args_list[0].kwargs['json']['template']['components']
+        second_components = mock_request.call_args_list[1].kwargs['json']['template']['components']
+        self.assertEqual(len(first_components), 2)
+        self.assertEqual(len(second_components), 1)
+        self.assertEqual(second_components[0]['type'], 'body')
+
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
+        self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
+        self.assertEqual(queue.bridge_message_id, 'wamid.HBgM789')
 
 
 class WhatsAppCloudWebhookTests(TestCase):
@@ -1459,3 +2168,66 @@ class InventoryApiTests(TestCase):
         self.assertEqual(payload['summary']['entry_count'], 1)
         self.assertEqual(payload['register_rows'][0]['party_name'], 'Register Supplier')
         self.assertTrue(payload['register_rows'][0]['show_return_action'])
+
+
+class StaffJobCreationWhatsAppTests(TestCase):
+    def setUp(self):
+        self.staff_user = User.objects.create_user(
+            username='whatsapp-job-admin',
+            password='StrongPass123!',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_login(self.staff_user)
+
+        self.settings_obj = WhatsAppIntegrationSettings.get_settings()
+        self.settings_obj.is_enabled = True
+        self.settings_obj.api_version = 'v23.0'
+        self.settings_obj.phone_number_id = '123456789012345'
+        self.settings_obj.access_token = 'token-123'
+        self.settings_obj.public_site_url = 'https://botgi.example.com'
+        self.settings_obj.template_language_code = 'en_US'
+        self.settings_obj.notify_on_created = True
+        self.settings_obj.created_template_name = 'job_created_update'
+        self.settings_obj.created_template = 'Hello {customer_name}, ticket {job_code}. Receipt: {receipt_link}'
+        self.settings_obj.save()
+
+    @patch('job_tickets.whatsapp_service.requests.request')
+    def test_staff_dashboard_job_create_sends_created_template_message(self, mock_request):
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'messages': [{'id': 'wamid.HBgM123456'}]}
+        mock_request.return_value = mock_response
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse('staff_dashboard'),
+                {
+                    'job_ticket_form_submit': '1',
+                    'customer_name': 'Anand',
+                    'customer_phone': '9876543210',
+                    'estimated_amount': '',
+                    'estimated_delivery': '',
+                    'device_forms[0].device_type': 'Laptop',
+                    'device_forms[0].device_brand': 'Dell',
+                    'device_forms[0].device_model': 'Latitude',
+                    'device_forms[0].device_serial': '',
+                    'device_forms[0].reported_issue': 'Battery issue',
+                    'device_forms[0].additional_items': '',
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+
+        job = JobTicket.objects.get(customer_name='Anand', customer_phone='9876543210')
+        self.assertEqual(response.url, reverse('job_creation_success', args=[job.job_code]))
+
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
+        self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
+        self.assertEqual(queue.transport, 'whatsapp-cloud-api-template')
+        self.assertEqual(queue.bridge_message_id, 'wamid.HBgM123456')
+
+        payload = mock_request.call_args.kwargs['json']
+        self.assertEqual(payload['template']['name'], 'job_created_update')
+        self.assertEqual(payload['to'], '919876543210')

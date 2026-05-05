@@ -1,6 +1,156 @@
 from .helpers import *  # noqa: F401,F403
 
 
+def _parse_vendor_money(raw_value, label):
+    try:
+        amount = Decimal((raw_value or '0').strip() or '0').quantize(Decimal('0.01'))
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError(f"Invalid {label}.")
+    if amount < 0:
+        raise ValueError(f"{label} cannot be negative.")
+    return amount
+
+
+def _parse_vendor_payment_date(raw_value):
+    raw_value = (raw_value or '').strip()
+    if not raw_value:
+        return timezone.localdate()
+    try:
+        return datetime.strptime(raw_value, '%Y-%m-%d').date()
+    except ValueError:
+        raise ValueError("Invalid payment date.")
+
+
+def _clean_vendor_payment_method(raw_value):
+    method = (raw_value or VendorPayment.METHOD_CASH).strip()
+    valid_methods = {value for value, _label in VendorPayment.METHOD_CHOICES}
+    if method not in valid_methods:
+        raise ValueError("Invalid payment method.")
+    return method
+
+
+def _record_vendor_payment_for_locked_service(service, amount, payment_method, payment_date, reference_no, notes, user):
+    if not service.vendor_id:
+        raise ValueError("Vendor is required before recording payment.")
+    if service.status != 'Returned from Vendor':
+        raise ValueError("Payment can be recorded only after the job returns from vendor.")
+
+    balance_before = service.vendor_balance_amount
+    if balance_before is None:
+        balance_before = service.vendor_net_payable - (service.vendor_paid_amount or Decimal('0.00'))
+    balance_before = max(balance_before or Decimal('0.00'), Decimal('0.00')).quantize(Decimal('0.01'))
+
+    if amount <= Decimal('0.00'):
+        raise ValueError("Payment amount must be greater than zero.")
+    if amount > balance_before:
+        raise ValueError("Payment amount cannot be greater than vendor balance.")
+
+    balance_after = (balance_before - amount).quantize(Decimal('0.01'))
+    payment = VendorPayment.objects.create(
+        vendor=service.vendor,
+        specialized_service=service,
+        payment_date=payment_date,
+        payment_method=payment_method,
+        amount=amount,
+        balance_before=balance_before,
+        balance_after=balance_after,
+        reference_no=(reference_no or '').strip(),
+        notes=(notes or '').strip(),
+        created_by=user if getattr(user, 'is_authenticated', False) else None,
+    )
+    service.vendor_paid_amount = ((service.vendor_paid_amount or Decimal('0.00')) + amount).quantize(Decimal('0.01'))
+    service.vendor_balance_amount = balance_after
+    service.save(update_fields=['vendor_paid_amount', 'vendor_balance_amount'])
+    return payment
+
+
+def _record_vendor_payment_for_service(service_id, amount, payment_method, payment_date, reference_no, notes, user):
+    service = (
+        SpecializedService.objects
+        .select_for_update()
+        .select_related('vendor', 'job_ticket')
+        .get(id=service_id)
+    )
+    return _record_vendor_payment_for_locked_service(
+        service,
+        amount,
+        payment_method,
+        payment_date,
+        reference_no,
+        notes,
+        user,
+    )
+
+
+def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, reference_no, notes, user):
+    if amount <= Decimal('0.00'):
+        raise ValueError("Payment amount must be greater than zero.")
+
+    services = list(
+        SpecializedService.objects
+        .select_for_update()
+        .select_related('vendor', 'job_ticket')
+        .filter(
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_balance_amount__gt=0,
+        )
+        .order_by('returned_date', 'id')
+    )
+    if not services:
+        raise ValueError("No pending vendor balances found.")
+
+    total_balance = sum(
+        (
+            max(
+                service.vendor_balance_amount or Decimal('0.00'),
+                Decimal('0.00'),
+            )
+            for service in services
+        ),
+        Decimal('0.00'),
+    ).quantize(Decimal('0.01'))
+    if amount > total_balance:
+        raise ValueError("Payment amount cannot be greater than total vendor balance.")
+
+    remaining = amount
+    payments = []
+    for service in services:
+        if remaining <= Decimal('0.00'):
+            break
+        balance = max(service.vendor_balance_amount or Decimal('0.00'), Decimal('0.00')).quantize(Decimal('0.01'))
+        if balance <= Decimal('0.00'):
+            continue
+        allocation = min(remaining, balance).quantize(Decimal('0.01'))
+        payment_note = (notes or '').strip()
+        if not payment_note:
+            payment_note = f"Bulk payment allocated to {service.job_ticket.job_code}"
+        payment = _record_vendor_payment_for_locked_service(
+            service,
+            allocation,
+            payment_method,
+            payment_date,
+            reference_no,
+            payment_note,
+            user,
+        )
+        payments.append(payment)
+        remaining = (remaining - allocation).quantize(Decimal('0.01'))
+
+    return payments
+
+
+def _redirect_back_to_vendor_page(request, fallback='vendor_dashboard'):
+    next_url = (request.POST.get('next') or request.META.get('HTTP_REFERER') or '').strip()
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(next_url)
+    return redirect(fallback)
+
+
 @login_required
 @require_POST
 def request_specialized_service(request, job_code):
@@ -27,6 +177,9 @@ def request_specialized_service(request, job_code):
                 service.status = 'Awaiting Assignment'
                 service.vendor = None
                 service.vendor_cost = None
+                service.vendor_discount_amount = Decimal('0.00')
+                service.vendor_paid_amount = Decimal('0.00')
+                service.vendor_balance_amount = Decimal('0.00')
                 service.client_charge = None
                 service.sent_date = None
                 service.returned_date = None
@@ -76,21 +229,28 @@ def mark_service_returned(request, service_id):
         
         # Validate that costs are provided
         if not vendor_cost or not client_charge:
-            messages.error(request, "Both Vendor Cost and Client Charge are required.")
+            messages.error(request, "Both Vendor Bill Amount and Client Charge are required.")
             return redirect('vendor_dashboard')
         
         try:
-            vendor_cost = Decimal(vendor_cost)
-            client_charge = Decimal(client_charge)
-        except (ValueError, TypeError):
-            messages.error(request, "Invalid cost values. Please enter valid numbers.")
+            vendor_cost = _parse_vendor_money(vendor_cost, "vendor cost")
+            client_charge = _parse_vendor_money(client_charge, "client charge")
+        except ValueError as exc:
+            messages.error(request, str(exc))
             return redirect('vendor_dashboard')
+
+        vendor_discount_amount = Decimal('0.00')
+        vendor_paid_amount = Decimal('0.00')
+        vendor_balance_amount = vendor_cost.quantize(Decimal('0.01'))
         
         with transaction.atomic():
             # Step 1: Update the SpecializedService record with costs
             service.status = 'Returned from Vendor'
             service.returned_date = timezone.now()
             service.vendor_cost = vendor_cost
+            service.vendor_discount_amount = vendor_discount_amount
+            service.vendor_paid_amount = vendor_paid_amount
+            service.vendor_balance_amount = vendor_balance_amount
             service.client_charge = client_charge
             service.save()
 
@@ -111,17 +271,106 @@ def mark_service_returned(request, service_id):
             job.save()
 
             # Step 4: Log this important event
-            details = f"Device returned from vendor '{service.vendor.company_name}'. Costs: Vendor ₹{vendor_cost}, Client ₹{client_charge}. Service charge automatically added. Status changed from '{old_status}' to 'Repairing'."
+            details = (
+                f"Device returned from vendor '{service.vendor.company_name}'. "
+                f"Vendor bill Rs {vendor_cost}, balance Rs {vendor_balance_amount}, "
+                f"client charge Rs {client_charge}. Service charge automatically added. "
+                f"Status changed from '{old_status}' to 'Repairing'."
+            )
             JobTicketLog.objects.create(job_ticket=job, user=request.user, action='STATUS', details=details)
             
             # Send WebSocket update
             send_job_update_message(job.job_code, job.status)
 
-        messages.success(request, f"Job {job.job_code} marked as returned with costs recorded and service charge automatically added. Job is now back in the technician's queue.")
+        messages.success(request, f"Job {job.job_code} marked as returned. Vendor bill and client charge were recorded.")
         return redirect('vendor_dashboard')
     
     # GET request should not happen, redirect to vendor dashboard
     return redirect('vendor_dashboard')
+
+
+@login_required
+@require_POST
+def record_vendor_payment(request, vendor_id):
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    vendor = get_object_or_404(Vendor, id=vendor_id)
+    payment_scope = (request.POST.get('payment_scope') or 'bulk').strip()
+    if payment_scope not in {'bulk', 'single'}:
+        payment_scope = 'bulk'
+
+    try:
+        amount = _parse_vendor_money(request.POST.get('payment_amount'), "payment amount")
+        payment_method = _clean_vendor_payment_method(request.POST.get('payment_method'))
+        payment_date = _parse_vendor_payment_date(request.POST.get('payment_date'))
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return _redirect_back_to_vendor_page(request)
+
+    reference_no = request.POST.get('reference_no')
+    notes = request.POST.get('notes')
+
+    try:
+        with transaction.atomic():
+            if payment_scope == 'single':
+                service_id = request.POST.get('specialized_service_id')
+                if not service_id:
+                    raise ValueError("Select a vendor job before recording payment.")
+                service = SpecializedService.objects.select_related('vendor', 'job_ticket').get(
+                    id=service_id,
+                    vendor=vendor,
+                )
+                payments = [
+                    _record_vendor_payment_for_service(
+                        service.id,
+                        amount,
+                        payment_method,
+                        payment_date,
+                        reference_no,
+                        notes,
+                        request.user,
+                    )
+                ]
+            else:
+                payments = _record_vendor_bulk_payment(
+                    vendor,
+                    amount,
+                    payment_method,
+                    payment_date,
+                    reference_no,
+                    notes,
+                    request.user,
+                )
+
+            for payment in payments:
+                log_label = "Vendor bulk payment allocated" if payment_scope == 'bulk' else "Vendor payment recorded"
+                JobTicketLog.objects.create(
+                    job_ticket=payment.specialized_service.job_ticket,
+                    user=request.user,
+                    action='BILLING',
+                    details=(
+                        f"{log_label} for '{vendor.company_name}': "
+                        f"Rs {payment.amount} by {payment.get_payment_method_display()} on {payment.payment_date}. "
+                        f"Balance Rs {payment.balance_after}."
+                    ),
+                )
+    except SpecializedService.DoesNotExist:
+        messages.error(request, "Selected vendor job was not found.")
+        return _redirect_back_to_vendor_page(request)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return _redirect_back_to_vendor_page(request)
+
+    if payment_scope == 'bulk':
+        messages.success(
+            request,
+            f"Payment of Rs {amount} recorded for {vendor.company_name} across {len(payments)} job(s).",
+        )
+    else:
+        messages.success(request, f"Payment of Rs {payments[0].amount} recorded for {vendor.company_name}.")
+    return _redirect_back_to_vendor_page(request)
 
 
 INVENTORY_ENTRY_CONFIG = {
@@ -187,17 +436,73 @@ def vendor_dashboard(request):
         vendor_form = VendorForm() # For GET request or error display
 
     # Get all vendors and annotate them with the count of jobs currently with them
-    vendors = Vendor.objects.annotate(
+    vendors = list(Vendor.objects.annotate(
         active_jobs_count=Count('services', filter=Q(services__status='Sent to Vendor'))
-    ).order_by('company_name')
+    ).order_by('company_name'))
+
+    vendor_by_id = {vendor.id: vendor for vendor in vendors}
+    for vendor in vendors:
+        vendor.total_payable = Decimal('0.00')
+        vendor.total_paid = Decimal('0.00')
+        vendor.total_balance = Decimal('0.00')
+        vendor.outstanding_services = []
+
+    if vendor_by_id:
+        settlement_rows = (
+            SpecializedService.objects
+            .filter(vendor_id__in=vendor_by_id, status='Returned from Vendor')
+            .values('vendor_id')
+            .annotate(
+                total_bill=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0.00')),
+                total_discount=Coalesce(Sum('vendor_discount_amount', output_field=DecimalField()), Decimal('0.00')),
+                total_paid=Coalesce(Sum('vendor_paid_amount', output_field=DecimalField()), Decimal('0.00')),
+                total_balance=Coalesce(Sum('vendor_balance_amount', output_field=DecimalField()), Decimal('0.00')),
+            )
+        )
+        for row in settlement_rows:
+            vendor = vendor_by_id.get(row['vendor_id'])
+            if not vendor:
+                continue
+            vendor.total_payable = (row['total_bill'] - row['total_discount']).quantize(Decimal('0.01'))
+            vendor.total_paid = row['total_paid']
+            vendor.total_balance = row['total_balance']
+
+        outstanding_services = (
+            SpecializedService.objects
+            .filter(vendor_id__in=vendor_by_id, status='Returned from Vendor', vendor_balance_amount__gt=0)
+            .select_related('job_ticket', 'vendor')
+            .order_by('returned_date', 'job_ticket__job_code')
+        )
+        for service in outstanding_services:
+            vendor = vendor_by_id.get(service.vendor_id)
+            if vendor:
+                vendor.outstanding_services.append(service)
 
     # Get all jobs that are currently with any vendor, ordered for easy grouping in the template
-    active_services = SpecializedService.objects.filter(status='Sent to Vendor').select_related('job_ticket', 'vendor').order_by('vendor__company_name', 'sent_date')
+    active_services = list(
+        SpecializedService.objects
+        .filter(status='Sent to Vendor')
+        .select_related('job_ticket', 'vendor')
+        .order_by('vendor__company_name', 'sent_date')
+    )
+    active_count_by_vendor = {vendor.id: vendor.active_jobs_count for vendor in vendors}
+    for service in active_services:
+        service.vendor_active_jobs_count = active_count_by_vendor.get(service.vendor_id, 0)
+
+    recent_payments = (
+        VendorPayment.objects
+        .filter(vendor_id__in=vendor_by_id)
+        .select_related('vendor', 'specialized_service__job_ticket', 'created_by')
+        .order_by('-payment_date', '-created_at')[:75]
+    )
 
     context = {
         'vendors': vendors,
         'vendor_form': vendor_form,
         'active_services_by_vendor': active_services,
+        'recent_vendor_payments': recent_payments,
+        'today_date': timezone.localdate().strftime('%Y-%m-%d'),
+        'vendor_payment_method_choices': VendorPayment.METHOD_CHOICES,
     }
     return render(request, 'job_tickets/vendor_dashboard.html', context)
 
@@ -266,6 +571,7 @@ def vendor_report_detail(request, vendor_id):
     
     # Start with all services for this vendor
     services = SpecializedService.objects.filter(vendor=vendor).select_related('job_ticket')
+    payments = VendorPayment.objects.filter(vendor=vendor).select_related('specialized_service__job_ticket', 'created_by')
     
     # Apply date filtering using vendor concept
     if start_date_str and end_date_str:
@@ -281,27 +587,41 @@ def vendor_report_detail(request, vendor_id):
                 returned_date__gte=start_of_period,
                 returned_date__lte=end_of_period
             )
+            payments = payments.filter(
+                payment_date__gte=start_date,
+                payment_date__lte=end_date,
+            )
         except ValueError:
             # If date parsing fails, show all services
             pass
     
     services = services.order_by('-sent_date')
+    payments = payments.order_by('-payment_date', '-created_at')
 
     # Calculate financial totals
     totals = services.aggregate(
-        total_cost=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0')),
-        total_charge=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0'))
+        total_bill=Coalesce(Sum('vendor_cost', output_field=DecimalField()), Decimal('0')),
+        total_discount=Coalesce(Sum('vendor_discount_amount', output_field=DecimalField()), Decimal('0')),
+        total_paid=Coalesce(Sum('vendor_paid_amount', output_field=DecimalField()), Decimal('0')),
+        total_balance=Coalesce(Sum('vendor_balance_amount', output_field=DecimalField()), Decimal('0')),
+        total_charge=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0')),
     )
     
-    profit = totals['total_charge'] - totals['total_cost']
+    total_net_payable = sum_vendor_net_cost(services)
+    profit = totals['total_charge'] - total_net_payable
 
     context = {
         'vendor': vendor,
         'services': services,
         'total_jobs': services.count(),
-        'total_vendor_cost': totals['total_cost'],
+        'total_vendor_bill': totals['total_bill'],
+        'total_vendor_discount': totals['total_discount'],
+        'total_vendor_cost': total_net_payable,
+        'total_vendor_paid': totals['total_paid'],
+        'total_vendor_balance': totals['total_balance'],
         'total_client_charge': totals['total_charge'],
         'total_profit': profit,
+        'vendor_payments': payments,
         'start_date': start_date_str,
         'end_date': end_date_str,
     }

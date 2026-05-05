@@ -1,4 +1,191 @@
 from .helpers import *  # noqa: F401,F403
+from ..whatsapp_service import queue_job_whatsapp_message, send_job_whatsapp_notification
+
+
+REMINDER_PROMPT_COOLDOWN_MINUTES = 10
+FEEDBACK_FOLLOWUP_DAYS = 7
+FEEDBACK_AUTO_SEND_LIMIT = 25
+
+
+def _parse_reminder_offset(post_data, *, hour_field='reminder_hours', minute_field='reminder_minutes', require_value=False):
+    raw_hours = (post_data.get(hour_field) or '').strip()
+    raw_minutes = (post_data.get(minute_field) or '').strip()
+
+    if not raw_hours and not raw_minutes:
+        if require_value:
+            return None, 'Enter reminder hour or minute.'
+        return None, ''
+
+    try:
+        hours = int(raw_hours or 0)
+        minutes = int(raw_minutes or 0)
+    except (TypeError, ValueError):
+        return None, 'Reminder hour and minute must be valid numbers.'
+
+    if hours < 0 or hours > 24:
+        return None, 'Reminder hour must be between 0 and 24.'
+    if minutes < 0 or minutes > 60:
+        return None, 'Reminder minute must be between 0 and 60.'
+    if hours == 0 and minutes == 0:
+        if require_value:
+            return None, 'Enter reminder hour or minute.'
+        return None, ''
+
+    return timedelta(hours=hours, minutes=minutes), ''
+
+
+def _parse_estimated_amount(raw_amount):
+    raw_amount = (raw_amount or '').strip()
+    if not raw_amount:
+        return None, ''
+    try:
+        amount = Decimal(raw_amount)
+    except InvalidOperation:
+        return None, 'Invalid estimate amount.'
+    if amount < 0:
+        return None, 'Estimate amount cannot be negative.'
+    return amount.quantize(Decimal('0.01')), ''
+
+
+def _save_job_estimation_from_post(request, job):
+    estimated_amount, amount_error = _parse_estimated_amount(request.POST.get('estimated_amount'))
+    if amount_error:
+        return amount_error
+
+    estimation_note = (request.POST.get('estimation_note') or '').strip()
+    old_amount = job.estimated_amount
+    old_note = job.estimation_note or ''
+
+    if old_amount == estimated_amount and old_note == estimation_note:
+        return ''
+
+    job.estimated_amount = estimated_amount
+    job.estimation_note = estimation_note
+    job.save(update_fields=['estimated_amount', 'estimation_note', 'updated_at'])
+
+    changes = []
+    if old_amount != estimated_amount:
+        changes.append(f"estimate amount changed from Rs {old_amount or '0.00'} to Rs {estimated_amount or '0.00'}")
+    if old_note != estimation_note:
+        changes.append('estimate note updated')
+
+    JobTicketLog.objects.create(
+        job_ticket=job,
+        user=request.user,
+        action='NOTE',
+        details='Staff updated ' + ', '.join(changes) + '.',
+    )
+    return ''
+
+
+def _active_job_reminder(job):
+    return job.reminders.filter(status=JobReminder.STATUS_PENDING).order_by('due_at', 'id').first()
+
+
+def _feedback_due_at_from_closed_at(closed_at):
+    return closed_at + timedelta(days=FEEDBACK_FOLLOWUP_DAYS)
+
+
+def _schedule_feedback_followup(job, *, save=True):
+    if job.status != 'Closed':
+        return []
+
+    now = timezone.now()
+    changed_fields = []
+    if not job.closed_at:
+        job.closed_at = now
+        changed_fields.append('closed_at')
+    if not job.feedback_due_at:
+        job.feedback_due_at = _feedback_due_at_from_closed_at(job.closed_at)
+        changed_fields.append('feedback_due_at')
+    if not job.feedback_followup_enabled:
+        job.feedback_followup_enabled = True
+        changed_fields.append('feedback_followup_enabled')
+    if job.feedback_rating and job.feedback_followup_status != JobTicket.FEEDBACK_RECEIVED:
+        job.feedback_followup_status = JobTicket.FEEDBACK_RECEIVED
+        changed_fields.append('feedback_followup_status')
+
+    if save and changed_fields:
+        job.save(update_fields=[*changed_fields, 'updated_at'])
+    return changed_fields
+
+
+def _prepare_feedback_followups():
+    JobTicket.objects.filter(
+        feedback_rating__isnull=False,
+    ).exclude(
+        feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
+    ).update(
+        feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
+    )
+
+
+def _queue_feedback_followup_message(job, *, user=None, manual=False):
+    result = (
+        queue_job_whatsapp_message(job, MessageQueue.EVENT_FEEDBACK)
+        if manual
+        else send_job_whatsapp_notification(job, MessageQueue.EVENT_FEEDBACK)
+    )
+    if not result.get('ok'):
+        return result
+
+    now = timezone.now()
+    update_fields = ['feedback_message_sent_at', 'feedback_followup_status', 'updated_at']
+    job.feedback_message_sent_at = now
+    if job.feedback_followup_status == JobTicket.FEEDBACK_PENDING:
+        job.feedback_followup_status = JobTicket.FEEDBACK_MESSAGE_SENT
+    job.save(update_fields=update_fields)
+
+    JobTicketLog.objects.create(
+        job_ticket=job,
+        user=user,
+        action='FEEDBACK',
+        details='Feedback WhatsApp follow-up queued.',
+    )
+    return result
+
+
+def _auto_send_due_feedback_messages():
+    _prepare_feedback_followups()
+    due_jobs = JobTicket.objects.filter(
+        status='Closed',
+        feedback_followup_enabled=True,
+        feedback_rating__isnull=True,
+        feedback_due_at__lte=timezone.now(),
+        feedback_message_sent_at__isnull=True,
+    ).exclude(
+        feedback_followup_status__in=[
+            JobTicket.FEEDBACK_RECEIVED,
+            JobTicket.FEEDBACK_CALLED_HAPPY,
+        ]
+    ).order_by('feedback_due_at', 'id')[:FEEDBACK_AUTO_SEND_LIMIT]
+
+    sent_count = 0
+    for job in due_jobs:
+        result = _queue_feedback_followup_message(job)
+        if result.get('ok'):
+            sent_count += 1
+    return sent_count
+
+
+def _append_feedback_note(existing_note, new_note):
+    new_note = (new_note or '').strip()
+    if not new_note:
+        return existing_note or ''
+    timestamp = timezone.localtime(timezone.now()).strftime('%d-%m-%Y %I:%M %p')
+    entry = f"{timestamp}: {new_note}"
+    return f"{existing_note}\n{entry}".strip() if existing_note else entry
+
+
+def _safe_next_redirect(request, fallback='staff_dashboard', **fallback_kwargs):
+    next_url = (request.POST.get('next') or request.GET.get('next') or request.META.get('HTTP_REFERER') or '').strip()
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(next_url)
+    return redirect(fallback, **fallback_kwargs)
 
 
 @login_required
@@ -94,6 +281,16 @@ def staff_dashboard(request):
                 request.session['show_create_job_modal'] = True
                 messages.error(request, error_message)
                 return redirect('staff_dashboard')
+
+        reminder_delta, reminder_error = _parse_reminder_offset(request.POST)
+        if reminder_error:
+            if is_ajax_request:
+                return JsonResponse({'success': False, 'message': reminder_error}, status=400)
+            request.session['show_create_job_modal'] = True
+            messages.error(request, reminder_error)
+            return redirect('staff_dashboard')
+
+        reminder_due_at = timezone.now() + reminder_delta if reminder_delta else None
         
         # 2. Identify and collect all device submissions using JavaScript's array naming
         device_submissions = []
@@ -201,6 +398,20 @@ def staff_dashboard(request):
                             )
                 
                 JobTicketLog.objects.create(job_ticket=new_job, user=request.user, action='CREATED', details=f"Job ticket created for device: {device_data['device_type']}.")
+
+                if reminder_due_at:
+                    reminder = JobReminder.objects.create(
+                        job_ticket=new_job,
+                        due_at=reminder_due_at,
+                        created_by=request.user,
+                    )
+                    local_due_at = timezone.localtime(reminder.due_at).strftime('%d-%m-%Y %I:%M %p')
+                    JobTicketLog.objects.create(
+                        job_ticket=new_job,
+                        user=request.user,
+                        action='NOTE',
+                        details=f"Callback reminder scheduled for {local_due_at}.",
+                    )
                 
                 created_job_codes.append(new_job.job_code)
                 created_jobs_payload.append({
@@ -363,6 +574,17 @@ def staff_dashboard(request):
         status='accepted'
     ).select_related('job', 'technician__user').order_by('-responded_at')
 
+    reminder_alerts = list(
+        JobReminder.objects.filter(status=JobReminder.STATUS_PENDING)
+        .select_related('job_ticket', 'created_by')
+        .order_by('due_at', 'id')[:75]
+    )
+    reminder_alert_count = JobReminder.objects.filter(status=JobReminder.STATUS_PENDING).count()
+    due_reminder_count = JobReminder.objects.filter(
+        status=JobReminder.STATUS_PENDING,
+        due_at__lte=timezone.now(),
+    ).count()
+
     # FINAL CONTEXT
     context = {
         'form': JobTicketForm(), # Use an empty form here for any generic field access in the template
@@ -388,6 +610,9 @@ def staff_dashboard(request):
         'ready_count': ready_for_pickup_jobs.count(),
         'completed_count': completed_jobs.count(),
         'returned_count': returned_jobs.count(),
+        'reminder_alerts': reminder_alerts,
+        'reminder_alert_count': reminder_alert_count,
+        'due_reminder_count': due_reminder_count,
     }
     return render(request, 'job_tickets/staff_dashboard.html', context)
 
@@ -488,6 +713,19 @@ def job_billing_staff(request, job_code):
 
                         old_part_cost = log.part_cost or Decimal('0')
                         old_service_charge = log.service_charge or Decimal('0')
+                        description_field = f'description_{log_id}'
+                        if description_field in request.POST:
+                            old_description = log.description or ''
+                            new_description = (request.POST.get(description_field) or '').strip()
+                            if not new_description:
+                                raise ValueError("Service description cannot be empty.")
+                            if len(new_description) > 255:
+                                raise ValueError("Service description cannot exceed 255 characters.")
+                            if old_description != new_description:
+                                log.description = new_description
+                                is_updated = True
+                                details = f"Updated service description from '{old_description}' to '{new_description}'."
+                                JobTicketLog.objects.create(job_ticket=job, user=request.user, action='BILLING', details=details)
 
                         if product_sale_entry:
                             if new_part_cost < 0:
@@ -886,23 +1124,118 @@ def close_job(request, job_code):
         return denied
 
     job = get_object_or_404(JobTicket, job_code=job_code)
+    if request.method != 'POST':
+        messages.error(request, 'Use the close confirmation window to close a job.')
+        return redirect('job_billing_staff', job_code=job.job_code)
+
     old_status = job.get_status_display()
     job.status = 'Closed'
-    job.save()
+    job.closed_at = timezone.now()
+    job.feedback_due_at = _feedback_due_at_from_closed_at(job.closed_at)
+    job.feedback_followup_enabled = True
+    job.feedback_followup_status = (
+        JobTicket.FEEDBACK_RECEIVED if job.feedback_rating else JobTicket.FEEDBACK_PENDING
+    )
+    job.save(update_fields=[
+        'status',
+        'closed_at',
+        'feedback_due_at',
+        'feedback_followup_enabled',
+        'feedback_followup_status',
+        'updated_at',
+    ])
 
     details = f"Status changed from '{old_status}' to 'Closed'."
     JobTicketLog.objects.create(job_ticket=job, user=request.user, action='CLOSED', details=details)
 
     send_job_update_message(job.job_code, job.status)
     
-    next_url = (request.GET.get('next') or request.META.get('HTTP_REFERER') or '').strip()
-    if next_url and url_has_allowed_host_and_scheme(
-        next_url,
-        allowed_hosts={request.get_host()},
-        require_https=request.is_secure(),
+    return _safe_next_redirect(request)
+
+
+@login_required
+@require_POST
+def update_feedback_followup(request, job_code):
+    if not request.user.is_staff or not (
+        user_has_staff_access(request.user, "staff_dashboard")
+        or user_has_staff_access(request.user, "feedback_analytics")
     ):
-        return redirect(next_url)
-    return redirect('staff_dashboard')
+        return redirect('unauthorized')
+
+    job = get_object_or_404(JobTicket, job_code=job_code)
+    if job.status != 'Closed':
+        messages.error(request, 'Feedback follow-up is available only after the job is closed.')
+        return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+    if not job.feedback_followup_enabled or not job.feedback_due_at:
+        messages.error(request, 'Feedback follow-up is enabled only for newly closed jobs.')
+        return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
+    action = (request.POST.get('feedback_action') or '').strip()
+    note = (request.POST.get('feedback_note') or '').strip()
+    rating_raw = (request.POST.get('feedback_rating') or '').strip()
+    status_map = {
+        'called_happy': JobTicket.FEEDBACK_CALLED_HAPPY,
+        'called_issue': JobTicket.FEEDBACK_CALLED_ISSUE,
+        'no_answer': JobTicket.FEEDBACK_NO_ANSWER,
+        'call_later': JobTicket.FEEDBACK_CALL_LATER,
+    }
+
+    if action == 'send_now':
+        result = _queue_feedback_followup_message(job, user=request.user, manual=True)
+        if result.get('ok'):
+            messages.success(request, f'Feedback WhatsApp queued for {job.customer_name}.')
+        else:
+            messages.error(request, result.get('reason') or result.get('error') or 'Could not queue feedback WhatsApp.')
+        return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
+    update_fields = ['feedback_followup_status', 'feedback_followup_note', 'feedback_followup_marked_by', 'updated_at']
+    old_status = job.get_feedback_followup_status_display()
+    job.feedback_followup_marked_by = request.user
+    if note:
+        job.feedback_followup_note = _append_feedback_note(job.feedback_followup_note, note)
+
+    if action == 'mark_received':
+        if not rating_raw or not note:
+            messages.error(request, 'Rating and feedback note are required to mark feedback as received.')
+            return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
+        try:
+            rating = int(rating_raw)
+        except (TypeError, ValueError):
+            messages.error(request, 'Feedback rating must be between 1 and 10.')
+            return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+        if rating < 1 or rating > 10:
+            messages.error(request, 'Feedback rating must be between 1 and 10.')
+            return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
+        job.feedback_followup_status = JobTicket.FEEDBACK_RECEIVED
+        job.feedback_rating = rating
+        job.feedback_comment = note
+        job.feedback_date = timezone.now()
+        update_fields.extend(['feedback_rating', 'feedback_comment', 'feedback_date'])
+        success_message = 'Feedback marked as received.'
+    elif action in status_map:
+        job.feedback_followup_status = status_map[action]
+        job.feedback_followup_called_at = timezone.now()
+        update_fields.append('feedback_followup_called_at')
+        success_message = f'Feedback follow-up marked as {dict(JobTicket.FEEDBACK_FOLLOWUP_CHOICES)[job.feedback_followup_status]}.'
+    else:
+        messages.error(request, 'Invalid feedback follow-up action.')
+        return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
+    job.save(update_fields=list(dict.fromkeys(update_fields)))
+    JobTicketLog.objects.create(
+        job_ticket=job,
+        user=request.user,
+        action='FEEDBACK',
+        details=(
+            f"Feedback follow-up changed from '{old_status}' to "
+            f"'{job.get_feedback_followup_status_display()}'."
+        ),
+    )
+    messages.success(request, success_message)
+    return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
 
 @login_required
 def job_billing_print_view(request, job_code):
@@ -963,6 +1296,74 @@ def staff_job_detail(request, job_code):
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
+        if action == 'update_status':
+            new_status = (request.POST.get('status') or '').strip()
+            valid_statuses = {value for value, _label in JobTicket.STATUS_CHOICES}
+
+            if new_status not in valid_statuses:
+                messages.error(request, 'Invalid job status selected.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            if new_status == job.status:
+                messages.info(request, 'Status is already up to date.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            old_status = job.get_status_display()
+            with transaction.atomic():
+                job.status = new_status
+                update_fields = ['status', 'updated_at']
+                if new_status == 'Closed' and not job.closed_at:
+                    job.closed_at = timezone.now()
+                    update_fields.append('closed_at')
+                if new_status == 'Closed' and not job.feedback_due_at:
+                    job.feedback_due_at = _feedback_due_at_from_closed_at(job.closed_at or timezone.now())
+                    update_fields.append('feedback_due_at')
+                if new_status == 'Closed':
+                    job.feedback_followup_enabled = True
+                    job.feedback_followup_status = (
+                        JobTicket.FEEDBACK_RECEIVED if job.feedback_rating else JobTicket.FEEDBACK_PENDING
+                    )
+                    update_fields.append('feedback_followup_enabled')
+                    update_fields.append('feedback_followup_status')
+                elif new_status != 'Closed' and job.closed_at:
+                    job.closed_at = None
+                    job.feedback_due_at = None
+                    job.feedback_followup_enabled = False
+                    job.feedback_message_sent_at = None
+                    job.feedback_followup_status = JobTicket.FEEDBACK_PENDING
+                    job.feedback_followup_called_at = None
+                    job.feedback_followup_marked_by = None
+                    update_fields.append('closed_at')
+                    update_fields.extend([
+                        'feedback_due_at',
+                        'feedback_followup_enabled',
+                        'feedback_message_sent_at',
+                        'feedback_followup_status',
+                        'feedback_followup_called_at',
+                        'feedback_followup_marked_by',
+                    ])
+                update_fields = list(dict.fromkeys(update_fields))
+                job.save(update_fields=update_fields)
+                if new_status == 'Specialized Service':
+                    service, _created = SpecializedService.objects.get_or_create(job_ticket=job)
+                    if service.status == 'Returned from Vendor':
+                        service.status = 'Awaiting Assignment'
+                        service.vendor = None
+                        service.vendor_cost = None
+                        service.vendor_discount_amount = Decimal('0.00')
+                        service.vendor_paid_amount = Decimal('0.00')
+                        service.vendor_balance_amount = Decimal('0.00')
+                        service.client_charge = None
+                        service.sent_date = None
+                        service.returned_date = None
+                        service.save()
+                details = f"Staff changed status from '{old_status}' to '{job.get_status_display()}'."
+                JobTicketLog.objects.create(job_ticket=job, user=request.user, action='STATUS', details=details)
+
+            send_job_update_message(job.job_code, job.status)
+            messages.success(request, f"Status updated to {job.get_status_display()}.")
+            return redirect('staff_job_detail', job_code=job_code)
+
         if action == 'update_checklist':
             posted_answers, missing_required_labels, invalid_option_labels = _extract_checklist_answers_from_post(
                 request.POST,
@@ -1026,12 +1427,105 @@ def staff_job_detail(request, job_code):
             messages.success(request, 'Inspection checklist updated.')
             return redirect('staff_job_detail', job_code=job_code)
 
+        if action in {'save_estimation', 'send_estimation_whatsapp'}:
+            estimation_error = _save_job_estimation_from_post(request, job)
+            if estimation_error:
+                messages.error(request, estimation_error)
+                return redirect('staff_job_detail', job_code=job_code)
+
+            if action == 'save_estimation':
+                messages.success(request, 'Estimate note saved.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            if job.estimated_amount is None:
+                messages.error(request, 'Enter estimate amount before sending WhatsApp.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            result = queue_job_whatsapp_message(job, MessageQueue.EVENT_ESTIMATE)
+            if result.get('ok'):
+                queue_id = (result.get('data') or {}).get('message_queue_id')
+                queue = MessageQueue.objects.filter(id=queue_id).first() if queue_id else None
+                if queue and queue.status == MessageQueue.STATUS_FAILED:
+                    messages.error(request, queue.error_message or 'Estimate WhatsApp failed.')
+                else:
+                    active_reminder = _active_job_reminder(job)
+                    if active_reminder:
+                        now = timezone.now()
+                        active_reminder.status = JobReminder.STATUS_DONE
+                        active_reminder.completed_at = now
+                        active_reminder.save(update_fields=['status', 'completed_at', 'updated_at'])
+                        JobTicketLog.objects.create(
+                            job_ticket=job,
+                            user=request.user,
+                            action='NOTE',
+                            details='Callback reminder completed after estimate WhatsApp was queued.',
+                        )
+                    messages.success(request, 'Estimate WhatsApp queued.')
+            else:
+                messages.error(request, result.get('error') or 'Unable to queue estimate WhatsApp.')
+            return redirect('staff_job_detail', job_code=job_code)
+
+        if action in {'schedule_reminder', 'reschedule_reminder'}:
+            reminder_delta, reminder_error = _parse_reminder_offset(request.POST, require_value=True)
+            if reminder_error:
+                messages.error(request, reminder_error)
+                return redirect('staff_job_detail', job_code=job_code)
+
+            due_at = timezone.now() + reminder_delta
+            reminder_id = (request.POST.get('reminder_id') or '').strip()
+            reminder = None
+            if reminder_id:
+                reminder = get_object_or_404(JobReminder, id=reminder_id, job_ticket=job)
+            if reminder is None:
+                reminder = _active_job_reminder(job)
+
+            local_due_at = timezone.localtime(due_at).strftime('%d-%m-%Y %I:%M %p')
+            if reminder:
+                old_due_at = timezone.localtime(reminder.due_at).strftime('%d-%m-%Y %I:%M %p')
+                reminder.due_at = due_at
+                reminder.status = JobReminder.STATUS_PENDING
+                reminder.completed_at = None
+                reminder.last_prompted_at = None
+                reminder.save(update_fields=['due_at', 'status', 'completed_at', 'last_prompted_at', 'updated_at'])
+                details = f"Callback reminder rescheduled from {old_due_at} to {local_due_at}."
+            else:
+                JobReminder.objects.create(
+                    job_ticket=job,
+                    due_at=due_at,
+                    created_by=request.user,
+                )
+                details = f"Callback reminder scheduled for {local_due_at}."
+
+            JobTicketLog.objects.create(job_ticket=job, user=request.user, action='NOTE', details=details)
+            messages.success(request, 'Reminder scheduled.')
+            return redirect('staff_job_detail', job_code=job_code)
+
+        if action == 'complete_reminder':
+            reminder_id = (request.POST.get('reminder_id') or '').strip()
+            reminder = get_object_or_404(JobReminder, id=reminder_id, job_ticket=job)
+            if reminder.status != JobReminder.STATUS_DONE:
+                reminder.status = JobReminder.STATUS_DONE
+                reminder.completed_at = timezone.now()
+                reminder.save(update_fields=['status', 'completed_at', 'updated_at'])
+                JobTicketLog.objects.create(
+                    job_ticket=job,
+                    user=request.user,
+                    action='NOTE',
+                    details='Callback reminder marked done.',
+                )
+                messages.success(request, 'Reminder marked done.')
+            else:
+                messages.info(request, 'Reminder is already done.')
+            return redirect('staff_job_detail', job_code=job_code)
+
     job_tickets = [job]
     calculate_job_totals(job_tickets)
     
     history_logs = job.logs.all().select_related('user')
     specialized_service = SpecializedService.objects.filter(job_ticket=job).first()
     technician_list = get_assignable_technician_queryset()
+    job_reminders = job.reminders.select_related('created_by').order_by('-due_at', '-id')
+    active_reminder = _active_job_reminder(job)
     
     if job.customer_group_id:
         related_jobs = JobTicket.objects.filter(
@@ -1069,6 +1563,9 @@ def staff_job_detail(request, job_code):
         'checklist_schema': checklist_schema,
         'checklist_title': checklist_title,
         'checklist_notes': checklist_notes,
+        'staff_status_choices': JobTicket.STATUS_CHOICES,
+        'job_reminders': job_reminders,
+        'active_reminder': active_reminder,
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
 
@@ -1140,6 +1637,11 @@ def unlock_vendor_details(request, job_code):
                 'vendor_name': str(specialized_service.vendor) if specialized_service and specialized_service.vendor else 'N/A',
                 'status': specialized_service.get_status_display() if specialized_service else 'N/A',
                 'vendor_cost': float(specialized_service.vendor_cost) if specialized_service and specialized_service.vendor_cost else 0,
+                'vendor_discount_amount': float(specialized_service.vendor_discount_amount) if specialized_service else 0,
+                'vendor_paid_amount': float(specialized_service.vendor_paid_amount) if specialized_service else 0,
+                'vendor_balance_amount': float(specialized_service.vendor_balance_amount) if specialized_service else 0,
+                'vendor_net_payable': float(specialized_service.vendor_net_payable) if specialized_service else 0,
+                'vendor_payment_status': specialized_service.vendor_payment_status if specialized_service else 'N/A',
                 'client_charge': float(specialized_service.client_charge) if specialized_service and specialized_service.client_charge else 0,
                 'sent_date': specialized_service.sent_date.strftime('%Y-%m-%d') if specialized_service and specialized_service.sent_date else None,
                 'returned_date': specialized_service.returned_date.strftime('%Y-%m-%d') if specialized_service and specialized_service.returned_date else None
@@ -1167,6 +1669,50 @@ def lock_vendor_details(request, job_code):
     
     messages.info(request, 'Vendor details locked.')
     return redirect('staff_job_detail', job_code=job_code)
+
+
+@login_required
+@require_GET
+def due_job_reminders_api(request):
+    if not request.user.is_staff or not user_has_staff_access(request.user, "staff_dashboard"):
+        return JsonResponse({'ok': False, 'error': 'Unauthorized'}, status=403)
+
+    now = timezone.now()
+    prompt_cutoff = now - timedelta(minutes=REMINDER_PROMPT_COOLDOWN_MINUTES)
+    reminders = list(
+        JobReminder.objects.filter(
+            status=JobReminder.STATUS_PENDING,
+            due_at__lte=now,
+        )
+        .filter(Q(last_prompted_at__isnull=True) | Q(last_prompted_at__lte=prompt_cutoff))
+        .select_related('job_ticket')
+        .order_by('due_at', 'id')[:5]
+    )
+
+    reminder_ids = [reminder.id for reminder in reminders]
+    if reminder_ids:
+        JobReminder.objects.filter(id__in=reminder_ids).update(last_prompted_at=now)
+
+    payload = []
+    for reminder in reminders:
+        job = reminder.job_ticket
+        payload.append({
+            'id': reminder.id,
+            'job_code': job.job_code,
+            'customer_name': job.customer_name,
+            'customer_phone': job.customer_phone,
+            'device': ' '.join(part for part in [job.device_type, job.device_brand, job.device_model] if part).strip(),
+            'due_at': timezone.localtime(reminder.due_at).strftime('%d-%m-%Y %I:%M %p'),
+            'url': reverse('staff_job_detail', args=[job.job_code]),
+        })
+
+    return JsonResponse({
+        'ok': True,
+        'count': len(payload),
+        'cooldown_minutes': REMINDER_PROMPT_COOLDOWN_MINUTES,
+        'reminders': payload,
+    })
+
 
 @login_required
 def api_all_jobs(request):
