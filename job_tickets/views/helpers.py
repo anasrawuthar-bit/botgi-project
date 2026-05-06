@@ -509,6 +509,10 @@ def get_mobile_job_available_actions(user, job):
         return []
 
     actions = []
+    if permissions['is_assigned_tech'] and job.is_new_assignment:
+        actions.append({'key': 'acknowledge', 'label': 'Acknowledge'})
+        actions.append({'key': 'return_to_staff', 'label': 'Return to Staff'})
+
     if job.status in ['Pending', 'Under Inspection']:
         actions.append({'key': 'start', 'label': 'Mark Started'})
 

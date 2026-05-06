@@ -68,7 +68,15 @@ urlpatterns = [
     path('api/mobile/jobs/', views.mobile_api_jobs, name='mobile_api_jobs'),
     path('api/mobile/jobs/<str:job_code>/', views.mobile_api_job_detail, name='mobile_api_job_detail'),
     path('api/mobile/jobs/<str:job_code>/action/', views.mobile_api_job_action, name='mobile_api_job_action'),
+    path('api/mobile/jobs/<str:job_code>/technician-update/', views.mobile_api_job_technician_update, name='mobile_api_job_technician_update'),
     path('api/mobile/jobs/<str:job_code>/notes/', views.mobile_api_job_notes, name='mobile_api_job_notes'),
+    path('api/mobile/jobs/<str:job_code>/checklist/', views.mobile_api_job_checklist, name='mobile_api_job_checklist'),
+    path('api/mobile/jobs/<str:job_code>/photos/', views.mobile_api_job_photos, name='mobile_api_job_photos'),
+    path(
+        'api/mobile/jobs/<str:job_code>/photos/<int:photo_id>/file/',
+        views.mobile_api_job_photo_file,
+        name='mobile_api_job_photo_file',
+    ),
     path('api/mobile/jobs/<str:job_code>/service-lines/', views.mobile_api_service_line_create, name='mobile_api_service_line_create'),
     path(
         'api/mobile/jobs/<str:job_code>/service-lines/<int:line_id>/update/',

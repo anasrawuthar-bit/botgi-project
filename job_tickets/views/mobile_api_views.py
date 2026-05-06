@@ -89,8 +89,15 @@ def mobile_api_jobs(request):
     else:
         jobs_qs = JobTicket.objects.none()
 
+    try:
+        limit = min(max(int(request.GET.get('limit', 200)), 1), 300)
+    except (TypeError, ValueError):
+        limit = 200
+
     jobs = list(
-        jobs_qs.select_related('assigned_to__user').prefetch_related('service_logs').order_by('-updated_at')[:30]
+        jobs_qs.select_related('assigned_to__user', 'specialized_service')
+        .prefetch_related('service_logs')
+        .order_by('-updated_at')[:limit]
     )
     calculate_job_totals(jobs, exclude_vendor_charges=True)
 
@@ -108,6 +115,10 @@ def mobile_api_jobs(request):
                 'part_total': str(job.part_total or Decimal('0.00')),
                 'service_total': str(job.service_total or Decimal('0.00')),
                 'discount_amount': str(job.discount_amount or Decimal('0.00')),
+                'is_new_assignment': bool(job.is_new_assignment),
+                'returned_from_vendor': bool(
+                    getattr(getattr(job, 'specialized_service', None), 'status', '') == 'Returned from Vendor'
+                ),
                 'assigned_to': (
                     job.assigned_to.user.username
                     if job.assigned_to and getattr(job.assigned_to, 'user', None)
@@ -130,6 +141,7 @@ def mobile_api_job_detail(request, job_code):
         JobTicket.objects.select_related('assigned_to__user', 'created_by').prefetch_related(
             'service_logs__product_sale__product',
             'logs__user',
+            'photos',
         ),
         job_code=job_code,
     )
@@ -197,6 +209,8 @@ def mobile_api_job_detail(request, job_code):
         )
 
     checklist_schema, checklist_title, checklist_notes = _build_checklist_schema_for_job(job)
+    can_change_status = _mobile_technician_can_change_status(job)
+    specialized_service = getattr(job, 'specialized_service', None)
 
     return JsonResponse(
         {
@@ -245,12 +259,336 @@ def mobile_api_job_detail(request, job_code):
             'permissions': {
                 'can_edit_notes': mobile_can_edit_notes(user, job),
                 'can_manage_service_logs': mobile_can_manage_service_lines(user, job),
+                'can_change_status': bool(permissions['is_assigned_tech'] and can_change_status),
+                'can_request_specialized_service': bool(
+                    permissions['is_assigned_tech']
+                    and job.status not in ['Completed', 'Ready for Pickup', 'Closed']
+                ),
             },
+            'status_choices': _mobile_technician_status_choices(job),
+            'can_change_status': bool(can_change_status),
+            'checklist_required_for_completion': bool(_checklist_requires_completion(checklist_schema)),
+            'specialized_service': _mobile_specialized_service_payload(specialized_service),
+            'technician_checklist_schema': checklist_schema,
+            'technician_checklist_title': checklist_title,
+            'technician_checklist_notes': checklist_notes,
+            'photos': [_mobile_job_photo_payload(request, job, photo) for photo in job.photos.all()],
+        }
+    )
+
+
+def _mobile_technician_status_choices(job):
+    excluded_statuses = {'Pending', 'Ready for Pickup', 'Closed', 'Specialized Service'}
+    return [
+        {'value': value, 'label': label}
+        for value, label in job.STATUS_CHOICES
+        if label not in excluded_statuses
+    ]
+
+
+def _mobile_technician_can_change_status(job):
+    if job.status == 'Specialized Service':
+        specialized_service = getattr(job, 'specialized_service', None)
+        if specialized_service and specialized_service.status != 'Returned from Vendor':
+            return False
+    return True
+
+
+def _mobile_specialized_service_payload(service):
+    if not service:
+        return {
+            'exists': False,
+            'status': '',
+            'status_display': '',
+            'vendor_name': '',
+            'notes': '',
+        }
+    return {
+        'exists': True,
+        'status': service.status or '',
+        'status_display': service.get_status_display() if service.status else '',
+        'vendor_name': service.vendor.company_name if service.vendor else '',
+        'notes': service.notes or '',
+    }
+
+
+def _mobile_job_photo_payload(request, job, photo):
+    return {
+        'id': photo.id,
+        'name': photo.image_name or f'{job.job_code}-photo-{photo.id}.jpg',
+        'content_type': photo.image_content_type or 'application/octet-stream',
+        'uploaded_at': timezone.localtime(photo.uploaded_at).strftime('%Y-%m-%d %H:%M'),
+        'url': request.build_absolute_uri(
+            reverse('mobile_api_job_photo_file', kwargs={'job_code': job.job_code, 'photo_id': photo.id})
+        ),
+    }
+
+
+def _mobile_normalize_checklist_answers(raw_answers, checklist_schema):
+    if not isinstance(raw_answers, dict):
+        raise ValueError("Checklist answers must be an object.")
+
+    normalized = {}
+    invalid_option_labels = []
+    for field in checklist_schema:
+        key = field['key']
+        if key not in raw_answers:
+            continue
+
+        if field.get('type') == 'checkbox':
+            value = _normalize_checkbox_answer(raw_answers.get(key))
+        else:
+            value = _normalize_checklist_answer(raw_answers.get(key))
+
+        options = field.get('options') or []
+        if field.get('type') == 'select' and value and options and value not in options:
+            invalid_option_labels.append(field['label'])
+            continue
+
+        normalized[key] = value
+
+    if invalid_option_labels:
+        preview = ', '.join(invalid_option_labels[:6])
+        suffix = '...' if len(invalid_option_labels) > 6 else ''
+        raise ValueError(f"Invalid checklist option for: {preview}{suffix}")
+
+    return normalized
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_job_checklist(request, job_code):
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = json.loads((request.body or b'{}').decode('utf-8'))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
+
+    with transaction.atomic():
+        job = get_object_or_404(JobTicket.objects.select_for_update(), job_code=job_code)
+        permissions = get_mobile_job_permissions(user, job)
+        if not permissions['can_access']:
+            return JsonResponse(
+                {'error': 'forbidden', 'message': 'You are not allowed to update this job.'},
+                status=403,
+            )
+
+        checklist_schema, checklist_title, checklist_notes = _build_checklist_schema_for_job(job)
+        try:
+            posted_answers = _mobile_normalize_checklist_answers(payload.get('answers') or {}, checklist_schema)
+        except ValueError as exc:
+            return JsonResponse({'error': 'invalid_checklist', 'message': str(exc)}, status=400)
+
+        if not checklist_schema:
+            return JsonResponse({'error': 'no_checklist', 'message': 'No checklist is configured for this job.'}, status=400)
+
+        job.technician_checklist = _merge_checklist_answers(_get_job_checklist_answers(job), posted_answers)
+        job.save(update_fields=['technician_checklist', 'updated_at'])
+        JobTicketLog.objects.create(job_ticket=job, user=user, action='NOTE', details='Technician checklist updated.')
+
+    send_job_update_message(job.job_code, job.status)
+    checklist_schema, checklist_title, checklist_notes = _build_checklist_schema_for_job(job)
+    return JsonResponse(
+        {
+            'ok': True,
+            'message': 'Checklist saved successfully.',
+            'technician_checklist': _get_job_checklist_answers(job),
             'technician_checklist_schema': checklist_schema,
             'technician_checklist_title': checklist_title,
             'technician_checklist_notes': checklist_notes,
         }
     )
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_job_technician_update(request, job_code):
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = json.loads((request.body or b'{}').decode('utf-8'))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
+
+    new_status = (payload.get('status') or '').strip()
+    technician_notes = payload.get('technician_notes') or ''
+    raw_answers = payload.get('answers') or {}
+    excluded_statuses = {'Ready for Pickup', 'Closed', 'Specialized Service'}
+
+    with transaction.atomic():
+        job = get_object_or_404(
+            JobTicket.objects.select_for_update().select_related('assigned_to__user', 'specialized_service'),
+            job_code=job_code,
+        )
+        permissions = get_mobile_job_permissions(user, job)
+        if not permissions['is_assigned_tech']:
+            return JsonResponse(
+                {'error': 'forbidden', 'message': 'Only the assigned technician can update this job.'},
+                status=403,
+            )
+
+        if not _mobile_technician_can_change_status(job):
+            return JsonResponse(
+                {'error': 'status_locked', 'message': 'Cannot change status while job is with vendor.'},
+                status=403,
+            )
+
+        allowed_statuses = {item['value'] for item in _mobile_technician_status_choices(job)}
+        if not new_status:
+            return JsonResponse({'error': 'missing_status', 'message': 'Status is required.'}, status=400)
+        if new_status in excluded_statuses or new_status not in allowed_statuses:
+            return JsonResponse({'error': 'invalid_status', 'message': 'Invalid status update attempt.'}, status=400)
+
+        checklist_schema, _, _ = _build_checklist_schema_for_job(job)
+        try:
+            posted_answers = _mobile_normalize_checklist_answers(raw_answers, checklist_schema)
+        except ValueError as exc:
+            return JsonResponse({'error': 'invalid_checklist', 'message': str(exc)}, status=400)
+
+        old_status_display = job.get_status_display()
+        old_notes = job.technician_notes or ''
+        old_answers = _get_job_checklist_answers(job)
+        merged_answers = _merge_checklist_answers(old_answers, posted_answers)
+
+        if new_status == 'Completed':
+            missing_required = []
+            for field in checklist_schema:
+                if not field.get('required'):
+                    continue
+                value = _normalize_checklist_answer(merged_answers.get(field['key'], ''))
+                if not value:
+                    missing_required.append(field['label'])
+            if missing_required:
+                return JsonResponse(
+                    {
+                        'error': 'checklist_incomplete',
+                        'message': _format_checklist_required_error(missing_required),
+                        'missing_checklist_fields': missing_required,
+                    },
+                    status=400,
+                )
+
+        job.status = new_status
+        job.technician_notes = technician_notes
+        job.technician_checklist = merged_answers
+        job.save(update_fields=['status', 'technician_notes', 'technician_checklist', 'updated_at'])
+
+        if old_status_display != job.get_status_display():
+            JobTicketLog.objects.create(
+                job_ticket=job,
+                user=user,
+                action='STATUS',
+                details=f"Status changed from '{old_status_display}' to '{job.get_status_display()}'.",
+            )
+            send_job_update_message(job.job_code, job.status)
+
+        if old_notes != technician_notes:
+            details = f'Technician notes updated: "{technician_notes}"' if technician_notes else 'Technician notes cleared.'
+            JobTicketLog.objects.create(job_ticket=job, user=user, action='NOTE', details=details)
+
+        if old_answers != merged_answers:
+            JobTicketLog.objects.create(job_ticket=job, user=user, action='NOTE', details='Technician checklist updated.')
+
+    return JsonResponse(
+        {
+            'ok': True,
+            'message': 'Status, notes, and checklist updated successfully.',
+            'status': job.status,
+            'status_display': job.get_status_display(),
+            'technician_notes': job.technician_notes or '',
+            'technician_checklist': _get_job_checklist_answers(job),
+        }
+    )
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def mobile_api_job_photos(request, job_code):
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    job = get_object_or_404(JobTicket.objects.prefetch_related('photos'), job_code=job_code)
+    permissions = get_mobile_job_permissions(user, job)
+    if not permissions['can_access']:
+        return JsonResponse(
+            {'error': 'forbidden', 'message': 'You are not allowed to access this job.'},
+            status=403,
+        )
+
+    if request.method == 'GET':
+        return JsonResponse({'photos': [_mobile_job_photo_payload(request, job, photo) for photo in job.photos.all()]})
+
+    photo_files = request.FILES.getlist('photos') or request.FILES.getlist('photo')
+    if not photo_files:
+        return JsonResponse({'error': 'missing_photo', 'message': 'Upload at least one photo.'}, status=400)
+
+    created_photos = []
+    with transaction.atomic():
+        locked_job = JobTicket.objects.select_for_update().get(id=job.id)
+        for photo_file in photo_files:
+            content_type = (getattr(photo_file, 'content_type', '') or '').strip()
+            if not content_type:
+                guessed_type, _ = mimetypes.guess_type(getattr(photo_file, 'name', ''))
+                content_type = guessed_type or 'application/octet-stream'
+            if not content_type.startswith('image/'):
+                return JsonResponse({'error': 'invalid_photo', 'message': 'Only image uploads are allowed.'}, status=400)
+
+            created_photos.append(
+                JobTicketPhoto.objects.create(
+                    job_ticket=locked_job,
+                    image_name=(getattr(photo_file, 'name', '') or 'device-photo').strip()[:255],
+                    image_content_type=content_type[:100],
+                    image_data=photo_file.read(),
+                )
+            )
+
+        JobTicketLog.objects.create(
+            job_ticket=locked_job,
+            user=user,
+            action='NOTE',
+            details=f"{len(created_photos)} technician photo(s) uploaded from mobile app.",
+        )
+
+    send_job_update_message(job.job_code, job.status)
+    return JsonResponse(
+        {
+            'ok': True,
+            'message': f"{len(created_photos)} photo(s) uploaded successfully.",
+            'photos': [_mobile_job_photo_payload(request, job, photo) for photo in created_photos],
+        }
+    )
+
+
+def mobile_api_job_photo_file(request, job_code, photo_id):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    job = get_object_or_404(JobTicket, job_code=job_code)
+    permissions = get_mobile_job_permissions(user, job)
+    if not permissions['can_access']:
+        return JsonResponse({'error': 'forbidden', 'message': 'You are not allowed to access this photo.'}, status=403)
+
+    photo = get_object_or_404(JobTicketPhoto, id=photo_id, job_ticket=job)
+    if photo.image_data:
+        response = HttpResponse(photo.image_data, content_type=photo.image_content_type or 'application/octet-stream')
+        response['Content-Disposition'] = f'inline; filename="{photo.image_name or f"{job.job_code}-photo-{photo.id}.jpg"}"'
+        return response
+
+    if photo.image:
+        return redirect(photo.image.url)
+
+    return HttpResponse(status=404)
+
 
 @csrf_exempt
 @require_POST
@@ -270,7 +608,7 @@ def mobile_api_job_action(request, job_code):
 
     with transaction.atomic():
         job = get_object_or_404(
-            JobTicket.objects.select_for_update().select_related('assigned_to__user'),
+            JobTicket.objects.select_for_update().select_related('assigned_to__user', 'specialized_service'),
             job_code=job_code,
         )
 
@@ -282,6 +620,115 @@ def mobile_api_job_action(request, job_code):
             )
 
         old_status_display = job.get_status_display()
+        if action_key == 'acknowledge':
+            if not permissions['is_assigned_tech']:
+                return JsonResponse({'error': 'forbidden', 'message': 'Only the assigned technician can acknowledge this job.'}, status=403)
+            if job.is_new_assignment:
+                job.is_new_assignment = False
+                job.save(update_fields=['is_new_assignment', 'updated_at'])
+                JobTicketLog.objects.create(
+                    job_ticket=job,
+                    user=user,
+                    action='ACKNOWLEDGED',
+                    details=f"Job {job.job_code} acknowledged by technician.",
+                )
+                send_job_update_message(job.job_code, job.status)
+            return JsonResponse(
+                {
+                    'ok': True,
+                    'message': f"Job {job.job_code} acknowledged successfully.",
+                    'status': job.status,
+                    'status_display': job.get_status_display(),
+                    'available_actions': get_mobile_job_available_actions(user, job),
+                }
+            )
+
+        if action_key == 'return_to_staff':
+            if not permissions['is_assigned_tech']:
+                return JsonResponse({'error': 'forbidden', 'message': 'Only the assigned technician can return this job.'}, status=403)
+            if not job.is_new_assignment:
+                return JsonResponse(
+                    {'error': 'invalid_transition', 'message': 'Only newly assigned jobs can be returned to staff.'},
+                    status=400,
+                )
+            job.assigned_to = None
+            job.status = 'Pending'
+            job.is_new_assignment = False
+            job.save(update_fields=['assigned_to', 'status', 'is_new_assignment', 'updated_at'])
+            JobTicketLog.objects.create(
+                job_ticket=job,
+                user=user,
+                action='ASSIGNED',
+                details=f"Technician returned job to staff. Previous status: {old_status_display}",
+            )
+            send_job_update_message(job.job_code, job.status)
+            return JsonResponse(
+                {
+                    'ok': True,
+                    'message': f"Job {job.job_code} returned to staff for reassignment.",
+                    'status': job.status,
+                    'status_display': job.get_status_display(),
+                    'available_actions': [],
+                }
+            )
+
+        if action_key == 'request_specialized_service':
+            if not permissions['is_assigned_tech']:
+                return JsonResponse(
+                    {'error': 'forbidden', 'message': 'Only the assigned technician can request specialized service.'},
+                    status=403,
+                )
+            if job.status in ['Completed', 'Ready for Pickup', 'Closed']:
+                return JsonResponse(
+                    {'error': 'invalid_transition', 'message': 'Finalized jobs cannot be sent for specialized service.'},
+                    status=400,
+                )
+
+            service = getattr(job, 'specialized_service', None)
+            if service:
+                if service.status == 'Returned from Vendor':
+                    job.status = 'Specialized Service'
+                    job.save(update_fields=['status', 'updated_at'])
+                    service.status = 'Awaiting Assignment'
+                    service.vendor = None
+                    service.vendor_cost = None
+                    service.vendor_discount_amount = Decimal('0.00')
+                    service.vendor_paid_amount = Decimal('0.00')
+                    service.vendor_balance_amount = Decimal('0.00')
+                    service.client_charge = None
+                    service.sent_date = None
+                    service.returned_date = None
+                    service.save()
+                    details = (
+                        f"Status changed from '{old_status_display}' to 'Specialized Service'. "
+                        'Re-requested specialized service.'
+                    )
+                else:
+                    return JsonResponse(
+                        {'error': 'already_specialized', 'message': 'This job has already been marked for specialized service.'},
+                        status=400,
+                    )
+            else:
+                job.status = 'Specialized Service'
+                job.save(update_fields=['status', 'updated_at'])
+                SpecializedService.objects.create(job_ticket=job)
+                details = (
+                    f"Status changed from '{old_status_display}' to 'Specialized Service'. "
+                    'Awaiting vendor assignment by staff.'
+                )
+
+            JobTicketLog.objects.create(job_ticket=job, user=user, action='STATUS', details=details)
+            send_job_update_message(job.job_code, job.status)
+            return JsonResponse(
+                {
+                    'ok': True,
+                    'message': f"Job {job.job_code} sent to staff for specialized service assignment.",
+                    'status': job.status,
+                    'status_display': job.get_status_display(),
+                    'available_actions': get_mobile_job_available_actions(user, job),
+                }
+            )
+
         target_status = None
         log_action = 'STATUS'
 

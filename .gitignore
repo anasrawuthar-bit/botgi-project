@@ -12,3 +12,6 @@ whatsapp_bridge/.wwebjs_auth/
 whatsapp_bridge/.wwebjs_cache/
 whatsapp_bridge/tokens/
 .tmp_whatsapp_bridge*
+kotlin/.gradle/
+kotlin/**/build/
+kotlin/local.properties

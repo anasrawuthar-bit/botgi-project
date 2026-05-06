@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import Group, User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpResponse
 from django.test import Client as DjangoTestClient, RequestFactory, TestCase, override_settings
 from django.urls import reverse
@@ -37,6 +38,7 @@ from .models import (
     JobReminder,
     JobTicket,
     JobTicketLog,
+    JobTicketPhoto,
     MessageQueue,
     Product,
     ProductSale,
@@ -2168,6 +2170,216 @@ class InventoryApiTests(TestCase):
         self.assertEqual(payload['summary']['entry_count'], 1)
         self.assertEqual(payload['register_rows'][0]['party_name'], 'Register Supplier')
         self.assertTrue(payload['register_rows'][0]['show_return_action'])
+
+
+class MobileTechnicianApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='mobile-tech',
+            password='StrongPass123!',
+        )
+        self.technician = TechnicianProfile.objects.create(
+            user=self.user,
+            unique_id='MT100',
+        )
+        self.token = issue_mobile_jwt(self.user)
+        self.job = JobTicket.objects.create(
+            job_code='GI-260506-501',
+            customer_name='Mobile App Client',
+            customer_phone='9876543299',
+            device_type='Laptop',
+            device_brand='Dell',
+            device_model='Latitude',
+            reported_issue='Needs inspection',
+            assigned_to=self.technician,
+            status='Repairing',
+            requires_laptop_inspection_checklist=True,
+        )
+
+    def test_mobile_technician_can_save_checklist_answers(self):
+        response = self.client.post(
+            reverse('mobile_api_job_checklist', kwargs={'job_code': self.job.job_code}),
+            data=json.dumps({'answers': {'ports_condition': 'Good', 'body_condition': 'Good'}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['ok'])
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.technician_checklist['ports_condition'], 'Good')
+        self.assertEqual(self.job.technician_checklist['body_condition'], 'Good')
+
+    def test_mobile_technician_can_upload_job_photo(self):
+        photo = SimpleUploadedFile(
+            'device.jpg',
+            b'\xff\xd8\xff\xe0mobile-photo-bytes',
+            content_type='image/jpeg',
+        )
+
+        response = self.client.post(
+            reverse('mobile_api_job_photos', kwargs={'job_code': self.job.job_code}),
+            data={'photos': [photo]},
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['ok'])
+        self.assertEqual(len(payload['photos']), 1)
+        stored_photo = JobTicketPhoto.objects.get(job_ticket=self.job)
+        self.assertEqual(stored_photo.image_name, 'device.jpg')
+        self.assertEqual(stored_photo.image_content_type, 'image/jpeg')
+        self.assertEqual(stored_photo.image_data, b'\xff\xd8\xff\xe0mobile-photo-bytes')
+
+    def test_mobile_jobs_include_dashboard_totals_and_new_assignment_flag(self):
+        self.job.is_new_assignment = True
+        self.job.save(update_fields=['is_new_assignment'])
+        ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Keyboard replacement',
+            part_cost=Decimal('1200.00'),
+            service_charge=Decimal('300.00'),
+        )
+
+        response = self.client.get(
+            reverse('mobile_api_jobs'),
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        job_payload = response.json()['jobs'][0]
+        self.assertEqual(job_payload['job_code'], self.job.job_code)
+        self.assertEqual(job_payload['part_total'], '1200.00')
+        self.assertEqual(job_payload['service_total'], '300.00')
+        self.assertTrue(job_payload['is_new_assignment'])
+        self.assertFalse(job_payload['returned_from_vendor'])
+
+    def test_mobile_technician_can_acknowledge_new_assignment(self):
+        self.job.is_new_assignment = True
+        self.job.save(update_fields=['is_new_assignment'])
+
+        response = self.client.post(
+            reverse('mobile_api_job_action', kwargs={'job_code': self.job.job_code}),
+            data=json.dumps({'action': 'acknowledge'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        self.job.refresh_from_db()
+        self.assertFalse(self.job.is_new_assignment)
+
+    def test_mobile_technician_can_return_new_assignment_to_staff(self):
+        self.job.is_new_assignment = True
+        self.job.save(update_fields=['is_new_assignment'])
+
+        response = self.client.post(
+            reverse('mobile_api_job_action', kwargs={'job_code': self.job.job_code}),
+            data=json.dumps({'action': 'return_to_staff'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        self.job.refresh_from_db()
+        self.assertIsNone(self.job.assigned_to)
+        self.assertEqual(self.job.status, 'Pending')
+        self.assertFalse(self.job.is_new_assignment)
+
+    def test_mobile_technician_detail_includes_webapp_permission_controls(self):
+        response = self.client.get(
+            reverse('mobile_api_job_detail', kwargs={'job_code': self.job.job_code}),
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['permissions']['can_change_status'])
+        self.assertTrue(payload['permissions']['can_request_specialized_service'])
+        self.assertIn({'value': 'Repairing', 'label': 'Repairing'}, payload['status_choices'])
+        self.assertNotIn({'value': 'Pending', 'label': 'Pending'}, payload['status_choices'])
+        self.assertNotIn({'value': 'Specialized Service', 'label': 'Specialized Service'}, payload['status_choices'])
+        self.assertTrue(payload['checklist_required_for_completion'])
+
+    def test_mobile_technician_can_update_status_notes_and_checklist_together(self):
+        response = self.client.post(
+            reverse('mobile_api_job_technician_update', kwargs={'job_code': self.job.job_code}),
+            data=json.dumps(
+                {
+                    'status': 'Under Inspection',
+                    'technician_notes': 'Checking display and ports.',
+                    'answers': {'ports_condition': 'Good'},
+                }
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Under Inspection')
+        self.assertEqual(self.job.technician_notes, 'Checking display and ports.')
+        self.assertEqual(self.job.technician_checklist['ports_condition'], 'Good')
+
+    def test_mobile_technician_cannot_set_pending_status(self):
+        response = self.client.post(
+            reverse('mobile_api_job_technician_update', kwargs={'job_code': self.job.job_code}),
+            data=json.dumps({'status': 'Pending', 'technician_notes': '', 'answers': {}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_status')
+
+    def test_mobile_technician_can_edit_service_line(self):
+        service_log = ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Old repair',
+            part_cost=Decimal('100.00'),
+            service_charge=Decimal('50.00'),
+        )
+
+        response = self.client.post(
+            reverse(
+                'mobile_api_service_line_update',
+                kwargs={'job_code': self.job.job_code, 'line_id': service_log.id},
+            ),
+            data=json.dumps(
+                {
+                    'description': 'Updated repair',
+                    'part_cost': '125.00',
+                    'service_charge': '75.00',
+                }
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        service_log.refresh_from_db()
+        self.assertEqual(service_log.description, 'Updated repair')
+        self.assertEqual(service_log.part_cost, Decimal('125.00'))
+        self.assertEqual(service_log.service_charge, Decimal('75.00'))
+
+    def test_mobile_technician_can_request_specialized_service(self):
+        response = self.client.post(
+            reverse('mobile_api_job_action', kwargs={'job_code': self.job.job_code}),
+            data=json.dumps({'action': 'request_specialized_service'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Specialized Service')
+        self.assertTrue(SpecializedService.objects.filter(job_ticket=self.job).exists())
 
 
 class StaffJobCreationWhatsAppTests(TestCase):
