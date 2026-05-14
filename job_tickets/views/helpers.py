@@ -23,6 +23,7 @@ from ..models import (
     DailyJobCodeSequence,
     DeviceChecklistTemplate,
     InventoryBill,
+    InventoryCreditPayment,
     InventoryEntry,
     InventoryParty,
     JobFieldPreset,
@@ -1664,6 +1665,7 @@ def _replace_inventory_bill_entries(
     entry_type,
     bill_id,
     entry_date,
+    invoice_date=None,
     party,
     invoice_number,
     line_items,
@@ -1714,6 +1716,7 @@ def _replace_inventory_bill_entries(
             request=request,
             entry_type=entry_type,
             entry_date=entry_date,
+            invoice_date=invoice_date,
             party=party,
             invoice_number=invoice_number,
             line_items=line_items,
@@ -1770,13 +1773,24 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
 
     _require_inventory_edit_password(request)
 
-    edit_entry_date_raw = (request.POST.get('edit_entry_date') or '').strip()
-    if not edit_entry_date_raw:
-        raise ValueError('Entry date is required.')
-    try:
-        new_entry_date = datetime.strptime(edit_entry_date_raw, '%Y-%m-%d').date()
-    except ValueError as exc:
-        raise ValueError('Entry date is invalid.') from exc
+    invoice_date = None
+    if entry_type == 'purchase':
+        edit_invoice_date_raw = (request.POST.get('edit_invoice_date') or '').strip()
+        if not edit_invoice_date_raw:
+            raise ValueError('Invoice date is required.')
+        try:
+            invoice_date = datetime.strptime(edit_invoice_date_raw, '%Y-%m-%d').date()
+        except ValueError as exc:
+            raise ValueError('Invoice date is invalid.') from exc
+        new_entry_date = invoice_date
+    else:
+        edit_entry_date_raw = (request.POST.get('edit_entry_date') or '').strip()
+        if not edit_entry_date_raw:
+            raise ValueError('Date is required.')
+        try:
+            new_entry_date = datetime.strptime(edit_entry_date_raw, '%Y-%m-%d').date()
+        except ValueError as exc:
+            raise ValueError('Date is invalid.') from exc
 
     new_invoice_number = (request.POST.get('edit_invoice_number') or '').strip()
     if not new_invoice_number:
@@ -1841,6 +1855,7 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
         entry_type=entry_type,
         bill_id=int(bill_id_raw),
         entry_date=new_entry_date,
+        invoice_date=invoice_date,
         party=new_party,
         invoice_number=new_invoice_number,
         line_items=final_line_items,
@@ -1893,7 +1908,49 @@ def _get_or_create_inventory_customer_party_for_job(job):
         is_active=True,
     )
 
-def _record_inventory_entries(request, entry_type, entry_date, party, invoice_number, line_items, job_ticket=None, existing_bill=None):
+def _build_inventory_initial_payment(request, entry_type, entry_date):
+    if entry_type not in {'purchase', 'sale'}:
+        return None
+
+    default_status = 'paid' if entry_type == 'sale' else 'unpaid'
+    payment_status = (request.POST.get('bill_payment_status') or default_status).strip().lower()
+    if payment_status not in {'paid', 'unpaid'}:
+        raise ValueError('Select whether this bill is paid or unpaid.')
+    if payment_status != 'paid':
+        return {'status': payment_status}
+
+    payment_method = (request.POST.get('bill_payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
+    if payment_method not in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
+        raise ValueError('Select a valid payment method.')
+
+    payment_date = entry_date
+    payment_date_raw = (request.POST.get('bill_payment_date') or '').strip()
+    if payment_date_raw:
+        try:
+            payment_date = datetime.strptime(payment_date_raw, '%Y-%m-%d').date()
+        except ValueError:
+            raise ValueError('Payment date is invalid.')
+
+    return {
+        'status': payment_status,
+        'payment_method': payment_method,
+        'payment_date': payment_date,
+        'reference_no': (request.POST.get('bill_payment_reference') or '').strip(),
+    }
+
+
+def _record_inventory_entries(
+    request,
+    entry_type,
+    entry_date,
+    party,
+    invoice_number,
+    line_items,
+    invoice_date=None,
+    job_ticket=None,
+    existing_bill=None,
+    initial_payment=None,
+):
     if not line_items:
         raise ValueError("Add at least one product line.")
 
@@ -1902,6 +1959,7 @@ def _record_inventory_entries(request, entry_type, entry_date, party, invoice_nu
 
     with transaction.atomic():
         shared_invoice = normalized_invoice or _generate_inventory_invoice_number(entry_type, entry_date)
+        normalized_invoice_date = invoice_date if entry_type == 'purchase' else None
         shared_notes = next(((line.get('notes') or '').strip() for line in line_items if (line.get('notes') or '').strip()), '')
 
         if existing_bill:
@@ -1916,6 +1974,9 @@ def _record_inventory_entries(request, entry_type, entry_date, party, invoice_nu
             if (bill.invoice_number or '') != shared_invoice:
                 bill.invoice_number = shared_invoice
                 update_fields.append('invoice_number')
+            if bill.invoice_date != normalized_invoice_date:
+                bill.invoice_date = normalized_invoice_date
+                update_fields.append('invoice_date')
             if bill.party_id != party.id:
                 bill.party = party
                 update_fields.append('party')
@@ -1936,6 +1997,7 @@ def _record_inventory_entries(request, entry_type, entry_date, party, invoice_nu
                 entry_type=entry_type,
                 entry_date=entry_date,
                 invoice_number=shared_invoice,
+                invoice_date=normalized_invoice_date,
                 job_ticket=job_ticket,
                 party=party,
                 notes=shared_notes,
@@ -2001,6 +2063,25 @@ def _record_inventory_entries(request, entry_type, entry_date, party, invoice_nu
             else:
                 product.stock_quantity = stock_after
                 product.save(update_fields=['stock_quantity'])
+
+        if initial_payment and initial_payment.get('status') == 'paid' and created_entries:
+            direction = _inventory_credit_direction_for_entry_type(entry_type)
+            bill_total = sum((entry.total_amount or Decimal('0.00') for entry in created_entries), Decimal('0.00'))
+            if direction and bill_total > Decimal('0.00'):
+                bill_total = bill_total.quantize(Decimal('0.01'))
+                InventoryCreditPayment.objects.create(
+                    party=party,
+                    bill=bill,
+                    direction=direction,
+                    payment_date=initial_payment['payment_date'],
+                    payment_method=initial_payment['payment_method'],
+                    amount=bill_total,
+                    balance_before=bill_total,
+                    balance_after=Decimal('0.00'),
+                    reference_no=initial_payment.get('reference_no', ''),
+                    notes='Initial paid bill settlement',
+                    created_by=request.user if request.user.is_authenticated else None,
+                )
 
     return created_entries
 
@@ -2069,6 +2150,11 @@ def _build_inventory_bill_summaries(entries, max_groups=None):
                 'entry_type': header_bill.entry_type if header_bill else entry.entry_type,
                 'entry_type_label': header_bill.get_entry_type_display() if header_bill else entry.get_entry_type_display(),
                 'entry_date': header_bill.entry_date if header_bill else entry.entry_date,
+                'invoice_date': (
+                    header_bill.invoice_date
+                    if header_bill and header_bill.invoice_date
+                    else (header_bill.entry_date if header_bill else entry.entry_date)
+                ),
                 'invoice_number': ((header_bill.invoice_number if header_bill else entry.invoice_number) or '').strip(),
                 'invoice_display': ((header_bill.invoice_number if header_bill else entry.invoice_number) or '').strip() or (header_bill.bill_number if header_bill else entry.entry_number),
                 'job_ticket': header_bill.job_ticket if header_bill and header_bill.job_ticket_id else entry.job_ticket,
@@ -2130,6 +2216,226 @@ def _build_inventory_bill_summaries(entries, max_groups=None):
 
     return bill_summaries
 
+
+INVENTORY_CREDIT_ENTRY_DIRECTIONS = {
+    'purchase': InventoryCreditPayment.DIRECTION_PAYABLE,
+    'sale': InventoryCreditPayment.DIRECTION_RECEIVABLE,
+}
+
+
+def _inventory_credit_direction_for_entry_type(entry_type):
+    return INVENTORY_CREDIT_ENTRY_DIRECTIONS.get(entry_type)
+
+
+def _inventory_credit_action_label(direction):
+    if direction == InventoryCreditPayment.DIRECTION_PAYABLE:
+        return 'Pay Supplier'
+    if direction == InventoryCreditPayment.DIRECTION_RECEIVABLE:
+        return 'Receive Payment'
+    return ''
+
+
+def _inventory_credit_status(total_amount, paid_amount):
+    total = _money_or_zero(total_amount)
+    paid = _money_or_zero(paid_amount)
+    balance = total - paid
+    if total <= 0:
+        return 'No Credit'
+    if balance <= Decimal('0.00'):
+        return 'Paid'
+    if paid > Decimal('0.00'):
+        return 'Part Paid'
+    return 'Credit'
+
+
+def _inventory_credit_payment_totals(bill_ids):
+    if not bill_ids:
+        return {}
+    payment_rows = (
+        InventoryCreditPayment.objects
+        .filter(bill_id__in=bill_ids)
+        .values('bill_id', 'direction')
+        .annotate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))
+    )
+    return {
+        (row['bill_id'], row['direction']): row['total'] or Decimal('0.00')
+        for row in payment_rows
+    }
+
+
+def _attach_inventory_credit_to_bill_summaries(bill_summaries):
+    bill_ids = [bill['bill_id'] for bill in bill_summaries if bill.get('bill_id')]
+    payment_totals = _inventory_credit_payment_totals(bill_ids)
+    for bill in bill_summaries:
+        direction = _inventory_credit_direction_for_entry_type(bill.get('entry_type'))
+        paid_amount = payment_totals.get((bill.get('bill_id'), direction), Decimal('0.00')) if direction else Decimal('0.00')
+        total_amount = _money_or_zero(bill.get('total_amount'))
+        balance_amount = total_amount - paid_amount
+        if balance_amount < Decimal('0.00'):
+            balance_amount = Decimal('0.00')
+
+        bill['credit_direction'] = direction or ''
+        bill['credit_action_label'] = _inventory_credit_action_label(direction)
+        bill['credit_paid_amount'] = paid_amount
+        bill['credit_balance_amount'] = balance_amount
+        bill['credit_payment_status'] = _inventory_credit_status(total_amount, paid_amount) if direction else ''
+        bill['can_record_credit_payment'] = bool(direction and bill.get('bill_id') and balance_amount > Decimal('0.00'))
+
+    return bill_summaries
+
+
+def _build_inventory_credit_rows(entry_type, limit=None):
+    direction = _inventory_credit_direction_for_entry_type(entry_type)
+    if not direction:
+        return []
+
+    bills = list(
+        InventoryBill.objects
+        .filter(entry_type=entry_type)
+        .select_related('party')
+        .annotate(bill_total=Coalesce(Sum('lines__total_amount', output_field=DecimalField()), Decimal('0.00')))
+        .order_by('entry_date', 'id')
+    )
+    payment_totals = _inventory_credit_payment_totals([bill.id for bill in bills])
+    rows = []
+    for bill in bills:
+        total_amount = _money_or_zero(getattr(bill, 'bill_total', Decimal('0.00')))
+        paid_amount = payment_totals.get((bill.id, direction), Decimal('0.00'))
+        balance_amount = total_amount - paid_amount
+        if balance_amount <= Decimal('0.00'):
+            continue
+        rows.append(
+            SimpleNamespace(
+                bill=bill,
+                bill_id=bill.id,
+                bill_number=bill.bill_number,
+                invoice_number=bill.invoice_number or bill.bill_number,
+                entry_date=bill.entry_date,
+                party=bill.party,
+                party_id=bill.party_id,
+                total_amount=total_amount,
+                paid_amount=paid_amount,
+                balance_amount=balance_amount,
+                direction=direction,
+                action_label=_inventory_credit_action_label(direction),
+                payment_status=_inventory_credit_status(total_amount, paid_amount),
+            )
+        )
+    if limit is not None:
+        rows = rows[:limit]
+    return rows
+
+
+def _build_inventory_credit_summary():
+    payable_rows = _build_inventory_credit_rows('purchase')
+    receivable_rows = _build_inventory_credit_rows('sale')
+    month_start = timezone.localdate().replace(day=1)
+    payment_totals = (
+        InventoryCreditPayment.objects
+        .filter(payment_date__gte=month_start)
+        .values('direction')
+        .annotate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))
+    )
+    month_payment_map = {row['direction']: row['total'] or Decimal('0.00') for row in payment_totals}
+
+    return {
+        'payable_total': sum((row.balance_amount for row in payable_rows), Decimal('0.00')),
+        'receivable_total': sum((row.balance_amount for row in receivable_rows), Decimal('0.00')),
+        'payable_count': len(payable_rows),
+        'receivable_count': len(receivable_rows),
+        'month_paid_total': month_payment_map.get(InventoryCreditPayment.DIRECTION_PAYABLE, Decimal('0.00')),
+        'month_received_total': month_payment_map.get(InventoryCreditPayment.DIRECTION_RECEIVABLE, Decimal('0.00')),
+        'payable_rows': payable_rows[:8],
+        'receivable_rows': receivable_rows[:8],
+        'recent_payments': list(
+            InventoryCreditPayment.objects
+            .select_related('party', 'bill', 'created_by')
+            .order_by('-payment_date', '-created_at')[:10]
+        ),
+    }
+
+
+def _record_inventory_credit_payment(request):
+    bill_id_raw = (request.POST.get('bill_id') or '').strip()
+    amount_raw = (request.POST.get('amount') or '').strip()
+    payment_date_raw = (request.POST.get('payment_date') or '').strip()
+    payment_method = (request.POST.get('payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
+    reference_no = (request.POST.get('reference_no') or '').strip()
+    notes = (request.POST.get('notes') or '').strip()
+
+    if not bill_id_raw.isdigit():
+        raise ValueError('Select a valid credit bill.')
+
+    amount = _parse_inventory_decimal(amount_raw, 'Enter a valid payment amount.')
+    if amount <= Decimal('0.00'):
+        raise ValueError('Payment amount must be greater than zero.')
+
+    if payment_method not in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
+        raise ValueError('Select a valid payment method.')
+
+    payment_date = timezone.localdate()
+    if payment_date_raw:
+        try:
+            payment_date = datetime.strptime(payment_date_raw, '%Y-%m-%d').date()
+        except ValueError:
+            raise ValueError('Payment date is invalid.')
+
+    with transaction.atomic():
+        bill = (
+            InventoryBill.objects.select_for_update()
+            .select_related('party')
+            .filter(pk=int(bill_id_raw))
+            .first()
+        )
+        if not bill:
+            raise ValueError('Selected bill was not found.')
+
+        direction = _inventory_credit_direction_for_entry_type(bill.entry_type)
+        if not direction:
+            raise ValueError('Credit payment is available only for purchase and sales bills.')
+
+        bill_total = (
+            InventoryEntry.objects
+            .filter(bill=bill)
+            .aggregate(total=Coalesce(Sum('total_amount', output_field=DecimalField()), Decimal('0.00')))['total']
+            or Decimal('0.00')
+        )
+        paid_total = (
+            InventoryCreditPayment.objects
+            .filter(bill=bill, direction=direction)
+            .aggregate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))['total']
+            or Decimal('0.00')
+        )
+        balance_before = bill_total - paid_total
+        if balance_before <= Decimal('0.00'):
+            raise ValueError('This bill is already fully settled.')
+        if amount > balance_before:
+            raise ValueError(f"Payment cannot exceed current balance Rs.{_money_text(balance_before)}.")
+
+        balance_after = (balance_before - amount).quantize(Decimal('0.01'))
+        payment = InventoryCreditPayment.objects.create(
+            party=bill.party,
+            bill=bill,
+            direction=direction,
+            payment_date=payment_date,
+            payment_method=payment_method,
+            amount=amount.quantize(Decimal('0.01')),
+            balance_before=balance_before.quantize(Decimal('0.01')),
+            balance_after=balance_after,
+            reference_no=reference_no,
+            notes=notes,
+            created_by=request.user if request.user.is_authenticated else None,
+        )
+
+    return {
+        'payment': payment,
+        'message': (
+            f"{_inventory_credit_action_label(direction)} recorded for "
+            f"{bill.party.name}: Rs.{_money_text(payment.amount)}."
+        ),
+    }
+
+
 def _build_inventory_dashboard_metrics():
     month_start = timezone.localdate().replace(day=1)
     monthly_totals_qs = (
@@ -2178,6 +2484,7 @@ def _build_inventory_dashboard_metrics():
     recent_entries = list(
         InventoryEntry.objects.select_related('party', 'product', 'created_by').order_by('-entry_date', '-id')[:10]
     )
+    credit_summary = _build_inventory_credit_summary()
 
     return {
         'party_count': InventoryParty.objects.count(),
@@ -2201,6 +2508,7 @@ def _build_inventory_dashboard_metrics():
         'monthly_net_amount': monthly_net_amount,
         'reserved_stock_products': reserved_stock_products,
         'recent_entries': recent_entries,
+        'credit_summary': credit_summary,
     }
 
 def _build_inventory_party_directory(query='', start_date=None, end_date=None):
@@ -2255,6 +2563,7 @@ def _build_inventory_party_directory(query='', start_date=None, end_date=None):
 
         for party_id, entry_list in party_entries_map.items():
             grouped_bills = _build_inventory_bill_summaries(entry_list)
+            _attach_inventory_credit_to_bill_summaries(grouped_bills)
             grouped_by_type = {
                 'purchase': [],
                 'purchase_return': [],
@@ -2274,6 +2583,8 @@ def _build_inventory_party_directory(query='', start_date=None, end_date=None):
                 'sale_amount': sum((bill['total_amount'] for bill in grouped_by_type['sale']), Decimal('0.00')),
                 'sale_return_count': len(grouped_by_type['sale_return']),
                 'sale_return_amount': sum((bill['total_amount'] for bill in grouped_by_type['sale_return']), Decimal('0.00')),
+                'credit_payable_amount': sum((bill['credit_balance_amount'] for bill in grouped_by_type['purchase']), Decimal('0.00')),
+                'credit_receivable_amount': sum((bill['credit_balance_amount'] for bill in grouped_by_type['sale']), Decimal('0.00')),
             }
 
             for entry_type_key in grouped_by_type:
@@ -2290,6 +2601,8 @@ def _build_inventory_party_directory(query='', start_date=None, end_date=None):
             party.sale_amount = stats.get('sale_amount', Decimal('0.00'))
             party.sale_return_count = stats.get('sale_return_count', 0)
             party.sale_return_amount = stats.get('sale_return_amount', Decimal('0.00'))
+            party.credit_payable_amount = stats.get('credit_payable_amount', Decimal('0.00'))
+            party.credit_receivable_amount = stats.get('credit_receivable_amount', Decimal('0.00'))
 
             party.purchase_history = recent_map.get(party.id, {}).get('purchase', [])
             party.purchase_return_history = recent_map.get(party.id, {}).get('purchase_return', [])
@@ -2543,6 +2856,7 @@ def _serialize_inventory_bill_summary_for_api(bill):
         'entry_type': bill['entry_type'],
         'entry_type_label': bill['entry_type_label'],
         'entry_date': bill['entry_date'].isoformat() if bill['entry_date'] else '',
+        'invoice_date': bill['invoice_date'].isoformat() if bill.get('invoice_date') else '',
         'invoice_display': bill['invoice_display'],
         'bill_number_display': bill['bill_number_display'],
         'item_label': bill['item_label'],
@@ -2724,6 +3038,30 @@ def _inventory_entry_dashboard(request, entry_type):
 
     config = INVENTORY_ENTRY_CONFIG[entry_type]
     query = (request.GET.get('q') or '').strip()
+    start_date_raw = (request.GET.get('start_date') or '').strip()
+    end_date_raw = (request.GET.get('end_date') or '').strip()
+    payment_status_filter = (request.GET.get('payment_status') or 'all').strip().lower()
+    if payment_status_filter not in {'all', 'credit', 'part_paid', 'paid'}:
+        payment_status_filter = 'all'
+
+    start_date = None
+    end_date = None
+    if start_date_raw:
+        try:
+            start_date = datetime.strptime(start_date_raw, '%Y-%m-%d').date()
+        except ValueError:
+            start_date = None
+            start_date_raw = ''
+    if end_date_raw:
+        try:
+            end_date = datetime.strptime(end_date_raw, '%Y-%m-%d').date()
+        except ValueError:
+            end_date = None
+            end_date_raw = ''
+    if start_date and end_date and start_date > end_date:
+        start_date, end_date = end_date, start_date
+        start_date_raw, end_date_raw = end_date_raw, start_date_raw
+
     entries = InventoryEntry.objects.filter(entry_type=entry_type).select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
 
     if query:
@@ -2735,6 +3073,10 @@ def _inventory_entry_dashboard(request, entry_type):
             | Q(party__name__icontains=query)
             | Q(product__name__icontains=query)
         )
+    if start_date:
+        entries = entries.filter(entry_date__gte=start_date)
+    if end_date:
+        entries = entries.filter(entry_date__lte=end_date)
 
     source_bill = None
     source_bill_lines = []
@@ -2804,14 +3146,26 @@ def _inventory_entry_dashboard(request, entry_type):
     default_gst_rate = Decimal('18.00')
     bill_discount_value = '0.00'
     bill_notes_value = ''
+    bill_payment_status_value = 'paid' if entry_type == 'sale' else 'unpaid'
+    bill_payment_method_value = InventoryCreditPayment.METHOD_CASH
+    bill_payment_date_value = timezone.localdate().isoformat()
+    bill_payment_reference_value = ''
     if request.method == 'POST':
         if request.POST.get('inventory_entry_submit') == entry_type:
             bill_discount_value = (request.POST.get('bill_discount_amount') or '').strip() or '0.00'
             bill_notes_value = (request.POST.get('bill_notes') or '').strip()
+            bill_payment_status_value = (request.POST.get('bill_payment_status') or bill_payment_status_value).strip().lower()
+            bill_payment_method_value = (request.POST.get('bill_payment_method') or bill_payment_method_value).strip()
+            bill_payment_date_value = (request.POST.get('bill_payment_date') or bill_payment_date_value).strip()
+            bill_payment_reference_value = (request.POST.get('bill_payment_reference') or '').strip()
             entry_form = InventoryEntryForm(request.POST, entry_type=entry_type)
             if entry_form.is_valid():
                 try:
-                    entry_date = entry_form.cleaned_data['entry_date']
+                    raw_entry_date = entry_form.cleaned_data.get('entry_date')
+                    invoice_date = entry_form.cleaned_data.get('invoice_date') or raw_entry_date or timezone.localdate()
+                    entry_date = invoice_date if entry_type == 'purchase' else raw_entry_date
+                    if not entry_date:
+                        raise ValueError("Date is required.")
                     party = entry_form.cleaned_data['party']
                     invoice_number = ''
                     if entry_type != 'sale':
@@ -2839,14 +3193,17 @@ def _inventory_entry_dashboard(request, entry_type):
                         bill_discount_amount,
                         bill_notes,
                     )
+                    initial_payment = _build_inventory_initial_payment(request, entry_type, entry_date)
 
                     created_entries = _record_inventory_entries(
                         request=request,
                         entry_type=entry_type,
                         entry_date=entry_date,
+                        invoice_date=invoice_date,
                         party=party,
                         invoice_number=invoice_number,
                         line_items=final_line_items,
+                        initial_payment=initial_payment,
                     )
                     shared_bill_number = created_entries[0].invoice_number if created_entries else invoice_number
                     messages.success(
@@ -3432,8 +3789,28 @@ def _inventory_entry_dashboard(request, entry_type):
     ordered_entries = entries.order_by('-entry_date', '-id')
     register_is_grouped = True
     register_rows = _build_inventory_bill_summaries(ordered_entries)
+    _attach_inventory_credit_to_bill_summaries(register_rows)
+
+    if entry_type in {'purchase', 'sale'} and payment_status_filter != 'all':
+        def bill_matches_payment_filter(bill):
+            paid_amount = bill.get('credit_paid_amount') or Decimal('0.00')
+            balance_amount = bill.get('credit_balance_amount') or Decimal('0.00')
+            if payment_status_filter == 'credit':
+                return balance_amount > Decimal('0.00') and paid_amount <= Decimal('0.00')
+            if payment_status_filter == 'part_paid':
+                return balance_amount > Decimal('0.00') and paid_amount > Decimal('0.00')
+            if payment_status_filter == 'paid':
+                return balance_amount <= Decimal('0.00')
+            return True
+
+        register_rows = [bill for bill in register_rows if bill_matches_payment_filter(bill)]
+
     entry_count_value = len(register_rows)
-    register_empty_colspan = 9
+    register_empty_colspan = 11 if entry_type in {'purchase', 'sale'} else 9
+    register_total_quantity = sum((int(bill.get('total_quantity') or 0) for bill in register_rows), 0)
+    register_total_amount = sum((bill.get('total_amount') or Decimal('0.00') for bill in register_rows), Decimal('0.00'))
+    register_paid_total = sum((bill.get('credit_paid_amount') or Decimal('0.00') for bill in register_rows), Decimal('0.00'))
+    register_balance_total = sum((bill.get('credit_balance_amount') or Decimal('0.00') for bill in register_rows), Decimal('0.00'))
 
     def money_text(amount):
         return format((amount or Decimal('0.00')).quantize(Decimal('0.01')), 'f')
@@ -3447,6 +3824,7 @@ def _inventory_entry_dashboard(request, entry_type):
             'bill_number': bill['bill_number'],
             'invoice_number': bill['invoice_number'],
             'entry_date': bill['entry_date'].isoformat() if bill['entry_date'] else '',
+            'invoice_date': bill['invoice_date'].isoformat() if bill.get('invoice_date') else '',
             'party_id': bill['party_id'],
             'party_name': bill['party'].name,
             'job_code': bill['job_code'] or '',
@@ -3484,11 +3862,20 @@ def _inventory_entry_dashboard(request, entry_type):
         'register_is_grouped': register_is_grouped,
         'register_empty_colspan': register_empty_colspan,
         'query': query,
+        'start_date': start_date_raw,
+        'end_date': end_date_raw,
+        'payment_status_filter': payment_status_filter,
         'entry_count': entry_count_value,
-        'total_quantity': entries.aggregate(total=Coalesce(Sum('quantity'), 0))['total'],
-        'total_amount': entries.aggregate(total=Coalesce(Sum('total_amount', output_field=DecimalField()), Decimal('0.00')))['total'],
+        'total_quantity': register_total_quantity,
+        'total_amount': register_total_amount,
+        'register_paid_total': register_paid_total,
+        'register_balance_total': register_balance_total,
         'bill_discount_value': bill_discount_value,
         'bill_notes_value': bill_notes_value,
+        'bill_payment_status_value': bill_payment_status_value,
+        'bill_payment_method_value': bill_payment_method_value,
+        'bill_payment_date_value': bill_payment_date_value,
+        'bill_payment_reference_value': bill_payment_reference_value,
         'source_bill': source_bill,
         'source_bill_lines': source_bill_lines,
         'source_bill_mode': bool(source_bill_lines),

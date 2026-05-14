@@ -23,6 +23,7 @@ from .models import (
     DeviceChecklistField,
     DeviceChecklistTemplate,
     InventoryBill,
+    InventoryCreditPayment,
     InventoryEntry,
     InventoryParty,
     JobFieldPreset,
@@ -1223,6 +1224,30 @@ class InventoryPartyAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
         actions = super().get_actions(request)
         actions.pop('delete_selected', None)
         return actions
+
+
+@admin.register(InventoryCreditPayment)
+class InventoryCreditPaymentAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
+    staff_can_delete = False
+
+    list_display = (
+        'party',
+        'bill',
+        'direction',
+        'payment_date',
+        'payment_method',
+        'amount',
+        'balance_before',
+        'balance_after',
+        'created_by',
+        'created_at',
+    )
+    list_filter = ('direction', 'payment_method', 'payment_date')
+    search_fields = ('party__name', 'bill__bill_number', 'bill__invoice_number', 'reference_no', 'notes')
+    raw_id_fields = ('party', 'bill', 'created_by')
+    readonly_fields = ('created_at',)
+    list_select_related = ('party', 'bill', 'created_by')
+    list_per_page = 100
 
 
 @admin.register(InventoryEntry)

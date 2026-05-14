@@ -10,6 +10,28 @@ def inventory_dashboard(request):
     return render(request, 'job_tickets/inventory_dashboard.html', context)
 
 @login_required
+@require_POST
+def inventory_record_credit_payment(request):
+    denied = _staff_access_required(request, "inventory")
+    if denied:
+        return denied
+
+    next_url = (request.POST.get('next') or '').strip()
+    if not next_url or not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = reverse('inventory_dashboard')
+
+    try:
+        result = _record_inventory_credit_payment(request)
+        messages.success(request, result['message'])
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    return redirect(next_url)
+
+@login_required
 def inventory_party_dashboard(request):
     denied = _staff_access_required(request, "inventory")
     if denied:
@@ -157,6 +179,7 @@ def inventory_party_dashboard(request):
                 'bill_number': bill['bill_number'],
                 'invoice_number': bill['invoice_number'],
                 'entry_date': bill['entry_date'].isoformat() if bill['entry_date'] else '',
+                'invoice_date': bill['invoice_date'].isoformat() if bill.get('invoice_date') else '',
                 'party_id': bill['party_id'],
                 'party_name': bill['party'].name,
                 'job_code': bill['job_code'] or '',
@@ -208,6 +231,167 @@ def inventory_party_dashboard(request):
         },
     }
     return render(request, 'job_tickets/inventory_party_dashboard.html', context)
+
+def _parse_inventory_filter_date(raw_value):
+    raw_value = (raw_value or '').strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+def _inventory_date_filters(request):
+    start_date = _parse_inventory_filter_date(request.GET.get('start_date'))
+    end_date = _parse_inventory_filter_date(request.GET.get('end_date'))
+    if start_date and end_date and start_date > end_date:
+        start_date, end_date = end_date, start_date
+    return start_date, end_date
+
+
+@login_required
+def inventory_product_ledger(request, product_id):
+    denied = _staff_access_required(request, "inventory")
+    if denied:
+        return denied
+
+    product = get_object_or_404(Product, pk=product_id)
+    start_date, end_date = _inventory_date_filters(request)
+
+    all_entries = list(
+        InventoryEntry.objects
+        .filter(product=product)
+        .select_related('bill', 'party', 'job_ticket', 'created_by')
+        .order_by('entry_date', 'id')
+    )
+    opening_qty = int(product.stock_quantity or 0) - sum(int(entry.stock_effect or 0) for entry in all_entries)
+
+    running_qty = opening_qty
+    ledger_rows = []
+    for entry in all_entries:
+        running_qty += int(entry.stock_effect or 0)
+        if start_date and entry.entry_date < start_date:
+            continue
+        if end_date and entry.entry_date > end_date:
+            continue
+
+        qty_in = entry.quantity if entry.entry_type in {'purchase', 'sale_return'} else 0
+        qty_out = entry.quantity if entry.entry_type in {'sale', 'purchase_return'} else 0
+        ledger_rows.append(
+            SimpleNamespace(
+                entry=entry,
+                entry_type=entry.entry_type,
+                entry_type_label=entry.get_entry_type_display(),
+                entry_date=entry.entry_date,
+                invoice_number=entry.invoice_number or (entry.bill.bill_number if entry.bill_id else entry.entry_number),
+                party=entry.party,
+                job_ticket=entry.job_ticket,
+                qty_in=int(qty_in or 0),
+                qty_out=int(qty_out or 0),
+                stock_balance=running_qty,
+                unit_price=entry.unit_price or Decimal('0.00'),
+                total_amount=entry.total_amount or Decimal('0.00'),
+                created_by=entry.created_by,
+            )
+        )
+
+    ledger_rows.sort(key=lambda row: (row.entry_date, row.entry.id), reverse=True)
+    total_in_qty = sum(row.qty_in for row in ledger_rows)
+    total_out_qty = sum(row.qty_out for row in ledger_rows)
+    purchase_amount = sum(
+        (row.total_amount for row in ledger_rows if row.entry_type == 'purchase'),
+        Decimal('0.00'),
+    )
+    sales_amount = sum(
+        (row.total_amount for row in ledger_rows if row.entry_type == 'sale'),
+        Decimal('0.00'),
+    )
+    current_stock_value = (Decimal(product.stock_quantity or 0) * (product.cost_price or Decimal('0.00'))).quantize(Decimal('0.01'))
+
+    context = {
+        'product': product,
+        'ledger_rows': ledger_rows,
+        'start_date': start_date.isoformat() if start_date else '',
+        'end_date': end_date.isoformat() if end_date else '',
+        'opening_qty': opening_qty,
+        'total_in_qty': total_in_qty,
+        'total_out_qty': total_out_qty,
+        'purchase_amount': purchase_amount,
+        'sales_amount': sales_amount,
+        'current_stock_value': current_stock_value,
+    }
+    return render(request, 'job_tickets/inventory_product_ledger.html', context)
+
+
+@login_required
+def inventory_party_ledger(request, party_id):
+    denied = _staff_access_required(request, "inventory")
+    if denied:
+        return denied
+
+    party = get_object_or_404(InventoryParty, pk=party_id)
+    start_date, end_date = _inventory_date_filters(request)
+
+    entries = (
+        InventoryEntry.objects
+        .filter(party=party)
+        .select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
+    )
+    payments = InventoryCreditPayment.objects.filter(party=party).select_related('bill', 'created_by')
+
+    if start_date:
+        entries = entries.filter(entry_date__gte=start_date)
+        payments = payments.filter(payment_date__gte=start_date)
+    if end_date:
+        entries = entries.filter(entry_date__lte=end_date)
+        payments = payments.filter(payment_date__lte=end_date)
+
+    bill_rows = _build_inventory_bill_summaries(entries.order_by('-entry_date', '-id'))
+    _attach_inventory_credit_to_bill_summaries(bill_rows)
+    payments = list(payments.order_by('-payment_date', '-created_at'))
+
+    all_party_bills = _build_inventory_bill_summaries(
+        InventoryEntry.objects
+        .filter(party=party)
+        .select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
+        .order_by('-entry_date', '-id')
+    )
+    _attach_inventory_credit_to_bill_summaries(all_party_bills)
+
+    payable_balance = sum(
+        (bill['credit_balance_amount'] for bill in all_party_bills if bill['entry_type'] == 'purchase'),
+        Decimal('0.00'),
+    )
+    receivable_balance = sum(
+        (bill['credit_balance_amount'] for bill in all_party_bills if bill['entry_type'] == 'sale'),
+        Decimal('0.00'),
+    )
+    purchase_total = sum((bill['total_amount'] for bill in bill_rows if bill['entry_type'] == 'purchase'), Decimal('0.00'))
+    sales_total = sum((bill['total_amount'] for bill in bill_rows if bill['entry_type'] == 'sale'), Decimal('0.00'))
+    paid_total = sum(
+        (payment.amount for payment in payments if payment.direction == InventoryCreditPayment.DIRECTION_PAYABLE),
+        Decimal('0.00'),
+    )
+    received_total = sum(
+        (payment.amount for payment in payments if payment.direction == InventoryCreditPayment.DIRECTION_RECEIVABLE),
+        Decimal('0.00'),
+    )
+
+    context = {
+        'party': party,
+        'bill_rows': bill_rows,
+        'payments': payments,
+        'start_date': start_date.isoformat() if start_date else '',
+        'end_date': end_date.isoformat() if end_date else '',
+        'payable_balance': payable_balance,
+        'receivable_balance': receivable_balance,
+        'purchase_total': purchase_total,
+        'sales_total': sales_total,
+        'paid_total': paid_total,
+        'received_total': received_total,
+    }
+    return render(request, 'job_tickets/inventory_party_ledger.html', context)
 
 @login_required
 @require_POST

@@ -67,11 +67,11 @@
     </style>
 </head>
 
-<body{% if user.is_authenticated %} class="sidebar-collapsed"{% endif %}
+<body{% if user.is_authenticated %} class="sidebar-collapsed{% if request.resolver_match.url_name|slice:":10" == "inventory_" %} inventory-workspace{% endif %}"{% endif %}
     data-botgi-web-version="{{ release_info.web_version }}"
     data-botgi-release-meta-url="{% url 'app_release_meta' %}"
     data-botgi-release-poll-ms="{{ release_info.poll_interval_ms }}">
-    {% if user.is_authenticated %}
+    {% if user.is_authenticated and request.resolver_match.url_name|slice:":10" != "inventory_" %}
     {# ── Mobile top strip with hamburger ────────────────────── #}
     <div class="sidebar-topbar">
         <button class="sidebar-toggle-btn" id="sidebarToggleBtn" type="button" aria-label="Open menu">
@@ -129,6 +129,8 @@
                     <a
                         class="sidebar-link {% if request.resolver_match.url_name == 'inventory_dashboard' or request.resolver_match.url_name == 'inventory_product_dashboard' or request.resolver_match.url_name == 'product_dashboard' or request.resolver_match.url_name == 'inventory_party_dashboard' or request.resolver_match.url_name == 'inventory_purchase_dashboard' or request.resolver_match.url_name == 'inventory_purchase_return_dashboard' or request.resolver_match.url_name == 'inventory_sales_dashboard' or request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}"
                         href="{% url 'inventory_dashboard' %}"
+                        target="_blank"
+                        rel="noopener"
                         title="Inventory">
                         <i class="fa-solid fa-warehouse"></i><span class="sidebar-link-label">Inventory</span>
                     </a>
@@ -203,7 +205,7 @@
     >
         <i class="fa-solid fa-angles-right"></i>
     </button>
-    {% else %}
+    {% elif not user.is_authenticated %}
     {# ── Unauthenticated: slim guest top bar ────────────────── #}
     <nav class="guest-topbar">
         <div class="guest-topbar-inner">
@@ -226,7 +228,7 @@
     </nav>
     {% endif %}
 
-    <div class="app-layout {% if user.is_authenticated %}has-sidebar{% endif %}">
+    <div class="app-layout {% if user.is_authenticated and request.resolver_match.url_name|slice:":10" != "inventory_" %}has-sidebar{% endif %}">
         <main class="app-main">
             <div class="container my-4 pb-4">
                 <div class="mb-3 d-none" data-auto-page-title>
@@ -684,7 +686,7 @@
 
     <script>
         (function () {
-            var inventorySidebarStorageKey = 'inventoryModuleCollapsed';
+            var inventorySidebarStorageKey = 'inventoryModuleCollapsedV2';
 
             function isInventoryDesktopView() {
                 return window.matchMedia('(min-width: 992px)').matches;
@@ -696,9 +698,13 @@
 
             function readInventorySidebarState() {
                 try {
-                    return window.localStorage.getItem(inventorySidebarStorageKey) === 'true';
+                    var storedValue = window.localStorage.getItem(inventorySidebarStorageKey);
+                    if (storedValue === null) {
+                        return true;
+                    }
+                    return storedValue === 'true';
                 } catch (error) {
-                    return false;
+                    return true;
                 }
             }
 
@@ -714,22 +720,46 @@
                 var shouldCollapse = isInventoryDesktopView() && collapsed;
 
                 getInventoryShells().forEach(function (shell) {
-                    shell.classList.toggle('inventory-shell-collapsed', shouldCollapse);
-
-                    var toggleBtn = shell.querySelector('[data-inventory-sidebar-toggle]');
-                    if (!toggleBtn) {
-                        return;
-                    }
-
-                    toggleBtn.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
-                    toggleBtn.setAttribute('aria-label', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
-                    toggleBtn.setAttribute('title', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
-
-                    var icon = toggleBtn.querySelector('i');
-                    if (icon) {
-                        icon.className = shouldCollapse ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
-                    }
+                    decorateInventoryShell(shell, shouldCollapse);
                 });
+            }
+
+            function decorateInventoryShell(shell, shouldCollapse) {
+                if (!shell) {
+                    return;
+                }
+                shell.classList.toggle('inventory-shell-collapsed', shouldCollapse);
+
+                var toggleBtn = shell.querySelector('[data-inventory-sidebar-toggle]');
+                if (!toggleBtn) {
+                    return;
+                }
+
+                toggleBtn.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
+                toggleBtn.setAttribute('aria-label', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
+                toggleBtn.setAttribute('title', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
+
+                var icon = toggleBtn.querySelector('i');
+                if (icon) {
+                    icon.className = shouldCollapse ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
+                }
+            }
+
+            function decorateInventoryResponse(html) {
+                if (!html || !isInventoryDesktopView()) {
+                    return html;
+                }
+                var parser = new DOMParser();
+                var nextDocument = parser.parseFromString(html, 'text/html');
+                var shells = Array.prototype.slice.call(nextDocument.querySelectorAll('[data-inventory-shell]'));
+                if (!shells.length) {
+                    return html;
+                }
+                var shouldCollapse = readInventorySidebarState();
+                shells.forEach(function (shell) {
+                    decorateInventoryShell(shell, shouldCollapse);
+                });
+                return nextDocument.documentElement.outerHTML;
             }
 
             function refreshInventoryShells() {
@@ -757,6 +787,22 @@
             window.addEventListener('resize', refreshInventoryShells);
             document.addEventListener('botgi:content-replaced', function () {
                 window.setTimeout(refreshInventoryShells, 0);
+            });
+            document.addEventListener('htmx:beforeSwap', function (event) {
+                var detail = event.detail || {};
+                var target = detail.target;
+                if (
+                    !target
+                    || !target.matches
+                    || !target.matches('.app-main > .container')
+                    || typeof detail.serverResponse !== 'string'
+                ) {
+                    return;
+                }
+                detail.serverResponse = decorateInventoryResponse(detail.serverResponse);
+            });
+            document.addEventListener('htmx:afterSwap', function () {
+                refreshInventoryShells();
             });
         }());
     </script>

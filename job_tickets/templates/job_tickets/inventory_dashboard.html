@@ -64,6 +64,132 @@
                 </div>
             </div>
 
+            <div class="row g-3 mb-4">
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">To Pay</p>
+                        <h4 class="inventory-kpi-value text-warning mb-0">&#8377;{{ credit_summary.payable_total|floatformat:2 }}</h4>
+                        <div class="small text-muted">{{ credit_summary.payable_count }} purchase bill(s)</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">To Collect</p>
+                        <h4 class="inventory-kpi-value text-success mb-0">&#8377;{{ credit_summary.receivable_total|floatformat:2 }}</h4>
+                        <div class="small text-muted">{{ credit_summary.receivable_count }} sales bill(s)</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">Paid This Month</p>
+                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ credit_summary.month_paid_total|floatformat:2 }}</h4>
+                        <div class="small text-muted">Supplier payments</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <p class="inventory-kpi-label mb-1">Received This Month</p>
+                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ credit_summary.month_received_total|floatformat:2 }}</h4>
+                        <div class="small text-muted">Customer payments</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4 mb-4">
+                <div class="col-xl-6">
+                    <div class="card-box h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0"><i class="fas fa-arrow-up-wide-short me-2"></i>Payables</h5>
+                            <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-outline-secondary btn-sm">Purchase Register</a>
+                        </div>
+                        <div class="table-responsive inventory-scroll-region inventory-scroll-region--compact">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Party</th>
+                                        <th>Balance</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in credit_summary.payable_rows %}
+                                    <tr>
+                                        <td>{{ row.invoice_number }}</td>
+                                        <td>{{ row.party.name }}</td>
+                                        <td><strong class="text-warning">&#8377;{{ row.balance_amount|floatformat:2 }}</strong></td>
+                                        <td>
+                                            <button
+                                                type="button"
+                                                class="btn btn-outline-primary btn-sm inventory-credit-payment-btn"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#inventoryCreditPaymentModal"
+                                                data-bill-id="{{ row.bill_id }}"
+                                                data-party-name="{{ row.party.name|escape }}"
+                                                data-invoice-number="{{ row.invoice_number|escape }}"
+                                                data-balance="{{ row.balance_amount|floatformat:2 }}"
+                                                data-action-label="{{ row.action_label }}"
+                                            >
+                                                Pay
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="4" class="text-center text-muted">No supplier payables.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-6">
+                    <div class="card-box h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0"><i class="fas fa-arrow-down-wide-short me-2"></i>Receivables</h5>
+                            <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-outline-secondary btn-sm">Sales Register</a>
+                        </div>
+                        <div class="table-responsive inventory-scroll-region inventory-scroll-region--compact">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Party</th>
+                                        <th>Balance</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in credit_summary.receivable_rows %}
+                                    <tr>
+                                        <td>{{ row.invoice_number }}</td>
+                                        <td>{{ row.party.name }}</td>
+                                        <td><strong class="text-success">&#8377;{{ row.balance_amount|floatformat:2 }}</strong></td>
+                                        <td>
+                                            <button
+                                                type="button"
+                                                class="btn btn-outline-success btn-sm inventory-credit-payment-btn"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#inventoryCreditPaymentModal"
+                                                data-bill-id="{{ row.bill_id }}"
+                                                data-party-name="{{ row.party.name|escape }}"
+                                                data-invoice-number="{{ row.invoice_number|escape }}"
+                                                data-balance="{{ row.balance_amount|floatformat:2 }}"
+                                                data-action-label="{{ row.action_label }}"
+                                            >
+                                                Receive
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="4" class="text-center text-muted">No customer receivables.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="card-box inventory-movement mb-4">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Monthly Movement Snapshot</h5>
@@ -127,6 +253,41 @@
                         <h6><i class="fas fa-rotate-right me-2"></i>Sales Return</h6>
                         <p class="mb-0 text-muted small">Capture customer returns and restore stock.</p>
                     </a>
+                </div>
+            </div>
+
+            <div class="card-box mb-4">
+                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+                    <div>
+                        <h5 class="mb-1"><i class="fas fa-chart-line me-2"></i>Quick Reports</h5>
+                        <p class="mb-0 small text-muted">Open the pages used most often for checking stock and account movement.</p>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6 col-xl-3">
+                        <a href="{% url 'inventory_product_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                            <h6><i class="fas fa-book-open me-2"></i>Product Ledgers</h6>
+                            <p class="mb-0 text-muted small">Open any product and review full stock movement.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a href="{% url 'inventory_party_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                            <h6><i class="fas fa-file-invoice me-2"></i>Party Statements</h6>
+                            <p class="mb-0 text-muted small">Check bills, payments, payable, and receivable balances.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a href="{% url 'inventory_purchase_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                            <h6><i class="fas fa-cart-arrow-down me-2"></i>Purchase Register</h6>
+                            <p class="mb-0 text-muted small">Review supplier bills and outstanding payables.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a href="{% url 'inventory_sales_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
+                            <h6><i class="fas fa-cart-shopping me-2"></i>Sales Register</h6>
+                            <p class="mb-0 text-muted small">Review customer sales and receivable balances.</p>
+                        </a>
+                    </div>
                 </div>
             </div>
 
@@ -225,7 +386,126 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card-box mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h5 class="mb-0"><i class="fas fa-receipt me-2"></i>Recent Credit Payments</h5>
+                    <span class="badge bg-light text-dark border">{{ credit_summary.recent_payments|length }}</span>
+                </div>
+                <div class="table-responsive inventory-scroll-region inventory-scroll-region--compact">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Party</th>
+                                <th>Invoice</th>
+                                <th>Method</th>
+                                <th>Amount</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in credit_summary.recent_payments %}
+                            <tr>
+                                <td>{{ payment.payment_date|date:"Y-m-d" }}</td>
+                                <td>{{ payment.get_direction_display }}</td>
+                                <td>{{ payment.party.name }}</td>
+                                <td>{{ payment.bill.invoice_number|default:payment.bill.bill_number }}</td>
+                                <td>{{ payment.get_payment_method_display }}</td>
+                                <td>&#8377;{{ payment.amount|floatformat:2 }}</td>
+                                <td>&#8377;{{ payment.balance_after|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="7" class="text-center text-muted">No credit payments recorded yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+<div class="modal fade quick-pop-modal" id="inventoryCreditPaymentModal" tabindex="-1" aria-labelledby="inventoryCreditPaymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="inventoryCreditPaymentModalLabel">
+                    <i class="fas fa-money-bill-transfer me-2"></i>Record Payment
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'inventory_record_credit_payment' %}">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <input type="hidden" name="bill_id" id="credit-payment-bill-id">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <div class="alert alert-light border py-2 small">
+                        <div><strong id="credit-payment-party">-</strong></div>
+                        <div class="text-muted">Invoice: <span id="credit-payment-invoice">-</span></div>
+                        <div class="text-muted">Current Balance: &#8377;<span id="credit-payment-balance">0.00</span></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Amount</label>
+                            <input type="number" name="amount" id="credit-payment-amount" class="form-control" step="0.01" min="0.01" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Payment Date</label>
+                            <input type="date" name="payment_date" class="form-control" value="{% now 'Y-m-d' %}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Method</label>
+                            <select name="payment_method" class="form-select">
+                                <option value="cash">Cash</option>
+                                <option value="transfer">Transfer</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Reference</label>
+                            <input type="text" name="reference_no" class="form-control" placeholder="Optional">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2" placeholder="Optional"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="credit-payment-submit-btn">Save Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+function initInventoryDashboard() {
+    const creditPaymentModal = document.getElementById('inventoryCreditPaymentModal');
+    if (!creditPaymentModal) return;
+    creditPaymentModal.addEventListener('show.bs.modal', function (event) {
+        const trigger = event.relatedTarget;
+        if (!trigger) return;
+        const balance = trigger.getAttribute('data-balance') || '0.00';
+        creditPaymentModal.querySelector('#credit-payment-bill-id').value = trigger.getAttribute('data-bill-id') || '';
+        creditPaymentModal.querySelector('#credit-payment-party').textContent = trigger.getAttribute('data-party-name') || '-';
+        creditPaymentModal.querySelector('#credit-payment-invoice').textContent = trigger.getAttribute('data-invoice-number') || '-';
+        creditPaymentModal.querySelector('#credit-payment-balance').textContent = balance;
+        const amountInput = creditPaymentModal.querySelector('#credit-payment-amount');
+        amountInput.value = balance;
+        amountInput.max = balance;
+        creditPaymentModal.querySelector('#credit-payment-submit-btn').textContent = trigger.getAttribute('data-action-label') || 'Save Payment';
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initInventoryDashboard);
+} else {
+    initInventoryDashboard();
+}
+}());
+</script>
 {% endblock %}

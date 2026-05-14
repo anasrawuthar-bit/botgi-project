@@ -173,22 +173,30 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <button
-                                            type="button"
-                                            class="btn btn-outline-primary btn-sm"
-                                            data-bs-toggle="collapse"
-                                            data-bs-target="#product-history-{{ product.id }}"
-                                            aria-expanded="false"
-                                            aria-controls="product-history-{{ product.id }}"
-                                        >
-                                            View
-                                        </button>
+                                        <div class="btn-group btn-group-sm" role="group" aria-label="Product actions">
+                                            <a href="{% url 'inventory_product_ledger' product_id=product.id %}" class="btn btn-outline-primary">
+                                                Ledger
+                                            </a>
+                                            <button
+                                                type="button"
+                                                class="btn btn-outline-secondary"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#product-history-{{ product.id }}"
+                                                aria-expanded="false"
+                                                aria-controls="product-history-{{ product.id }}"
+                                            >
+                                                Quick
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                                 <tr class="collapse" id="product-history-{{ product.id }}">
                                     <td colspan="11" class="bg-light-subtle">
                                         <div class="py-2">
                                             <h6 class="mb-2">Transaction History</h6>
+                                            <a href="{% url 'inventory_product_ledger' product_id=product.id %}" class="btn btn-outline-primary btn-sm mb-2">
+                                                <i class="fas fa-book-open me-1"></i>Open Full Ledger
+                                            </a>
                                             <div class="border rounded p-2 bg-white">
                                                 <div class="table-responsive inventory-scroll-region inventory-scroll-region--history">
                                                     <table class="table table-sm table-striped mb-0">
@@ -240,7 +248,7 @@
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="10" class="text-center">No products found.</td>
+                                    <td colspan="11" class="text-center">No products found.</td>
                                 </tr>
                             {% endfor %}
                         </tbody>

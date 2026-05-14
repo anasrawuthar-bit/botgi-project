@@ -433,9 +433,15 @@ class InventoryPartyForm(forms.ModelForm):
 
 
 class InventoryEntryForm(forms.ModelForm):
+    invoice_date = forms.DateField(
+        required=False,
+        label='Invoice Date',
+        widget=forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+    )
+
     class Meta:
         model = InventoryEntry
-        fields = ['entry_date', 'invoice_number', 'party']
+        fields = ['entry_date', 'invoice_date', 'invoice_number', 'party']
         widgets = {
             'entry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'invoice_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Leave blank for auto invoice number'}),
@@ -452,16 +458,22 @@ class InventoryEntryForm(forms.ModelForm):
             lambda party: f"{party.name} ({party.phone})" if (party.phone or '').strip() else party.name
         )
         self.fields['entry_date'].initial = timezone.localdate
+        self.fields['entry_date'].label = 'Date'
+        self.fields['invoice_date'].initial = timezone.localdate
         if entry_type == 'sale':
+            self.fields['invoice_date'].required = False
             self.fields['invoice_number'].required = False
             self.fields['invoice_number'].widget.attrs.update({
                 'placeholder': 'Auto generated invoice number',
                 'readonly': 'readonly',
             })
         elif entry_type == 'purchase':
+            self.fields['entry_date'].required = False
+            self.fields['invoice_date'].required = False
             self.fields['invoice_number'].required = True
             self.fields['invoice_number'].widget.attrs['placeholder'] = 'Party invoice number'
         else:
+            self.fields['invoice_date'].required = False
             self.fields['invoice_number'].required = True
             self.fields['invoice_number'].widget.attrs['placeholder'] = 'Invoice number'
 

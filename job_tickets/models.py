@@ -316,6 +316,11 @@ class InventoryBill(models.Model):
         null=True,
         help_text="Supplier/customer invoice number for reference.",
     )
+    invoice_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Original supplier/customer invoice date when different from entry date.",
+    )
     job_ticket = models.ForeignKey(
         'JobTicket',
         on_delete=models.SET_NULL,
@@ -394,6 +399,51 @@ class InventoryEntry(models.Model):
         if self.entry_type in {'purchase', 'sale_return'}:
             return self.quantity
         return -self.quantity
+
+
+class InventoryCreditPayment(models.Model):
+    DIRECTION_PAYABLE = 'payable'
+    DIRECTION_RECEIVABLE = 'receivable'
+    DIRECTION_CHOICES = [
+        (DIRECTION_PAYABLE, 'Payable'),
+        (DIRECTION_RECEIVABLE, 'Receivable'),
+    ]
+
+    METHOD_CASH = 'cash'
+    METHOD_TRANSFER = 'transfer'
+    METHOD_CHOICES = [
+        (METHOD_CASH, 'Cash'),
+        (METHOD_TRANSFER, 'Transfer'),
+    ]
+
+    party = models.ForeignKey(InventoryParty, on_delete=models.PROTECT, related_name='credit_payments')
+    bill = models.ForeignKey(InventoryBill, on_delete=models.CASCADE, related_name='credit_payments')
+    direction = models.CharField(max_length=20, choices=DIRECTION_CHOICES)
+    payment_date = models.DateField(default=timezone.localdate)
+    payment_method = models.CharField(max_length=20, choices=METHOD_CHOICES, default=METHOD_CASH)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    balance_before = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    balance_after = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reference_no = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_credit_payments_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-payment_date', '-created_at']
+        indexes = [
+            models.Index(fields=['direction', 'payment_date']),
+            models.Index(fields=['bill', 'direction']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_direction_display()} {self.party.name} - {self.amount}"
 
 
 class JobTicket(models.Model):

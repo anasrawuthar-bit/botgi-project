@@ -33,6 +33,7 @@ from .models import (
     Client,
     CompanyProfile,
     InventoryBill,
+    InventoryCreditPayment,
     InventoryEntry,
     InventoryParty,
     JobReminder,
@@ -1847,6 +1848,39 @@ class InventoryUxDefaultsTests(TestCase):
         self.assertIn('initializeLineProductPicker(row);', template_text)
         self.assertIn('refreshLineProductPickers();', template_text)
 
+    def test_inventory_dashboard_uses_expanded_workspace_chrome(self):
+        self.client.force_login(self.staff_user)
+
+        response = self.client.get(reverse('inventory_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'inventory-workspace')
+        self.assertContains(response, 'target="_blank"')
+        self.assertContains(response, 'rel="noopener"')
+        self.assertNotContains(response, 'id="appSidebar"')
+        self.assertContains(response, 'class="app-layout "')
+
+        style_path = Path(settings.BASE_DIR) / 'job_tickets' / 'static' / 'css' / 'style.css'
+        style_text = style_path.read_text(encoding='utf-8')
+        self.assertIn('body.inventory-workspace .app-layout.has-sidebar', style_text)
+        self.assertIn('body.inventory-workspace .app-sidebar', style_text)
+        self.assertIn('margin-left: 0;', style_text)
+
+        base_path = Path(settings.BASE_DIR) / 'job_tickets' / 'templates' / 'job_tickets' / 'base.html'
+        base_text = base_path.read_text(encoding='utf-8')
+        self.assertIn('user.is_authenticated and request.resolver_match.url_name|slice:":10" != "inventory_"', base_text)
+        self.assertIn('inventoryModuleCollapsedV2', base_text)
+        self.assertIn('decorateInventoryResponse', base_text)
+        self.assertIn("document.addEventListener('htmx:beforeSwap'", base_text)
+
+        sidebar_path = Path(settings.BASE_DIR) / 'job_tickets' / 'templates' / 'job_tickets' / '_inventory_sidebar.html'
+        sidebar_text = sidebar_path.read_text(encoding='utf-8')
+        self.assertIn('inventory-dashboard-return', sidebar_text)
+        self.assertIn("{% url 'staff_dashboard' %}", sidebar_text)
+        self.assertIn('hx-get="{% url \'inventory_dashboard\' %}"', sidebar_text)
+        self.assertIn('hx-target=".app-main > .container"', sidebar_text)
+        self.assertIn('hx-push-url="true"', sidebar_text)
+
 
 class InventorySaleStockRulesTests(TestCase):
     def setUp(self):
@@ -1894,6 +1928,359 @@ class InventorySaleStockRulesTests(TestCase):
         self.assertEqual(entry.stock_after, -2)
 
 
+class InventoryCreditPaymentTests(TestCase):
+    def setUp(self):
+        self.staff_user = User.objects.create_user(
+            username='inventory-credit-admin',
+            password='StrongPass123!',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.party = InventoryParty.objects.create(name='Credit Party')
+        self.product = Product.objects.create(
+            name='Credit Product',
+            unit_price=Decimal('1000.00'),
+            cost_price=Decimal('700.00'),
+            stock_quantity=5,
+        )
+
+    def _create_bill(self, entry_type='purchase', total='1000.00', invoice_number=None):
+        sequence = InventoryBill.objects.count() + 1
+        invoice_number = invoice_number or f'{entry_type.upper()}-INV-{sequence:03d}'
+        bill = InventoryBill.objects.create(
+            bill_number=f'{entry_type.upper()}-BILL-{sequence:03d}',
+            entry_type=entry_type,
+            entry_date=timezone.localdate(),
+            invoice_date=timezone.localdate() if entry_type == 'purchase' else None,
+            invoice_number=invoice_number,
+            party=self.party,
+        )
+        InventoryEntry.objects.create(
+            bill=bill,
+            entry_number=f'{entry_type.upper()}-ENTRY-{sequence:03d}',
+            entry_type=entry_type,
+            entry_date=timezone.localdate(),
+            invoice_number=bill.invoice_number,
+            party=self.party,
+            product=self.product,
+            quantity=1,
+            unit_price=Decimal(total),
+            taxable_amount=Decimal(total),
+            total_amount=Decimal(total),
+            stock_before=5,
+            stock_after=6 if entry_type == 'purchase' else 4,
+        )
+        return bill
+
+    def test_purchase_credit_payment_records_payable_balance(self):
+        self.client.force_login(self.staff_user)
+        bill = self._create_bill('purchase', '1000.00')
+
+        response = self.client.post(
+            reverse('inventory_record_credit_payment'),
+            {
+                'bill_id': str(bill.id),
+                'amount': '300.00',
+                'payment_date': timezone.localdate().isoformat(),
+                'payment_method': 'cash',
+                'reference_no': 'CASH-1',
+                'next': reverse('inventory_purchase_dashboard'),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        payment = InventoryCreditPayment.objects.get(bill=bill)
+        self.assertEqual(payment.direction, InventoryCreditPayment.DIRECTION_PAYABLE)
+        self.assertEqual(payment.balance_before, Decimal('1000.00'))
+        self.assertEqual(payment.balance_after, Decimal('700.00'))
+
+    def test_sale_credit_payment_records_receivable_balance(self):
+        self.client.force_login(self.staff_user)
+        bill = self._create_bill('sale', '1500.00')
+
+        response = self.client.post(
+            reverse('inventory_record_credit_payment'),
+            {
+                'bill_id': str(bill.id),
+                'amount': '500.00',
+                'payment_date': timezone.localdate().isoformat(),
+                'payment_method': 'transfer',
+                'reference_no': 'UPI-1',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        payment = InventoryCreditPayment.objects.get(bill=bill)
+        self.assertEqual(payment.direction, InventoryCreditPayment.DIRECTION_RECEIVABLE)
+        self.assertEqual(payment.balance_before, Decimal('1500.00'))
+        self.assertEqual(payment.balance_after, Decimal('1000.00'))
+
+    def test_inventory_credit_payment_cannot_exceed_balance(self):
+        self.client.force_login(self.staff_user)
+        bill = self._create_bill('purchase', '1000.00')
+
+        response = self.client.post(
+            reverse('inventory_record_credit_payment'),
+            {
+                'bill_id': str(bill.id),
+                'amount': '1200.00',
+                'payment_date': timezone.localdate().isoformat(),
+                'payment_method': 'cash',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(InventoryCreditPayment.objects.filter(bill=bill).exists())
+
+    def test_sale_bill_marked_paid_creates_full_initial_settlement(self):
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('inventory_sales_dashboard'),
+            {
+                'inventory_entry_submit': 'sale',
+                'entry_date': timezone.localdate().isoformat(),
+                'party': str(self.party.id),
+                'bill_discount_amount': '0.00',
+                'bill_notes': '',
+                'bill_payment_status': 'paid',
+                'bill_payment_method': 'transfer',
+                'bill_payment_date': timezone.localdate().isoformat(),
+                'bill_payment_reference': 'UPI-PAID',
+                'line_product_id[]': [str(self.product.id)],
+                'line_quantity[]': ['1'],
+                'line_unit_price[]': ['1000.00'],
+                'line_gst_rate[]': ['0.00'],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        bill = InventoryBill.objects.get(entry_type='sale')
+        payment = InventoryCreditPayment.objects.get(bill=bill)
+        self.assertEqual(payment.direction, InventoryCreditPayment.DIRECTION_RECEIVABLE)
+        self.assertEqual(payment.payment_method, InventoryCreditPayment.METHOD_TRANSFER)
+        self.assertEqual(payment.amount, Decimal('1000.00'))
+        self.assertEqual(payment.balance_before, Decimal('1000.00'))
+        self.assertEqual(payment.balance_after, Decimal('0.00'))
+        self.assertEqual(payment.reference_no, 'UPI-PAID')
+
+    def test_purchase_bill_marked_unpaid_stays_as_credit_balance(self):
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('inventory_purchase_dashboard'),
+            {
+                'inventory_entry_submit': 'purchase',
+                'entry_date': timezone.localdate().isoformat(),
+                'invoice_number': 'PUR-CREDIT-001',
+                'party': str(self.party.id),
+                'bill_discount_amount': '0.00',
+                'bill_notes': '',
+                'bill_payment_status': 'unpaid',
+                'line_product_id[]': [str(self.product.id)],
+                'line_quantity[]': ['1'],
+                'line_unit_price[]': ['700.00'],
+                'line_gst_rate[]': ['0.00'],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        bill = InventoryBill.objects.get(entry_type='purchase')
+        self.assertFalse(InventoryCreditPayment.objects.filter(bill=bill).exists())
+
+        response = self.client.get(reverse('inventory_purchase_dashboard'))
+        self.assertContains(response, 'Pay Supplier')
+        self.assertContains(response, '700.00')
+
+    def test_purchase_bill_saves_supplier_invoice_date(self):
+        self.client.force_login(self.staff_user)
+        entry_date = timezone.localdate()
+        invoice_date = entry_date - timedelta(days=3)
+
+        response = self.client.post(
+            reverse('inventory_purchase_dashboard'),
+            {
+                'inventory_entry_submit': 'purchase',
+                'invoice_date': invoice_date.isoformat(),
+                'invoice_number': 'SUP-INV-DATE-001',
+                'party': str(self.party.id),
+                'bill_discount_amount': '0.00',
+                'bill_notes': '',
+                'bill_payment_status': 'unpaid',
+                'line_product_id[]': [str(self.product.id)],
+                'line_quantity[]': ['1'],
+                'line_unit_price[]': ['700.00'],
+                'line_gst_rate[]': ['0.00'],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        bill = InventoryBill.objects.get(invoice_number='SUP-INV-DATE-001')
+        self.assertEqual(bill.entry_date, invoice_date)
+        self.assertEqual(bill.invoice_date, invoice_date)
+
+        response = self.client.get(reverse('inventory_purchase_dashboard'))
+        self.assertContains(response, 'Invoice Date')
+        self.assertNotContains(response, '<th>Entry Date</th>', html=False)
+        self.assertContains(response, invoice_date.strftime('%Y-%m-%d'))
+
+    def test_inventory_credit_sections_render_on_dashboards(self):
+        self.client.force_login(self.staff_user)
+        self._create_bill('purchase', '1000.00')
+        self._create_bill('sale', '1500.00')
+
+        pages = [
+            (reverse('inventory_dashboard'), 'To Pay'),
+            (reverse('inventory_purchase_dashboard'), 'Pay Supplier'),
+            (reverse('inventory_sales_dashboard'), 'Receive Payment'),
+            (reverse('inventory_party_dashboard'), 'To Collect'),
+        ]
+
+        for url, expected_text in pages:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, expected_text)
+
+    def test_purchase_register_filters_by_payment_status_and_links_party_ledger(self):
+        self.client.force_login(self.staff_user)
+        unpaid_bill = self._create_bill('purchase', '1000.00', invoice_number='PUR-CREDIT-STATUS')
+        part_paid_bill = self._create_bill('purchase', '1200.00', invoice_number='PUR-PART-STATUS')
+        paid_bill = self._create_bill('purchase', '700.00', invoice_number='PUR-PAID-STATUS')
+        InventoryCreditPayment.objects.create(
+            party=self.party,
+            bill=part_paid_bill,
+            direction=InventoryCreditPayment.DIRECTION_PAYABLE,
+            payment_date=timezone.localdate(),
+            payment_method=InventoryCreditPayment.METHOD_CASH,
+            amount=Decimal('200.00'),
+            balance_before=Decimal('1200.00'),
+            balance_after=Decimal('1000.00'),
+            created_by=self.staff_user,
+        )
+        InventoryCreditPayment.objects.create(
+            party=self.party,
+            bill=paid_bill,
+            direction=InventoryCreditPayment.DIRECTION_PAYABLE,
+            payment_date=timezone.localdate(),
+            payment_method=InventoryCreditPayment.METHOD_CASH,
+            amount=Decimal('700.00'),
+            balance_before=Decimal('700.00'),
+            balance_after=Decimal('0.00'),
+            created_by=self.staff_user,
+        )
+
+        response = self.client.get(reverse('inventory_purchase_dashboard'), {'payment_status': 'credit'})
+        self.assertContains(response, 'PUR-CREDIT-STATUS')
+        self.assertNotContains(response, 'PUR-PART-STATUS')
+        self.assertContains(response, reverse('inventory_party_ledger', args=[self.party.id]))
+
+        response = self.client.get(reverse('inventory_purchase_dashboard'), {'payment_status': 'part_paid'})
+        self.assertContains(response, 'PUR-PART-STATUS')
+        self.assertNotContains(response, 'PUR-CREDIT-STATUS')
+
+        response = self.client.get(reverse('inventory_purchase_dashboard'), {'payment_status': 'paid'})
+        self.assertContains(response, 'PUR-PAID-STATUS')
+        self.assertNotContains(response, 'PUR-PART-STATUS')
+
+
+class InventoryLedgerPageTests(TestCase):
+    def setUp(self):
+        self.staff_user = User.objects.create_user(
+            username='inventory-ledger-admin',
+            password='StrongPass123!',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.party = InventoryParty.objects.create(
+            name='Ledger Party',
+            phone='9876543210',
+        )
+        self.product = Product.objects.create(
+            name='Ledger Product',
+            category='Parts',
+            unit_price=Decimal('1200.00'),
+            cost_price=Decimal('800.00'),
+            stock_quantity=8,
+        )
+
+    def _create_bill(self, entry_type, invoice_number, total, quantity=1):
+        bill = InventoryBill.objects.create(
+            bill_number=f'{entry_type.upper()}-{invoice_number}',
+            entry_type=entry_type,
+            entry_date=timezone.localdate(),
+            invoice_date=timezone.localdate() if entry_type == 'purchase' else None,
+            invoice_number=invoice_number,
+            party=self.party,
+            created_by=self.staff_user,
+        )
+        stock_effect = quantity if entry_type in {'purchase', 'sale_return'} else -quantity
+        InventoryEntry.objects.create(
+            bill=bill,
+            entry_number=f'{entry_type.upper()}-ENTRY-{invoice_number}',
+            entry_type=entry_type,
+            entry_date=bill.entry_date,
+            invoice_number=invoice_number,
+            party=self.party,
+            product=self.product,
+            quantity=quantity,
+            unit_price=Decimal(total),
+            taxable_amount=Decimal(total),
+            total_amount=Decimal(total),
+            stock_before=self.product.stock_quantity - stock_effect,
+            stock_after=self.product.stock_quantity,
+            created_by=self.staff_user,
+        )
+        return bill
+
+    def test_product_ledger_renders_full_movement_and_product_master_link(self):
+        self.client.force_login(self.staff_user)
+        self._create_bill('purchase', 'PUR-LEDGER-1', '800.00', quantity=2)
+        self._create_bill('sale', 'SALE-LEDGER-1', '1200.00', quantity=1)
+
+        response = self.client.get(reverse('inventory_product_dashboard'))
+        self.assertContains(response, reverse('inventory_product_ledger', args=[self.product.id]))
+        self.assertContains(response, 'Ledger')
+
+        response = self.client.get(reverse('inventory_product_ledger', args=[self.product.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Product Ledger')
+        self.assertContains(response, 'Ledger Product')
+        self.assertContains(response, 'PUR-LEDGER-1')
+        self.assertContains(response, 'SALE-LEDGER-1')
+        self.assertContains(response, 'Stock Movement')
+
+    def test_party_ledger_renders_bills_payments_and_party_master_link(self):
+        self.client.force_login(self.staff_user)
+        bill = self._create_bill('purchase', 'PUR-PARTY-1', '1000.00')
+        InventoryCreditPayment.objects.create(
+            party=self.party,
+            bill=bill,
+            direction=InventoryCreditPayment.DIRECTION_PAYABLE,
+            payment_date=timezone.localdate(),
+            payment_method=InventoryCreditPayment.METHOD_CASH,
+            amount=Decimal('250.00'),
+            balance_before=Decimal('1000.00'),
+            balance_after=Decimal('750.00'),
+            created_by=self.staff_user,
+        )
+
+        response = self.client.get(reverse('inventory_party_dashboard'))
+        self.assertContains(response, reverse('inventory_party_ledger', args=[self.party.id]))
+        self.assertContains(response, 'Ledger')
+
+        response = self.client.get(reverse('inventory_party_ledger', args=[self.party.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Party Ledger')
+        self.assertContains(response, 'Ledger Party')
+        self.assertContains(response, 'PUR-PARTY-1')
+        self.assertContains(response, 'Payment History')
+        self.assertContains(response, '750.00')
+
+
 class StaffBillingZeroStockProductTests(TestCase):
     def setUp(self):
         self.staff_user = User.objects.create_user(
@@ -1928,6 +2315,18 @@ class StaffBillingZeroStockProductTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(self.product, list(response.context['products_for_sale']))
         self.assertContains(response, 'Laptop Keyboard (Stock: 0)')
+
+    def test_staff_billing_manage_products_opens_inventory_in_new_tab(self):
+        self.client.force_login(self.staff_user)
+
+        response = self.client.get(reverse('job_billing_staff', args=[self.job.job_code]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            'href="/staff/inventory/products/" target="_blank" rel="noopener"',
+        )
+        self.assertContains(response, 'Manage Products')
 
     def test_staff_billing_can_sell_zero_stock_product_and_track_negative_stock(self):
         self.client.force_login(self.staff_user)

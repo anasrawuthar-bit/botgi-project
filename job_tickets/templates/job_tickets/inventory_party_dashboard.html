@@ -105,6 +105,9 @@
                                 <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#party-history-{{ party.id }}" aria-expanded="false" aria-controls="party-history-{{ party.id }}">
                                     View Bills
                                 </button>
+                                <a href="{% url 'inventory_party_ledger' party_id=party.id %}" class="btn btn-primary btn-sm">
+                                    Ledger
+                                </a>
                             </div>
                         </div>
                         <div class="row g-2 mt-2">
@@ -136,6 +139,20 @@
                                     <div>&#8377;{{ party.sale_return_amount|floatformat:2 }}</div>
                                 </div>
                             </div>
+                            <div class="col-md-6">
+                                <div class="small bg-warning-subtle rounded p-2">
+                                    <div class="text-muted">To Pay</div>
+                                    <strong>&#8377;{{ party.credit_payable_amount|floatformat:2 }}</strong>
+                                    <div class="text-muted">Supplier credit balance</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="small bg-success-subtle rounded p-2">
+                                    <div class="text-muted">To Collect</div>
+                                    <strong>&#8377;{{ party.credit_receivable_amount|floatformat:2 }}</strong>
+                                    <div class="text-muted">Customer credit balance</div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="collapse mt-3" id="party-history-{{ party.id }}">
@@ -151,6 +168,8 @@
                                                 <th>Items</th>
                                                 <th>Qty</th>
                                                 <th>Total</th>
+                                                <th>Paid</th>
+                                                <th>Balance</th>
                                                 <th>Action</th>
                                             </tr>
                                         </thead>
@@ -176,6 +195,23 @@
                                                 <td>{{ bill.total_quantity }}</td>
                                                 <td>&#8377;{{ bill.total_amount|floatformat:2 }}</td>
                                                 <td>
+                                                    {% if bill.credit_direction %}
+                                                        &#8377;{{ bill.credit_paid_amount|floatformat:2 }}
+                                                    {% else %}
+                                                        -
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    {% if bill.credit_direction %}
+                                                        <strong class="{% if bill.credit_balance_amount > 0 %}text-warning{% else %}text-success{% endif %}">
+                                                            &#8377;{{ bill.credit_balance_amount|floatformat:2 }}
+                                                        </strong>
+                                                        <div class="small text-muted">{{ bill.credit_payment_status }}</div>
+                                                    {% else %}
+                                                        -
+                                                    {% endif %}
+                                                </td>
+                                                <td>
                                                     <button
                                                         type="button"
                                                         class="btn btn-outline-primary btn-sm party-bill-edit-btn"
@@ -192,7 +228,7 @@
                                             </tr>
                                             {% empty %}
                                             <tr>
-                                                <td colspan="7" class="text-center text-muted">No bills found for this filter.</td>
+                                                <td colspan="9" class="text-center text-muted">No bills found for this filter.</td>
                                             </tr>
                                             {% endfor %}
                                         </tbody>
@@ -466,9 +502,7 @@
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_js %}
 <script>
 (function () {
     const defaultGstRate = "{{ default_gst_rate|floatformat:2 }}";
@@ -932,10 +966,14 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', initPartyMasterPage);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPartyMasterPage);
+    } else {
+        initPartyMasterPage();
+    }
     document.addEventListener('botgi:content-replaced', function (event) {
         const detail = event.detail || {};
-        if (detail.targetSelector === '#inventory-party-page') {
+        if (detail.targetSelector === '#inventory-party-page' || detail.targetSelector === '.app-main > .container') {
             initPartyMasterPage();
         }
     });
