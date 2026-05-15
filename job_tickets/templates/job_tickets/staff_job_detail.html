@@ -373,14 +373,17 @@
                     {% if active_reminder %}
                     <input type="hidden" name="reminder_id" value="{{ active_reminder.id }}">
                     {% endif %}
-                    <label class="form-label">Reminder After</label>
-                    <div class="input-group mb-2">
-                        <input type="number" name="reminder_hours" class="form-control" min="0" max="24"
-                            placeholder="Hour" inputmode="numeric">
-                        <span class="input-group-text">hr</span>
-                        <input type="number" name="reminder_minutes" class="form-control" min="0" max="60"
-                            placeholder="Minute" inputmode="numeric">
-                        <span class="input-group-text">min</span>
+                    <label class="form-label">Callback Date & Time</label>
+                    <div class="row g-2 mb-2">
+                        <div class="col-sm-6">
+                            <input type="date" name="reminder_date" class="form-control"
+                                value="{{ reminder_schedule.date }}" min="{{ reminder_schedule.min_date }}">
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="time" name="reminder_time" class="form-control"
+                                value="{{ reminder_schedule.time }}" min="09:00" max="22:00" step="300"
+                                data-default-time="{{ reminder_schedule.default_time }}">
+                        </div>
                     </div>
                     <button type="submit" name="action" value="{% if active_reminder %}reschedule_reminder{% else %}schedule_reminder{% endif %}"
                         class="btn btn-outline-warning btn-sm">
@@ -849,6 +852,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const lockBtn = document.getElementById('lock-btn');
     if (lockBtn) {
         startCountdown();
+    }
+
+    const reminderDateInput = document.querySelector('input[name="reminder_date"]');
+    const reminderTimeInput = document.querySelector('input[name="reminder_time"]');
+    if (reminderDateInput && reminderTimeInput) {
+        const defaultReminderTime = reminderTimeInput.dataset.defaultTime || '09:00';
+        if (!reminderTimeInput.value) {
+            reminderTimeInput.value = defaultReminderTime;
+        }
+        reminderDateInput.addEventListener('change', () => {
+            if (!reminderTimeInput.value) {
+                reminderTimeInput.value = defaultReminderTime;
+            }
+        });
     }
 
     const previewModalEl = document.getElementById('photoPreviewModal');

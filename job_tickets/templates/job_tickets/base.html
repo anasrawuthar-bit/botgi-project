@@ -686,6 +686,25 @@
 
     <script>
         (function () {
+            document.addEventListener('wheel', function (event) {
+                var target = event.target;
+                if (!target || !target.closest) {
+                    return;
+                }
+
+                var numberInput = target.closest('input[type="number"]');
+                if (!numberInput || document.activeElement !== numberInput || numberInput.readOnly || numberInput.disabled) {
+                    return;
+                }
+
+                event.preventDefault();
+                numberInput.blur();
+            }, { capture: true, passive: false });
+        }());
+    </script>
+
+    <script>
+        (function () {
             var inventorySidebarStorageKey = 'inventoryModuleCollapsedV2';
 
             function isInventoryDesktopView() {

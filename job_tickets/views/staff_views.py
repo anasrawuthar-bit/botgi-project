@@ -3,8 +3,77 @@ from ..whatsapp_service import queue_job_whatsapp_message, send_job_whatsapp_not
 
 
 REMINDER_PROMPT_COOLDOWN_MINUTES = 10
+REMINDER_WORK_START = datetime.strptime('09:00', '%H:%M').time()
+REMINDER_WORK_END = datetime.strptime('22:00', '%H:%M').time()
+REMINDER_DEFAULT_TIME = '09:00'
 FEEDBACK_FOLLOWUP_DAYS = 7
 FEEDBACK_AUTO_SEND_LIMIT = 25
+
+
+def _parse_html_time(raw_time):
+    for fmt in ('%H:%M', '%H:%M:%S'):
+        try:
+            return datetime.strptime(raw_time, fmt).time()
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _parse_reminder_due_at(post_data, *, date_field='reminder_date', time_field='reminder_time', require_value=False):
+    raw_date = (post_data.get(date_field) or '').strip()
+    raw_time = (post_data.get(time_field) or '').strip()
+
+    if not raw_date and not raw_time:
+        if require_value:
+            return None, 'Choose reminder date.'
+        return None, ''
+    if not raw_date:
+        return None, 'Choose reminder date.'
+
+    try:
+        reminder_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None, 'Reminder date must be valid.'
+
+    reminder_time = _parse_html_time(raw_time or REMINDER_DEFAULT_TIME)
+    if reminder_time is None:
+        return None, 'Reminder time must be valid.'
+
+    if reminder_time < REMINDER_WORK_START or reminder_time > REMINDER_WORK_END:
+        return None, 'Reminder time must be between 9:00 AM and 10:00 PM.'
+
+    due_at = timezone.make_aware(
+        datetime.combine(reminder_date, reminder_time),
+        timezone.get_current_timezone(),
+    )
+    if due_at <= timezone.now():
+        return None, 'Reminder date and time must be in the future.'
+
+    return due_at, ''
+
+
+def _default_reminder_schedule(active_reminder=None):
+    now = timezone.localtime()
+
+    if active_reminder:
+        local_due_at = timezone.localtime(active_reminder.due_at)
+        return {
+            'date': local_due_at.date().isoformat(),
+            'time': local_due_at.strftime('%H:%M'),
+            'min_date': now.date().isoformat(),
+            'default_time': REMINDER_DEFAULT_TIME,
+        }
+
+    reminder_date = now.date()
+    if now.time() >= REMINDER_WORK_START:
+        reminder_date += timedelta(days=1)
+
+    return {
+        'date': reminder_date.isoformat(),
+        'time': REMINDER_DEFAULT_TIME,
+        'min_date': now.date().isoformat(),
+        'default_time': REMINDER_DEFAULT_TIME,
+    }
 
 
 def _parse_reminder_offset(post_data, *, hour_field='reminder_hours', minute_field='reminder_minutes', require_value=False):
@@ -1466,12 +1535,14 @@ def staff_job_detail(request, job_code):
             return redirect('staff_job_detail', job_code=job_code)
 
         if action in {'schedule_reminder', 'reschedule_reminder'}:
-            reminder_delta, reminder_error = _parse_reminder_offset(request.POST, require_value=True)
+            due_at, reminder_error = _parse_reminder_due_at(request.POST, require_value=False)
+            if due_at is None and not reminder_error:
+                reminder_delta, reminder_error = _parse_reminder_offset(request.POST, require_value=True)
+                due_at = timezone.now() + reminder_delta if reminder_delta else None
             if reminder_error:
                 messages.error(request, reminder_error)
                 return redirect('staff_job_detail', job_code=job_code)
 
-            due_at = timezone.now() + reminder_delta
             reminder_id = (request.POST.get('reminder_id') or '').strip()
             reminder = None
             if reminder_id:
@@ -1526,6 +1597,7 @@ def staff_job_detail(request, job_code):
     technician_list = get_assignable_technician_queryset()
     job_reminders = job.reminders.select_related('created_by').order_by('-due_at', '-id')
     active_reminder = _active_job_reminder(job)
+    reminder_schedule = _default_reminder_schedule(active_reminder)
     
     if job.customer_group_id:
         related_jobs = JobTicket.objects.filter(
@@ -1566,6 +1638,7 @@ def staff_job_detail(request, job_code):
         'staff_status_choices': JobTicket.STATUS_CHOICES,
         'job_reminders': job_reminders,
         'active_reminder': active_reminder,
+        'reminder_schedule': reminder_schedule,
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
 

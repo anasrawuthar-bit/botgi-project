@@ -659,6 +659,58 @@ class TechnicianAssignmentAndChecklistTests(TestCase):
         self.assertGreaterEqual(reminder.due_at, before + timedelta(hours=1, minutes=30))
         self.assertLessEqual(reminder.due_at, timezone.now() + timedelta(hours=1, minutes=31))
 
+    def test_staff_job_detail_can_schedule_reminder_for_selected_datetime(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-017',
+            customer_name='Callback Date Customer',
+            customer_phone='9876543227',
+            device_type='Laptop',
+            device_brand='Lenovo',
+            device_model='ThinkPad',
+            reported_issue='Call customer with estimate',
+        )
+        self.client.force_login(self.staff_user)
+        reminder_date = timezone.localdate() + timedelta(days=1)
+
+        response = self.client.post(
+            reverse('staff_job_detail', args=[job.job_code]),
+            {
+                'action': 'schedule_reminder',
+                'reminder_date': reminder_date.isoformat(),
+                'reminder_time': '09:30',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        reminder = JobReminder.objects.get(job_ticket=job)
+        local_due_at = timezone.localtime(reminder.due_at)
+        self.assertEqual(local_due_at.date(), reminder_date)
+        self.assertEqual(local_due_at.strftime('%H:%M'), '09:30')
+
+    def test_staff_job_detail_rejects_reminder_time_outside_working_hours(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-018',
+            customer_name='Callback Limit Customer',
+            customer_phone='9876543228',
+            device_type='Laptop',
+            device_brand='HP',
+            device_model='Pavilion',
+            reported_issue='Call outside time',
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse('staff_job_detail', args=[job.job_code]),
+            {
+                'action': 'schedule_reminder',
+                'reminder_date': (timezone.localdate() + timedelta(days=1)).isoformat(),
+                'reminder_time': '22:30',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(JobReminder.objects.filter(job_ticket=job).exists())
+
     def test_due_reminders_api_prompts_once_per_cooldown(self):
         job = JobTicket.objects.create(
             job_code='GI-260407-012',
