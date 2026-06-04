@@ -19,40 +19,61 @@
     {% if staff_access.reports_overview %}
     <h2 class="mb-3"><i class="fas fa-calendar-day me-2"></i> Today's Statistics</h2>
     <div class="row g-4 mb-5">
-        <div class="col-md-2">
-            <div class="card-box text-center">
+        <div class="col-lg-4">
+            <div class="card-box text-center h-100">
                 <h5 class="card-title">Jobs In</h5>
                 <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='in' %}" class="text-decoration-none text-dark">
                     <h2 class="mt-2 mb-0">{{ todays_jobs_in }}</h2>
                 </a>
+                <p class="text-muted small mb-0 mt-2">New jobs created today</p>
             </div>
         </div>
-        <div class="col-md-2">
-            <div class="card-box text-center">
-                <h5 class="card-title">Jobs Out</h5>
-                <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='out' %}" class="text-decoration-none text-dark">
-                    <h2 class="mt-2 mb-0">{{ todays_jobs_out }}</h2>
-                </a>
+        <div class="col-lg-4">
+            <div class="card-box h-100">
+                <div class="text-center">
+                    <h5 class="card-title">Completed Today</h5>
+                    <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='completed' %}" class="text-decoration-none text-dark">
+                        <h2 class="mt-2 mb-0">{{ todays_jobs_completed }}</h2>
+                    </a>
+                </div>
+                <div class="border-top mt-3 pt-3 small">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Spare Parts</span>
+                        <strong>&#8377;{{ todays_completed_spare|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Service</span>
+                        <strong>&#8377;{{ todays_completed_service|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-semibold">Total</span>
+                        <strong>&#8377;{{ todays_completed_total|floatformat:2 }}</strong>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="col-md-2">
-            <div class="card-box text-center">
-                <h5 class="card-title">Completed</h5>
-                <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='completed' %}" class="text-decoration-none text-dark">
-                    <h2 class="mt-2 mb-0">{{ todays_jobs_completed }}</h2>
-                </a>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-box text-center">
-                <h5 class="card-title">Spare Parts Total</h5>
-                <h2 class="mt-2 mb-0">₹{{ todays_total_spare|floatformat:2 }}</h2>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-box text-center">
-                <h5 class="card-title">Service Total</h5>
-                <h2 class="mt-2 mb-0">₹{{ todays_total_service|floatformat:2 }}</h2>
+        <div class="col-lg-4">
+            <div class="card-box h-100">
+                <div class="text-center">
+                    <h5 class="card-title">Closed Today</h5>
+                    <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='out' %}" class="text-decoration-none text-dark">
+                        <h2 class="mt-2 mb-0">{{ todays_jobs_out }}</h2>
+                    </a>
+                </div>
+                <div class="border-top mt-3 pt-3 small">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Spare Parts</span>
+                        <strong>&#8377;{{ todays_closed_spare|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Service</span>
+                        <strong>&#8377;{{ todays_closed_service|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-semibold">Total</span>
+                        <strong>&#8377;{{ todays_closed_total|floatformat:2 }}</strong>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -109,7 +130,7 @@
                     </li>
                     <li class="list-group-item p-0">
                         <a href="{% url 'staff_job_filtered_archive_view' status_code='Returned' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">Jobs Returned (Non-Repairable/Rework)</span>
+                            <span class="fw-bold text-dark">Returned -> Closed Jobs</span>
                             <span class="badge bg-danger rounded-pill">{{ returned_count }}</span>
                         </a>
                     </li>

@@ -857,8 +857,11 @@ fun JobDetailScreen(jobCode: String, viewModel: MainViewModel, onBack: () -> Uni
                 item {
                     ServiceEntryCard(
                         job = job,
-                        onAddLine = { description, part, service ->
-                            viewModel.addServiceLine(job.jobCode, description, part, service) { reload() }
+                        onAddLine = { description, part, service, onSaved ->
+                            viewModel.addServiceLine(job.jobCode, description, part, service) {
+                                onSaved()
+                                reload()
+                            }
                         }
                     )
                 }
@@ -1167,10 +1170,11 @@ fun SpecializedServiceRequestCard(job: JobDetail, onRequest: () -> Unit) {
 }
 
 @Composable
-fun ServiceEntryCard(job: JobDetail, onAddLine: (String, String, String) -> Unit) {
+fun ServiceEntryCard(job: JobDetail, onAddLine: (String, String, String, () -> Unit) -> Unit) {
     var description by remember(job.jobCode) { mutableStateOf("") }
     var partCost by remember(job.jobCode) { mutableStateOf("0") }
     var serviceCharge by remember(job.jobCode) { mutableStateOf("0") }
+    var warning by remember(job.jobCode) { mutableStateOf("") }
     val lineTotal = (partCost.toDoubleOrNull() ?: 0.0) + (serviceCharge.toDoubleOrNull() ?: 0.0)
 
     DetailCard("Service Log Actions") {
@@ -1178,9 +1182,15 @@ fun ServiceEntryCard(job: JobDetail, onAddLine: (String, String, String) -> Unit
             WarningBanner("Manual service log entry is disabled for this job status.")
             return@DetailCard
         }
+        if (warning.isNotBlank()) {
+            WarningBanner(warning)
+        }
         OutlinedTextField(
             value = description,
-            onValueChange = { description = it },
+            onValueChange = {
+                description = it
+                warning = ""
+            },
             label = { Text("Description") },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(10.dp)
@@ -1208,7 +1218,18 @@ fun ServiceEntryCard(job: JobDetail, onAddLine: (String, String, String) -> Unit
         Text("Line Total: ${formatTotal(listOf(lineTotal.toString()))}", color = Color(0xFF0B3A63), fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Button(
-            onClick = { onAddLine(description, partCost, serviceCharge) },
+            onClick = {
+                if (description.trim().isBlank()) {
+                    warning = "Description is required."
+                    return@Button
+                }
+                onAddLine(description.trim(), partCost, serviceCharge) {
+                    description = ""
+                    partCost = "0"
+                    serviceCharge = "0"
+                    warning = ""
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B3A63))

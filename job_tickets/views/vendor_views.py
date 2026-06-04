@@ -86,7 +86,7 @@ def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, re
     if amount <= Decimal('0.00'):
         raise ValueError("Payment amount must be greater than zero.")
 
-    services = list(
+    services_qs = (
         SpecializedService.objects
         .select_for_update()
         .select_related('vendor', 'job_ticket')
@@ -95,8 +95,10 @@ def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, re
             status='Returned from Vendor',
             vendor_balance_amount__gt=0,
         )
-        .order_by('returned_date', 'id')
     )
+    if vendor.workspace_id:
+        services_qs = services_qs.filter(job_ticket__workspace=vendor.workspace)
+    services = list(services_qs.order_by('returned_date', 'id'))
     if not services:
         raise ValueError("No pending vendor balances found.")
 
@@ -219,7 +221,14 @@ def mark_service_returned(request, service_id):
     if denied:
         return denied
 
-    service = get_object_or_404(SpecializedService, id=service_id)
+    service = get_object_or_404(
+        scope_to_workspace(
+            SpecializedService.objects.select_related('job_ticket'),
+            getattr(request, 'current_workspace', None),
+            field='job_ticket__workspace',
+        ),
+        id=service_id,
+    )
     job = service.job_ticket
 
     # Handle POST request with cost data
@@ -296,7 +305,8 @@ def record_vendor_payment(request, vendor_id):
     if denied:
         return denied
 
-    vendor = get_object_or_404(Vendor, id=vendor_id)
+    current_workspace = getattr(request, 'current_workspace', None)
+    vendor = get_object_or_404(scope_to_workspace(Vendor.objects.filter(id=vendor_id), current_workspace))
     payment_scope = (request.POST.get('payment_scope') or 'bulk').strip()
     if payment_scope not in {'bulk', 'single'}:
         payment_scope = 'bulk'
@@ -322,6 +332,8 @@ def record_vendor_payment(request, vendor_id):
                     id=service_id,
                     vendor=vendor,
                 )
+                if current_workspace and service.job_ticket.workspace_id != current_workspace.id:
+                    raise SpecializedService.DoesNotExist
                 payments = [
                     _record_vendor_payment_for_service(
                         service.id,
@@ -421,11 +433,14 @@ def vendor_dashboard(request):
     denied = _staff_access_required(request, "staff_dashboard")
     if denied:
         return denied
-    
+    current_workspace = getattr(request, 'current_workspace', None)
     if request.method == 'POST' and 'add_vendor_submit' in request.POST:
         vendor_form = VendorForm(request.POST)
         if vendor_form.is_valid():
-            vendor_form.save()
+            vendor = vendor_form.save(commit=False)
+            if not vendor.workspace_id:
+                vendor.workspace = current_workspace
+            vendor.save()
             messages.success(request, f"Vendor '{vendor_form.cleaned_data['company_name']}' added successfully.")
             return redirect('vendor_dashboard')
         else:
@@ -436,8 +451,11 @@ def vendor_dashboard(request):
         vendor_form = VendorForm() # For GET request or error display
 
     # Get all vendors and annotate them with the count of jobs currently with them
-    vendors = list(Vendor.objects.annotate(
-        active_jobs_count=Count('services', filter=Q(services__status='Sent to Vendor'))
+    active_jobs_filter = Q(services__status='Sent to Vendor')
+    if current_workspace:
+        active_jobs_filter &= Q(services__job_ticket__workspace=current_workspace)
+    vendors = list(scope_to_workspace(Vendor.objects, current_workspace).annotate(
+        active_jobs_count=Count('services', filter=active_jobs_filter)
     ).order_by('company_name'))
 
     vendor_by_id = {vendor.id: vendor for vendor in vendors}
@@ -449,7 +467,11 @@ def vendor_dashboard(request):
 
     if vendor_by_id:
         settlement_rows = (
-            SpecializedService.objects
+            scope_to_workspace(
+                SpecializedService.objects,
+                current_workspace,
+                field='job_ticket__workspace',
+            )
             .filter(vendor_id__in=vendor_by_id, status='Returned from Vendor')
             .values('vendor_id')
             .annotate(
@@ -468,7 +490,11 @@ def vendor_dashboard(request):
             vendor.total_balance = row['total_balance']
 
         outstanding_services = (
-            SpecializedService.objects
+            scope_to_workspace(
+                SpecializedService.objects,
+                current_workspace,
+                field='job_ticket__workspace',
+            )
             .filter(vendor_id__in=vendor_by_id, status='Returned from Vendor', vendor_balance_amount__gt=0)
             .select_related('job_ticket', 'vendor')
             .order_by('returned_date', 'job_ticket__job_code')
@@ -480,11 +506,21 @@ def vendor_dashboard(request):
 
     # Get all jobs that are currently with any vendor, ordered for easy grouping in the template
     active_services = list(
-        SpecializedService.objects
+        scope_to_workspace(
+            SpecializedService.objects,
+            current_workspace,
+            field='job_ticket__workspace',
+        )
         .filter(status='Sent to Vendor')
         .select_related('job_ticket', 'vendor')
+        .prefetch_related('job_ticket__service_logs')
         .order_by('vendor__company_name', 'sent_date')
     )
+    active_service_jobs = [service.job_ticket for service in active_services]
+    calculate_job_totals(active_service_jobs)
+    for job in active_service_jobs:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
     active_count_by_vendor = {vendor.id: vendor.active_jobs_count for vendor in vendors}
     for service in active_services:
         service.vendor_active_jobs_count = active_count_by_vendor.get(service.vendor_id, 0)
@@ -493,8 +529,11 @@ def vendor_dashboard(request):
         VendorPayment.objects
         .filter(vendor_id__in=vendor_by_id)
         .select_related('vendor', 'specialized_service__job_ticket', 'created_by')
-        .order_by('-payment_date', '-created_at')[:75]
+        .order_by('-payment_date', '-created_at')
     )
+    if current_workspace:
+        recent_payments = recent_payments.filter(specialized_service__job_ticket__workspace=current_workspace)
+    recent_payments = recent_payments[:75]
 
     context = {
         'vendors': vendors,
@@ -514,7 +553,7 @@ def edit_vendor(request, vendor_id):
     if denied:
         return denied
     
-    vendor = get_object_or_404(Vendor, id=vendor_id)
+    vendor = get_object_or_404(scope_to_workspace(Vendor.objects.filter(id=vendor_id), getattr(request, 'current_workspace', None)))
     
     # Update vendor fields
     vendor.company_name = request.POST.get('company_name', vendor.company_name)
@@ -540,10 +579,14 @@ def delete_vendor(request, vendor_id):
     if denied:
         return denied
     
-    vendor = get_object_or_404(Vendor, id=vendor_id)
+    vendor = get_object_or_404(scope_to_workspace(Vendor.objects.filter(id=vendor_id), getattr(request, 'current_workspace', None)))
     
     # Check if vendor has any active services
-    active_services = SpecializedService.objects.filter(vendor=vendor, status='Sent to Vendor').count()
+    active_services = scope_to_workspace(
+        SpecializedService.objects.filter(vendor=vendor, status='Sent to Vendor'),
+        getattr(request, 'current_workspace', None),
+        field='job_ticket__workspace',
+    ).count()
     
     if active_services > 0:
         messages.error(request, f"Cannot delete vendor '{vendor.company_name}' because they have {active_services} active job(s). Please mark those jobs as returned first.")
@@ -555,33 +598,31 @@ def delete_vendor(request, vendor_id):
     
     return redirect('vendor_dashboard')
 
-@login_required
-def vendor_report_detail(request, vendor_id):
-    denied = _staff_access_required(request, "reports_vendor")
-    if denied:
-        return denied
-    if not user_can_view_financial_reports(request.user):
-        return redirect('unauthorized')
-
+def _build_vendor_report_context(request, vendor_id):
     vendor = get_object_or_404(Vendor, id=vendor_id)
-    
+
     # Get date filters from URL parameters
     start_date_str = request.GET.get('start_date')
     end_date_str = request.GET.get('end_date')
-    
+
     # Start with all services for this vendor
     services = SpecializedService.objects.filter(vendor=vendor).select_related('job_ticket')
     payments = VendorPayment.objects.filter(vendor=vendor).select_related('specialized_service__job_ticket', 'created_by')
-    
+    period_query = ''
+
     # Apply date filtering using vendor concept
     if start_date_str and end_date_str:
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+                start_date_str = start_date.isoformat()
+                end_date_str = end_date.isoformat()
+
             start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day))
             end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
-            
+
             # Filter using vendor concept: only jobs returned in the period
             services = services.filter(
                 returned_date__gte=start_of_period,
@@ -591,10 +632,13 @@ def vendor_report_detail(request, vendor_id):
                 payment_date__gte=start_date,
                 payment_date__lte=end_date,
             )
+            period_query = urlencode({'start_date': start_date_str, 'end_date': end_date_str})
         except ValueError:
             # If date parsing fails, show all services
-            pass
-    
+            start_date_str = None
+            end_date_str = None
+            period_query = ''
+
     services = services.order_by('-sent_date')
     payments = payments.order_by('-payment_date', '-created_at')
 
@@ -606,11 +650,11 @@ def vendor_report_detail(request, vendor_id):
         total_balance=Coalesce(Sum('vendor_balance_amount', output_field=DecimalField()), Decimal('0')),
         total_charge=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0')),
     )
-    
+
     total_net_payable = sum_vendor_net_cost(services)
     profit = totals['total_charge'] - total_net_payable
 
-    context = {
+    return {
         'vendor': vendor,
         'services': services,
         'total_jobs': services.count(),
@@ -624,5 +668,140 @@ def vendor_report_detail(request, vendor_id):
         'vendor_payments': payments,
         'start_date': start_date_str,
         'end_date': end_date_str,
+        'period_query': period_query,
+        'generated_at': timezone.now(),
     }
+
+
+@login_required
+def vendor_report_detail(request, vendor_id):
+    denied = _staff_access_required(request, "reports_vendor")
+    if denied:
+        return denied
+    if not user_can_view_financial_reports(request.user):
+        return redirect('unauthorized')
+
+    context = _build_vendor_report_context(request, vendor_id)
     return render(request, 'job_tickets/vendor_report_detail.html', context)
+
+
+@login_required
+def vendor_report_export_csv(request, vendor_id):
+    denied = _staff_access_required(request, "reports_vendor")
+    if denied:
+        return denied
+    if not user_can_view_financial_reports(request.user):
+        return redirect('unauthorized')
+
+    context = _build_vendor_report_context(request, vendor_id)
+    vendor = context['vendor']
+    safe_name = re.sub(r'[^A-Za-z0-9_-]+', '-', vendor.company_name).strip('-') or 'vendor'
+    if context['start_date'] and context['end_date']:
+        period_text = f"{context['start_date']}_to_{context['end_date']}"
+    else:
+        period_text = 'all_time'
+    filename = f"vendor_report_{safe_name}_{period_text}.csv"
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    def money(value):
+        return f"{(_money_or_zero(value)):.2f}"
+
+    def datetime_text(value):
+        return timezone.localtime(value).strftime('%Y-%m-%d %H:%M') if value else ''
+
+    def job_url(job_code):
+        return request.build_absolute_uri(reverse('staff_job_detail', args=[job_code]))
+
+    writer = csv.writer(response)
+    writer.writerow(['Vendor Report'])
+    writer.writerow(['Vendor', vendor.company_name])
+    writer.writerow([
+        'Period',
+        f"{context['start_date']} to {context['end_date']}"
+        if context['start_date'] and context['end_date']
+        else 'All Time',
+    ])
+    writer.writerow(['Generated At', timezone.localtime(context['generated_at']).strftime('%Y-%m-%d %H:%M')])
+    writer.writerow([])
+    writer.writerow(['Financial Summary'])
+    writer.writerow(['Jobs', context['total_jobs']])
+    writer.writerow(['Vendor Bill', money(context['total_vendor_bill'])])
+    writer.writerow(['Discount', money(context['total_vendor_discount'])])
+    writer.writerow(['Net Payable', money(context['total_vendor_cost'])])
+    writer.writerow(['Paid', money(context['total_vendor_paid'])])
+    writer.writerow(['Balance', money(context['total_vendor_balance'])])
+    writer.writerow(['Client Charges', money(context['total_client_charge'])])
+    writer.writerow(['Profit', money(context['total_profit'])])
+    writer.writerow([])
+
+    writer.writerow(['Job History'])
+    writer.writerow([
+        'Job Code',
+        'Customer',
+        'Phone',
+        'Device',
+        'Status',
+        'Date Sent',
+        'Date Returned',
+        'Vendor Bill',
+        'Discount',
+        'Net Payable',
+        'Paid',
+        'Balance',
+        'Client Charge',
+        'Payment Status',
+        'Job URL',
+    ])
+    for service in context['services']:
+        job = service.job_ticket
+        device_label = ' '.join(part for part in [job.device_type, job.device_brand, job.device_model] if part)
+        writer.writerow([
+            job.job_code,
+            job.customer_name,
+            job.customer_phone,
+            device_label,
+            service.get_status_display(),
+            datetime_text(service.sent_date),
+            datetime_text(service.returned_date),
+            money(service.vendor_cost),
+            money(service.vendor_discount_amount),
+            money(service.vendor_net_payable),
+            money(service.vendor_paid_amount),
+            money(service.vendor_balance_amount),
+            money(service.client_charge),
+            service.vendor_payment_status,
+            job_url(job.job_code),
+        ])
+    writer.writerow([])
+
+    writer.writerow(['Payment Transactions'])
+    writer.writerow([
+        'Date',
+        'Job Code',
+        'Method',
+        'Payable Before',
+        'Paid',
+        'Balance',
+        'Reference',
+        'Notes',
+        'Entered By',
+        'Job URL',
+    ])
+    for payment in context['vendor_payments']:
+        payment_job = payment.specialized_service.job_ticket
+        writer.writerow([
+            payment.payment_date.strftime('%Y-%m-%d') if payment.payment_date else '',
+            payment_job.job_code,
+            payment.get_payment_method_display(),
+            money(payment.balance_before),
+            money(payment.amount),
+            money(payment.balance_after),
+            payment.reference_no,
+            payment.notes,
+            payment.created_by.username if payment.created_by else '',
+            job_url(payment_job.job_code),
+        ])
+
+    return response

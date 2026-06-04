@@ -213,14 +213,20 @@
             {{ current_report_date|date:"F Y" }}
         {% endif %}
     </p>
+    <p class="text-muted mb-3">
+        Financial totals below include only jobs closed in this period. Completed / Ready jobs are shown separately as pending value.
+    </p>
     <hr>
 
     <div class="section-title-line">
         <i class="fas fa-tasks"></i>
         <h2>Service Statistics</h2>
     </div>
+    <p class="text-muted mb-3">
+        Total closed includes jobs created in this period and older jobs closed in this period.
+    </p>
     <div class="row g-3 mb-5">
-        <div class="col-md-3">
+        <div class="col-md-4 col-xl-2">
             <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=created">
                 <div class="metric-card">
                     <p class="label">Jobs Created</p>
@@ -228,23 +234,43 @@
                 </div>
             </a>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4 col-xl-2">
             <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=finished">
                 <div class="metric-card metric-green">
-                    <p class="label">Jobs Finished</p>
-                    <p class="value">{{ jobs_finished_count }}</p>
+                    <p class="label">Total Jobs Closed</p>
+                    <p class="value">{{ jobs_closed_count }}</p>
+                    <p class="note">{{ current_month_in_closed_count }} current + {{ previous_month_in_closed_count }} previous</p>
                 </div>
             </a>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=current_in_closed">
+                <div class="metric-card">
+                    <p class="label">Current Month In &amp; Closed</p>
+                    <p class="value">{{ current_month_in_closed_count }}</p>
+                    <p class="note">&#8377;{{ current_month_in_closed_revenue|floatformat:2 }} closed value</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4 col-xl-2">
+            <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=previous_in">
+                <div class="metric-card metric-amber">
+                    <p class="label">Previous Month In Closed</p>
+                    <p class="value">{{ previous_month_in_closed_count }}</p>
+                    <p class="note">&#8377;{{ previous_month_in_closed_revenue|floatformat:2 }} closed value</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4 col-xl-2">
             <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=returned">
                 <div class="metric-card metric-amber">
-                    <p class="label">Jobs Returned</p>
+                    <p class="label">Returned -> Closed</p>
                     <p class="value">{{ jobs_returned_count }}</p>
+                    <p class="note">Closed from Returned status</p>
                 </div>
             </a>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4 col-xl-2">
             <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=vendor">
                 <div class="metric-card metric-dark">
                     <p class="label">Vendor Jobs</p>
@@ -261,9 +287,15 @@
             {% if show_jobs == 'created' %}
                 Jobs Created
             {% elif show_jobs == 'finished' %}
-                Jobs Finished
+                Total Jobs Closed
+            {% elif show_jobs == 'current_in_closed' %}
+                Current Month In &amp; Closed
+            {% elif show_jobs == 'previous_in' %}
+                Previous Month In Closed
+            {% elif show_jobs == 'pending_completed' %}
+                All-time Unclaimed / Ready Jobs
             {% elif show_jobs == 'returned' %}
-                Jobs Returned
+                Returned -> Closed Jobs
             {% elif show_jobs == 'vendor' %}
                 Vendor Jobs
             {% endif %}
@@ -279,6 +311,7 @@
                         <th>Status</th>
                         <th>Technician</th>
                         <th>Date</th>
+                        <th class="text-end">Amount</th>
                         {% if show_jobs == 'vendor' %}<th>Vendor</th>{% endif %}
                     </tr>
                 </thead>
@@ -291,23 +324,16 @@
                         <td><span class="badge bg-secondary">{{ job.status }}</span></td>
                         <td>{{ job.assigned_to.user.username|default:"N/A" }}</td>
                         <td>
-                            {% if show_jobs == 'created' %}
-                                {{ job.created_at|date:"M d, Y" }}
-                            {% elif show_jobs == 'returned' %}
-                                {{ job.updated_at|date:"M d, Y" }}
-                            {% elif show_jobs == 'vendor' %}
-                                {{ job.specialized_service.returned_date|date:"M d, Y" }}
-                            {% else %}
-                                {{ job.updated_at|date:"M d, Y" }}
-                            {% endif %}
+                            {{ job.summary_report_date|date:"M d, Y" }}
                         </td>
+                        <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                         {% if show_jobs == 'vendor' %}
                         <td>{{ job.specialized_service.vendor.company_name|default:"N/A" }}</td>
                         {% endif %}
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="{% if show_jobs == 'vendor' %}7{% else %}6{% endif %}" class="text-center">
+                        <td colspan="{% if show_jobs == 'vendor' %}8{% else %}7{% endif %}" class="text-center">
                             No jobs found for this category.
                         </td>
                     </tr>
@@ -323,116 +349,122 @@
     </div>
     {% endif %}
 
-    <div class="section-title-line">
-        <i class="fas fa-sack-dollar"></i>
-        <h2>Financial Overview</h2>
-    </div>
-    <div class="row g-3 mb-5">
-        <div class="col-md-3">
-            <div class="metric-card metric-dark">
-                <p class="label">Total Revenue</p>
-                <p class="value">&#8377;{{ overall_revenue|floatformat:2 }}</p>
+    <div class="card-box mb-5">
+        <h4 class="mb-3"><i class="fas fa-calendar-check me-1"></i>Closed Job Source Split</h4>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="metric-card">
+                    <p class="label">Current Month In &amp; Closed</p>
+                    <p class="value">&#8377;{{ current_month_in_closed_revenue|floatformat:2 }}</p>
+                    <p class="note">
+                        {{ current_month_in_closed_count }} jobs |
+                        Expense: &#8377;{{ current_month_in_closed_expense|floatformat:2 }} |
+                        Profit: &#8377;{{ current_month_in_closed_profit|floatformat:2 }}
+                    </p>
+                </div>
             </div>
-        </div>
-        <div class="col-md-3">
-            <div class="metric-card metric-red">
-                <p class="label">Total Expense</p>
-                <p class="value">&#8377;{{ overall_expense|floatformat:2 }}</p>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="metric-card metric-amber">
-                <p class="label">Stock Units Sold</p>
-                <p class="value">{{ stock_sales_units }}</p>
-                <p class="note">Across {{ stock_sale_lines_count }} sale lines</p>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="metric-card metric-green">
-                <p class="label">Overall Profit</p>
-                <p class="value">&#8377;{{ overall_profit|floatformat:2 }}</p>
-                <p class="note">Margin: {{ overall_margin|floatformat:2 }}%</p>
+            <div class="col-md-6">
+                <div class="metric-card metric-amber">
+                    <p class="label">Previous Month In Jobs</p>
+                    <p class="value">&#8377;{{ previous_month_in_closed_revenue|floatformat:2 }}</p>
+                    <p class="note">
+                        {{ previous_month_in_closed_count }} jobs |
+                        Expense: &#8377;{{ previous_month_in_closed_expense|floatformat:2 }} |
+                        Profit: &#8377;{{ previous_month_in_closed_profit|floatformat:2 }}
+                    </p>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="card-box mb-5">
-        <h4 class="mb-3"><i class="fas fa-layer-group me-1"></i>Financial Blocks (Revenue / Expense / Profit)</h4>
-        <div class="row g-3">
+        <div class="section-title-line">
+            <i class="fas fa-sack-dollar"></i>
+            <h2>Closed Job Financial Summary</h2>
+        </div>
+        <p class="text-muted mb-3">
+            Revenue, expense, and profit below are calculated only from jobs closed in this report period.
+            Service parts and service labor are shown separately; job-level discount is deducted once from total revenue.
+        </p>
+        <div class="row g-3 mb-4">
             <div class="col-md-4">
-                <div class="metric-card">
-                    <p class="label">Service Block</p>
-                    <p class="note mb-1">Revenue: <strong>&#8377;{{ service_revenue|floatformat:2 }}</strong></p>
-                    <p class="note mb-1">Expense: <strong>&#8377;{{ service_expense|floatformat:2 }}</strong></p>
-                    <p class="note mb-0">Profit: <strong>&#8377;{{ service_profit|floatformat:2 }}</strong></p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="metric-card metric-amber">
-                    <p class="label">Stock Sales Block</p>
-                    <p class="note mb-1">Revenue: <strong>&#8377;{{ stock_sales_income|floatformat:2 }}</strong></p>
-                    <p class="note mb-1">Expense (COGS): <strong>&#8377;{{ stock_sales_cogs|floatformat:2 }}</strong></p>
-                    <p class="note mb-0">Profit: <strong>&#8377;{{ stock_sales_profit|floatformat:2 }}</strong></p>
+                <div class="metric-card metric-dark">
+                    <p class="label">Closed Revenue</p>
+                    <p class="value">&#8377;{{ overall_revenue|floatformat:2 }}</p>
+                    <p class="note">Gross before discount: &#8377;{{ closed_gross_revenue|floatformat:2 }}</p>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="metric-card metric-red">
-                    <p class="label">Vendor Block</p>
-                    <p class="note mb-1">Revenue: <strong>&#8377;{{ vendor_revenue|floatformat:2 }}</strong></p>
-                    <p class="note mb-1">Expense: <strong>&#8377;{{ vendor_expense|floatformat:2 }}</strong></p>
-                    <p class="note mb-0">Profit: <strong>&#8377;{{ vendor_profit|floatformat:2 }}</strong></p>
+                    <p class="label">Closed Expense</p>
+                    <p class="value">&#8377;{{ overall_expense|floatformat:2 }}</p>
+                    <p class="note">Stock COGS + vendor payable</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card metric-green">
+                    <p class="label">Closed Profit</p>
+                    <p class="value">&#8377;{{ overall_profit|floatformat:2 }}</p>
+                    <p class="note">Margin: {{ overall_margin|floatformat:2 }}%</p>
                 </div>
             </div>
         </div>
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Block</th>
+                        <th>Basis</th>
+                        <th class="text-end">Revenue</th>
+                        <th class="text-end">Expense</th>
+                        <th class="text-end">Profit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for block in closed_financial_blocks %}
+                    <tr>
+                        <td><strong>{{ block.label }}</strong></td>
+                        <td class="text-muted small">{{ block.note }}</td>
+                        <td class="text-end {% if block.is_discount %}text-danger{% endif %}">
+                            {% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.revenue_abs|floatformat:2 }}{% else %}{{ block.revenue|floatformat:2 }}{% endif %}
+                        </td>
+                        <td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td>
+                        <td class="text-end {% if block.is_discount %}text-danger{% endif %}">
+                            {% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.profit_abs|floatformat:2 }}{% else %}{{ block.profit|floatformat:2 }}{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="fw-bold table-primary">
+                        <td colspan="2">Total Closed Jobs ({{ jobs_closed_count }})</td>
+                        <td class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
     </div>
 
-    <div class="row g-4 mb-5">
-        <div class="col-md-6">
-            <div class="card-box h-100">
-                <h4><i class="fas fa-chart-pie me-1"></i>Service Breakdown</h4>
-                <hr>
-                <ul class="list-group list-group-flush compact-list">
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Service Parts Revenue
-                        <span class="badge bg-primary rounded-pill">&#8377;{{ service_parts_revenue|floatformat:2 }}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Service Labor Revenue
-                        <span class="badge bg-primary rounded-pill">&#8377;{{ service_labor_revenue|floatformat:2 }}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Service Expense
-                        <span class="badge bg-danger rounded-pill">&#8377;{{ service_expense|floatformat:2 }}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center fw-bold">
-                        Service Profit
-                        <span class="badge bg-success rounded-pill">&#8377;{{ service_profit|floatformat:2 }}</span>
-                    </li>
-                </ul>
+    <div class="card-box mb-5">
+        <h4 class="mb-3"><i class="fas fa-hourglass-half me-1"></i>Ready for Pickup Receivable</h4>
+        <p class="text-muted mb-3">All-time jobs ready for pickup, but not closed/claimed yet.</p>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="metric-card metric-amber">
+                    <p class="label">Ready for Pickup Jobs</p>
+                    <p class="value">{{ ready_for_pickup_count }}</p>
+                    <p class="note">All time, customer not claimed</p>
+                </div>
             </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card-box h-100">
-                <h4><i class="fas fa-industry me-1"></i>Vendor Analysis</h4>
-                <hr>
-                <ul class="list-group list-group-flush compact-list">
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Vendor Jobs Returned
-                        <span class="badge bg-warning text-dark rounded-pill">{{ vendor_jobs_count }}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Vendor Expense
-                        <span class="badge bg-danger rounded-pill">&#8377;{{ vendor_expense|floatformat:2 }}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Vendor Revenue
-                        <span class="badge bg-success rounded-pill">&#8377;{{ vendor_revenue|floatformat:2 }}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center fw-bold">
-                        Vendor Profit
-                        <span class="badge bg-info rounded-pill">&#8377;{{ vendor_profit|floatformat:2 }}</span>
-                    </li>
-                </ul>
+            <div class="col-md-6">
+                <div class="metric-card">
+                    <p class="label">Ready for Pickup Value</p>
+                    <p class="value">&#8377;{{ ready_for_pickup_value|floatformat:2 }}</p>
+                    <p class="note">After discount: &#8377;{{ ready_for_pickup_discount|floatformat:2 }}</p>
+                </div>
             </div>
         </div>
     </div>

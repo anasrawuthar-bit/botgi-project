@@ -35,6 +35,18 @@
                 <a href="{% url 'staff_job_archive_view' %}" class="btn btn-outline-secondary w-100">Clear Filter</a>
             </div>
             {% endif %}
+            <div class="col-md-3 ms-auto">
+                <div class="summary-metrics text-end p-2 bg-white border rounded">
+                    <p class="mb-1">
+                        <strong>Total Jobs:</strong>
+                        <span class="badge bg-success fs-6">{{ total_jobs_count }}</span>
+                    </p>
+                    <p class="mb-0">
+                        <strong>Total Amount:</strong>
+                        <span class="badge bg-info fs-6">&#8377;{{ total_jobs_amount|floatformat:2 }}</span>
+                    </p>
+                </div>
+            </div>
         </div>
     </form>
 
@@ -47,6 +59,7 @@
                     <th>Device</th>
                     <th>Status</th>
                     <th>Created At</th>
+                    <th class="text-end">Amount</th>
                     <th>Assigned Technician</th>
                     <th>Actions</th>
                 </tr>
@@ -59,6 +72,7 @@
                     <td>{{ job.device_type }} - {{ job.device_brand|default:'' }}</td>
                     <td><span class="badge bg-secondary">{{ job.get_status_display }}</span></td>
                     <td>{{ job.created_at|date:"Y-m-d H:i" }}</td>
+                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                     <td>{{ job.assigned_to.user.username|default:"N/A" }}</td>
                     <td>
                         <a href="{% url 'staff_job_detail' job.job_code %}" class="btn btn-sm btn-info text-white">View</a>
@@ -66,7 +80,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center">No jobs found in the selected date range.</td>
+                    <td colspan="8" class="text-center">No jobs found in the selected date range.</td>
                 </tr>
                 {% endfor %}
             </tbody>

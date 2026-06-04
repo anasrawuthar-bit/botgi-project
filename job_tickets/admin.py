@@ -18,6 +18,8 @@ from .gst_utils import normalize_compact_code, normalize_text_code
 from .models import (
     Assignment,
     Client,
+    CompanyUserMembership,
+    CompanyWorkspace,
     CompanyProfile,
     DailyJobCodeSequence,
     DeviceChecklistField,
@@ -1029,7 +1031,19 @@ class CompanyProfileAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
             },
         ),
         ("Banking", {'fields': ('bank_name', 'account_number', 'ifsc_code', 'branch', 'upi_id')}),
-        ("Invoice", {'fields': ('job_code_prefix', 'sales_invoice_next_number', 'enable_gst', 'gst_rate')}),
+        (
+            "Invoice",
+            {
+                'fields': (
+                    'job_code_prefix',
+                    'job_ticket_print_paper_size',
+                    'bill_print_paper_size',
+                    'sales_invoice_next_number',
+                    'enable_gst',
+                    'gst_rate',
+                )
+            },
+        ),
         ("Policy", {'fields': ('terms_conditions', 'warranty_policy')}),
     )
 
@@ -1045,6 +1059,30 @@ class CompanyProfileAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
         actions = super().get_actions(request)
         actions.pop('delete_selected', None)
         return actions
+
+
+class CompanyUserMembershipInline(admin.TabularInline):
+    model = CompanyUserMembership
+    extra = 0
+    raw_id_fields = ('user',)
+
+
+@admin.register(CompanyWorkspace)
+class CompanyWorkspaceAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
+    list_display = ('name', 'owner', 'status', 'plan_name', 'contact_phone', 'contact_email', 'created_at')
+    list_filter = ('status', 'plan_name', 'created_at')
+    search_fields = ('name', 'slug', 'owner__username', 'owner__email', 'contact_phone', 'contact_email')
+    prepopulated_fields = {'slug': ('name',)}
+    raw_id_fields = ('owner',)
+    inlines = (CompanyUserMembershipInline,)
+
+
+@admin.register(CompanyUserMembership)
+class CompanyUserMembershipAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
+    list_display = ('workspace', 'user', 'role', 'is_active', 'joined_at')
+    list_filter = ('role', 'is_active', 'joined_at')
+    search_fields = ('workspace__name', 'user__username', 'user__email')
+    raw_id_fields = ('workspace', 'user')
 
 
 @admin.register(PlatformSettings)

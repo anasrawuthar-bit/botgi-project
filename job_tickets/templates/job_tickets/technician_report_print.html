@@ -1,97 +1,514 @@
 {% extends "job_tickets/base.html" %}
-{% block title %}Technician Report - {{ technician.user.username }}{% endblock %}
+{% block title %}Technician Report - {{ technician_name }}{% endblock %}
 
-{% block content %}
-{% now "Y-m-d H:i" as now %}
+{% block extra_css %}
 <style>
-  .report-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
-  .report-left { display:flex; align-items:center; gap:12px; }
-  .report-logo { height:64px; width:auto; }
-  .report-meta { color:#666; font-size:13px; }
-  .summary-table { width:100%; border-collapse:collapse; table-layout: fixed; }
-  .summary-table th, .summary-table td { border:1px solid #ddd; padding:8px; vertical-align:top; word-break:break-word; }
-  .summary-table thead th { background:#f8f9fa; font-weight:600; }
-  .jobno { width:10%; }
-  .customer { width:20%; }
-  .device { width:20%; }
-  .status { width:10%; }
-  .part, .serv, .disc, .total { width:10%; text-align:right; }
-  .totals { margin-top:14px; font-weight:700; }
-  .print-btn { padding:6px 10px; border:1px solid #777; background:#f7f7f7; cursor:pointer; border-radius:4px; }
-  .report-period { font-size:14px; margin-top:8px; font-weight:bold; }
+  .tech-report {
+    --report-ink: #071833;
+    --report-muted: #667085;
+    --report-line: #d8e0eb;
+    --report-soft: #f6f8fb;
+    --report-accent: #f59e0b;
+    --report-green: #067647;
+    color: var(--report-ink);
+  }
+
+  .tech-report-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    border-left: 4px solid var(--report-accent);
+    padding: 0.25rem 0 0.25rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .tech-report-title {
+    margin: 0;
+    font-size: 2rem;
+    line-height: 1.15;
+    font-weight: 700;
+  }
+
+  .tech-report-subtitle {
+    margin: 0.25rem 0 0;
+    color: var(--report-muted);
+    font-size: 0.95rem;
+  }
+
+  .tech-report-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .tech-report-filter {
+    display: flex;
+    align-items: end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.9rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--report-line);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .filter-field label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #344054;
+    text-transform: uppercase;
+  }
+
+  .filter-field input {
+    min-width: 160px;
+    border: 1px solid #c8d2e0;
+    border-radius: 7px;
+    padding: 0.48rem 0.6rem;
+  }
+
+  .report-brand-line {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1rem 0;
+    border-top: 1px solid var(--report-line);
+    border-bottom: 1px solid var(--report-line);
+    margin-bottom: 1rem;
+  }
+
+  .report-logo {
+    width: 54px;
+    height: 54px;
+    object-fit: contain;
+  }
+
+  .report-company {
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .report-meta {
+    color: var(--report-muted);
+    font-size: 0.9rem;
+  }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .kpi-card {
+    border: 1px solid var(--report-line);
+    border-radius: 8px;
+    padding: 0.9rem;
+    background: #fff;
+    min-height: 88px;
+  }
+
+  .kpi-label {
+    margin: 0;
+    color: var(--report-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .kpi-value {
+    margin: 0.3rem 0 0;
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: var(--report-ink);
+  }
+
+  .kpi-note {
+    margin: 0.2rem 0 0;
+    color: var(--report-muted);
+    font-size: 0.84rem;
+  }
+
+  .kpi-card.good .kpi-value {
+    color: var(--report-green);
+  }
+
+  .report-table-wrap {
+    border: 1px solid var(--report-line);
+    border-radius: 8px;
+    overflow: auto;
+    background: #fff;
+  }
+
+  .report-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1050px;
+  }
+
+  .report-table th,
+  .report-table td {
+    border-bottom: 1px solid var(--report-line);
+    padding: 0.72rem 0.7rem;
+    vertical-align: top;
+  }
+
+  .report-table thead th {
+    background: #071833;
+    color: #fff;
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .report-table tbody tr:nth-child(even) {
+    background: var(--report-soft);
+  }
+
+  .report-table tfoot th,
+  .report-table tfoot td {
+    background: #fff7e8;
+    font-weight: 800;
+    border-bottom: 0;
+  }
+
+  .job-code-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 800;
+    color: #0b5ed7;
+    text-decoration: none;
+  }
+
+  .job-code-link:hover {
+    text-decoration: underline;
+  }
+
+  .cell-main {
+    font-weight: 700;
+  }
+
+  .cell-sub {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--report-muted);
+    font-size: 0.84rem;
+  }
+
+  .money-cell {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    background: #eaf7ef;
+    color: #067647;
+    white-space: nowrap;
+  }
+
+  .status-pill.status-completed {
+    background: #e8f1ff;
+    color: #175cd3;
+  }
+
+  .open-job-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid #c8d2e0;
+    border-radius: 7px;
+    padding: 0.42rem 0.58rem;
+    color: var(--report-ink);
+    background: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .open-job-btn:hover {
+    border-color: #071833;
+    color: #071833;
+  }
+
+  .empty-row {
+    text-align: center;
+    color: var(--report-muted);
+    padding: 2rem !important;
+  }
+
+  @media (max-width: 900px) {
+    .tech-report-head {
+      flex-direction: column;
+    }
+
+    .tech-report-actions {
+      justify-content: flex-start;
+    }
+
+    .kpi-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 560px) {
+    .tech-report-title {
+      font-size: 1.55rem;
+    }
+
+    .kpi-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .filter-field,
+    .filter-field input,
+    .tech-report-filter .btn {
+      width: 100%;
+    }
+  }
 
   @media print {
-    nav.navbar { display:none !important; }
-    .d-print-none { display:none !important; }
-    body { margin:10mm; }
+    .app-sidebar,
+    .sidebar-topbar,
+    .sidebar-backdrop,
+    .sidebar-desktop-toggle,
+    .tech-report-filter,
+    .tech-report-actions,
+    .screen-only,
+    footer {
+      display: none !important;
+    }
+
+    body,
+    body.sidebar-collapsed {
+      background: #fff !important;
+    }
+
+    .app-layout,
+    .app-layout.has-sidebar,
+    .app-main,
+    .container {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      max-width: none !important;
+    }
+
+    .tech-report {
+      font-size: 10pt;
+    }
+
+    .tech-report-head {
+      margin-bottom: 0.6rem;
+    }
+
+    .tech-report-title {
+      font-size: 18pt;
+    }
+
+    .kpi-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.45rem;
+    }
+
+    .kpi-card,
+    .report-table-wrap {
+      border-color: #bbb;
+      box-shadow: none !important;
+    }
+
+    .kpi-card {
+      min-height: auto;
+      padding: 0.45rem;
+    }
+
+    .kpi-value {
+      font-size: 13pt;
+    }
+
+    .report-table-wrap {
+      overflow: visible;
+      border-radius: 0;
+    }
+
+    .report-table {
+      min-width: 0;
+      font-size: 9pt;
+    }
+
+    .report-table th,
+    .report-table td {
+      padding: 0.35rem;
+    }
+
+    .tech-report a::after {
+      content: "" !important;
+    }
   }
 </style>
+{% endblock %}
 
-<div class="report-header">
-  <div class="report-left">
-    {% if company.logo %}
-    <img src="{{ company.logo.url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo"/>
-    {% elif company.logo_url %}
-    <img src="{{ company.logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo"/>
-    {% endif %}
+{% block content %}
+<div class="tech-report">
+  <div class="tech-report-head">
     <div>
-      <h3 style="margin:0">Technician Report - {{ technician.user.username }}</h3>
-      <div class="report-meta">Generated: {{ now }}</div>
-
-      <div class="report-period">
+      <h1 class="tech-report-title">Technician Report - {{ technician_name }}</h1>
+      <p class="tech-report-subtitle">
         {% if report_start_date and report_end_date %}
-            Reporting Period: {{ report_start_date }} to {{ report_end_date }}
+          Reporting Period: {{ report_start_date }} to {{ report_end_date }}
         {% else %}
-            Reporting Period: All Time Completed/Closed Jobs
+          Reporting Period: All Time Completed/Closed Jobs
         {% endif %}
-      </div>
+      </p>
+    </div>
+    <div class="tech-report-actions d-print-none">
+      <a class="btn btn-outline-secondary" href="{% url 'reports_dashboard' %}">
+        <i class="fa-solid fa-arrow-left me-1"></i>Reports
+      </a>
+      <a class="btn btn-outline-success" href="{% url 'technician_report_export_csv' technician.id %}{% if period_query %}?{{ period_query }}{% endif %}">
+        <i class="fa-solid fa-file-csv me-1"></i>CSV
+      </a>
+      <button type="button" class="btn btn-dark" onclick="return BotgiPrintHelper.startPrint();">
+        <i class="fa-solid fa-print me-1"></i>Print
+      </button>
     </div>
   </div>
 
-  <div class="d-print-none">
-    <button type="button" class="print-btn" onclick="return BotgiPrintHelper.startPrint();">Print</button>
+  <form class="tech-report-filter d-print-none" method="get">
+    <div class="filter-field">
+      <label for="tech-report-start">Start Date</label>
+      <input id="tech-report-start" type="date" name="start_date" value="{{ report_start_date|default:'' }}">
+    </div>
+    <div class="filter-field">
+      <label for="tech-report-end">End Date</label>
+      <input id="tech-report-end" type="date" name="end_date" value="{{ report_end_date|default:'' }}">
+    </div>
+    <button type="submit" class="btn btn-primary">
+      <i class="fa-solid fa-filter me-1"></i>Filter
+    </button>
+    <a class="btn btn-outline-secondary" href="{% url 'technician_report_print' technician.id %}">
+      <i class="fa-solid fa-rotate-left me-1"></i>All Time
+    </a>
+  </form>
+
+  <div class="report-brand-line">
+    {% if company.logo %}
+      <img src="{{ company.logo.url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo">
+    {% elif company.logo_url %}
+      <img src="{{ company.logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo">
+    {% endif %}
+    <div>
+      <div class="report-company">{{ company.company_name|default:"Service Billing" }}</div>
+      <div class="report-meta">Generated: {{ generated_at|date:"Y-m-d H:i" }}</div>
+    </div>
   </div>
-</div>
 
-<table class="summary-table" aria-label="Summary table">
-  <thead>
-    <tr>
-      <th class="jobno">Job No</th>
-      <th class="customer">Customer</th>
-      <th class="device">Device</th>
-      <th class="status">Status</th>
-      <th class="part">Part Cost</th>
-      <th class="serv">Service Charge</th>
-      <th class="disc">Discount</th>
-      <th class="total">Net Total</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for job in jobs %}
-    <tr>
-      <td>{{ job.job_code }}</td>
-      <td class="customer">{{ job.customer_name }}</td>
-      <td class="device">
-        {{ job.device_type }}{% if job.device_brand %} {{ job.device_brand }}{% endif %}{% if job.device_model %} {{ job.device_model }}{% endif %}
-      </td>
-      <td class="status">{{ job.status }}</td>
-      <td class="part">&#8377;{{ job.part_total|default_if_none:0|floatformat:2 }}</td>
-      <td class="serv">&#8377;{{ job.service_total|default_if_none:0|floatformat:2 }}</td>
-      <td class="disc">&#8377;{{ job.discount_total|default_if_none:0|floatformat:2 }}</td>
-      <td class="total">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="8">No completed/closed jobs found for this technician in the selected period.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <p class="kpi-label">Jobs Counted</p>
+      <p class="kpi-value">{{ jobs_count }}</p>
+      <p class="kpi-note">{{ completed_count }} completed | {{ closed_count }} closed</p>
+    </div>
+    <div class="kpi-card">
+      <p class="kpi-label">Parts Sales</p>
+      <p class="kpi-value">&#8377;{{ total_parts|floatformat:2 }}</p>
+      <p class="kpi-note">Technician service jobs</p>
+    </div>
+    <div class="kpi-card">
+      <p class="kpi-label">Service Sales</p>
+      <p class="kpi-value">&#8377;{{ total_services|floatformat:2 }}</p>
+      <p class="kpi-note">Vendor service charges excluded</p>
+    </div>
+    <div class="kpi-card good">
+      <p class="kpi-label">Net Income</p>
+      <p class="kpi-value">&#8377;{{ total_income|floatformat:2 }}</p>
+      <p class="kpi-note">Avg &#8377;{{ average_income|floatformat:2 }} per job</p>
+    </div>
+  </div>
 
-<div class="totals">
-  <p>Total Jobs Counted: {{ jobs|length }}</p>
-  <p>Total Parts Sales: &#8377;{{ total_parts|floatformat:2 }}</p>
-  <p>Total Service Sales: &#8377;{{ total_services|floatformat:2 }}</p>
-  <p>Total Discounts: &#8377;{{ total_discounts|floatformat:2 }}</p>
-  <p>Net Income: &#8377;{{ total_income|floatformat:2 }}</p>
+  <div class="report-table-wrap">
+    <table class="report-table" aria-label="Technician report jobs">
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Customer</th>
+          <th>Device</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th class="money-cell">Part Cost</th>
+          <th class="money-cell">Service Charge</th>
+          <th class="money-cell">Discount</th>
+          <th class="money-cell">Net Total</th>
+          <th class="screen-only">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>
+            <a class="job-code-link" href="{% url 'staff_job_detail' job.job_code %}" target="_blank" rel="noopener">
+              <i class="fa-solid fa-arrow-up-right-from-square screen-only"></i>{{ job.job_code }}
+            </a>
+            <span class="cell-sub">{{ job.customer_phone }}</span>
+          </td>
+          <td>
+            <span class="cell-main">{{ job.customer_name }}</span>
+          </td>
+          <td>
+            <span class="cell-main">{{ job.device_label|default:"-" }}</span>
+            {% if job.device_serial %}
+              <span class="cell-sub">S/N: {{ job.device_serial }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="status-pill status-{{ job.status|slugify }}">{{ job.status }}</span>
+          </td>
+          <td>
+            {{ job.report_date|date:"d M Y" }}
+            <span class="cell-sub">{{ job.report_date|time:"H:i" }}</span>
+          </td>
+          <td class="money-cell">&#8377;{{ job.part_total|default_if_none:0|floatformat:2 }}</td>
+          <td class="money-cell">&#8377;{{ job.service_total|default_if_none:0|floatformat:2 }}</td>
+          <td class="money-cell">&#8377;{{ job.discount_total|default_if_none:0|floatformat:2 }}</td>
+          <td class="money-cell"><strong>&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</strong></td>
+          <td class="screen-only">
+            <a class="open-job-btn" href="{% url 'staff_job_detail' job.job_code %}" target="_blank" rel="noopener">
+              <i class="fa-solid fa-up-right-from-square"></i>Open
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="10" class="empty-row">No completed/closed jobs found for this technician in the selected period.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="5">Totals</th>
+          <td class="money-cell">&#8377;{{ total_parts|floatformat:2 }}</td>
+          <td class="money-cell">&#8377;{{ total_services|floatformat:2 }}</td>
+          <td class="money-cell">&#8377;{{ total_discounts|floatformat:2 }}</td>
+          <td class="money-cell">&#8377;{{ total_income|floatformat:2 }}</td>
+          <td class="screen-only"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 </div>
 {% endblock %}
 

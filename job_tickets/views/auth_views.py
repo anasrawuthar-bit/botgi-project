@@ -12,6 +12,7 @@ def home(request):
 def unauthorized(request):
     return render(request, 'job_tickets/unauthorized.html')
 
+
 @never_cache
 def login_view(request):
     next_url = _get_safe_next_url(request)

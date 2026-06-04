@@ -178,6 +178,7 @@
                                                         {% if job.created_at %}
                                                             - {{ job.created_at|date:"d M Y" }}
                                                         {% endif %}
+                                                        - Amount: &#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}
                                                     </div>
                                                 </div>
                                                 {% with s=job.status %}

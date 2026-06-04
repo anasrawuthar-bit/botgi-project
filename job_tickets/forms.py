@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 from django import forms
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
@@ -23,6 +24,7 @@ from .gst_utils import (
     normalize_text_code,
 )
 from .phone_utils import normalize_indian_phone
+
 
 class TechnicianCreationForm(UserCreationForm):
     ROLE_CHOICES = [
@@ -90,15 +92,14 @@ class ServiceLogForm(forms.ModelForm):
         fields = ['description', 'part_cost', 'service_charge']
 
 
-def get_assignable_technician_queryset():
-    return (
-        TechnicianProfile.objects.filter(
-            user__is_active=True,
-            user__is_staff=False,
-        )
-        .select_related('user')
-        .order_by('user__username')
+def get_assignable_technician_queryset(workspace=None):
+    queryset = TechnicianProfile.objects.filter(
+        user__is_active=True,
+        user__is_staff=False,
     )
+    if workspace:
+        queryset = queryset.filter(Q(workspace=workspace) | Q(workspace__isnull=True))
+    return queryset.select_related('user').order_by('user__username')
 
 
 class AssignJobForm(forms.Form):
@@ -109,8 +110,9 @@ class AssignJobForm(forms.Form):
     job_code = forms.CharField(widget=forms.HiddenInput())
 
     def __init__(self, *args, **kwargs):
+        workspace = kwargs.pop('workspace', None)
         super().__init__(*args, **kwargs)
-        self.fields['technician'].queryset = get_assignable_technician_queryset()
+        self.fields['technician'].queryset = get_assignable_technician_queryset(workspace)
 
 class ReworkForm(forms.Form):
     rework_reason = forms.CharField(label="Reason for Rework", widget=forms.Textarea(attrs={'class': 'form-control'}))
@@ -133,6 +135,14 @@ class AssignVendorForm(forms.Form):
     )
     # This hidden field will identify which SpecializedService record we are updating
     specialized_service_id = forms.IntegerField(widget=forms.HiddenInput())
+
+    def __init__(self, *args, **kwargs):
+        workspace = kwargs.pop('workspace', None)
+        super().__init__(*args, **kwargs)
+        queryset = Vendor.objects.all()
+        if workspace:
+            queryset = queryset.filter(Q(workspace=workspace) | Q(workspace__isnull=True))
+        self.fields['vendor'].queryset = queryset.order_by('company_name')
 
 class ReturnVendorServiceForm(forms.Form):
     """Form for when device returns from vendor - requires cost fields"""
@@ -158,8 +168,9 @@ class ReassignTechnicianForm(forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
+        workspace = kwargs.pop('workspace', None)
         super().__init__(*args, **kwargs)
-        self.fields['new_technician'].queryset = get_assignable_technician_queryset()
+        self.fields['new_technician'].queryset = get_assignable_technician_queryset(workspace)
 
 class VendorForm(forms.ModelForm):
     class Meta:
@@ -448,12 +459,15 @@ class InventoryEntryForm(forms.ModelForm):
             'party': forms.Select(attrs={'class': 'form-select'}),
         }
 
-    def __init__(self, *args, entry_type='purchase', **kwargs):
+    def __init__(self, *args, entry_type='purchase', workspace=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.entry_type = entry_type
 
         self.fields['party'].label = "Party"
-        self.fields['party'].queryset = InventoryParty.objects.filter(is_active=True).order_by('name')
+        party_qs = InventoryParty.objects.filter(is_active=True)
+        if workspace:
+            party_qs = party_qs.filter(workspace=workspace)
+        self.fields['party'].queryset = party_qs.order_by('name')
         self.fields['party'].label_from_instance = (
             lambda party: f"{party.name} ({party.phone})" if (party.phone or '').strip() else party.name
         )
@@ -500,7 +514,7 @@ class CompanyProfileForm(forms.ModelForm):
             'lut_bond_enabled', 'annual_turnover_band', 'e_invoice_applicable', 'e_way_bill_enabled',
             'default_place_of_supply_state',
             'bank_name', 'account_number', 'ifsc_code', 'branch', 'upi_id',
-            'job_code_prefix',
+            'job_code_prefix', 'job_ticket_print_paper_size', 'bill_print_paper_size',
             'enable_gst', 'gst_rate',
             'terms_conditions'
         ]
@@ -534,6 +548,8 @@ class CompanyProfileForm(forms.ModelForm):
             'branch': forms.TextInput(attrs={'class': 'form-control'}),
             'upi_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'yourname@paytm'}),
             'job_code_prefix': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'GI'}),
+            'job_ticket_print_paper_size': forms.Select(attrs={'class': 'form-select'}),
+            'bill_print_paper_size': forms.Select(attrs={'class': 'form-select'}),
             'gst_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'terms_conditions': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }
@@ -545,6 +561,8 @@ class CompanyProfileForm(forms.ModelForm):
             'lut_bond_enabled': 'LUT / Bond Enabled',
             'e_invoice_applicable': 'E-Invoice Applicable',
             'e_way_bill_enabled': 'Enable e-Way Bill',
+            'job_ticket_print_paper_size': 'Job Ticket Print Paper Size',
+            'bill_print_paper_size': 'Bill Print Paper Size',
         }
 
     def clean_gstin(self):
@@ -710,8 +728,6 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
                 self.add_error(field_name, error_message)
 
         if delivery_method == WhatsAppIntegrationSettings.DELIVERY_CLOUD_API:
-            if cleaned_data.get('notify_on_created') and not cleaned_data.get('created_template_name'):
-                self.add_error('created_template_name', 'Approved template name is required for created notifications.')
             if cleaned_data.get('notify_on_completed') and not cleaned_data.get('completed_template_name'):
                 self.add_error('completed_template_name', 'Approved template name is required for completed notifications.')
             if cleaned_data.get('notify_on_delivered') and not cleaned_data.get('delivered_template_name'):

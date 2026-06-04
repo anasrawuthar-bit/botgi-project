@@ -12,6 +12,18 @@ from django.utils import timezone
 
 from .models import UserSessionActivity
 from .signals import SESSION_ACTIVITY_KEY
+from .workspaces import get_current_workspace
+
+
+class CurrentWorkspaceMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request.current_workspace = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            request.current_workspace = get_current_workspace(request)
+        return self.get_response(request)
 
 
 class SessionSecurityMiddleware:

@@ -128,11 +128,11 @@
 
         @media print {
             @page {
-                size: A5 portrait;
-                margin: 6mm;
+                size: {{ company.job_ticket_print_page_size_css|default:"A5 portrait" }};
+                margin: {{ company.job_ticket_print_margin_css|default:"6mm" }};
             }
             .receipt-container {
-                width: 148mm;
+                width: {{ company.job_ticket_print_page_width_css|default:"148mm" }};
                 max-width: none;
                 border: none;
                 padding: 8mm;

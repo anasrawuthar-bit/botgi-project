@@ -930,6 +930,60 @@ class TechnicianAssignmentAndChecklistTests(TestCase):
         self.assertEqual(payment.balance_after, Decimal('800.00'))
         self.assertEqual(payment.payment_method, VendorPayment.METHOD_TRANSFER)
 
+    def test_vendor_report_csv_exports_jobs_and_payments(self):
+        vendor = Vendor.objects.create(company_name='CSV Vendor Lab', name='Rafi')
+        job = JobTicket.objects.create(
+            job_code='GI-260407-018',
+            customer_name='CSV Customer',
+            customer_phone='9876543228',
+            device_type='Laptop',
+            device_brand='HP',
+            device_model='ProBook',
+            reported_issue='Vendor CSV export',
+            status='Repairing',
+        )
+        service = SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('2500.00'),
+            vendor_discount_amount=Decimal('500.00'),
+            vendor_paid_amount=Decimal('700.00'),
+            vendor_balance_amount=Decimal('1300.00'),
+            client_charge=Decimal('3500.00'),
+            sent_date=timezone.now() - timedelta(days=1),
+            returned_date=timezone.now(),
+        )
+        VendorPayment.objects.create(
+            vendor=vendor,
+            specialized_service=service,
+            payment_date=timezone.localdate(),
+            payment_method=VendorPayment.METHOD_TRANSFER,
+            amount=Decimal('700.00'),
+            balance_before=Decimal('2000.00'),
+            balance_after=Decimal('1300.00'),
+            reference_no='CSV-TXN-01',
+            created_by=self.staff_user,
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.get(
+            reverse('vendor_report_export_csv', args=[vendor.id]),
+            {
+                'start_date': timezone.localdate().isoformat(),
+                'end_date': timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/csv', response['Content-Type'])
+        body = response.content.decode()
+        self.assertIn('Vendor Report', body)
+        self.assertIn(job.job_code, body)
+        self.assertIn('2000.00', body)
+        self.assertIn('CSV-TXN-01', body)
+        self.assertIn(reverse('staff_job_detail', args=[job.job_code]), body)
+
     def test_vendor_bulk_payment_auto_allocates_oldest_balances(self):
         vendor = Vendor.objects.create(company_name='Bulk Pay Lab', name='Faisal')
         old_job = JobTicket.objects.create(
@@ -1235,6 +1289,8 @@ class GstMasterFormTests(TestCase):
                 'branch': '',
                 'upi_id': '',
                 'job_code_prefix': 'GI',
+                'job_ticket_print_paper_size': CompanyProfile.PRINT_PAPER_A5,
+                'bill_print_paper_size': CompanyProfile.PRINT_PAPER_A4,
                 'enable_gst': 'on',
                 'gst_rate': '18.00',
                 'terms_conditions': 'Standard terms',
@@ -1284,6 +1340,8 @@ class GstMasterFormTests(TestCase):
                 'branch': '',
                 'upi_id': '',
                 'job_code_prefix': 'GI',
+                'job_ticket_print_paper_size': CompanyProfile.PRINT_PAPER_A5,
+                'bill_print_paper_size': CompanyProfile.PRINT_PAPER_A4,
                 'enable_gst': 'on',
                 'gst_rate': '18.00',
                 'terms_conditions': 'Standard terms',
@@ -1334,7 +1392,7 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertIn('phone_number_id', form.errors)
         self.assertIn('access_token', form.errors)
         self.assertIn('template_language_code', form.errors)
-        self.assertIn('created_template_name', form.errors)
+        self.assertNotIn('created_template_name', form.errors)
         self.assertIn('delivered_template_name', form.errors)
         self.assertIn('estimate_template_name', form.errors)
 
@@ -1372,7 +1430,7 @@ class WhatsAppCloudApiTests(TestCase):
 
     @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
     @patch('job_tickets.whatsapp_service.requests.request')
-    def test_job_notification_uses_cloud_template_delivery(self, mock_request, _mock_on_commit):
+    def test_job_notification_uses_cloud_document_delivery_for_created_ticket(self, mock_request, _mock_on_commit):
         job = JobTicket.objects.create(
             job_code='GI-260420-301',
             customer_name='Anand',
@@ -1405,24 +1463,30 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertTrue(result['ok'])
         queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
         self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
-        self.assertEqual(queue.transport, 'whatsapp-cloud-api-template')
+        self.assertEqual(queue.transport, 'whatsapp-cloud-api-document')
         self.assertEqual(queue.bridge_message_id, 'wamid.HBgM123')
+        self.assertIn('/client-receipt/', queue.pdf_url)
+        self.assertIn('/pdf/', queue.pdf_url)
+        self.assertEqual(queue.filename, f'{job.job_code}.pdf')
+        self.assertIn('/client-receipt/', queue.caption)
+        self.assertIn('/client-status/', queue.caption)
 
         payload = mock_request.call_args.kwargs['json']
-        self.assertEqual(payload['template']['name'], 'job_created_update')
-        body_component = payload['template']['components'][0]
-        button_component = payload['template']['components'][1]
-        parameters = body_component['parameters']
-        self.assertEqual(parameters[0]['text'], 'Anand')
-        self.assertEqual(parameters[1]['text'], job.job_code)
-        self.assertIn('/client-receipt/', parameters[2]['text'])
-        self.assertEqual(button_component['type'], 'button')
-        self.assertEqual(button_component['sub_type'], 'url')
-        self.assertEqual(button_component['parameters'][0]['text'], f'{job.job_code}/')
+        self.assertEqual(payload['type'], 'document')
+        self.assertEqual(payload['to'], '919876543210')
+        self.assertEqual(payload['document']['link'], queue.pdf_url)
+        self.assertEqual(payload['document']['filename'], f'{job.job_code}.pdf')
+        self.assertIn('/client-receipt/', payload['document']['caption'])
+
+        pdf_path = queue.pdf_url.replace('https://botgi.example.com', '')
+        pdf_response = self.client.get(pdf_path)
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
+        self.assertTrue(pdf_response.content.startswith(b'%PDF-'))
 
     @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
     @patch('job_tickets.whatsapp_service.requests.request')
-    def test_job_notification_uses_bridge_rendered_template_delivery(self, mock_request, _mock_on_commit):
+    def test_job_notification_uses_bridge_document_delivery_for_created_ticket(self, mock_request, _mock_on_commit):
         job = JobTicket.objects.create(
             job_code='GI-260420-304',
             customer_name='Nikhil',
@@ -1458,15 +1522,16 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertTrue(result['ok'])
         queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
         self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
-        self.assertEqual(queue.transport, 'whatsapp-bridge-text')
+        self.assertEqual(queue.transport, 'whatsapp-bridge-document')
         self.assertEqual(queue.bridge_message_id, 'bridge-msg-123')
 
         self.assertEqual(mock_request.call_args.args[0], 'POST')
-        self.assertEqual(mock_request.call_args.args[1], 'http://127.0.0.1:3001/api/messages/send')
+        self.assertEqual(mock_request.call_args.args[1], 'http://127.0.0.1:3001/api/messages/send-pdf')
         payload = mock_request.call_args.kwargs['json']
         self.assertEqual(payload['to'], '919876543210')
-        self.assertIn('Hello Nikhil, ticket GI-260420-304.', payload['message'])
-        self.assertIn('/client-receipt/', payload['message'])
+        self.assertIn('/client-receipt/', payload['pdf_url'])
+        self.assertIn('/client-receipt/', payload['caption'])
+        self.assertEqual(payload['filename'], f'{job.job_code}.pdf')
 
     @patch('job_tickets.whatsapp_service.transaction.on_commit', side_effect=lambda callback: callback())
     @patch('job_tickets.whatsapp_service.requests.request')
@@ -1487,9 +1552,9 @@ class WhatsAppCloudApiTests(TestCase):
         self.settings_obj.access_token = 'token-123'
         self.settings_obj.public_site_url = 'https://botgi.example.com'
         self.settings_obj.template_language_code = 'en_US'
-        self.settings_obj.notify_on_created = True
-        self.settings_obj.created_template_name = 'job_created_update'
-        self.settings_obj.created_template = 'Hello {customer_name}, ticket {job_code}. Receipt: {receipt_link}'
+        self.settings_obj.notify_on_completed = True
+        self.settings_obj.completed_template_name = 'job_completed_update'
+        self.settings_obj.completed_template = 'Hello {customer_name}, ticket {job_code}. Track: {status_link}'
         self.settings_obj.save()
 
         translation_missing_response = Mock()
@@ -1501,7 +1566,7 @@ class WhatsAppCloudApiTests(TestCase):
                 'type': 'OAuthException',
                 'code': 132001,
                 'error_data': {
-                    'details': 'template name (job_created_update) does not exist in en_US',
+                    'details': 'template name (job_completed_update) does not exist in en_US',
                 },
             }
         }
@@ -1512,7 +1577,7 @@ class WhatsAppCloudApiTests(TestCase):
         success_response.json.return_value = {'messages': [{'id': 'wamid.HBgM456'}]}
         mock_request.side_effect = [translation_missing_response, success_response]
 
-        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_CREATED)
+        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_COMPLETED)
 
         self.assertTrue(result['ok'])
         self.assertEqual(mock_request.call_count, 2)
@@ -1521,7 +1586,7 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertEqual(first_payload['template']['language']['code'], 'en_US')
         self.assertEqual(second_payload['template']['language']['code'], 'en')
 
-        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_COMPLETED)
         self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
         self.assertEqual(queue.bridge_message_id, 'wamid.HBgM456')
 
@@ -1544,9 +1609,9 @@ class WhatsAppCloudApiTests(TestCase):
         self.settings_obj.access_token = 'token-123'
         self.settings_obj.public_site_url = 'https://botgi.example.com'
         self.settings_obj.template_language_code = 'en'
-        self.settings_obj.notify_on_created = True
-        self.settings_obj.created_template_name = 'job_created_update'
-        self.settings_obj.created_template = 'Hello {customer_name}, ticket {job_code}. Receipt: {receipt_link}'
+        self.settings_obj.notify_on_completed = True
+        self.settings_obj.completed_template_name = 'job_completed_update'
+        self.settings_obj.completed_template = 'Hello {customer_name}, ticket {job_code}. Track: {status_link}'
         self.settings_obj.save()
 
         button_error_response = Mock()
@@ -1569,7 +1634,7 @@ class WhatsAppCloudApiTests(TestCase):
         success_response.json.return_value = {'messages': [{'id': 'wamid.HBgM789'}]}
         mock_request.side_effect = [button_error_response, success_response]
 
-        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_CREATED)
+        result = send_job_whatsapp_notification(job, MessageQueue.EVENT_COMPLETED)
 
         self.assertTrue(result['ok'])
         self.assertEqual(mock_request.call_count, 2)
@@ -1579,7 +1644,7 @@ class WhatsAppCloudApiTests(TestCase):
         self.assertEqual(len(second_components), 1)
         self.assertEqual(second_components[0]['type'], 'body')
 
-        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
+        queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_COMPLETED)
         self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
         self.assertEqual(queue.bridge_message_id, 'wamid.HBgM789')
 
@@ -1739,6 +1804,147 @@ class DiscountAwareReportsTests(TestCase):
         self.assertEqual(context['total_income'], Decimal('360.00'))
         self.assertEqual(context['jobs'][0].discount_total, Decimal('40.00'))
         self.assertEqual(context['jobs'][0].net_total, Decimal('360.00'))
+
+    def test_technician_report_print_links_jobs_and_csv(self):
+        job = self._create_finished_job('GI-260403-903', '150.00', '250.00', '40.00')
+
+        response = self.client.get(
+            reverse('technician_report_print', args=[self.technician.id]),
+            {
+                'start_date': self.report_date.isoformat(),
+                'end_date': self.report_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('staff_job_detail', args=[job.job_code]))
+        self.assertContains(response, reverse('technician_report_export_csv', args=[self.technician.id]))
+
+    def test_technician_report_csv_exports_net_totals_and_job_url(self):
+        job = self._create_finished_job('GI-260403-904', '150.00', '250.00', '40.00')
+
+        response = self.client.get(
+            reverse('technician_report_export_csv', args=[self.technician.id]),
+            {
+                'start_date': self.report_date.isoformat(),
+                'end_date': self.report_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/csv', response['Content-Type'])
+        body = response.content.decode()
+        self.assertIn(job.job_code, body)
+        self.assertIn('360.00', body)
+        self.assertIn(reverse('staff_job_detail', args=[job.job_code]), body)
+
+    def test_monthly_summary_splits_service_parts_and_labor_blocks(self):
+        job = self._create_finished_job('GI-260403-905', '150.00', '250.00', '40.00')
+        JobTicket.objects.filter(pk=job.pk).update(
+            status='Closed',
+            closed_at=self.report_timestamp,
+            updated_at=self.report_timestamp,
+        )
+
+        captured = {}
+
+        def fake_render(_request, _template_name, context):
+            captured['context'] = context
+            return HttpResponse('ok')
+
+        with patch('job_tickets.views.report_views.render', side_effect=fake_render):
+            response = self.client.get(
+                reverse('print_monthly_summary_report'),
+                {
+                    'start_date': self.report_date.isoformat(),
+                    'end_date': self.report_date.isoformat(),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        blocks = {
+            block['label']: block
+            for block in captured['context']['closed_financial_blocks']
+        }
+        self.assertEqual(blocks['Service Parts']['revenue'], Decimal('150.00'))
+        self.assertEqual(blocks['Service Labor']['revenue'], Decimal('250.00'))
+        self.assertEqual(captured['context']['closed_gross_revenue'], Decimal('400.00'))
+        self.assertEqual(captured['context']['overall_revenue'], Decimal('360.00'))
+
+    def test_monthly_summary_csv_includes_closed_bill_balance(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260403-906',
+            customer_name='Closed Credit Customer',
+            customer_phone='9876543230',
+            device_type='Laptop',
+            reported_issue='Closed credit balance',
+            status='Closed',
+            assigned_to=self.technician,
+            closed_at=self.report_timestamp,
+        )
+        JobTicket.objects.filter(pk=job.pk).update(updated_at=self.report_timestamp)
+        product = Product.objects.create(
+            name='Report Product',
+            sku='RPT-001',
+            unit_price=Decimal('500.00'),
+            cost_price=Decimal('300.00'),
+            stock_quantity=5,
+        )
+        party = InventoryParty.objects.create(
+            name='Closed Credit Customer',
+            party_type='customer',
+            phone='9876543230',
+        )
+        bill = InventoryBill.objects.create(
+            bill_number='SALE-RPT-001',
+            entry_type='sale',
+            entry_date=self.report_date,
+            invoice_number='SALE-RPT-001',
+            job_ticket=job,
+            party=party,
+            created_by=self.staff_user,
+        )
+        InventoryEntry.objects.create(
+            entry_number='SE-RPT-001',
+            entry_type='sale',
+            entry_date=self.report_date,
+            bill=bill,
+            invoice_number='SALE-RPT-001',
+            job_ticket=job,
+            party=party,
+            product=product,
+            quantity=1,
+            unit_price=Decimal('500.00'),
+            taxable_amount=Decimal('500.00'),
+            total_amount=Decimal('500.00'),
+            stock_before=5,
+            stock_after=4,
+            created_by=self.staff_user,
+        )
+        InventoryCreditPayment.objects.create(
+            party=party,
+            bill=bill,
+            direction=InventoryCreditPayment.DIRECTION_RECEIVABLE,
+            payment_date=self.report_date,
+            payment_method=InventoryCreditPayment.METHOD_CASH,
+            amount=Decimal('200.00'),
+            balance_before=Decimal('500.00'),
+            balance_after=Decimal('300.00'),
+            created_by=self.staff_user,
+        )
+
+        response = self.client.get(
+            reverse('export_monthly_summary_csv'),
+            {
+                'start_date': self.report_date.isoformat(),
+                'end_date': self.report_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('Closed Bill Balance,300.00', body)
+        self.assertIn('Closed Bill Paid,200.00', body)
 
 
 class InventoryUxDefaultsTests(TestCase):
@@ -2856,7 +3062,7 @@ class StaffJobCreationWhatsAppTests(TestCase):
         self.settings_obj.save()
 
     @patch('job_tickets.whatsapp_service.requests.request')
-    def test_staff_dashboard_job_create_sends_created_template_message(self, mock_request):
+    def test_staff_dashboard_job_create_sends_created_ticket_pdf_message(self, mock_request):
         mock_response = Mock()
         mock_response.ok = True
         mock_response.status_code = 200
@@ -2888,9 +3094,15 @@ class StaffJobCreationWhatsAppTests(TestCase):
 
         queue = MessageQueue.objects.get(job_ticket=job, event_type=MessageQueue.EVENT_CREATED)
         self.assertEqual(queue.status, MessageQueue.STATUS_SENT)
-        self.assertEqual(queue.transport, 'whatsapp-cloud-api-template')
+        self.assertEqual(queue.transport, 'whatsapp-cloud-api-document')
         self.assertEqual(queue.bridge_message_id, 'wamid.HBgM123456')
+        self.assertIn('/client-receipt/', queue.pdf_url)
+        self.assertIn('/pdf/', queue.pdf_url)
+        self.assertIn('/client-receipt/', queue.caption)
+        self.assertEqual(queue.filename, f'{job.job_code}.pdf')
 
         payload = mock_request.call_args.kwargs['json']
-        self.assertEqual(payload['template']['name'], 'job_created_update')
+        self.assertEqual(payload['type'], 'document')
         self.assertEqual(payload['to'], '919876543210')
+        self.assertEqual(payload['document']['link'], queue.pdf_url)
+        self.assertIn('/client-receipt/', payload['document']['caption'])

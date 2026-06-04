@@ -26,12 +26,9 @@ def reports_dashboard(request):
         Q(status='Completed') | Q(status='Ready for Pickup')
     ).count()
 
-    # Get accurate count of all jobs that have been returned (including those now closed)
-    returned_job_ids = JobTicketLog.objects.filter(
-        action='STATUS',
-        details__icontains="'Returned'"
-    ).values_list('job_ticket_id', flat=True).distinct()
-    returned_count = JobTicket.objects.filter(id__in=returned_job_ids).count()
+    # Returned means either currently Returned, or closed directly from Returned status.
+    closed_returned_jobs_all_time = get_returned_to_closed_jobs(all_jobs)
+    returned_count = all_jobs.filter(status='Returned').count() + closed_returned_jobs_all_time.count()
     closed_count = all_jobs.filter(status='Closed').count()
     
     # Static data for HTML limits
@@ -204,15 +201,20 @@ def reports_dashboard(request):
     )
     todays_jobs_completed = todays_completed_jobs_qs.count()
 
-    todays_finished_jobs_qs = JobTicket.objects.filter(
-        status__in=['Completed', 'Closed'],
-        updated_at__range=(start_of_day, end_of_day)
-    )
+    def today_service_totals(jobs_queryset):
+        logs = ServiceLog.objects.filter(job_ticket__in=jobs_queryset)
+        spare_total = logs.aggregate(
+            total=Coalesce(Sum('part_cost', output_field=DecimalField()), Decimal('0.00'))
+        )['total']
+        service_total = logs.aggregate(
+            total=Coalesce(Sum('service_charge', output_field=DecimalField()), Decimal('0.00'))
+        )['total']
+        return spare_total, service_total, spare_total + service_total
 
-    # Calculate income from jobs completed/closed *today*
-    todays_logs = ServiceLog.objects.filter(job_ticket__in=todays_finished_jobs_qs)
-    todays_total_spare = todays_logs.aggregate(total=Coalesce(Sum('part_cost', output_field=DecimalField()), Decimal('0.00')))['total']
-    todays_total_service = todays_logs.aggregate(total=Coalesce(Sum('service_charge', output_field=DecimalField()), Decimal('0.00')))['total']
+    todays_completed_spare, todays_completed_service, todays_completed_total = today_service_totals(todays_completed_jobs_qs)
+    todays_closed_spare, todays_closed_service, todays_closed_total = today_service_totals(todays_jobs_out_qs)
+    todays_total_spare = todays_completed_spare + todays_closed_spare
+    todays_total_service = todays_completed_service + todays_closed_service
 
 
     # --- 4. CONTEXT BUILDING ---
@@ -223,6 +225,12 @@ def reports_dashboard(request):
         'todays_jobs_completed': todays_jobs_completed,
         'todays_total_spare': todays_total_spare,
         'todays_total_service': todays_total_service,
+        'todays_completed_spare': todays_completed_spare,
+        'todays_completed_service': todays_completed_service,
+        'todays_completed_total': todays_completed_total,
+        'todays_closed_spare': todays_closed_spare,
+        'todays_closed_service': todays_closed_service,
+        'todays_closed_total': todays_closed_total,
 
         'company_start_date': company_start_date.strftime('%Y-%m-%d'),
         'today_date_str': today_date_str,
@@ -370,37 +378,34 @@ def reports_chart_data(request):
 
 # job_tickets/views.py
 
-@login_required
-def technician_report_print(request, tech_id):
-    denied = _staff_access_required(request, "reports_technician")
-    if denied:
-        return denied
-    if not user_can_view_financial_reports(request.user):
-        return redirect('unauthorized')
-
+def _build_technician_report_context(request, tech_id):
     finished_statuses = ['Completed', 'Closed']
     technician = get_object_or_404(TechnicianProfile, id=tech_id)
-    
+
     # 1. GET DATE FILTERS from URL (These are passed from the Reports Dashboard)
     start_date_str = request.GET.get('start_date')
     end_date_str = request.GET.get('end_date')
 
     # Start with base filters: assigned technician and finished statuses
     jobs_filter = Q(assigned_to=technician, status__in=finished_statuses)
-    
+
     # 2. APPLY DATE FILTERING
     if start_date_str and end_date_str:
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+                start_date_str = start_date.isoformat()
+                end_date_str = end_date.isoformat()
+
             # Create Timezone-Aware Boundaries
             start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0))
             end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
-            
+
             # Filter jobs by the date they were last updated (completion/closure date)
             jobs_filter &= Q(updated_at__gte=start_of_period, updated_at__lte=end_of_period)
-            
+
         except ValueError:
             messages.error(request, "Invalid date format provided for report filtering.")
             # If dates are bad, the report defaults to All Time (jobs_filter remains simple)
@@ -410,13 +415,17 @@ def technician_report_print(request, tech_id):
         # If no dates provided, ensure variables are None to display 'All Time' header
         start_date_str = None
         end_date_str = None
-    
+
     # 3. Fetch Jobs
-    jobs = list(JobTicket.objects.filter(jobs_filter).prefetch_related('service_logs').order_by('-updated_at'))
+    jobs = list(
+        JobTicket.objects.filter(jobs_filter)
+        .prefetch_related('service_logs')
+        .order_by('-updated_at', '-id')
+    )
 
     # 4. Calculate Totals excluding vendor service charges
     calculate_job_totals(jobs, exclude_vendor_charges=True)
-    
+
     total_parts_all = sum(job.part_total for job in jobs)
     total_services_all = sum(job.service_total for job in jobs)
     total_discounts_all = Decimal('0.00')
@@ -424,22 +433,128 @@ def technician_report_print(request, tech_id):
     for job in jobs:
         job.discount_total = _money_or_zero(job.discount_amount)
         job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+        job.device_label = ' '.join(
+            part for part in [job.device_type, job.device_brand, job.device_model]
+            if part
+        )
+        job.report_date = job.updated_at
         total_discounts_all += job.discount_total
         total_income += job.net_total
 
-    context = {
-        'company': CompanyProfile.get_profile(),
+    jobs_count = len(jobs)
+    completed_count = sum(1 for job in jobs if job.status == 'Completed')
+    closed_count = sum(1 for job in jobs if job.status == 'Closed')
+    average_income = total_income / jobs_count if jobs_count else Decimal('0.00')
+    technician_name = technician.user.get_full_name() or technician.user.username
+    period_query = ''
+    if start_date_str and end_date_str:
+        period_query = urlencode({'start_date': start_date_str, 'end_date': end_date_str})
+
+    return {
+        'company': CompanyProfile.get_profile(getattr(request, 'current_workspace', None)),
         'technician': technician,
+        'technician_name': technician_name,
         'jobs': jobs,
+        'jobs_count': jobs_count,
+        'completed_count': completed_count,
+        'closed_count': closed_count,
         'total_parts': total_parts_all,
         'total_services': total_services_all,
         'total_discounts': total_discounts_all,
         'total_income': total_income,
+        'average_income': average_income,
         # Pass dates for display in the report header
-        'report_start_date': start_date_str, 
+        'report_start_date': start_date_str,
         'report_end_date': end_date_str,
+        'period_query': period_query,
+        'generated_at': timezone.now(),
     }
+
+
+@login_required
+def technician_report_print(request, tech_id):
+    denied = _staff_access_required(request, "reports_technician")
+    if denied:
+        return denied
+    if not user_can_view_financial_reports(request.user):
+        return redirect('unauthorized')
+
+    context = _build_technician_report_context(request, tech_id)
     return render(request, 'job_tickets/technician_report_print.html', context)
+
+
+@login_required
+def technician_report_export_csv(request, tech_id):
+    denied = _staff_access_required(request, "reports_technician")
+    if denied:
+        return denied
+    if not user_can_view_financial_reports(request.user):
+        return redirect('unauthorized')
+
+    context = _build_technician_report_context(request, tech_id)
+    safe_name = re.sub(r'[^A-Za-z0-9_-]+', '-', context['technician_name']).strip('-') or 'technician'
+    if context['report_start_date'] and context['report_end_date']:
+        period_text = f"{context['report_start_date']}_to_{context['report_end_date']}"
+    else:
+        period_text = 'all_time'
+    filename = f"technician_report_{safe_name}_{period_text}.csv"
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    def money(value):
+        return f"{(_money_or_zero(value)):.2f}"
+
+    writer = csv.writer(response)
+    writer.writerow(['Technician Report'])
+    writer.writerow(['Technician', context['technician_name']])
+    writer.writerow([
+        'Period',
+        f"{context['report_start_date']} to {context['report_end_date']}"
+        if context['report_start_date'] and context['report_end_date']
+        else 'All Time Completed/Closed Jobs',
+    ])
+    writer.writerow(['Generated At', timezone.localtime(context['generated_at']).strftime('%Y-%m-%d %H:%M')])
+    writer.writerow([])
+    writer.writerow(['Summary'])
+    writer.writerow(['Jobs Counted', context['jobs_count']])
+    writer.writerow(['Completed Jobs', context['completed_count']])
+    writer.writerow(['Closed Jobs', context['closed_count']])
+    writer.writerow(['Total Parts Sales', money(context['total_parts'])])
+    writer.writerow(['Total Service Sales', money(context['total_services'])])
+    writer.writerow(['Total Discounts', money(context['total_discounts'])])
+    writer.writerow(['Net Income', money(context['total_income'])])
+    writer.writerow(['Average Net Per Job', money(context['average_income'])])
+    writer.writerow([])
+    writer.writerow([
+        'Job Code',
+        'Customer',
+        'Phone',
+        'Device',
+        'Status',
+        'Report Date',
+        'Part Cost',
+        'Service Charge',
+        'Discount',
+        'Net Total',
+        'Job URL',
+    ])
+    for job in context['jobs']:
+        writer.writerow([
+            job.job_code,
+            job.customer_name,
+            job.customer_phone,
+            job.device_label,
+            job.status,
+            timezone.localtime(job.report_date).strftime('%Y-%m-%d %H:%M') if job.report_date else '',
+            money(job.part_total),
+            money(job.service_total),
+            money(job.discount_total),
+            money(job.net_total),
+            request.build_absolute_uri(reverse('staff_job_detail', args=[job.job_code])),
+        ])
+
+    return response
 
 @login_required
 def print_pending_jobs_report(request):
@@ -447,7 +562,11 @@ def print_pending_jobs_report(request):
     if not request.user.is_staff or not access.get("reports_overview"):
         return redirect('unauthorized')
     
-    pending_jobs = JobTicket.objects.filter(status='Pending').order_by('created_at')
+    pending_jobs = list(JobTicket.objects.filter(status='Pending').prefetch_related('service_logs').order_by('created_at'))
+    calculate_job_totals(pending_jobs)
+    for job in pending_jobs:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
     company = CompanyProfile.get_profile()
     
     context = {
@@ -504,21 +623,57 @@ def export_monthly_summary_csv(request):
     writer = csv.writer(response)
     writer.writerow(['Financial Summary Report'])
     writer.writerow(['Period', f"{period['start_date_str']} to {period['end_date_str']}"])
+    writer.writerow(['Basis', 'Closed jobs only for financial totals'])
+    writer.writerow(['Unclaimed / Ready Basis', 'All-time jobs with Completed or Ready for Pickup status'])
     writer.writerow([])
     writer.writerow(['Job Statistics'])
     writer.writerow(['Jobs Created', context['jobs_created_count']])
-    writer.writerow(['Jobs Finished', context['jobs_finished_count']])
-    writer.writerow(['Jobs Returned', context['jobs_returned_count']])
-    writer.writerow(['Vendor Jobs', context['vendor_jobs_count']])
+    writer.writerow(['Jobs Closed', context['jobs_closed_count']])
+    writer.writerow(['Current Month In Jobs Closed', context['current_month_in_closed_count']])
+    writer.writerow(['Previous Month In Jobs Closed', context['previous_month_in_closed_count']])
+    writer.writerow(['All-time Unclaimed / Ready Jobs', context['pending_completed_count']])
+    writer.writerow(['All-time Unclaimed / Ready Value', money(context['pending_completed_value'])])
+    writer.writerow(['All-time Ready for Pickup Jobs', context['ready_for_pickup_count']])
+    writer.writerow(['All-time Ready for Pickup Value', money(context['ready_for_pickup_value'])])
+    writer.writerow(['Returned -> Closed Jobs', context['jobs_returned_count']])
+    writer.writerow(['Closed Vendor Jobs', context['vendor_jobs_count']])
     writer.writerow([])
 
-    writer.writerow(['Financial Blocks'])
-    writer.writerow(['Block', 'Revenue', 'Expense', 'Profit'])
-    writer.writerow(['Service', money(context['service_revenue']), money(context['service_expense']), money(context['service_profit'])])
-    writer.writerow(['Stock Sales', money(context['stock_sales_income']), money(context['stock_sales_cogs']), money(context['stock_sales_profit'])])
-    writer.writerow(['Vendor', money(context['vendor_revenue']), money(context['vendor_expense']), money(context['vendor_profit'])])
-    writer.writerow(['Overall', money(context['overall_revenue']), money(context['overall_expense']), money(context['overall_profit'])])
+    writer.writerow(['Closed Job Source Split'])
+    writer.writerow(['Source', 'Revenue', 'Expense', 'Profit'])
+    writer.writerow([
+        'Current Month In Jobs Closed',
+        money(context['current_month_in_closed_revenue']),
+        money(context['current_month_in_closed_expense']),
+        money(context['current_month_in_closed_profit']),
+    ])
+    writer.writerow([
+        'Previous Month In Jobs Closed',
+        money(context['previous_month_in_closed_revenue']),
+        money(context['previous_month_in_closed_expense']),
+        money(context['previous_month_in_closed_profit']),
+    ])
+    writer.writerow([])
+
+    writer.writerow(['Closed Job Financial Summary'])
+    writer.writerow(['Closed Revenue', money(context['overall_revenue'])])
+    writer.writerow(['Closed Expense', money(context['overall_expense'])])
+    writer.writerow(['Closed Profit', money(context['overall_profit'])])
     writer.writerow(['Overall Margin %', f"{(context['overall_margin'] or Decimal('0.00')):.2f}"])
+    writer.writerow(['Gross Revenue Before Discount', money(context['closed_gross_revenue'])])
+    writer.writerow(['Total Discount Applied Once', money(context['total_discounts'])])
+    writer.writerow([])
+
+    writer.writerow(['Closed Job Financial Blocks'])
+    writer.writerow(['Block', 'Basis', 'Revenue', 'Expense', 'Profit'])
+    for block in context['closed_financial_blocks']:
+        writer.writerow([
+            block['label'],
+            block['note'],
+            money(block['revenue']),
+            money(block['expense']),
+            money(block['profit']),
+        ])
     writer.writerow([])
 
     writer.writerow(['Stock Sales Summary'])
@@ -644,8 +799,14 @@ def daily_jobs_report(request, date_str, filter_type):
         messages.error(request, "Invalid filter type provided.")
         return redirect('reports_dashboard')
 
+    jobs = list(jobs_queryset.prefetch_related('service_logs'))
+    calculate_job_totals(jobs)
+    for job in jobs:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+
     context = {
-        'jobs': jobs_queryset,
+        'jobs': jobs,
         'report_title': report_title,
     }
     return render(request, 'job_tickets/daily_jobs_report.html', context)

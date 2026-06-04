@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db import models, transaction
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.utils.text import slugify
 from django.urls import reverse
 
 from .gst_utils import (
@@ -14,7 +15,85 @@ from .gst_utils import (
 )
 
 # A user profile to link to the technician
+class CompanyWorkspace(models.Model):
+    STATUS_TRIAL = 'trial'
+    STATUS_ACTIVE = 'active'
+    STATUS_SUSPENDED = 'suspended'
+    STATUS_CHOICES = [
+        (STATUS_TRIAL, 'Trial'),
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_SUSPENDED, 'Suspended'),
+    ]
+
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
+    owner = models.ForeignKey(User, on_delete=models.PROTECT, related_name='owned_workspaces')
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=20, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_TRIAL, db_index=True)
+    plan_name = models.CharField(max_length=80, default='Starter')
+    timezone_name = models.CharField(max_length=80, default='Asia/Kolkata')
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.name) or 'workspace'
+            slug = base_slug
+            counter = 2
+            while CompanyWorkspace.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f'{base_slug}-{counter}'
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+
+class CompanyUserMembership(models.Model):
+    ROLE_OWNER = 'owner'
+    ROLE_ADMIN = 'admin'
+    ROLE_STAFF = 'staff'
+    ROLE_TECHNICIAN = 'technician'
+    ROLE_INVENTORY = 'inventory'
+    ROLE_VIEWER = 'viewer'
+    ROLE_CHOICES = [
+        (ROLE_OWNER, 'Owner'),
+        (ROLE_ADMIN, 'Admin'),
+        (ROLE_STAFF, 'Staff'),
+        (ROLE_TECHNICIAN, 'Technician'),
+        (ROLE_INVENTORY, 'Inventory'),
+        (ROLE_VIEWER, 'Viewer'),
+    ]
+
+    workspace = models.ForeignKey(CompanyWorkspace, on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='workspace_memberships')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_STAFF)
+    is_active = models.BooleanField(default=True, db_index=True)
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('workspace', 'user')
+        ordering = ['workspace__name', 'user__username']
+
+    def __str__(self):
+        return f'{self.user.username} - {self.workspace.name} ({self.get_role_display()})'
+
+
 class TechnicianProfile(models.Model):
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='technicians',
+        db_index=True,
+    )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='technician_profile')
     unique_id = models.CharField(max_length=10, unique=True)
 
@@ -23,8 +102,16 @@ class TechnicianProfile(models.Model):
 
 
 class Client(models.Model):
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='clients',
+        db_index=True,
+    )
     name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=20, unique=True)
+    phone = models.CharField(max_length=20)
     email = models.EmailField(blank=True)
     company_name = models.CharField(max_length=200, blank=True)
     address = models.TextField(blank=True)
@@ -35,6 +122,9 @@ class Client(models.Model):
 
     class Meta:
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'phone'], name='unique_client_phone_per_workspace'),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.phone})"
@@ -48,6 +138,14 @@ class JobFieldPreset(models.Model):
         ('additional_items', 'Additional Items'),
     ]
 
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='job_field_presets',
+        db_index=True,
+    )
     field_name = models.CharField(max_length=32, choices=FIELD_CHOICES, db_index=True)
     value = models.CharField(max_length=255)
     sort_order = models.PositiveIntegerField(default=0)
@@ -57,16 +155,25 @@ class JobFieldPreset(models.Model):
 
     class Meta:
         ordering = ['field_name', 'sort_order', 'value']
-        unique_together = ('field_name', 'value')
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'field_name', 'value'], name='unique_job_preset_per_workspace'),
+        ]
 
     def __str__(self):
         return f"{self.get_field_name_display()}: {self.value}"
 
 
 class DeviceChecklistTemplate(models.Model):
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='device_checklist_templates',
+        db_index=True,
+    )
     device_type = models.CharField(
         max_length=100,
-        unique=True,
         db_index=True,
         help_text="Device type this checklist applies to (example: Laptop, Desktop, Printer).",
     )
@@ -85,6 +192,9 @@ class DeviceChecklistTemplate(models.Model):
 
     class Meta:
         ordering = ['device_type']
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'device_type'], name='unique_checklist_template_per_workspace'),
+        ]
 
     def __str__(self):
         return (self.name or self.device_type).strip()
@@ -176,8 +286,16 @@ ANNUAL_TURNOVER_BAND_CHOICES = [
 
 
 class Product(models.Model):
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='products',
+        db_index=True,
+    )
     name = models.CharField(max_length=200)
-    sku = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    sku = models.CharField(max_length=50, null=True, blank=True)
     category = models.CharField(max_length=120, blank=True)
     brand = models.CharField(max_length=120, blank=True)
     item_type = models.CharField(max_length=20, choices=PRODUCT_ITEM_TYPE_CHOICES, default='goods')
@@ -232,6 +350,9 @@ class Product(models.Model):
 
     class Meta:
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'sku'], name='unique_product_sku_per_workspace'),
+        ]
 
     def __str__(self):
         return self.name
@@ -250,6 +371,14 @@ class InventoryParty(models.Model):
         ('both', 'Both'),
     ]
 
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_parties',
+        db_index=True,
+    )
     name = models.CharField(max_length=200)
     legal_name = models.CharField(max_length=200, blank=True)
     contact_person = models.CharField(max_length=120, blank=True)
@@ -307,6 +436,14 @@ INVENTORY_ENTRY_TYPE_CHOICES = [
 
 
 class InventoryBill(models.Model):
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_bills',
+        db_index=True,
+    )
     bill_number = models.CharField(max_length=40, unique=True)
     entry_type = models.CharField(max_length=20, choices=INVENTORY_ENTRY_TYPE_CHOICES)
     entry_date = models.DateField(default=timezone.localdate)
@@ -351,6 +488,14 @@ class InventoryBill(models.Model):
 class InventoryEntry(models.Model):
     ENTRY_TYPE_CHOICES = INVENTORY_ENTRY_TYPE_CHOICES
 
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_entries',
+        db_index=True,
+    )
     entry_number = models.CharField(max_length=40, unique=True)
     entry_type = models.CharField(max_length=20, choices=ENTRY_TYPE_CHOICES)
     entry_date = models.DateField(default=timezone.localdate)
@@ -416,6 +561,14 @@ class InventoryCreditPayment(models.Model):
         (METHOD_TRANSFER, 'Transfer'),
     ]
 
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_credit_payments',
+        db_index=True,
+    )
     party = models.ForeignKey(InventoryParty, on_delete=models.PROTECT, related_name='credit_payments')
     bill = models.ForeignKey(InventoryBill, on_delete=models.CASCADE, related_name='credit_payments')
     direction = models.CharField(max_length=20, choices=DIRECTION_CHOICES)
@@ -476,6 +629,14 @@ class JobTicket(models.Model):
 
     ]
 
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='job_tickets',
+        db_index=True,
+    )
     job_code = models.CharField(max_length=50, unique=True, editable=False)  # Will be generated automatically
 
     # Customer Details
@@ -791,6 +952,14 @@ class ServiceLog(models.Model):
 
 class ProductSale(models.Model):
     """Ledger of inventory sales captured from billing."""
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='product_sales',
+        db_index=True,
+    )
     job_ticket = models.ForeignKey(JobTicket, on_delete=models.CASCADE, related_name='product_sales')
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='sales')
     service_log = models.OneToOneField(
@@ -855,8 +1024,16 @@ class JobTicketLog(models.Model):
 
 class Vendor(models.Model):
     """Represents a third-party service provider or company."""
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vendors',
+        db_index=True,
+    )
     name = models.CharField(max_length=200, help_text="The individual's name or contact person.")
-    company_name = models.CharField(max_length=255, unique=True, help_text="The official name of the vendor company.")
+    company_name = models.CharField(max_length=255, help_text="The official name of the vendor company.")
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
@@ -865,6 +1042,9 @@ class Vendor(models.Model):
 
     class Meta:
         ordering = ['company_name']
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'company_name'], name='unique_vendor_company_per_workspace'),
+        ]
 
     def __str__(self):
         return self.company_name
@@ -977,6 +1157,14 @@ class DailyJobCodeSequence(models.Model):
 
 class CompanyProfile(models.Model):
     """Company profile settings - single instance"""
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='company_profiles',
+        db_index=True,
+    )
     # Basic Info
     company_name = models.CharField(max_length=200, default="GI Hostings")
     legal_name = models.CharField(
@@ -1050,8 +1238,39 @@ class CompanyProfile(models.Model):
     branch = models.CharField(max_length=200, blank=True)
     upi_id = models.CharField(max_length=100, blank=True, help_text="UPI ID for payments")
     
+    PRINT_PAPER_A4 = 'a4'
+    PRINT_PAPER_A5 = 'a5'
+    PRINT_PAPER_THERMAL_80 = 'thermal_80'
+    PRINT_PAPER_CHOICES = [
+        (PRINT_PAPER_A4, 'A4'),
+        (PRINT_PAPER_A5, 'A5'),
+        (PRINT_PAPER_THERMAL_80, 'Thermal 80mm'),
+    ]
+    PRINT_PAGE_SIZE_CSS = {
+        PRINT_PAPER_A4: 'A4 portrait',
+        PRINT_PAPER_A5: 'A5 portrait',
+        PRINT_PAPER_THERMAL_80: '80mm 297mm',
+    }
+    PRINT_PAGE_WIDTH_CSS = {
+        PRINT_PAPER_A4: '210mm',
+        PRINT_PAPER_A5: '148mm',
+        PRINT_PAPER_THERMAL_80: '80mm',
+    }
+
     # Job Ticket Settings
     job_code_prefix = models.CharField(max_length=10, default="GI", help_text="Prefix for job codes (e.g., GI, SERV)")
+    job_ticket_print_paper_size = models.CharField(
+        max_length=20,
+        choices=PRINT_PAPER_CHOICES,
+        default=PRINT_PAPER_A5,
+        help_text="Default paper size for job ticket / receipt prints.",
+    )
+    bill_print_paper_size = models.CharField(
+        max_length=20,
+        choices=PRINT_PAPER_CHOICES,
+        default=PRINT_PAPER_A4,
+        help_text="Default paper size for service and inventory bill prints.",
+    )
     sales_invoice_prefix = models.CharField(
         max_length=20,
         default="INV",
@@ -1080,10 +1299,54 @@ class CompanyProfile(models.Model):
     
     def __str__(self):
         return self.company_name
+
+    @staticmethod
+    def _print_page_size_css(paper_size):
+        return CompanyProfile.PRINT_PAGE_SIZE_CSS.get(paper_size, 'A4 portrait')
+
+    @staticmethod
+    def _print_page_width_css(paper_size):
+        return CompanyProfile.PRINT_PAGE_WIDTH_CSS.get(paper_size, '210mm')
+
+    @staticmethod
+    def _print_margin_css(paper_size, default_margin='12mm'):
+        if paper_size == CompanyProfile.PRINT_PAPER_THERMAL_80:
+            return '3mm'
+        return default_margin
+
+    @property
+    def job_ticket_print_page_size_css(self):
+        return self._print_page_size_css(self.job_ticket_print_paper_size)
+
+    @property
+    def job_ticket_print_page_width_css(self):
+        return self._print_page_width_css(self.job_ticket_print_paper_size)
+
+    @property
+    def job_ticket_print_margin_css(self):
+        return self._print_margin_css(self.job_ticket_print_paper_size, '6mm')
+
+    @property
+    def bill_print_page_size_css(self):
+        return self._print_page_size_css(self.bill_print_paper_size)
+
+    @property
+    def bill_print_page_width_css(self):
+        return self._print_page_width_css(self.bill_print_paper_size)
+
+    @property
+    def bill_print_margin_css(self):
+        return self._print_margin_css(self.bill_print_paper_size, '12mm')
     
     @classmethod
-    def get_profile(cls):
-        """Get or create the single company profile instance"""
+    def get_profile(cls, workspace=None):
+        """Get or create the company profile for the active workspace."""
+        if workspace:
+            profile, created = cls.objects.get_or_create(
+                workspace=workspace,
+                defaults={'company_name': workspace.name},
+            )
+            return profile
         profile, created = cls.objects.get_or_create(id=1)
         return profile
 
@@ -1141,6 +1404,14 @@ class WhatsAppIntegrationSettings(models.Model):
         (DELIVERY_BRIDGE, 'WhatsApp Bridge (QR Login)'),
     ]
 
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='whatsapp_settings',
+        db_index=True,
+    )
     delivery_method = models.CharField(
         max_length=20,
         choices=DELIVERY_METHOD_CHOICES,
@@ -1285,7 +1556,10 @@ class WhatsAppIntegrationSettings(models.Model):
         return "WhatsApp Integration Settings"
 
     @classmethod
-    def get_settings(cls):
+    def get_settings(cls, workspace=None):
+        if workspace:
+            settings_obj, _ = cls.objects.get_or_create(workspace=workspace)
+            return settings_obj
         settings_obj, _ = cls.objects.get_or_create(id=1)
         return settings_obj
 

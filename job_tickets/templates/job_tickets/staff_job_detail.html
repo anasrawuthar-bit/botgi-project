@@ -3,6 +3,115 @@
 
 {% block title %}Job Detail: {{ job.job_code }}{% endblock %}
 
+{% block extra_css %}
+{{ block.super }}
+<style>
+    .job-bill-card {
+        border: 1px solid #dbe4f0;
+        background: #ffffff;
+    }
+
+    .job-bill-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .job-bill-title {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #071b3a;
+    }
+
+    .job-bill-total {
+        border: 1px solid #dbe4f0;
+        border-radius: 8px;
+        background: #f8fbff;
+        padding: 0.9rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .job-bill-total .amount {
+        font-size: 1.8rem;
+        line-height: 1.1;
+        font-weight: 800;
+        color: #0057ff;
+    }
+
+    .job-bill-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin-bottom: 1rem;
+    }
+
+    .job-bill-meta-item {
+        border: 1px solid #e5ebf4;
+        border-radius: 8px;
+        padding: 0.65rem 0.75rem;
+        background: #fbfcfe;
+    }
+
+    .job-bill-meta-label {
+        display: block;
+        font-size: 0.78rem;
+        color: #6c7a90;
+        margin-bottom: 0.15rem;
+    }
+
+    .job-bill-lines {
+        max-height: 340px;
+        overflow: auto;
+        border: 1px solid #e5ebf4;
+        border-radius: 8px;
+    }
+
+    .job-bill-lines .table {
+        margin-bottom: 0;
+    }
+
+    .job-bill-lines thead th {
+        position: sticky;
+        top: 0;
+        background: #071b3a;
+        color: #ffffff;
+        z-index: 1;
+    }
+
+    .job-bill-footer {
+        border-top: 1px solid #dbe4f0;
+        margin-top: 1rem;
+        padding-top: 0.75rem;
+    }
+
+    .job-bill-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.25rem 0;
+    }
+
+    @media (max-width: 575.98px) {
+        .job-bill-header,
+        .job-bill-row {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .job-bill-meta {
+            grid-template-columns: 1fr;
+        }
+
+        .job-bill-total .amount {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="section-container">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -414,53 +523,95 @@
             </div>
             {% endif %}
 
-            <div class="card-box mb-4">
-                <h4 class="mb-3">Billing Summary</h4>
-                <p class="mb-2"><strong>Sales Invoice No:</strong> {{ job.vyapar_invoice_number|default:"Not assigned yet" }}</p>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Description</th>
-                            <th class="text-end">Part</th>
-                            <th class="text-end">Service</th>
-                            <th class="text-end">Line Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for log in service_logs %}
-                        <tr>
-                            <td>{{ log.description }}</td>
-                            <td class="text-end">&#8377;{{ log.part_cost|floatformat:2 }}</td>
-                            <td class="text-end">&#8377;{{ log.service_charge|floatformat:2 }}</td>
-                            <td class="text-end">&#8377;{{ log.part_cost|add:log.service_charge|floatformat:2 }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="4">No service logs added yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <td colspan="3">Total Part Cost</td>
-                            <td class="text-end">&#8377;{{ total_parts_cost|floatformat:2 }}</td>
-                        </tr>
-                        <tr>
-                            <td colspan="3">Total Service Charge</td>
-                            <td class="text-end">&#8377;{{ total_service_charges|floatformat:2 }}</td>
-                        </tr>
-                        <tr class="fw-bold">
-                            <td colspan="3">Subtotal</td>
-                            <td class="text-end">&#8377;{{ subtotal|floatformat:2 }}</td>
-                        </tr>
-                        <tr>
-                            <td colspan="3">Discount</td>
-                            <td class="text-end text-danger">- &#8377;{{ discount_amount|floatformat:2 }}</td>
-                        </tr>
-                        <tr class="fw-bold fs-5 table-primary">
-                            <td colspan="3">Grand Total</td>
-                            <td class="text-end">&#8377;{{ grand_total|floatformat:2 }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
+            <div class="card-box job-bill-card mb-4">
+                <div class="job-bill-header">
+                    <div>
+                        <h4 class="job-bill-title"><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Bill / Invoice</h4>
+                        <div class="text-muted small">Included inside this job card for quick billing review.</div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{% url 'job_billing_staff' job.job_code %}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-pen-to-square"></i> Edit Bill
+                        </a>
+                        <a href="{% url 'job_billing_print_view' job.job_code %}" class="btn btn-outline-success btn-sm" target="_blank" rel="noopener">
+                            <i class="fas fa-print"></i> Print
+                        </a>
+                    </div>
+                </div>
+
+                <div class="job-bill-total">
+                    <span class="text-muted small d-block">Net Bill Amount</span>
+                    <div class="amount">&#8377;{{ grand_total|floatformat:2 }}</div>
+                </div>
+
+                <div class="job-bill-meta">
+                    <div class="job-bill-meta-item">
+                        <span class="job-bill-meta-label">Sales Invoice No</span>
+                        <strong>{{ job.vyapar_invoice_number|default:"Not assigned" }}</strong>
+                    </div>
+                    <div class="job-bill-meta-item">
+                        <span class="job-bill-meta-label">Bill Status</span>
+                        <strong>{{ job.get_status_display }}</strong>
+                    </div>
+                    <div class="job-bill-meta-item">
+                        <span class="job-bill-meta-label">Part Total</span>
+                        <strong>&#8377;{{ total_parts_cost|floatformat:2 }}</strong>
+                    </div>
+                    <div class="job-bill-meta-item">
+                        <span class="job-bill-meta-label">Service Total</span>
+                        <strong>&#8377;{{ total_service_charges|floatformat:2 }}</strong>
+                    </div>
+                </div>
+
+                <div class="job-bill-lines">
+                    <table class="table table-sm table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th class="text-end">Part</th>
+                                <th class="text-end">Service</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in service_logs %}
+                            <tr>
+                                <td>{{ log.description }}</td>
+                                <td class="text-end">&#8377;{{ log.part_cost|floatformat:2 }}</td>
+                                <td class="text-end">&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                                <td class="text-end fw-semibold">&#8377;{{ log.part_cost|add:log.service_charge|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">No billing lines added yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="job-bill-footer">
+                    <div class="job-bill-row">
+                        <span>Total Part Cost</span>
+                        <strong>&#8377;{{ total_parts_cost|floatformat:2 }}</strong>
+                    </div>
+                    <div class="job-bill-row">
+                        <span>Total Service Charge</span>
+                        <strong>&#8377;{{ total_service_charges|floatformat:2 }}</strong>
+                    </div>
+                    <div class="job-bill-row">
+                        <span>Subtotal</span>
+                        <strong>&#8377;{{ subtotal|floatformat:2 }}</strong>
+                    </div>
+                    <div class="job-bill-row text-danger">
+                        <span>Discount</span>
+                        <strong>- &#8377;{{ discount_amount|floatformat:2 }}</strong>
+                    </div>
+                    <div class="job-bill-row fs-5 text-primary">
+                        <span class="fw-bold">Grand Total</span>
+                        <strong>&#8377;{{ grand_total|floatformat:2 }}</strong>
+                    </div>
+                </div>
             </div>
 
             {% if job.status == 'Closed' and job.feedback_followup_enabled and job.feedback_due_at and not job.feedback_rating and job.feedback_followup_status != 'received' and job.feedback_followup_status != 'called_happy' %}

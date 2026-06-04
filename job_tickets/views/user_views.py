@@ -1,4 +1,5 @@
 from .helpers import *  # noqa: F401,F403
+from ..workspaces import ensure_user_workspace_membership
 
 
 @login_required
@@ -10,6 +11,7 @@ def staff_technicians(request):
     # Ensure groups exist
     technicians_group, _ = Group.objects.get_or_create(name='Technicians')
     staff_group, _ = Group.objects.get_or_create(name='Staff')
+    current_workspace = getattr(request, 'current_workspace', None)
     tech_form = TechnicianCreationForm(request.POST or None)
     access_keys = {option['key'] for option in ACCESS_OPTIONS}
     staff_access_options = [option for option in ACCESS_OPTIONS if option.get('section') == 'general']
@@ -32,8 +34,9 @@ def staff_technicians(request):
                     if role == 'technician':
                         TechnicianProfile.objects.update_or_create(
                             user=user,
-                            defaults={'unique_id': unique_id}
+                            defaults={'unique_id': unique_id, 'workspace': current_workspace}
                         )
+                        ensure_user_workspace_membership(user, current_workspace, 'technician')
                         user.groups.add(technicians_group)
                         user.groups.remove(staff_group)
                         user.is_staff = False
@@ -45,6 +48,7 @@ def staff_technicians(request):
                         user.is_staff = True
                         user.save(update_fields=['is_staff'])
                         apply_staff_access(user, selected_access_keys)
+                        ensure_user_workspace_membership(user, current_workspace, 'staff')
                         messages.success(request, 'Staff member created successfully.')
                     return redirect('staff_technicians')
 
@@ -94,6 +98,8 @@ def staff_technicians(request):
             ),
         )
     )
+    if current_workspace:
+        managed_users = managed_users.filter(workspace_memberships__workspace=current_workspace).distinct()
 
     for managed_user in managed_users:
         try:
@@ -148,6 +154,7 @@ def edit_user(request, user_id):
     selected_access_keys = parse_access_keys(request.POST)
     technicians_group, _ = Group.objects.get_or_create(name='Technicians')
     staff_group, _ = Group.objects.get_or_create(name='Staff')
+    current_workspace = getattr(request, 'current_workspace', None)
     
     if new_role == 'staff':
         if user.id == request.user.id and not request.user.is_superuser:
@@ -161,8 +168,13 @@ def edit_user(request, user_id):
                 messages.error(request, f'Unique ID "{unique_id}" is already assigned to another user.')
                 return redirect('staff_technicians')
             user.technician_profile.unique_id = unique_id
-            user.technician_profile.save(update_fields=['unique_id'])
+            if current_workspace:
+                user.technician_profile.workspace = current_workspace
+                user.technician_profile.save(update_fields=['unique_id', 'workspace'])
+            else:
+                user.technician_profile.save(update_fields=['unique_id'])
         apply_staff_access(user, selected_access_keys)
+        ensure_user_workspace_membership(user, current_workspace, 'staff')
     else:  # technician
         if user.id == request.user.id:
             messages.error(request, 'You cannot change your own role to Technician.')
@@ -176,8 +188,9 @@ def edit_user(request, user_id):
             return redirect('staff_technicians')
         TechnicianProfile.objects.update_or_create(
             user=user,
-            defaults={'unique_id': unique_id}
+            defaults={'unique_id': unique_id, 'workspace': current_workspace}
         )
+        ensure_user_workspace_membership(user, current_workspace, 'technician')
         user.groups.remove(staff_group)
         user.groups.add(technicians_group)
         user.is_staff = False

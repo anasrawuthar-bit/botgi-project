@@ -35,6 +35,7 @@
                 <th>Device Type</th>
                 <th>Reported Issue</th>
                 <th>Created At</th>
+                <th style="text-align:right;">Amount</th>
             </tr>
         </thead>
         <tbody>
@@ -45,10 +46,11 @@
                 <td>{{ job.device_type }}</td>
                 <td>{{ job.reported_issue }}</td>
                 <td>{{ job.created_at|date:"Y-m-d" }}</td>
+                <td style="text-align:right;">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5">No pending jobs.</td>
+                <td colspan="6">No pending jobs.</td>
             </tr>
             {% endfor %}
         </tbody>

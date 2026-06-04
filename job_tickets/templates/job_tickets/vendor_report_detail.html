@@ -9,7 +9,14 @@
             <h1 class="section-title mb-0">Complete Vendor Report</h1>
             <p class="lead">Showing all jobs assigned to <strong>{{ vendor.company_name }}</strong></p>
         </div>
-        <a href="{% url 'reports_dashboard' %}" class="btn btn-secondary no-print"><i class="fas fa-arrow-left"></i> Back to Reports</a>
+        <div class="d-flex flex-wrap gap-2 no-print">
+            <a href="{% url 'vendor_report_export_csv' vendor.id %}{% if period_query %}?{{ period_query }}{% endif %}" class="btn btn-outline-success">
+                <i class="fas fa-file-csv"></i> CSV
+            </a>
+            <a href="{% url 'reports_dashboard' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Reports
+            </a>
+        </div>
     </div>
 
     <!-- Date Filter Form -->
@@ -26,6 +33,9 @@
             <div class="col-md-4">
                 <button type="submit" class="btn btn-primary">Filter Report</button>
                 <a href="{% url 'vendor_report_detail' vendor.id %}" class="btn btn-outline-secondary">Clear</a>
+                <a href="{% url 'vendor_report_export_csv' vendor.id %}{% if period_query %}?{{ period_query }}{% endif %}" class="btn btn-outline-success">
+                    <i class="fas fa-file-csv"></i> CSV
+                </a>
             </div>
         </form>
     </div>

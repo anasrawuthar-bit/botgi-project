@@ -110,13 +110,14 @@
         }
         @media print {
             @page {
-                size: A4;
-                margin: 12mm;
+                size: {{ company.bill_print_page_size_css|default:"A4 portrait" }};
+                margin: {{ company.bill_print_margin_css|default:"12mm" }};
             }
             body {
                 background: #fff;
             }
             .invoice-wrap {
+                width: {{ company.bill_print_page_width_css|default:"210mm" }};
                 margin: 0;
                 border: none;
                 max-width: none;

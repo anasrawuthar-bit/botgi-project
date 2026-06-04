@@ -4,6 +4,8 @@ from django.contrib.contenttypes.models import ContentType
 from .models import (
     Assignment,
     Client,
+    CompanyUserMembership,
+    CompanyWorkspace,
     CompanyProfile,
     DailyJobCodeSequence,
     JobTicket,
@@ -48,6 +50,8 @@ def sync_admin_roles():
         (Client, ('add', 'change', 'delete', 'view')),
         (Product, ('add', 'change', 'delete', 'view')),
         (CompanyProfile, ('add', 'change', 'delete', 'view')),
+        (CompanyWorkspace, ('add', 'change', 'delete', 'view')),
+        (CompanyUserMembership, ('add', 'change', 'delete', 'view')),
         (TechnicianProfile, ('add', 'change', 'delete', 'view')),
         (DailyJobCodeSequence, ('view',)),
         (User, ('add', 'change', 'delete', 'view')),
@@ -64,6 +68,8 @@ def sync_admin_roles():
         (Client, ('add', 'change', 'view')),
         (Product, ('add', 'change', 'view')),
         (CompanyProfile, ('view', 'change')),
+        (CompanyWorkspace, ('add', 'change', 'view')),
+        (CompanyUserMembership, ('add', 'change', 'view')),
         (TechnicianProfile, ('view',)),
         (DailyJobCodeSequence, ('view',)),
     ]
@@ -78,6 +84,8 @@ def sync_admin_roles():
         (Client, ('view',)),
         (Product, ('view',)),
         (CompanyProfile, ('view',)),
+        (CompanyWorkspace, ('view',)),
+        (CompanyUserMembership, ('view',)),
         (TechnicianProfile, ('view',)),
         (DailyJobCodeSequence, ('view',)),
     ]

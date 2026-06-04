@@ -157,6 +157,7 @@ def feedback_analytics(request):
         )
         .exclude(feedback_followup_status__in=feedback_done_statuses)
         .select_related('assigned_to__user', 'feedback_followup_marked_by')
+        .prefetch_related('service_logs')
         .order_by('feedback_due_at', 'id')[:100]
     )
     feedback_followup_count = JobTicket.objects.filter(
@@ -200,15 +201,23 @@ def feedback_analytics(request):
         .filter(Q(feedback_followup_enabled=True) | Q(feedback_rating__isnull=False))
         .exclude(feedback_followup_status=JobTicket.FEEDBACK_PENDING)
         .select_related('feedback_followup_marked_by')
+        .prefetch_related('service_logs')
         .order_by('-feedback_followup_called_at', '-feedback_date', '-updated_at')[:30]
     )
+    recent_feedback = list(filtered_feedback.prefetch_related('service_logs'))
+
+    feedback_amount_jobs = feedback_followup_jobs + feedback_followup_history + recent_feedback
+    calculate_job_totals(feedback_amount_jobs)
+    for job in feedback_amount_jobs:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
 
     context = {
         'total_feedback': total_feedback,
         'avg_rating': round(avg_rating, 2),
         'rating_distribution': rating_distribution,
         'tech_feedback': tech_feedback,
-        'recent_feedback': list(filtered_feedback),
+        'recent_feedback': recent_feedback,
         'filtered_feedback_count': filtered_feedback.count(),
         'selected_rating': selected_rating,
         'selected_technician': selected_technician,

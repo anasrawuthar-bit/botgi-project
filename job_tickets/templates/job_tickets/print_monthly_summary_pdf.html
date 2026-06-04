@@ -108,6 +108,7 @@
     <div class="pdf-sheet">
         <div class="pdf-title">Financial Summary Report</div>
         <div class="pdf-subtitle">Period: {{ start_date }} to {{ end_date }}</div>
+        <div class="pdf-subtitle">Financial totals include only jobs closed in this period.</div>
 
         <div class="pdf-section-title">Job Statistics</div>
         <table class="pdf-table">
@@ -115,56 +116,101 @@
                 <tr>
                     <th>Jobs Created</th>
                     <td class="text-end">{{ jobs_created_count }}</td>
-                    <th>Jobs Finished</th>
-                    <td class="text-end">{{ jobs_finished_count }}</td>
+                    <th>Jobs Closed</th>
+                    <td class="text-end">{{ jobs_closed_count }}</td>
                 </tr>
                 <tr>
-                    <th>Jobs Returned</th>
-                    <td class="text-end">{{ jobs_returned_count }}</td>
-                    <th>Vendor Jobs</th>
+                    <th>Current Month In Closed</th>
+                    <td class="text-end">{{ current_month_in_closed_count }}</td>
+                    <th>Previous Month In Closed</th>
+                    <td class="text-end">{{ previous_month_in_closed_count }}</td>
+                </tr>
+                <tr>
+                    <th>Closed Vendor Jobs</th>
                     <td class="text-end">{{ vendor_jobs_count }}</td>
+                    <th>Returned -> Closed Jobs</th>
+                    <td class="text-end">{{ jobs_returned_count }}</td>
+                </tr>
+                <tr>
+                    <th>All-time Unclaimed / Ready Jobs</th>
+                    <td class="text-end">{{ pending_completed_count }}</td>
+                    <th>All-time Unclaimed / Ready Value</th>
+                    <td class="text-end">&#8377;{{ pending_completed_value|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <th>All-time Ready for Pickup Jobs</th>
+                    <td class="text-end">{{ ready_for_pickup_count }}</td>
+                    <th>All-time Ready for Pickup Value</th>
+                    <td class="text-end">&#8377;{{ ready_for_pickup_value|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <th>Current Month In Closed Value</th>
+                    <td class="text-end">&#8377;{{ current_month_in_closed_revenue|floatformat:2 }}</td>
+                    <th>Previous Month In Closed Value</th>
+                    <td class="text-end">&#8377;{{ previous_month_in_closed_revenue|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <th>Current Month In Profit</th>
+                    <td class="text-end">&#8377;{{ current_month_in_closed_profit|floatformat:2 }}</td>
+                    <th>Previous Month In Profit</th>
+                    <td class="text-end">&#8377;{{ previous_month_in_closed_profit|floatformat:2 }}</td>
                 </tr>
             </tbody>
         </table>
 
-        <div class="pdf-section-title">Financial Blocks</div>
+        <div class="pdf-section-title">Closed Job Financial Summary</div>
+        <table class="pdf-table">
+            <tbody>
+                <tr>
+                    <th>Closed Revenue</th>
+                    <td class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</td>
+                    <th>Closed Expense</th>
+                    <td class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <th>Closed Profit</th>
+                    <td class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</td>
+                    <th>Margin</th>
+                    <td class="text-end">{{ overall_margin|floatformat:2 }}%</td>
+                </tr>
+                <tr>
+                    <th>Gross Revenue Before Discount</th>
+                    <td class="text-end">&#8377;{{ closed_gross_revenue|floatformat:2 }}</td>
+                    <th>Total Discount</th>
+                    <td class="text-end">&#8377;{{ total_discounts|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="pdf-section-title">Closed Job Financial Blocks</div>
         <table class="pdf-table">
             <thead>
                 <tr>
                     <th>Block</th>
+                    <th>Basis</th>
                     <th class="text-end">Revenue</th>
                     <th class="text-end">Expense</th>
                     <th class="text-end">Profit</th>
                 </tr>
             </thead>
             <tbody>
+                {% for block in closed_financial_blocks %}
                 <tr>
-                    <td>Service</td>
-                    <td class="text-end">&#8377;{{ service_revenue|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ service_expense|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ service_profit|floatformat:2 }}</td>
+                    <td>{{ block.label }}</td>
+                    <td>{{ block.note }}</td>
+                    <td class="text-end">{% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.revenue_abs|floatformat:2 }}{% else %}{{ block.revenue|floatformat:2 }}{% endif %}</td>
+                    <td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td>
+                    <td class="text-end">{% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.profit_abs|floatformat:2 }}{% else %}{{ block.profit|floatformat:2 }}{% endif %}</td>
                 </tr>
+                {% endfor %}
                 <tr>
-                    <td>Stock Sales</td>
-                    <td class="text-end">&#8377;{{ stock_sales_income|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ stock_sales_cogs|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ stock_sales_profit|floatformat:2 }}</td>
-                </tr>
-                <tr>
-                    <td>Vendor</td>
-                    <td class="text-end">&#8377;{{ vendor_revenue|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ vendor_expense|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ vendor_profit|floatformat:2 }}</td>
-                </tr>
-                <tr>
-                    <th>Overall</th>
+                    <th colspan="2">Total Closed Jobs</th>
                     <th class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</th>
                     <th class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</th>
                     <th class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</th>
                 </tr>
             </tbody>
         </table>
-        <p class="pdf-subtitle" style="margin-top:0.4rem;">Overall Margin: {{ overall_margin|floatformat:2 }}%</p>
 
         <div class="pdf-section-title">Stock Sales Snapshot</div>
         <table class="pdf-table">

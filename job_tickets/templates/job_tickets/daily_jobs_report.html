@@ -18,6 +18,7 @@
                     <th>Device</th>
                     <th>Status</th>
                     <th>Created At</th>
+                    <th class="text-end">Amount</th>
                     <th>Assigned Technician</th>
                     <th>Actions</th>
                 </tr>
@@ -30,6 +31,7 @@
                     <td>{{ job.device_type }} - {{ job.device_brand|default:'' }}</td>
                     <td><span class="badge bg-secondary">{{ job.get_status_display }}</span></td>
                     <td>{{ job.created_at|date:"Y-m-d H:i" }}</td>
+                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                     <td>{{ job.assigned_to.user.username|default:"N/A" }}</td>
                     <td>
                         <a href="{% url 'job_billing_print_view' job.job_code %}" class="btn btn-sm btn-success me-2">
@@ -42,7 +44,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center">No jobs found for this report.</td>
+                    <td colspan="8" class="text-center">No jobs found for this report.</td>
                 </tr>
                 {% endfor %}
             </tbody>

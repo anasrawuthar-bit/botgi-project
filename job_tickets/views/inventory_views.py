@@ -6,7 +6,7 @@ def inventory_dashboard(request):
     denied = _staff_access_required(request, "inventory")
     if denied:
         return denied
-    context = _build_inventory_dashboard_metrics()
+    context = _build_inventory_dashboard_metrics(getattr(request, 'current_workspace', None))
     return render(request, 'job_tickets/inventory_dashboard.html', context)
 
 @login_required
@@ -37,6 +37,7 @@ def inventory_party_dashboard(request):
     if denied:
         return denied
 
+    current_workspace = getattr(request, 'current_workspace', None)
     query = (request.GET.get('q') or '').strip()
     start_date = None
     end_date = None
@@ -82,7 +83,11 @@ def inventory_party_dashboard(request):
     if request.method == 'POST' and 'add_inventory_party_submit' in request.POST:
         party_form = InventoryPartyForm(request.POST)
         if party_form.is_valid():
-            party = party_form.save()
+            party = party_form.save(commit=False)
+            if not party.workspace_id:
+                party.workspace = current_workspace
+            party.save()
+            party_form.save_m2m()
             messages.success(request, f"Party '{party.name}' added successfully.")
             return redirect(f"{reverse('inventory_party_dashboard')}?tab={active_tab}")
         messages.error(request, 'Please fix the highlighted errors and try again.')
@@ -97,7 +102,10 @@ def inventory_party_dashboard(request):
     edit_party_modal_party_id = ''
     if request.method == 'POST' and 'edit_inventory_party_submit' in request.POST:
         edit_party_id = (request.POST.get('edit_party_id') or '').strip()
-        party_to_edit = InventoryParty.objects.filter(pk=edit_party_id).first()
+        party_to_edit = scope_to_workspace(
+            InventoryParty.objects.filter(pk=edit_party_id),
+            current_workspace,
+        ).first()
         if not party_to_edit:
             messages.error(request, 'Selected party was not found.')
             return redirect(f"{reverse('inventory_party_dashboard')}?tab={active_tab}")
@@ -117,6 +125,7 @@ def inventory_party_dashboard(request):
         query=query,
         start_date=start_date,
         end_date=end_date,
+        workspace=current_workspace,
     )
     parties = directory_context['parties']
     suppliers = directory_context['suppliers']
@@ -124,12 +133,16 @@ def inventory_party_dashboard(request):
     legacy_both_count = directory_context['legacy_both_count']
 
     try:
-        default_gst_rate = CompanyProfile.get_profile().gst_rate
+        default_gst_rate = CompanyProfile.get_profile(current_workspace).gst_rate
     except Exception:
         default_gst_rate = Decimal('18.00')
 
-    shared_edit_options = InventoryParty.objects.filter(
+    shared_edit_options = scope_to_workspace(InventoryParty.objects.filter(
         is_active=True,
+    ), current_workspace).order_by('name')
+    line_products = scope_to_workspace(
+        Product.objects.filter(is_active=True),
+        current_workspace,
     ).order_by('name')
 
     def serialize_party_options(option_qs):
@@ -220,7 +233,7 @@ def inventory_party_dashboard(request):
         'start_date': start_date.isoformat() if start_date else '',
         'end_date': end_date.isoformat() if end_date else '',
         'default_gst_rate': default_gst_rate,
-        'line_products': Product.objects.filter(is_active=True).order_by('name'),
+        'line_products': line_products,
         'inventory_party_bill_payload': inventory_party_bill_payload,
         'inventory_party_profile_payload': inventory_party_profile_payload,
         'inventory_party_edit_options': {
@@ -256,7 +269,8 @@ def inventory_product_ledger(request, product_id):
     if denied:
         return denied
 
-    product = get_object_or_404(Product, pk=product_id)
+    current_workspace = getattr(request, 'current_workspace', None)
+    product = get_object_or_404(scope_to_workspace(Product.objects.filter(pk=product_id), current_workspace))
     start_date, end_date = _inventory_date_filters(request)
 
     all_entries = list(
@@ -330,15 +344,18 @@ def inventory_party_ledger(request, party_id):
     if denied:
         return denied
 
-    party = get_object_or_404(InventoryParty, pk=party_id)
+    current_workspace = getattr(request, 'current_workspace', None)
+    party = get_object_or_404(scope_to_workspace(InventoryParty.objects.filter(pk=party_id), current_workspace))
     start_date, end_date = _inventory_date_filters(request)
 
     entries = (
-        InventoryEntry.objects
-        .filter(party=party)
+        scope_to_workspace(InventoryEntry.objects.filter(party=party), current_workspace)
         .select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
     )
-    payments = InventoryCreditPayment.objects.filter(party=party).select_related('bill', 'created_by')
+    payments = scope_to_workspace(
+        InventoryCreditPayment.objects.filter(party=party),
+        current_workspace,
+    ).select_related('bill', 'created_by')
 
     if start_date:
         entries = entries.filter(entry_date__gte=start_date)
@@ -352,8 +369,7 @@ def inventory_party_ledger(request, party_id):
     payments = list(payments.order_by('-payment_date', '-created_at'))
 
     all_party_bills = _build_inventory_bill_summaries(
-        InventoryEntry.objects
-        .filter(party=party)
+        scope_to_workspace(InventoryEntry.objects.filter(party=party), current_workspace)
         .select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
         .order_by('-entry_date', '-id')
     )
@@ -410,6 +426,8 @@ def inventory_quick_add_party(request):
         return JsonResponse({'ok': False, 'errors': _inventory_form_errors(party_form)}, status=400)
 
     party = party_form.save(commit=False)
+    if not party.workspace_id:
+        party.workspace = getattr(request, 'current_workspace', None)
     party.party_type = 'both'
     party.is_active = True
     party.save()
@@ -471,7 +489,7 @@ def inventory_quick_add_product(request):
     payload.setdefault('is_tax_inclusive_default', '')
 
     try:
-        payload.setdefault('gst_rate', str(CompanyProfile.get_profile().gst_rate or Decimal('18.00')))
+        payload.setdefault('gst_rate', str(CompanyProfile.get_profile(getattr(request, 'current_workspace', None)).gst_rate or Decimal('18.00')))
     except Exception:
         payload.setdefault('gst_rate', '18.00')
 
@@ -480,6 +498,8 @@ def inventory_quick_add_product(request):
         return JsonResponse({'ok': False, 'errors': _inventory_form_errors(product_form)}, status=400)
 
     product = product_form.save(commit=False)
+    if not product.workspace_id:
+        product.workspace = getattr(request, 'current_workspace', None)
     product.cost_price = _normalize_tax_mode_price(
         product_form.cleaned_data.get('cost_price'),
         product_form.cleaned_data.get('purchase_price_tax_mode'),
@@ -538,7 +558,10 @@ def inventory_sales_print_bill_view(request, bill_id):
         return denied
 
     sale_bill = (
-        InventoryBill.objects.filter(pk=bill_id, entry_type='sale')
+        scope_to_workspace(
+            InventoryBill.objects.filter(pk=bill_id, entry_type='sale'),
+            getattr(request, 'current_workspace', None),
+        )
         .select_related('party', 'job_ticket')
         .first()
     )
@@ -566,10 +589,10 @@ def inventory_sales_print_view(request, invoice_number):
 
     normalized_invoice = (invoice_number or '').strip()
     sale_bill = (
-        InventoryBill.objects.filter(
+        scope_to_workspace(InventoryBill.objects.filter(
             entry_type='sale',
             invoice_number__iexact=normalized_invoice,
-        )
+        ), getattr(request, 'current_workspace', None))
         .select_related('party', 'job_ticket')
         .first()
     )
@@ -596,7 +619,9 @@ def client_dashboard(request):
         return denied
 
     query = (request.GET.get('q') or '').strip()
-    clients = Client.objects.all()
+    current_workspace = getattr(request, 'current_workspace', None)
+    clients = scope_to_workspace(Client.objects.all(), current_workspace)
+    jobs_scope = scope_to_workspace(JobTicket.objects.all(), current_workspace)
 
     if query:
         clients = clients.filter(
@@ -607,7 +632,10 @@ def client_dashboard(request):
     if request.method == 'POST' and 'add_client_submit' in request.POST:
         client_form = ClientForm(request.POST)
         if client_form.is_valid():
-            client = client_form.save()
+            client = client_form.save(commit=False)
+            if not client.workspace_id:
+                client.workspace = current_workspace
+            client.save()
             messages.success(request, f"Client '{client.name}' added successfully.")
             return redirect('client_dashboard')
         messages.error(request, "Please fix the errors and try again.")
@@ -616,9 +644,9 @@ def client_dashboard(request):
 
     phone_job_counts = {
         row['customer_phone']: row['total_jobs']
-        for row in JobTicket.objects.values('customer_phone').annotate(total_jobs=Count('id'))
+        for row in jobs_scope.values('customer_phone').annotate(total_jobs=Count('id'))
     }
-    phone_device_rows = JobTicket.objects.values('customer_phone', 'device_type').annotate(total_jobs=Count('id')).order_by('customer_phone', '-total_jobs')
+    phone_device_rows = jobs_scope.values('customer_phone', 'device_type').annotate(total_jobs=Count('id')).order_by('customer_phone', '-total_jobs')
     device_map = {}
     for row in phone_device_rows:
         phone_key = row['customer_phone']
@@ -632,14 +660,18 @@ def client_dashboard(request):
     client_phones = [client.phone for client in client_rows if client.phone]
     jobs_by_phone = {phone: [] for phone in client_phones}
     if client_phones:
-        job_rows = (
-            JobTicket.objects
+        job_rows = list(
+            jobs_scope
             .filter(customer_phone__in=client_phones)
-            .values('customer_phone', 'job_code', 'device_type', 'status', 'created_at')
+            .prefetch_related('service_logs')
             .order_by('-created_at')
         )
+        calculate_job_totals(job_rows)
+        for job in job_rows:
+            job.discount_total = _money_or_zero(job.discount_amount)
+            job.net_total = _net_amount_after_discount(job.total, job.discount_total)
         for row in job_rows:
-            phone_key = row['customer_phone']
+            phone_key = row.customer_phone
             if phone_key in jobs_by_phone:
                 jobs_by_phone[phone_key].append(row)
     for client in client_rows:
@@ -651,7 +683,7 @@ def client_dashboard(request):
         'clients': client_rows,
         'client_form': client_form,
         'query': query,
-        'total_clients': Client.objects.count(),
+        'total_clients': clients.count(),
     }
     return render(request, 'job_tickets/client_dashboard.html', context)
 
@@ -665,7 +697,8 @@ def product_dashboard(request):
     redirect_target = 'inventory_product_dashboard' if current_url_name == 'inventory_product_dashboard' else 'product_dashboard'
 
     query = (request.GET.get('q') or '').strip()
-    products = Product.objects.all()
+    current_workspace = getattr(request, 'current_workspace', None)
+    products = scope_to_workspace(Product.objects.all(), current_workspace)
 
     if query:
         products = products.filter(
@@ -773,7 +806,10 @@ def product_dashboard(request):
         if 'update_reserved_stock_submit' in request.POST:
             is_async_request = request.headers.get('X-Botgi-Async') == '1'
             reload_url = request.get_full_path()
-            product = Product.objects.filter(pk=request.POST.get('product_id')).first()
+            product = scope_to_workspace(
+                Product.objects.filter(pk=request.POST.get('product_id')),
+                current_workspace,
+            ).first()
             if not product:
                 if is_async_request:
                     return JsonResponse({'ok': False, 'message': 'Selected product was not found.'}, status=404)
@@ -842,6 +878,8 @@ def product_dashboard(request):
                     product_form.cleaned_data.get('unit_price'),
                     product_form.cleaned_data.get('sales_price_tax_mode'),
                 )
+                if not product.workspace_id:
+                    product.workspace = getattr(request, 'current_workspace', None)
                 product.save()
                 messages.success(request, f"Product '{product.name}' added successfully.")
                 return redirect(redirect_target)
@@ -851,8 +889,9 @@ def product_dashboard(request):
     else:
         product_form = ProductForm()
 
-    out_of_stock_count = Product.objects.filter(stock_quantity__lte=0).count()
-    reserved_alert_count = Product.objects.filter(
+    products_scope = scope_to_workspace(Product.objects.all(), current_workspace)
+    out_of_stock_count = products_scope.filter(stock_quantity__lte=0).count()
+    reserved_alert_count = products_scope.filter(
         reserved_stock__gt=0,
         stock_quantity__lte=F('reserved_stock'),
     ).count()
@@ -860,7 +899,7 @@ def product_dashboard(request):
         'products': product_rows,
         'product_form': product_form,
         'query': query,
-        'total_products': Product.objects.count(),
+        'total_products': products_scope.count(),
         'reserved_alert_count': reserved_alert_count,
         'out_of_stock_count': out_of_stock_count,
         'from_inventory': current_url_name == 'inventory_product_dashboard',

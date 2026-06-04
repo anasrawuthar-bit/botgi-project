@@ -37,7 +37,8 @@
                     <th style="width: 15%;">Job Code</th>
                     <th style="width: 25%;">Customer / Phone</th>
                     <th style="width: 25%;">Device Details</th>
-                    <th style="width: 25%;">Reported Issue</th>
+                    <th style="width: 22%;">Reported Issue</th>
+                    <th style="width: 10%; text-align: right;">Amount</th>
                     <th style="width: 10%;">Status</th>
                 </tr>
             </thead>
@@ -54,6 +55,7 @@
                         <small>S/N: {{ job.device_serial|default:"N/A" }}</small>
                     </td>
                     <td>{{ job.reported_issue|truncatewords:10 }}</td>
+                    <td style="text-align: right;">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                     <td>
                         {% with s=job.status|slugify %}
                             <span class="status-badge {{ s }}">

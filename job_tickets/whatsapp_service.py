@@ -63,6 +63,25 @@ def _build_receipt_link(settings_obj: WhatsAppIntegrationSettings, job: JobTicke
     return f"{base_url}{reverse('job_creation_receipt_public', args=[job.job_code])}?token={token}&autoprint=0"
 
 
+def _build_receipt_pdf_link(settings_obj: WhatsAppIntegrationSettings, job: JobTicket) -> str:
+    base_url = _public_base_url(settings_obj)
+    if not base_url:
+        return ''
+    token = create_receipt_access_token(job)
+    return f"{base_url}{reverse('job_creation_receipt_pdf_public', args=[job.job_code])}?token={token}"
+
+
+def _build_job_ticket_pdf_url(settings_obj: WhatsAppIntegrationSettings, job: JobTicket) -> str:
+    if settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE:
+        return _build_receipt_link(settings_obj, job)
+    return _build_receipt_pdf_link(settings_obj, job)
+
+
+def _job_ticket_pdf_filename(job: JobTicket) -> str:
+    safe_job_code = re.sub(r'[^a-zA-Z0-9_.-]+', '-', job.job_code).strip('-') or 'job-ticket'
+    return f"{safe_job_code}.pdf"
+
+
 def create_receipt_access_token(job: JobTicket, issued_at=None) -> str:
     issued_ts = int((issued_at or timezone.now()).timestamp())
     payload = f"{job.job_code}:{job.customer_phone}:{issued_ts}".encode('utf-8')
@@ -859,6 +878,26 @@ def _render_message(template: str, job: JobTicket, settings_obj: WhatsAppIntegra
         )
 
 
+def _render_created_pdf_caption(job: JobTicket, settings_obj: WhatsAppIntegrationSettings) -> str:
+    caption_template = (
+        settings_obj.created_pdf_caption_template
+        or "Job Ticket {job_code}"
+    )
+    caption = _render_message(caption_template, job, settings_obj)
+    context = _message_context(job, settings_obj)
+
+    receipt_link = context.get('receipt_link') or ''
+    status_link = context.get('status_link') or ''
+    additions = []
+    if receipt_link and receipt_link not in caption:
+        additions.append(f"Receipt: {receipt_link}")
+    if status_link and status_link not in caption:
+        additions.append(f"Track status: {status_link}")
+    if additions:
+        caption = f"{caption}\n" + "\n".join(additions)
+    return caption.strip()
+
+
 def _template_body_parameters(template: str, context: dict[str, Any]) -> list[dict[str, str]]:
     parameters: list[dict[str, str]] = []
     for placeholder_name in PLACEHOLDER_PATTERN.findall(template or ''):
@@ -916,6 +955,11 @@ def _deliver_message_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
     settings_obj = _settings()
     if settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE:
         return _deliver_bridge_queue(queue)
+    if queue.pdf_url:
+        return (
+            send_cloud_document_message(queue.target_phone, queue.pdf_url, queue.caption, queue.filename),
+            'whatsapp-cloud-api-document',
+        )
     if queue.event_type in {
         MessageQueue.EVENT_CREATED,
         MessageQueue.EVENT_COMPLETED,
@@ -924,11 +968,6 @@ def _deliver_message_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
         MessageQueue.EVENT_FEEDBACK,
     }:
         return _deliver_template_queue(queue)
-    if queue.pdf_url:
-        return (
-            send_cloud_document_message(queue.target_phone, queue.pdf_url, queue.caption, queue.filename),
-            'whatsapp-cloud-api-document',
-        )
     return (
         send_cloud_text_message(queue.target_phone, queue.message),
         'whatsapp-cloud-api-text',
@@ -997,11 +1036,21 @@ def _should_send(settings_obj: WhatsAppIntegrationSettings, event_type: str) -> 
 def queue_job_whatsapp_message(job: JobTicket, event_type: str) -> dict[str, Any]:
     settings_obj = _settings()
     message = _render_message(_template_for_event(settings_obj, event_type), job, settings_obj)
+    pdf_url = ''
+    caption = ''
+    filename = 'job-ticket.pdf'
+    if event_type == MessageQueue.EVENT_CREATED:
+        pdf_url = _build_job_ticket_pdf_url(settings_obj, job)
+        caption = _render_created_pdf_caption(job, settings_obj)
+        filename = _job_ticket_pdf_filename(job)
     return create_message_queue(
         job.customer_phone,
         job=job,
         event_type=event_type,
         message=message,
+        pdf_url=pdf_url,
+        caption=caption,
+        filename=filename,
     )
 
 
@@ -1083,7 +1132,7 @@ def send_job_whatsapp_notification(job: JobTicket, event_type: str) -> dict[str,
 
     is_cloud_delivery = settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_CLOUD_API
     template_name = _template_name_for_event(settings_obj, event_type)
-    if is_cloud_delivery and not template_name:
+    if is_cloud_delivery and event_type != MessageQueue.EVENT_CREATED and not template_name:
         return {
             'ok': False,
             'skipped': True,

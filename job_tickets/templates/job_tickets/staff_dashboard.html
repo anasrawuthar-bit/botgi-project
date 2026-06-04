@@ -113,7 +113,7 @@
                         <th>Status</th>
                         <th>Assigned To</th>
                         <th>Created Date</th>
-                        <th>Total Amount</th>
+                        <th class="text-end">Amount</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -146,7 +146,8 @@
                             {% endif %}
                         </td>
                         <td>{{ job.created_at|date:"Y-m-d" }}</td>
-                        <td>
+                        <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+                        <td class="d-none">
                             {% if job.total != None %}
                             ₹{{ job.total|default:0|floatformat:2 }}
                             {% else %}
@@ -189,6 +190,7 @@
                         <th>Job Code</th>
                         <th>Customer Name</th>
                         <th>Device</th>
+                        <th class="text-end">Amount</th>
                         <th>Assign to Technician</th>
                         <th>Job Ticket</th>
                     </tr>
@@ -205,6 +207,7 @@
                         </td>
                         <td>{{ job.customer_name }}</td>
                         <td>{{ job.device_type }}</td>
+                        <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                         <td>
                             <form method="post" class="d-flex flex-wrap gap-2">
                                 {% csrf_token %}
@@ -223,7 +226,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center">No pending jobs at the moment.</td>
+                        <td colspan="7" class="text-center">No pending jobs at the moment.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -483,6 +486,7 @@
                         <th>Customer</th>
                         <th>Device</th>
                         <th>Reported Issue</th>
+                        <th class="text-end">Amount</th>
                         <th>Assign Vendor</th>
                     </tr>
                 </thead>
@@ -493,6 +497,7 @@
                         <td>{{ service.job_ticket.customer_name }}</td>
                         <td>{{ service.job_ticket.device_type }}</td>
                         <td>{{ service.job_ticket.reported_issue|truncatewords:10 }}</td>
+                        <td class="text-end fw-semibold">&#8377;{{ service.job_ticket.net_total|default_if_none:0|floatformat:2 }}</td>
                         <td>
                             <form method="post">
                                 {% csrf_token %}
@@ -509,7 +514,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="text-center">No jobs are awaiting vendor assignment.</td>
+                        <td colspan="6" class="text-center">No jobs are awaiting vendor assignment.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -592,6 +597,7 @@
                                                     <th>Customer</th>
                                                     <th>Device</th>
                                                     <th>Status</th>
+                                                    <th class="text-end">Amount</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -601,6 +607,7 @@
                                                     <td>{{ job.customer_name }}</td>
                                                     <td>{{ job.device_type }}</td>
                                                     <td><span class="badge badge-status badge-info">{{ job.status }}</span></td>
+                                                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                                                 </tr>
                                                 {% endfor %}
                                             </tbody>
@@ -634,6 +641,7 @@
                                     <th>Customer Name</th>
                                     <th>Device</th>
                                     <th>Status</th>
+                                    <th class="text-end">Amount</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -649,6 +657,7 @@
                                     <td>{{ job.customer_name }}</td>
                                     <td>{{ job.device_type }}</td>
                                     <td><span class="badge badge-status badge-success">{{ job.status }}</span></td>
+                                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                                     <td>
                                         <a href="{% url 'job_billing_staff' job.job_code %}"
                                             class="btn btn-primary btn-sm me-2"><i class="fas fa-file-invoice"></i> View
@@ -660,7 +669,7 @@
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="5" class="text-center">No completed jobs yet.</td>
+                                    <td colspan="6" class="text-center">No completed jobs yet.</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -688,6 +697,7 @@
                                     <th>Customer Name</th>
                                     <th>Device</th>
                                     <th>Status</th>
+                                    <th class="text-end">Amount</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -698,6 +708,7 @@
                                     <td>{{ job.customer_name }}</td>
                                     <td>{{ job.device_type }}</td>
                                     <td><span class="badge badge-status badge-warning">{{ job.status }}</span></td>
+                                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                                     <td>
                                         <button type="button"
                                             class="btn btn-danger btn-sm close-job-modal-btn"
@@ -712,7 +723,7 @@
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="5" class="text-center">No jobs marked as returned.</td>
+                                    <td colspan="6" class="text-center">No jobs marked as returned.</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -739,6 +750,7 @@
                                     <th>Customer Name</th>
                                     <th>Device</th>
                                     <th>Status</th>
+                                    <th class="text-end">Amount</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -749,13 +761,14 @@
                                     <td>{{ job.customer_name }}</td>
                                     <td>{{ job.device_type }}</td>
                                     <td><span class="badge badge-status badge-success">{{ job.status }}</span></td>
+                                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                                     <td><a href="{% url 'job_billing_staff' job.job_code %}"
                                             class="btn btn-primary btn-sm"><i class="fas fa-file-invoice"></i> View
                                             Bill</a></td>
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="5" class="text-center">No jobs ready for pickup.</td>
+                                    <td colspan="6" class="text-center">No jobs ready for pickup.</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -1475,6 +1488,7 @@
                 </td>
                 <td>${job.customer_name}</td>
                 <td>${job.device_type}</td>
+                <td class="text-end fw-semibold">&#8377;${job.net_total || '0.00'}</td>
                 <td colspan="2">
                     <div class="d-flex gap-2 flex-wrap">
                         <a href="${job.detail_url}" class="btn btn-sm btn-outline-primary">

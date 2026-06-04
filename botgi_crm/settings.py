@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 import environ
@@ -56,6 +57,7 @@ PUBLIC_BASE_URL = env('PUBLIC_BASE_URL', default='')
 WEB_RELEASE_VERSION = env('WEB_RELEASE_VERSION', default='dev')
 WEB_RELEASE_POLL_INTERVAL_SECONDS = env.int('WEB_RELEASE_POLL_INTERVAL_SECONDS', default=300)
 WHATSAPP_BRIDGE_AUTO_START = env.bool('WHATSAPP_BRIDGE_AUTO_START', default=True)
+REDIS_URL = env('REDIS_URL', default='redis://127.0.0.1:6379/0')
 
 
 # Application definition
@@ -79,6 +81,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'job_tickets.middleware.CurrentWorkspaceMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'job_tickets.middleware.SessionSecurityMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -154,6 +157,13 @@ CHANNEL_LAYERS = {
 #         },
 #     },
 # }
+
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default=REDIS_URL)
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default=REDIS_URL)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_ALWAYS_EAGER = env.bool('CELERY_TASK_ALWAYS_EAGER', default=False)
         
 
 # Database
@@ -200,6 +210,7 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'Asia/Kolkata'
+CELERY_TIMEZONE = TIME_ZONE
 
 USE_I18N = True
 
@@ -216,7 +227,16 @@ STATICFILES_DIRS = [
 ]
 
 # WhiteNoise configuration for static files
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+RUNNING_TESTS = 'test' in sys.argv
+STATICFILES_STORAGE = env(
+    'DJANGO_STATICFILES_STORAGE',
+    default=(
+        'django.contrib.staticfiles.storage.StaticFilesStorage'
+        if RUNNING_TESTS
+        else 'whitenoise.storage.CompressedStaticFilesStorage'
+    ),
+)
+WHITENOISE_MANIFEST_STRICT = env.bool('WHITENOISE_MANIFEST_STRICT', default=False)
 
 # Media files (uploads)
 MEDIA_URL = '/media/'

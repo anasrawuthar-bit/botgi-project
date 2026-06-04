@@ -250,6 +250,22 @@
                                                 </small>
                                             </div>
                                         </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label" for="{{ form.job_ticket_print_paper_size.id_for_label }}">
+                                                    {{ form.job_ticket_print_paper_size.label }}
+                                                </label>
+                                                {{ form.job_ticket_print_paper_size }}
+                                                <small class="form-text text-muted">Used for job ticket and receipt prints.</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label" for="{{ form.bill_print_paper_size.id_for_label }}">
+                                                    {{ form.bill_print_paper_size.label }}
+                                                </label>
+                                                {{ form.bill_print_paper_size }}
+                                                <small class="form-text text-muted">Used for service bills and inventory sales bills.</small>
+                                            </div>
+                                        </div>
                                         <div class="alert alert-info">
                                             <i class="fas fa-info-circle"></i> Invoice numbers will be auto-generated as: <strong>0001, 0002...</strong> (single continuous sequence for service + inventory sales)
                                         </div>

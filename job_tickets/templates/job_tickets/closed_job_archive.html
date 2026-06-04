@@ -18,9 +18,9 @@
             <div class="col-md-3 col-lg-2">
                 <label for="status_filter" class="form-label">Filter by Status:</label>
                 <select name="status_filter" id="status_filter" class="form-select">
-                    <option value="" {% if not status_filter %}selected{% endif %}>All Returned Jobs</option>
+                    <option value="" {% if not status_filter %}selected{% endif %}>Still Returned + Returned -> Closed</option>
                     <option value="returned" {% if status_filter == 'returned' %}selected{% endif %}>Still Returned ({{ returned_count }})</option>
-                    <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Closed ({{ closed_returned_count }})</option>
+                    <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Returned -> Closed ({{ closed_returned_count }})</option>
                 </select>
             </div>
             {% endif %}
@@ -52,7 +52,7 @@
                     <p class="mb-0">
                         <strong>Total Amount:</strong> 
                         <span id="total-jobs-amount" class="badge bg-info fs-6">
-                            {% if total_jobs_amount is not None %}${{ total_jobs_amount|floatformat:2 }}{% else %}$0.00{% endif %}
+                            {% if total_jobs_amount is not None %}&#8377;{{ total_jobs_amount|floatformat:2 }}{% else %}&#8377;0.00{% endif %}
                         </span>
                     </p>
                 </div>
@@ -75,6 +75,7 @@
                     <th>Device</th>
                     <th>Status</th>
                     <th>Created At</th>
+                    <th class="text-end">Amount</th>
                     <th>Assigned Technician</th>
                     <th>Actions</th>
                 </tr>
@@ -95,6 +96,7 @@
                         {% endif %}
                     </td>
                     <td>{{ job.created_at|date:"Y-m-d H:i" }}</td>
+                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                     <td>{{ job.assigned_to.user.username|default:"N/A" }}</td>
                     <td>
                         <a href="{% url 'job_billing_print_view' job.job_code %}" class="btn btn-sm btn-success me-2">
@@ -107,7 +109,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center">No jobs found in the selected date range.</td>
+                    <td colspan="8" class="text-center">No jobs found in the selected date range.</td>
                 </tr>
                 {% endfor %}
             </tbody>

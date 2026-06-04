@@ -15,6 +15,7 @@ urlpatterns = [
     path('client-bill/<str:job_code>/', views.client_bill_view, name='client_bill_view'),
     path('qr/<str:job_code>/', views.qr_access, name='qr_access'),
     path('client-receipt/<str:job_code>/', views.job_creation_receipt_public_view, name='job_creation_receipt_public'),
+    path('client-receipt/<str:job_code>/pdf/', views.job_creation_receipt_pdf_public_view, name='job_creation_receipt_pdf_public'),
 
     # Staff-facing views
     path('staff-dashboard/', views.staff_dashboard, name='staff_dashboard'),
@@ -47,6 +48,7 @@ urlpatterns = [
     path('staff/company-profile/', views.company_profile_settings, name='company_profile_settings'),
     path('staff/reports/daily/<str:date_str>/<str:filter_type>/', views.daily_jobs_report, name='daily_jobs_report'),
     path('staff/reports/vendor/<int:vendor_id>/', views.vendor_report_detail, name='vendor_report_detail'), # <--- ADD THIS LINE
+    path('staff/reports/vendor/<int:vendor_id>/export/csv/', views.vendor_report_export_csv, name='vendor_report_export_csv'),
     path('staff/job/ready-for-pickup/<str:job_code>/', views.mark_ready_for_pickup, name='mark_ready_for_pickup'),
     path('staff/receipt/print/<str:job_code>/', views.job_creation_receipt_print_view, name='job_creation_receipt_print'),
     path('staff/reports/pending/print/', views.print_pending_jobs_report, name='print_pending_jobs_report'),
@@ -120,6 +122,7 @@ urlpatterns = [
     path("job/<str:job_code>/complete/", views.job_mark_completed, name="job_mark_completed"),
     path('staff/billing/print/<str:job_code>/', views.job_billing_print_view, name='job_billing_print_view'),
     path('reports/technician/<int:tech_id>/print/', views.technician_report_print, name='technician_report_print'),
+    path('reports/technician/<int:tech_id>/export/csv/', views.technician_report_export_csv, name='technician_report_export_csv'),
     path('staff/technician-reports/', views.staff_technician_reports, name='staff_technician_reports'),
 
     # gemini

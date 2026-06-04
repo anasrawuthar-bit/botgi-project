@@ -308,11 +308,19 @@ def staff_dashboard(request):
                 messages.error(request, error)
             return redirect('staff_dashboard')
 
+        current_workspace = getattr(request, 'current_workspace', None)
+
         # Auto-create or refresh the client directory.
         try:
-            existing_client = Client.objects.filter(phone__in=phone_lookup_variants(customer_phone)).order_by('id').first()
+            client_qs = Client.objects.filter(phone__in=phone_lookup_variants(customer_phone))
+            if current_workspace:
+                client_qs = client_qs.filter(workspace=current_workspace)
+            existing_client = client_qs.order_by('id').first()
             if existing_client:
                 client_updated_fields = []
+                if current_workspace and existing_client.workspace_id != current_workspace.id:
+                    existing_client.workspace = current_workspace
+                    client_updated_fields.append('workspace')
                 if existing_client.name != customer_name:
                     existing_client.name = customer_name
                     client_updated_fields.append('name')
@@ -322,7 +330,7 @@ def staff_dashboard(request):
                 if client_updated_fields:
                     existing_client.save(update_fields=client_updated_fields)
             else:
-                Client.objects.create(phone=customer_phone, name=customer_name)
+                Client.objects.create(workspace=current_workspace, phone=customer_phone, name=customer_name)
         except Exception:
             # Client directory sync should not block ticket creation.
             pass
@@ -441,6 +449,7 @@ def staff_dashboard(request):
                 new_job_code = get_next_job_code() 
                 
                 new_job = JobTicket.objects.create(
+                    workspace=current_workspace,
                     job_code=new_job_code,
                     customer_name=customer_name,
                     customer_phone=customer_phone,
@@ -488,6 +497,7 @@ def staff_dashboard(request):
                     'customer_name': new_job.customer_name,
                     'customer_phone': new_job.customer_phone,
                     'device_type': new_job.device_type,
+                    'net_total': '0.00',
                     'detail_url': reverse('staff_job_detail', args=[new_job.job_code]),
                     'receipt_url': reverse('job_creation_receipt_print', args=[new_job.job_code]),
                 })
@@ -530,7 +540,7 @@ def staff_dashboard(request):
         form = JobTicketForm()
         
     if request.method == 'POST' and 'assign_job_form_submit' in request.POST:
-        assign_form = AssignJobForm(request.POST)
+        assign_form = AssignJobForm(request.POST, workspace=getattr(request, 'current_workspace', None))
         if assign_form.is_valid():
             job_code = assign_form.cleaned_data['job_code']
             technician = assign_form.cleaned_data['technician']
@@ -552,11 +562,11 @@ def staff_dashboard(request):
             messages.success(request, f"Job {job_to_assign.job_code} assigned to {technician.user.username}.")
             return redirect('staff_dashboard')
     else:
-        assign_form = AssignJobForm()
+        assign_form = AssignJobForm(workspace=getattr(request, 'current_workspace', None))
     
     # START: NEW VENDOR ASSIGNMENT LOGIC (Logic retained)
     if request.method == 'POST' and 'assign_vendor_form_submit' in request.POST:
-        assign_vendor_form = AssignVendorForm(request.POST)
+        assign_vendor_form = AssignVendorForm(request.POST, workspace=getattr(request, 'current_workspace', None))
         if assign_vendor_form.is_valid():
             data = assign_vendor_form.cleaned_data
             service = get_object_or_404(SpecializedService, id=data['specialized_service_id'])
@@ -579,13 +589,17 @@ def staff_dashboard(request):
 
     # GET QUERY AND LIST FETCHING (Logic retained)
     query = request.GET.get('q')
+    current_workspace = getattr(request, 'current_workspace', None)
     search_results = []
     if query:
-        search_results = list(JobTicket.objects.filter(
+        search_qs = JobTicket.objects.filter(
             Q(job_code__icontains=query) |
             Q(customer_name__icontains=query) |
             Q(customer_phone__icontains=query)
-        ).select_related(
+        )
+        if current_workspace:
+            search_qs = search_qs.filter(workspace=current_workspace)
+        search_results = list(search_qs.select_related(
             'assigned_to__user'
         ).prefetch_related(
             'service_logs'
@@ -594,6 +608,9 @@ def staff_dashboard(request):
         try:
             # Calculate totals for search results
             calculate_job_totals(search_results)
+            for job in search_results:
+                job.discount_total = _money_or_zero(job.discount_amount)
+                job.net_total = _net_amount_after_discount(job.total, job.discount_total)
         except InvalidOperation:
             messages.error(request, "Error calculating job totals. Some values may be incorrect.")
         
@@ -605,20 +622,35 @@ def staff_dashboard(request):
         ).order_by('-created_at')
     else:
         job_tickets = JobTicket.objects.all().order_by('-created_at')
+    if current_workspace:
+        job_tickets = job_tickets.filter(workspace=current_workspace)
     
-    pending_jobs = job_tickets.filter(status='Pending')
-    returned_jobs = job_tickets.filter(status='Returned')
-    ready_for_pickup_jobs = job_tickets.filter(status='Ready for Pickup')
-    completed_jobs = job_tickets.filter(status='Completed')
-    awaiting_assignment = SpecializedService.objects.filter(status='Awaiting Assignment').select_related('job_ticket')
+    def prepare_dashboard_jobs(queryset):
+        jobs = list(queryset.select_related('assigned_to__user').prefetch_related('service_logs'))
+        calculate_job_totals(jobs)
+        for job in jobs:
+            job.discount_total = _money_or_zero(job.discount_amount)
+            job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+        return jobs
+
+    pending_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Pending'))
+    returned_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Returned'))
+    ready_for_pickup_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Ready for Pickup'))
+    completed_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Completed'))
+    awaiting_assignment = list(
+        SpecializedService.objects.filter(status='Awaiting Assignment')
+        .select_related('job_ticket')
+        .prefetch_related('job_ticket__service_logs')
+    )
 
     # Fetch and group in-progress jobs by technician (Logic retained)
     in_progress_jobs_qs = job_tickets.filter(
         Q(status='Under Inspection') | Q(status='Repairing')
-    ).select_related('assigned_to__user')
+    )
+    in_progress_jobs = prepare_dashboard_jobs(in_progress_jobs_qs)
 
     grouped_in_progress_jobs = {}
-    for job in in_progress_jobs_qs:
+    for job in in_progress_jobs:
         key = job.assigned_to.user.username if job.assigned_to and job.assigned_to.user else "Unassigned"
         if key not in grouped_in_progress_jobs:
             grouped_in_progress_jobs[key] = []
@@ -626,7 +658,13 @@ def staff_dashboard(request):
 
     # Create a form instance for each of these jobs (Logic retained)
     for service in awaiting_assignment:
-        service.form = AssignVendorForm(initial={'specialized_service_id': service.id})
+        calculate_job_totals([service.job_ticket])
+        service.job_ticket.discount_total = _money_or_zero(service.job_ticket.discount_amount)
+        service.job_ticket.net_total = _net_amount_after_discount(service.job_ticket.total, service.job_ticket.discount_total)
+        service.form = AssignVendorForm(
+            initial={'specialized_service_id': service.id},
+            workspace=getattr(request, 'current_workspace', None) or service.job_ticket.workspace,
+        )
 
     sent_to_vendor = SpecializedService.objects.filter(status='Sent to Vendor').select_related('job_ticket', 'vendor')
 
@@ -662,7 +700,7 @@ def staff_dashboard(request):
         'show_create_job_modal': request.session.pop('show_create_job_modal', False),
         'pending_jobs': pending_jobs,
         'grouped_in_progress_jobs': grouped_in_progress_jobs,
-        'in_progress_jobs_count': in_progress_jobs_qs.count(),
+        'in_progress_jobs_count': len(in_progress_jobs),
         'returned_jobs': returned_jobs,
         'ready_for_pickup_jobs': ready_for_pickup_jobs,
         'completed_jobs': completed_jobs,
@@ -675,10 +713,10 @@ def staff_dashboard(request):
         'accepted_assignments': accepted_assignments,
         'awaiting_assignment_jobs': awaiting_assignment,
         'sent_to_vendor_jobs': sent_to_vendor,
-        'pending_count': pending_jobs.count(),
-        'ready_count': ready_for_pickup_jobs.count(),
-        'completed_count': completed_jobs.count(),
-        'returned_count': returned_jobs.count(),
+        'pending_count': len(pending_jobs),
+        'ready_count': len(ready_for_pickup_jobs),
+        'completed_count': len(completed_jobs),
+        'returned_count': len(returned_jobs),
         'reminder_alerts': reminder_alerts,
         'reminder_alert_count': reminder_alert_count,
         'due_reminder_count': due_reminder_count,
@@ -980,6 +1018,7 @@ def job_billing_staff(request, job_code):
                             inventory_sale_bill.save(update_fields=inventory_bill_updates + ['updated_at'])
                     else:
                         inventory_sale_bill = InventoryBill.objects.create(
+                            workspace=job.workspace or getattr(request, 'current_workspace', None),
                             bill_number=_generate_inventory_bill_number('sale', sale_entry_date),
                             entry_type='sale',
                             entry_date=sale_entry_date,
@@ -1015,7 +1054,10 @@ def job_billing_staff(request, job_code):
                         if product_service_charge < 0:
                             raise ValueError("Product service charge cannot be negative.")
 
-                        product = Product.objects.select_for_update().filter(pk=product_id).first()
+                        product_qs = Product.objects.select_for_update().filter(pk=product_id)
+                        if job.workspace_id:
+                            product_qs = product_qs.filter(workspace=job.workspace)
+                        product = product_qs.first()
                         if not product:
                             raise ValueError("Selected product no longer exists.")
                         stock_before = product.stock_quantity
@@ -1034,6 +1076,7 @@ def job_billing_staff(request, job_code):
                         line_cost = (product.cost_price or Decimal('0')) * Decimal(quantity)
                         line_profit = line_total - line_cost
                         inventory_sale_entry = InventoryEntry.objects.create(
+                            workspace=job.workspace or getattr(request, 'current_workspace', None),
                             bill=inventory_sale_bill,
                             entry_number=_generate_inventory_entry_number('sale', sale_entry_date),
                             entry_type='sale',
@@ -1056,6 +1099,7 @@ def job_billing_staff(request, job_code):
                         )
 
                         ProductSale.objects.create(
+                            workspace=job.workspace or getattr(request, 'current_workspace', None),
                             job_ticket=job,
                             product=product,
                             service_log=created_sale_log,
@@ -1122,6 +1166,7 @@ def job_billing_staff(request, job_code):
                 new_job_code = get_next_job_code()
                 
                 new_job = JobTicket.objects.create(
+                    workspace=getattr(request, 'current_workspace', None) or job.workspace,
                     job_code=new_job_code,
                     customer_name=job.customer_name,
                     customer_phone=job.customer_phone,
@@ -1594,7 +1639,7 @@ def staff_job_detail(request, job_code):
     
     history_logs = job.logs.all().select_related('user')
     specialized_service = SpecializedService.objects.filter(job_ticket=job).first()
-    technician_list = get_assignable_technician_queryset()
+    technician_list = get_assignable_technician_queryset(getattr(request, 'current_workspace', None) or job.workspace)
     job_reminders = job.reminders.select_related('created_by').order_by('-due_at', '-id')
     active_reminder = _active_job_reminder(job)
     reminder_schedule = _default_reminder_schedule(active_reminder)
@@ -1630,7 +1675,7 @@ def staff_job_detail(request, job_code):
         'related_jobs': related_jobs,
         'all_jobs': all_jobs,
         'technician_list': technician_list,
-        'ReassignTechnicianForm': ReassignTechnicianForm(),
+        'ReassignTechnicianForm': ReassignTechnicianForm(workspace=getattr(request, 'current_workspace', None) or job.workspace),
         'qr_url': qr_url,
         'checklist_schema': checklist_schema,
         'checklist_title': checklist_title,
@@ -1833,14 +1878,18 @@ def print_active_workload_report(request):
     active_statuses = ['Under Inspection', 'Repairing', 'Specialized Service', 'Returned']
     
     # 1. Fetch active jobs, excluding those that are ready for pickup or closed
-    active_jobs_qs = JobTicket.objects.filter(
+    active_jobs = list(JobTicket.objects.filter(
         status__in=active_statuses
-    ).select_related('assigned_to__user').order_by('assigned_to__user__username', 'job_code')
+    ).select_related('assigned_to__user').prefetch_related('service_logs').order_by('assigned_to__user__username', 'job_code'))
+    calculate_job_totals(active_jobs)
+    for job in active_jobs:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
 
     # 2. Group the jobs by Technician for clear reporting
     grouped_jobs = {}
     
-    for job in active_jobs_qs:
+    for job in active_jobs:
         technician_name = job.assigned_to.user.username if job.assigned_to and job.assigned_to.user else "UNASSIGNED"
         
         if technician_name not in grouped_jobs:
@@ -1866,7 +1915,7 @@ def job_reassign_staff(request, job_code):
     
     job = get_object_or_404(JobTicket, job_code=job_code)
     
-    form = ReassignTechnicianForm(request.POST)
+    form = ReassignTechnicianForm(request.POST, workspace=getattr(request, 'current_workspace', None) or job.workspace)
     # Note: We must validate the job_code field that is passed implicitly here, but trust the primary key validation
     
     if form.is_valid():
@@ -1936,14 +1985,26 @@ def staff_job_archive_view(request):
             messages.error(request, "Invalid date format provided for filtering.")
             # Keep jobs_queryset unfiltered on error
     
+    jobs_list = list(jobs_queryset.prefetch_related('service_logs'))
+    calculate_job_totals(jobs_list)
+    for job in jobs_list:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+
+    total_amount_sum = sum((job.total for job in jobs_list), Decimal('0.00'))
+    total_discount_sum = sum((job.discount_total for job in jobs_list), Decimal('0.00'))
+    grand_total_amount = _net_amount_after_discount(total_amount_sum, total_discount_sum)
+
     # --- Context Setup ---
     context = {
-        'jobs': jobs_queryset,
+        'jobs': jobs_list,
         'current_start_date': start_date_str,
         'current_end_date': end_date_str,
         'today_date_str': timezone.localdate().strftime('%Y-%m-%d'),
         # Assuming you have a helper for company start date:
         'company_start_date': get_company_start_date().strftime('%Y-%m-%d'), 
+        'total_jobs_count': len(jobs_list),
+        'total_jobs_amount': grand_total_amount,
     }
     return render(request, 'job_tickets/staff_job_archive.html', context)
 
@@ -1977,25 +2038,20 @@ def staff_job_filtered_archive_view(request, status_code):
         q_status_filter = Q(status__in=['Completed', 'Ready for Pickup'])
         report_title = "Completed/Ready Jobs Archive"
     elif status_code == 'Returned':
-        # Enhanced filtering for returned jobs using job logs to track history
-        # Get all jobs that have been marked as 'Returned' at some point
-        returned_job_ids = JobTicketLog.objects.filter(
-            action='STATUS',
-            details__icontains="'Returned'"
-        ).values_list('job_ticket_id', flat=True).distinct()
+        closed_returned_job_ids = get_returned_to_closed_job_ids()
         
         if status_filter == 'closed':
-            # Jobs that were returned and are now closed
-            q_status_filter = Q(id__in=returned_job_ids, status='Closed')
-            report_title = "Returned Jobs - Closed"
+            # Jobs that were closed directly from Returned status
+            q_status_filter = Q(id__in=closed_returned_job_ids, status='Closed')
+            report_title = "Returned -> Closed Jobs"
         elif status_filter == 'returned':
             # Jobs that are currently in returned status
             q_status_filter = Q(status='Returned')
             report_title = "Returned Jobs - Still Returned"
         else:
-            # Show all jobs that have been returned at some point
-            q_status_filter = Q(id__in=returned_job_ids)
-            report_title = "Jobs Returned (Non-Repairable/Rework)"
+            # Show current Returned jobs and jobs closed directly from Returned status
+            q_status_filter = Q(status='Returned') | Q(id__in=closed_returned_job_ids, status='Closed')
+            report_title = "Returned -> Closed Jobs"
     elif status_code == 'Closed':
         q_status_filter = Q(status='Closed')
         report_title = "Closed Jobs Archive"
@@ -2024,40 +2080,35 @@ def staff_job_filtered_archive_view(request, status_code):
             messages.error(request, "Invalid date format provided for filtering.")
 
         # Fetch job objects (including prefetched service_logs) to calculate totals per job
-    jobs_list = list(jobs_queryset) 
+    jobs_list = list(jobs_queryset.prefetch_related('service_logs'))
     
     # Reuse the helper function to calculate individual job totals (part_total, service_total, total)
     calculate_job_totals(jobs_list) 
     
     # Calculate the grand total and grand discount from the list
-    total_amount_sum = sum(job.total for job in jobs_list)
-    total_discount_sum = sum(job.discount_amount for job in jobs_list)
+    for job in jobs_list:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+
+    total_amount_sum = sum((job.total for job in jobs_list), Decimal('0.00'))
+    total_discount_sum = sum((job.discount_total for job in jobs_list), Decimal('0.00'))
     
     # Grand Total (Subtotal - Discount)
-    grand_total_amount = total_amount_sum - total_discount_sum if total_amount_sum > total_discount_sum else Decimal('0.00')
-    total_jobs_count = jobs_queryset.count()
+    grand_total_amount = _net_amount_after_discount(total_amount_sum, total_discount_sum)
+    total_jobs_count = len(jobs_list)
     
     # Calculate counts for returned jobs filtering
     returned_count = 0
     closed_returned_count = 0
     if status_code == 'Returned':
-        # Get all jobs that have been marked as 'Returned' at some point
-        returned_job_ids = JobTicketLog.objects.filter(
-            action='STATUS',
-            details__icontains="'Returned'"
-        ).values_list('job_ticket_id', flat=True).distinct()
-        
         # Count jobs currently in Returned status
         returned_count = JobTicket.objects.filter(status='Returned').count()
-        # Count jobs that were returned and are now closed
-        closed_returned_count = JobTicket.objects.filter(
-            id__in=returned_job_ids, 
-            status='Closed'
-        ).count()
+        # Count jobs closed directly from Returned status
+        closed_returned_count = get_returned_to_closed_jobs().count()
     
     # --- Context Setup ---
     context = {
-        'jobs': jobs_queryset,
+        'jobs': jobs_list,
         'report_title': report_title,
         'current_start_date': start_date_str,
         'current_end_date': end_date_str,

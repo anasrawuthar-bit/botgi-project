@@ -211,6 +211,7 @@ def job_creation_receipt_print_view(request, job_code):
         'grouped_jobs': grouped_jobs,
         'estimated_amount': estimated_amount,
         'estimated_delivery': estimated_delivery,
+        'company': CompanyProfile.get_profile(getattr(request, 'current_workspace', None)),
         'autoprint': autoprint,
     }
     return render(request, 'job_tickets/job_creation_receipt_print.html', context)
@@ -237,9 +238,96 @@ def job_creation_receipt_public_view(request, job_code):
         'grouped_jobs': grouped_jobs,
         'estimated_amount': estimated_amount,
         'estimated_delivery': estimated_delivery,
+        'company': CompanyProfile.get_profile(getattr(request, 'current_workspace', None)),
         'autoprint': autoprint,
     }
     return render(request, 'job_tickets/job_creation_receipt_print.html', context)
+
+
+def _pdf_escape(value):
+    text = str(value or '')
+    return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+
+def _simple_job_receipt_pdf_bytes(job_ticket, grouped_jobs, estimated_amount, estimated_delivery):
+    lines = [
+        'BOTGI Job Ticket Receipt',
+        f'Primary Job: {job_ticket.job_code}',
+        f'Customer: {job_ticket.customer_name}',
+        f'Phone: {job_ticket.customer_phone}',
+        f'Date: {timezone.localtime(job_ticket.created_at).strftime("%Y-%m-%d %I:%M %p")}',
+        f'Estimated Amount: Rs {Decimal(estimated_amount):.2f}',
+        f'Estimated Delivery: {estimated_delivery.strftime("%Y-%m-%d") if estimated_delivery else "-"}',
+        '',
+        'Jobs',
+    ]
+
+    for job in grouped_jobs:
+        device = ' '.join(part for part in [job.device_brand, job.device_model, f'({job.device_type})'] if part).strip()
+        lines.extend([
+            f'- {job.job_code}',
+            f'  Device: {device or job.device_type or "-"}',
+            f'  Issue: {job.reported_issue or "-"}',
+            f'  Status: {job.get_status_display()}',
+        ])
+        if job.additional_items:
+            lines.append(f'  Items: {job.additional_items}')
+
+    content_lines = ['BT /F1 16 Tf 50 790 Td (BOTGI Job Ticket Receipt) Tj ET']
+    y = 760
+    for line in lines[1:]:
+        if y < 60:
+            break
+        font_size = 11 if line else 6
+        content_lines.append(f'BT /F1 {font_size} Tf 50 {y} Td ({_pdf_escape(line)}) Tj ET')
+        y -= 18 if line else 10
+
+    content = '\n'.join(content_lines).encode('latin-1', errors='replace')
+    objects = [
+        b'1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+        b'2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+        b'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+        b'4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+        b'5 0 obj\n<< /Length ' + str(len(content)).encode('ascii') + b' >>\nstream\n' + content + b'\nendstream\nendobj\n',
+    ]
+
+    pdf = bytearray(b'%PDF-1.4\n')
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(pdf))
+        pdf.extend(obj)
+    xref_offset = len(pdf)
+    pdf.extend(f'xref\n0 {len(objects) + 1}\n'.encode('ascii'))
+    pdf.extend(b'0000000000 65535 f \n')
+    for offset in offsets[1:]:
+        pdf.extend(f'{offset:010d} 00000 n \n'.encode('ascii'))
+    pdf.extend(
+        f'trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n'.encode('ascii')
+    )
+    return bytes(pdf)
+
+
+def job_creation_receipt_pdf_public_view(request, job_code):
+    job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    token = (request.GET.get('token') or '').strip()
+    if not verify_receipt_access_token(job_ticket, token):
+        return HttpResponseForbidden("Invalid or expired receipt link.")
+
+    if job_ticket.customer_group_id:
+        grouped_jobs = list(
+            JobTicket.objects.filter(customer_group_id=job_ticket.customer_group_id).order_by('created_at')
+        )
+    else:
+        grouped_jobs = [job_ticket]
+
+    estimated_amount = job_ticket.estimated_amount if job_ticket.estimated_amount is not None else Decimal('0.00')
+    estimated_delivery = job_ticket.estimated_delivery or (job_ticket.created_at + timedelta(days=3))
+    pdf_bytes = _simple_job_receipt_pdf_bytes(job_ticket, grouped_jobs, estimated_amount, estimated_delivery)
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{job_ticket.job_code}.pdf"'
+    return response
+
 
 def qr_access(request, job_code):
     """Direct access to job status via QR code without login"""

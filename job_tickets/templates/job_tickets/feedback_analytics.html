@@ -272,6 +272,7 @@
                     <th>Customer</th>
                     <th>Device</th>
                     <th>Status</th>
+                    <th class="text-end">Amount</th>
                     <th>Staff Action</th>
                 </tr>
             </thead>
@@ -297,6 +298,7 @@
                         <div class="small text-muted">Called {{ job.feedback_followup_called_at|date:"d M, h:i A" }}</div>
                         {% endif %}
                     </td>
+                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                     <td>
                         <form method="post" action="{% url 'update_feedback_followup' job.job_code %}">
                             {% csrf_token %}
@@ -336,7 +338,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="text-center text-muted">No feedback calls pending.</td>
+                    <td colspan="7" class="text-center text-muted">No feedback calls pending.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -354,6 +356,7 @@
                         <th>Customer</th>
                         <th>Status</th>
                         <th>Rating</th>
+                        <th class="text-end">Amount</th>
                         <th>Note</th>
                     </tr>
                 </thead>
@@ -364,6 +367,7 @@
                         <td>{{ job.customer_name }}</td>
                         <td><span class="followup-status {{ job.feedback_followup_status }}">{{ job.get_feedback_followup_status_display }}</span></td>
                         <td>{% if job.feedback_rating %}{{ job.feedback_rating }}/10{% else %}-{% endif %}</td>
+                        <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                         <td class="text-muted small">{{ job.feedback_comment|default:job.feedback_followup_note|truncatechars:100 }}</td>
                     </tr>
                     {% endfor %}
@@ -564,6 +568,7 @@
                     <th>Customer</th>
                     <th>Phone</th>
                     <th>Rating</th>
+                    <th class="text-end">Amount</th>
                     <th>Comment</th>
                     <th>Date</th>
                 </tr>
@@ -577,12 +582,13 @@
                     <td>
                         {{ job.feedback_rating }}/10
                     </td>
+                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
                     <td>{{ job.feedback_comment|truncatewords:12|default:"No comment provided" }}</td>
                     <td>{{ job.feedback_date|date:"M d, Y" }}</td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="text-center text-muted">No feedback found for this filter.</td>
+                    <td colspan="7" class="text-center text-muted">No feedback found for this filter.</td>
                 </tr>
                 {% endfor %}
             </tbody>

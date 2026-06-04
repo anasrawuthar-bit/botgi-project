@@ -83,6 +83,13 @@ CHECKLIST_FIELD_TYPES = {'text', 'textarea', 'number', 'select', 'checkbox'}
 MONEY_OUTPUT_FIELD = DecimalField(max_digits=12, decimal_places=2)
 
 
+def scope_to_workspace(queryset, workspace_or_request, field='workspace'):
+    workspace = getattr(workspace_or_request, 'current_workspace', workspace_or_request)
+    if workspace:
+        return queryset.filter(**{field: workspace})
+    return queryset
+
+
 def vendor_net_cost_expression(prefix=''):
     cost_field = f'{prefix}vendor_cost'
     discount_field = f'{prefix}vendor_discount_amount'
@@ -764,39 +771,169 @@ def _net_amount_after_discount(gross_amount, discount_amount):
     discount = _money_or_zero(discount_amount)
     return max(Decimal('0.00'), gross - discount)
 
+RETURNED_TO_CLOSED_LOG_TEXT = "from 'Returned' to 'Closed'"
+
+def get_returned_to_closed_job_ids(job_queryset=None):
+    """Jobs that were closed directly from Returned status."""
+    logs = JobTicketLog.objects.filter(
+        details__icontains=RETURNED_TO_CLOSED_LOG_TEXT,
+    )
+    if job_queryset is not None:
+        logs = logs.filter(job_ticket__in=job_queryset)
+    return logs.values_list('job_ticket_id', flat=True).distinct()
+
+def get_returned_to_closed_jobs(job_queryset=None):
+    """Return closed jobs whose closing transition was Returned -> Closed."""
+    jobs = JobTicket.objects.filter(status='Closed')
+    if job_queryset is not None:
+        jobs = jobs.filter(id__in=job_queryset.values('id'))
+    return jobs.filter(id__in=get_returned_to_closed_job_ids(jobs))
+
 def _money_text(amount):
     return format((_money_or_zero(amount)).quantize(Decimal('0.01')), 'f')
 
 def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, end_date_str, preset='', show_jobs=''):
     """Build unified financial summary context for HTML/CSV/PDF outputs."""
-    valid_show_jobs = {'created', 'finished', 'returned', 'vendor'}
+    valid_show_jobs = {'created', 'finished', 'current_in_closed', 'previous_in', 'pending_completed', 'returned', 'vendor'}
     if show_jobs not in valid_show_jobs:
         show_jobs = ''
 
-    monthly_finished_jobs_list = get_jobs_for_report_period(start_of_period, end_of_period)
-    finished_job_ids = [job.id for job in monthly_finished_jobs_list]
-    monthly_finished_jobs = JobTicket.objects.filter(id__in=finished_job_ids)
+    closed_jobs_filter = Q(status='Closed') & (
+        Q(closed_at__gte=start_of_period, closed_at__lt=end_of_period)
+        | Q(closed_at__isnull=True, updated_at__gte=start_of_period, updated_at__lt=end_of_period)
+    )
+    monthly_closed_jobs = JobTicket.objects.filter(closed_jobs_filter)
+    current_month_in_closed_jobs = monthly_closed_jobs.filter(created_at__gte=start_of_period, created_at__lt=end_of_period)
+    previous_month_in_closed_jobs = monthly_closed_jobs.filter(created_at__lt=start_of_period)
+    pending_completed_jobs = JobTicket.objects.filter(status__in=['Completed', 'Ready for Pickup'])
+    ready_for_pickup_jobs = pending_completed_jobs.filter(status='Ready for Pickup')
 
     jobs_created = JobTicket.objects.filter(created_at__gte=start_of_period, created_at__lt=end_of_period)
-    jobs_returned = JobTicket.objects.filter(status='Returned', updated_at__gte=start_of_period, updated_at__lt=end_of_period)
-    vendor_jobs = [job for job in monthly_finished_jobs_list if job.is_vendor_job()]
+    jobs_returned = get_returned_to_closed_jobs(monthly_closed_jobs)
+    vendor_jobs = list(monthly_closed_jobs.filter(specialized_service__isnull=False))
+
+    def summarize_pending_value(jobs_queryset):
+        totals = ServiceLog.objects.filter(job_ticket__in=jobs_queryset).aggregate(
+            parts=Coalesce(Sum('part_cost', output_field=DecimalField()), Decimal('0.00')),
+            service=Coalesce(Sum('service_charge', output_field=DecimalField()), Decimal('0.00')),
+        )
+        parts_total = totals['parts']
+        service_total = totals['service']
+        discount_total = _sum_job_discounts(jobs_queryset)
+        return {
+            'parts': parts_total,
+            'service': service_total,
+            'discount': discount_total,
+            'value': _net_amount_after_discount(parts_total + service_total, discount_total),
+        }
+
+    def summarize_closed_financials(jobs_queryset):
+        closed_logs = list(ServiceLog.objects.filter(job_ticket__in=jobs_queryset).select_related('job_ticket'))
+        closed_stock_sales = summarize_stock_sales(jobs_queryset, closed_logs)
+        closed_product_sale_log_ids = closed_stock_sales['service_log_ids']
+        closed_service_logs = [
+            log for log in closed_logs
+            if log.id not in closed_product_sale_log_ids
+            and 'Specialized Service' not in (log.description or '')
+        ]
+        closed_service_revenue = sum(
+            ((log.part_cost or Decimal('0.00')) + (log.service_charge or Decimal('0.00')) for log in closed_service_logs),
+            Decimal('0.00'),
+        )
+        closed_vendor_services = SpecializedService.objects.filter(job_ticket__in=jobs_queryset)
+        closed_vendor_expense = sum_vendor_net_cost(closed_vendor_services)
+        closed_vendor_revenue = closed_vendor_services.aggregate(
+            total=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0.00'))
+        )['total']
+        closed_discount = _sum_job_discounts(jobs_queryset)
+        closed_revenue = _net_amount_after_discount(
+            closed_service_revenue + closed_stock_sales['total_revenue'] + closed_vendor_revenue,
+            closed_discount,
+        )
+        closed_expense = closed_stock_sales['total_cogs'] + closed_vendor_expense
+        closed_profit = closed_revenue - closed_expense
+        return {
+            'count': jobs_queryset.count(),
+            'revenue': closed_revenue,
+            'expense': closed_expense,
+            'profit': closed_profit,
+            'discount': closed_discount,
+        }
+
+    def summarize_closed_bill_receivables(jobs_queryset):
+        bills = list(
+            InventoryBill.objects
+            .filter(entry_type='sale', job_ticket__in=jobs_queryset)
+            .annotate(bill_total=Coalesce(Sum('lines__total_amount', output_field=DecimalField()), Decimal('0.00')))
+            .order_by('entry_date', 'id')
+        )
+        direction = InventoryCreditPayment.DIRECTION_RECEIVABLE
+        payment_totals = _inventory_credit_payment_totals([bill.id for bill in bills])
+
+        bill_total = Decimal('0.00')
+        paid_total = Decimal('0.00')
+        balance_total = Decimal('0.00')
+        balance_count = 0
+        for bill in bills:
+            total_amount = _money_or_zero(getattr(bill, 'bill_total', Decimal('0.00')))
+            paid_amount = _money_or_zero(payment_totals.get((bill.id, direction), Decimal('0.00')))
+            balance_amount = total_amount - paid_amount
+            if balance_amount < Decimal('0.00'):
+                balance_amount = Decimal('0.00')
+
+            bill_total += total_amount
+            paid_total += paid_amount
+            balance_total += balance_amount
+            if balance_amount > Decimal('0.00'):
+                balance_count += 1
+
+        return {
+            'bill_count': len(bills),
+            'balance_count': balance_count,
+            'bill_total': bill_total,
+            'paid': paid_total,
+            'balance': balance_total,
+        }
+
+    pending_completed_summary = summarize_pending_value(pending_completed_jobs)
+    ready_for_pickup_summary = summarize_pending_value(ready_for_pickup_jobs)
+    current_month_in_closed_summary = summarize_closed_financials(current_month_in_closed_jobs)
+    previous_month_in_closed_summary = summarize_closed_financials(previous_month_in_closed_jobs)
+    closed_receivable_summary = summarize_closed_bill_receivables(monthly_closed_jobs)
 
     job_list = []
     if show_jobs == 'created':
         job_list = list(jobs_created.select_related('assigned_to__user').order_by('-created_at'))
     elif show_jobs == 'finished':
-        job_list = list(monthly_finished_jobs.select_related('assigned_to__user').order_by('-updated_at'))
+        job_list = list(monthly_closed_jobs.select_related('assigned_to__user').order_by('-closed_at', '-updated_at'))
+    elif show_jobs == 'current_in_closed':
+        job_list = list(current_month_in_closed_jobs.select_related('assigned_to__user').order_by('-closed_at', '-updated_at'))
+    elif show_jobs == 'previous_in':
+        job_list = list(previous_month_in_closed_jobs.select_related('assigned_to__user').order_by('-closed_at', '-updated_at'))
+    elif show_jobs == 'pending_completed':
+        job_list = list(pending_completed_jobs.select_related('assigned_to__user').order_by('-updated_at'))
     elif show_jobs == 'returned':
         job_list = list(jobs_returned.select_related('assigned_to__user').order_by('-updated_at'))
     elif show_jobs == 'vendor':
         job_list = list(
-            JobTicket.objects.filter(id__in=[job.id for job in vendor_jobs])
+            monthly_closed_jobs.filter(specialized_service__isnull=False)
             .select_related('assigned_to__user', 'specialized_service__vendor')
-            .order_by('-updated_at')
+            .order_by('-closed_at', '-updated_at')
         )
 
-    logs_in_period = list(ServiceLog.objects.filter(job_ticket__in=monthly_finished_jobs).select_related('job_ticket'))
-    stock_sales = summarize_stock_sales(monthly_finished_jobs, logs_in_period)
+    for job in job_list:
+        if show_jobs in {'finished', 'current_in_closed', 'previous_in', 'vendor'}:
+            job.summary_report_date = job.closed_at or job.updated_at
+        else:
+            job.summary_report_date = job.created_at if show_jobs == 'created' else job.updated_at
+    if job_list:
+        calculate_job_totals(job_list)
+        for job in job_list:
+            job.discount_total = _money_or_zero(job.discount_amount)
+            job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+
+    logs_in_period = list(ServiceLog.objects.filter(job_ticket__in=monthly_closed_jobs).select_related('job_ticket'))
+    stock_sales = summarize_stock_sales(monthly_closed_jobs, logs_in_period)
     product_sale_log_ids = stock_sales['service_log_ids']
 
     non_product_logs = [log for log in logs_in_period if log.id not in product_sale_log_ids]
@@ -814,21 +951,67 @@ def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, 
     stock_sales_cogs = stock_sales['total_cogs']
     stock_sales_profit = stock_sales['total_profit']
 
-    vendor_services_in_period = SpecializedService.objects.filter(job_ticket__in=monthly_finished_jobs)
+    vendor_services_in_period = SpecializedService.objects.filter(job_ticket__in=monthly_closed_jobs)
     vendor_expense = sum_vendor_net_cost(vendor_services_in_period)
     vendor_revenue = vendor_services_in_period.aggregate(
         total=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0.00'))
     )['total']
     vendor_profit = vendor_revenue - vendor_expense
 
-    total_discounts = _sum_job_discounts(monthly_finished_jobs)
+    total_discounts = _sum_job_discounts(monthly_closed_jobs)
+    closed_gross_revenue = service_revenue + stock_sales_income + vendor_revenue
     overall_revenue = _net_amount_after_discount(
-        service_revenue + stock_sales_income + vendor_revenue,
+        closed_gross_revenue,
         total_discounts,
     )
     overall_expense = service_expense + stock_sales_cogs + vendor_expense
     overall_profit = overall_revenue - overall_expense
     overall_margin = (overall_profit / overall_revenue * 100) if overall_revenue > 0 else Decimal('0.00')
+
+    closed_financial_blocks = [
+        {
+            'label': 'Service Parts',
+            'note': 'Service part revenue from closed jobs',
+            'revenue': service_parts_revenue,
+            'expense': Decimal('0.00'),
+            'profit': service_parts_revenue,
+            'is_discount': False,
+        },
+        {
+            'label': 'Service Labor',
+            'note': 'Service labor revenue from closed jobs',
+            'revenue': service_labor_revenue,
+            'expense': service_expense,
+            'profit': service_labor_revenue - service_expense,
+            'is_discount': False,
+        },
+        {
+            'label': 'Stock Sales',
+            'note': 'Product sale lines from closed jobs',
+            'revenue': stock_sales_income,
+            'expense': stock_sales_cogs,
+            'profit': stock_sales_profit,
+            'is_discount': False,
+        },
+        {
+            'label': 'Vendor',
+            'note': 'Vendor client charge less vendor payable',
+            'revenue': vendor_revenue,
+            'expense': vendor_expense,
+            'profit': vendor_profit,
+            'is_discount': False,
+        },
+        {
+            'label': 'Discount Applied Once',
+            'note': 'Job-level discount deducted from total revenue',
+            'revenue': -total_discounts,
+            'revenue_abs': total_discounts,
+            'expense': Decimal('0.00'),
+            'profit': -total_discounts,
+            'profit_abs': total_discounts,
+            'is_discount': True,
+        },
+    ]
 
     all_part_income = sum((log.part_cost or Decimal('0.00') for log in logs_in_period), Decimal('0.00'))
     all_service_income = sum((log.service_charge or Decimal('0.00') for log in logs_in_period), Decimal('0.00'))
@@ -841,7 +1024,33 @@ def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, 
         'show_jobs': show_jobs,
         'job_list': job_list,
         'jobs_created_count': jobs_created.count(),
-        'jobs_finished_count': monthly_finished_jobs.count(),
+        'jobs_finished_count': monthly_closed_jobs.count(),
+        'jobs_closed_count': monthly_closed_jobs.count(),
+        'current_month_in_closed_count': current_month_in_closed_jobs.count(),
+        'current_month_in_closed_revenue': current_month_in_closed_summary['revenue'],
+        'current_month_in_closed_expense': current_month_in_closed_summary['expense'],
+        'current_month_in_closed_profit': current_month_in_closed_summary['profit'],
+        'current_month_in_closed_discount': current_month_in_closed_summary['discount'],
+        'previous_month_in_closed_count': previous_month_in_closed_jobs.count(),
+        'previous_month_in_closed_revenue': previous_month_in_closed_summary['revenue'],
+        'previous_month_in_closed_expense': previous_month_in_closed_summary['expense'],
+        'previous_month_in_closed_profit': previous_month_in_closed_summary['profit'],
+        'previous_month_in_closed_discount': previous_month_in_closed_summary['discount'],
+        'pending_completed_count': pending_completed_jobs.count(),
+        'pending_completed_parts': pending_completed_summary['parts'],
+        'pending_completed_service': pending_completed_summary['service'],
+        'pending_completed_discount': pending_completed_summary['discount'],
+        'pending_completed_value': pending_completed_summary['value'],
+        'ready_for_pickup_count': ready_for_pickup_jobs.count(),
+        'ready_for_pickup_parts': ready_for_pickup_summary['parts'],
+        'ready_for_pickup_service': ready_for_pickup_summary['service'],
+        'ready_for_pickup_discount': ready_for_pickup_summary['discount'],
+        'ready_for_pickup_value': ready_for_pickup_summary['value'],
+        'closed_receivable_bill_count': closed_receivable_summary['bill_count'],
+        'closed_receivable_balance_count': closed_receivable_summary['balance_count'],
+        'closed_receivable_bill_total': closed_receivable_summary['bill_total'],
+        'closed_receivable_paid': closed_receivable_summary['paid'],
+        'closed_receivable_balance': closed_receivable_summary['balance'],
         'jobs_returned_count': jobs_returned.count(),
         'vendor_jobs_count': len(vendor_jobs),
 
@@ -868,6 +1077,8 @@ def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, 
         'vendor_profit': vendor_profit,
 
         # Overall
+        'closed_gross_revenue': closed_gross_revenue,
+        'closed_financial_blocks': closed_financial_blocks,
         'overall_revenue': overall_revenue,
         'overall_expense': overall_expense,
         'overall_profit': overall_profit,
@@ -1531,7 +1742,7 @@ def _parse_inventory_decimal(raw_value, label, default='0.00'):
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(label)
 
-def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rates):
+def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rates, workspace=None):
     max_lines = max(
         len(product_ids),
         len(quantities),
@@ -1574,7 +1785,10 @@ def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rate
         if gst_rate < 0:
             raise ValueError(f"Line {line_no}: GST rate cannot be negative.")
 
-        product = Product.objects.filter(pk=product_id, is_active=True).first()
+        product = scope_to_workspace(
+            Product.objects.filter(pk=product_id, is_active=True),
+            workspace,
+        ).first()
         if not product:
             raise ValueError(f"Line {line_no}: selected product was not found.")
         if product.id in seen_product_ids:
@@ -1758,16 +1972,17 @@ def _inventory_post_response(request, url_name, ok, message, extra_params=None):
 
 def _process_inventory_grouped_bill_edit(request, *, entry_type):
     config = INVENTORY_ENTRY_CONFIG[entry_type]
+    current_workspace = getattr(request, 'current_workspace', None)
     bill_id_raw = (request.POST.get('bill_id') or '').strip()
     entry_id = (request.POST.get('entry_id') or '').strip()
     if not entry_id or not bill_id_raw.isdigit():
         raise ValueError('Selected bill was not found.')
 
-    grouped_entry = InventoryEntry.objects.filter(
+    grouped_entry = scope_to_workspace(InventoryEntry.objects.filter(
         pk=entry_id,
         bill_id=int(bill_id_raw),
         entry_type=entry_type,
-    ).select_related('job_ticket', 'party').first()
+    ), current_workspace).select_related('job_ticket', 'party').first()
     if not grouped_entry:
         raise ValueError('Selected bill was not found.')
 
@@ -1809,10 +2024,10 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
         raise ValueError("Bill discount cannot be negative.")
 
     scoped_entries = list(
-        InventoryEntry.objects.filter(
+        scope_to_workspace(InventoryEntry.objects.filter(
             bill_id=int(bill_id_raw),
             entry_type=entry_type,
-        ).select_related('bill', 'party', 'job_ticket').order_by('id')
+        ), current_workspace).select_related('bill', 'party', 'job_ticket').order_by('id')
     )
     if not scoped_entries:
         raise ValueError('Selected bill was not found.')
@@ -1823,7 +2038,7 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
     if entry_type == 'sale' and linked_job_ids:
         raise ValueError('Service-linked sales bills must be edited from the job billing screen.')
 
-    valid_party_qs = InventoryParty.objects.filter(is_active=True)
+    valid_party_qs = scope_to_workspace(InventoryParty.objects.filter(is_active=True), current_workspace)
 
     if linked_job_ids:
         new_party = scoped_entries[0].party
@@ -1844,6 +2059,7 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
         request.POST.getlist('edit_line_quantity[]'),
         request.POST.getlist('edit_line_unit_price[]'),
         request.POST.getlist('edit_line_gst_rate[]'),
+        workspace=current_workspace,
     )
     final_line_items = _apply_inventory_bill_discount(
         line_items,
@@ -1878,8 +2094,11 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
 def _get_or_create_inventory_customer_party_for_job(job):
     customer_name = (job.customer_name or '').strip() or f"Customer {job.job_code}"
     customer_phone = (job.customer_phone or '').strip()
+    workspace = getattr(job, 'workspace', None)
 
     party_qs = InventoryParty.objects.all()
+    if workspace:
+        party_qs = party_qs.filter(workspace=workspace)
     party = None
     if customer_phone:
         party = party_qs.filter(phone=customer_phone).first()
@@ -1897,11 +2116,15 @@ def _get_or_create_inventory_customer_party_for_job(job):
         if customer_name and party.name != customer_name:
             party.name = customer_name[:200]
             update_fields.append('name')
+        if workspace and party.workspace_id != workspace.id:
+            party.workspace = workspace
+            update_fields.append('workspace')
         if update_fields:
             party.save(update_fields=update_fields)
         return party
 
     return InventoryParty.objects.create(
+        workspace=workspace,
         name=customer_name[:200],
         party_type='both',
         phone=customer_phone[:20],
@@ -1956,6 +2179,11 @@ def _record_inventory_entries(
 
     normalized_invoice = (invoice_number or '').strip()
     created_entries = []
+    workspace = (
+        getattr(job_ticket, 'workspace', None)
+        or getattr(party, 'workspace', None)
+        or getattr(request, 'current_workspace', None)
+    )
 
     with transaction.atomic():
         shared_invoice = normalized_invoice or _generate_inventory_invoice_number(entry_type, entry_date)
@@ -1983,6 +2211,9 @@ def _record_inventory_entries(
             if bill.job_ticket_id != (job_ticket.id if job_ticket else None):
                 bill.job_ticket = job_ticket
                 update_fields.append('job_ticket')
+            if workspace and bill.workspace_id != workspace.id:
+                bill.workspace = workspace
+                update_fields.append('workspace')
             if (bill.notes or '') != shared_notes:
                 bill.notes = shared_notes
                 update_fields.append('notes')
@@ -1993,6 +2224,7 @@ def _record_inventory_entries(
                 bill.save(update_fields=update_fields + ['updated_at'])
         else:
             bill = InventoryBill.objects.create(
+                workspace=workspace,
                 bill_number=_generate_inventory_bill_number(entry_type, entry_date),
                 entry_type=entry_type,
                 entry_date=entry_date,
@@ -2026,6 +2258,7 @@ def _record_inventory_entries(
             total_amount = taxable_amount + gst_amount
 
             entry = InventoryEntry.objects.create(
+                workspace=workspace,
                 bill=bill,
                 entry_number=_generate_inventory_entry_number(entry_type, entry_date),
                 entry_type=entry_type,
@@ -2070,6 +2303,7 @@ def _record_inventory_entries(
             if direction and bill_total > Decimal('0.00'):
                 bill_total = bill_total.quantize(Decimal('0.01'))
                 InventoryCreditPayment.objects.create(
+                    workspace=workspace,
                     party=party,
                     bill=bill,
                     direction=direction,
@@ -2284,14 +2518,13 @@ def _attach_inventory_credit_to_bill_summaries(bill_summaries):
     return bill_summaries
 
 
-def _build_inventory_credit_rows(entry_type, limit=None):
+def _build_inventory_credit_rows(entry_type, limit=None, workspace=None):
     direction = _inventory_credit_direction_for_entry_type(entry_type)
     if not direction:
         return []
 
     bills = list(
-        InventoryBill.objects
-        .filter(entry_type=entry_type)
+        scope_to_workspace(InventoryBill.objects.filter(entry_type=entry_type), workspace)
         .select_related('party')
         .annotate(bill_total=Coalesce(Sum('lines__total_amount', output_field=DecimalField()), Decimal('0.00')))
         .order_by('entry_date', 'id')
@@ -2326,13 +2559,15 @@ def _build_inventory_credit_rows(entry_type, limit=None):
     return rows
 
 
-def _build_inventory_credit_summary():
-    payable_rows = _build_inventory_credit_rows('purchase')
-    receivable_rows = _build_inventory_credit_rows('sale')
+def _build_inventory_credit_summary(workspace=None):
+    payable_rows = _build_inventory_credit_rows('purchase', workspace=workspace)
+    receivable_rows = _build_inventory_credit_rows('sale', workspace=workspace)
     month_start = timezone.localdate().replace(day=1)
     payment_totals = (
-        InventoryCreditPayment.objects
-        .filter(payment_date__gte=month_start)
+        scope_to_workspace(
+            InventoryCreditPayment.objects.filter(payment_date__gte=month_start),
+            workspace,
+        )
         .values('direction')
         .annotate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))
     )
@@ -2348,7 +2583,7 @@ def _build_inventory_credit_summary():
         'payable_rows': payable_rows[:8],
         'receivable_rows': receivable_rows[:8],
         'recent_payments': list(
-            InventoryCreditPayment.objects
+            scope_to_workspace(InventoryCreditPayment.objects, workspace)
             .select_related('party', 'bill', 'created_by')
             .order_by('-payment_date', '-created_at')[:10]
         ),
@@ -2382,7 +2617,7 @@ def _record_inventory_credit_payment(request):
 
     with transaction.atomic():
         bill = (
-            InventoryBill.objects.select_for_update()
+            scope_to_workspace(InventoryBill.objects.select_for_update(), getattr(request, 'current_workspace', None))
             .select_related('party')
             .filter(pk=int(bill_id_raw))
             .first()
@@ -2414,6 +2649,7 @@ def _record_inventory_credit_payment(request):
 
         balance_after = (balance_before - amount).quantize(Decimal('0.01'))
         payment = InventoryCreditPayment.objects.create(
+            workspace=bill.workspace or getattr(request, 'current_workspace', None),
             party=bill.party,
             bill=bill,
             direction=direction,
@@ -2436,10 +2672,13 @@ def _record_inventory_credit_payment(request):
     }
 
 
-def _build_inventory_dashboard_metrics():
+def _build_inventory_dashboard_metrics(workspace=None):
     month_start = timezone.localdate().replace(day=1)
+    entries_scope = scope_to_workspace(InventoryEntry.objects.all(), workspace)
+    products_scope = scope_to_workspace(Product.objects.all(), workspace)
+    parties_scope = scope_to_workspace(InventoryParty.objects.all(), workspace)
     monthly_totals_qs = (
-        InventoryEntry.objects.filter(entry_date__gte=month_start)
+        entries_scope.filter(entry_date__gte=month_start)
         .values('entry_type')
         .annotate(
             total_amount=Coalesce(Sum('total_amount', output_field=DecimalField()), Decimal('0.00')),
@@ -2467,29 +2706,29 @@ def _build_inventory_dashboard_metrics():
     monthly_net_amount = monthly_stock_in_amount - monthly_stock_out_amount
 
     inventory_value = Decimal('0.00')
-    for product in Product.objects.only('stock_quantity', 'cost_price'):
+    for product in products_scope.only('stock_quantity', 'cost_price'):
         inventory_value += Decimal(product.stock_quantity or 0) * (product.cost_price or Decimal('0.00'))
 
     reserved_stock_products = list(
-        Product.objects.filter(
+        products_scope.filter(
             reserved_stock__gt=0,
             stock_quantity__lte=F('reserved_stock'),
         ).order_by('stock_quantity', 'reserved_stock', 'name')[:8]
     )
-    reserved_alert_count = Product.objects.filter(
+    reserved_alert_count = products_scope.filter(
         reserved_stock__gt=0,
         stock_quantity__lte=F('reserved_stock'),
     ).count()
 
     recent_entries = list(
-        InventoryEntry.objects.select_related('party', 'product', 'created_by').order_by('-entry_date', '-id')[:10]
+        entries_scope.select_related('party', 'product', 'created_by').order_by('-entry_date', '-id')[:10]
     )
-    credit_summary = _build_inventory_credit_summary()
+    credit_summary = _build_inventory_credit_summary(workspace)
 
     return {
-        'party_count': InventoryParty.objects.count(),
-        'product_count': Product.objects.count(),
-        'low_stock_count': Product.objects.filter(stock_quantity__lte=5).count(),
+        'party_count': parties_scope.count(),
+        'product_count': products_scope.count(),
+        'low_stock_count': products_scope.filter(stock_quantity__lte=5).count(),
         'reserved_alert_count': reserved_alert_count,
         'inventory_value': inventory_value.quantize(Decimal('0.01')) if inventory_value else Decimal('0.00'),
         'monthly_purchase_total': monthly_purchase_total,
@@ -2511,8 +2750,8 @@ def _build_inventory_dashboard_metrics():
         'credit_summary': credit_summary,
     }
 
-def _build_inventory_party_directory(query='', start_date=None, end_date=None):
-    parties = InventoryParty.objects.all()
+def _build_inventory_party_directory(query='', start_date=None, end_date=None, workspace=None):
+    parties = scope_to_workspace(InventoryParty.objects.all(), workspace)
 
     if query:
         parties = parties.filter(
@@ -2525,6 +2764,7 @@ def _build_inventory_party_directory(query='', start_date=None, end_date=None):
             | Q(state_code__icontains=query)
         )
 
+    total_party_count = parties.count()
     parties = list(parties.order_by('name'))
     suppliers = list(parties)
     customers = list(parties)
@@ -2545,7 +2785,10 @@ def _build_inventory_party_directory(query='', start_date=None, end_date=None):
     if party_ids:
         max_recent_per_type = 20 if start_date or end_date else 8
         party_entries_map = {party_id: [] for party_id in party_ids}
-        recent_entries = InventoryEntry.objects.filter(party_id__in=party_ids)
+        recent_entries = scope_to_workspace(
+            InventoryEntry.objects.filter(party_id__in=party_ids),
+            workspace,
+        )
         if start_date:
             recent_entries = recent_entries.filter(entry_date__gte=start_date)
         if end_date:
@@ -2626,13 +2869,13 @@ def _build_inventory_party_directory(query='', start_date=None, end_date=None):
         'suppliers': suppliers,
         'customers': customers,
         'legacy_both_count': legacy_both_count,
-        'total_parties': InventoryParty.objects.count(),
-        'supplier_count': InventoryParty.objects.count(),
-        'customer_count': InventoryParty.objects.count(),
+        'total_parties': total_party_count,
+        'supplier_count': total_party_count,
+        'customer_count': total_party_count,
     }
 
-def _build_inventory_product_catalog(query=''):
-    products = Product.objects.all()
+def _build_inventory_product_catalog(query='', workspace=None):
+    products = scope_to_workspace(Product.objects.all(), workspace)
 
     if query:
         products = products.filter(
@@ -2674,7 +2917,7 @@ def _build_inventory_product_catalog(query=''):
 
     if product_ids:
         history_entries = (
-            InventoryEntry.objects.filter(product_id__in=product_ids)
+            scope_to_workspace(InventoryEntry.objects.filter(product_id__in=product_ids), workspace)
             .select_related('party')
             .order_by('-entry_date', '-id')
         )
@@ -2739,10 +2982,10 @@ def _build_inventory_product_catalog(query=''):
     return {
         'products': product_rows,
         'query': query,
-        'total_products': Product.objects.count(),
+        'total_products': scope_to_workspace(Product.objects.all(), workspace).count(),
         'filtered_count': len(product_rows),
-        'out_of_stock_count': Product.objects.filter(stock_quantity=0).count(),
-        'reserved_alert_count': Product.objects.filter(
+        'out_of_stock_count': scope_to_workspace(Product.objects.all(), workspace).filter(stock_quantity=0).count(),
+        'reserved_alert_count': scope_to_workspace(Product.objects.all(), workspace).filter(
             reserved_stock__gt=0,
             stock_quantity__lte=F('reserved_stock'),
         ).count(),
@@ -3037,6 +3280,7 @@ def _inventory_entry_dashboard(request, entry_type):
         return denied
 
     config = INVENTORY_ENTRY_CONFIG[entry_type]
+    current_workspace = getattr(request, 'current_workspace', None)
     query = (request.GET.get('q') or '').strip()
     start_date_raw = (request.GET.get('start_date') or '').strip()
     end_date_raw = (request.GET.get('end_date') or '').strip()
@@ -3062,7 +3306,10 @@ def _inventory_entry_dashboard(request, entry_type):
         start_date, end_date = end_date, start_date
         start_date_raw, end_date_raw = end_date_raw, start_date_raw
 
-    entries = InventoryEntry.objects.filter(entry_type=entry_type).select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
+    entries = scope_to_workspace(
+        InventoryEntry.objects.filter(entry_type=entry_type),
+        current_workspace,
+    ).select_related('bill', 'party', 'product', 'created_by', 'job_ticket')
 
     if query:
         entries = entries.filter(
@@ -3094,7 +3341,10 @@ def _inventory_entry_dashboard(request, entry_type):
         if source_bill_id_raw.isdigit():
             source_bill_id = int(source_bill_id_raw)
             source_bill_obj = (
-                InventoryBill.objects.filter(pk=source_bill_id, entry_type=source_entry_type)
+                scope_to_workspace(
+                    InventoryBill.objects.filter(pk=source_bill_id, entry_type=source_entry_type),
+                    current_workspace,
+                )
                 .select_related('party')
                 .first()
             )
@@ -3107,11 +3357,11 @@ def _inventory_entry_dashboard(request, entry_type):
         elif source_invoice and source_party_raw.isdigit():
             source_party_id = int(source_party_raw)
             source_entries = list(
-                InventoryEntry.objects.filter(
+                scope_to_workspace(InventoryEntry.objects.filter(
                     entry_type=source_entry_type,
                     invoice_number=source_invoice,
                     party_id=source_party_id,
-                )
+                ), current_workspace)
                 .select_related('bill', 'party', 'product')
                 .order_by('id')
             )
@@ -3158,7 +3408,7 @@ def _inventory_entry_dashboard(request, entry_type):
             bill_payment_method_value = (request.POST.get('bill_payment_method') or bill_payment_method_value).strip()
             bill_payment_date_value = (request.POST.get('bill_payment_date') or bill_payment_date_value).strip()
             bill_payment_reference_value = (request.POST.get('bill_payment_reference') or '').strip()
-            entry_form = InventoryEntryForm(request.POST, entry_type=entry_type)
+            entry_form = InventoryEntryForm(request.POST, entry_type=entry_type, workspace=current_workspace)
             if entry_form.is_valid():
                 try:
                     raw_entry_date = entry_form.cleaned_data.get('entry_date')
@@ -3187,6 +3437,7 @@ def _inventory_entry_dashboard(request, entry_type):
                         request.POST.getlist('line_quantity[]'),
                         request.POST.getlist('line_unit_price[]'),
                         request.POST.getlist('line_gst_rate[]'),
+                        workspace=current_workspace,
                     )
                     final_line_items = _apply_inventory_bill_discount(
                         line_items,
@@ -3228,7 +3479,10 @@ def _inventory_entry_dashboard(request, entry_type):
             return redirect(config['url_name'])
 
             entry_id = request.POST.get('entry_id')
-            entry = InventoryEntry.objects.filter(pk=entry_id, entry_type=entry_type).first()
+            entry = scope_to_workspace(
+                InventoryEntry.objects.filter(pk=entry_id, entry_type=entry_type),
+                current_workspace,
+            ).first()
             if not entry:
                 messages.error(request, 'Selected entry was not found.')
                 return redirect(config['url_name'])
@@ -3258,7 +3512,7 @@ def _inventory_entry_dashboard(request, entry_type):
                     messages.error(request, 'Invoice number is required.')
                     return redirect(config['url_name'])
 
-                scope_qs = InventoryEntry.objects.filter(entry_type='sale')
+                scope_qs = scope_to_workspace(InventoryEntry.objects.filter(entry_type='sale'), current_workspace)
                 if scope_bill_id:
                     scope_qs = scope_qs.filter(bill_id=scope_bill_id)
                 elif scope_invoice:
@@ -3282,10 +3536,10 @@ def _inventory_entry_dashboard(request, entry_type):
                     return redirect(config['url_name'])
 
                 existing_bill = scoped_entries[0].bill if scoped_entries[0].bill_id else None
-                new_party = InventoryParty.objects.filter(
+                new_party = scope_to_workspace(InventoryParty.objects.filter(
                     is_active=True,
                     pk=edit_party_id,
-                ).first()
+                ), current_workspace).first()
                 if not new_party:
                     messages.error(request, "Please select a valid party.")
                     return redirect(config['url_name'])
@@ -3354,7 +3608,10 @@ def _inventory_entry_dashboard(request, entry_type):
                         if gst_rate < 0:
                             raise ValueError(f"Line {line_no}: GST rate cannot be negative.")
 
-                        product = Product.objects.filter(pk=product_id, is_active=True).first()
+                        product = scope_to_workspace(
+                            Product.objects.filter(pk=product_id, is_active=True),
+                            current_workspace,
+                        ).first()
                         if not product:
                             raise ValueError(f"Line {line_no}: selected product was not found.")
                         if product.id in seen_product_ids:
@@ -3437,7 +3694,10 @@ def _inventory_entry_dashboard(request, entry_type):
 
                 try:
                     with transaction.atomic():
-                        locked_scope_qs = InventoryEntry.objects.select_for_update().filter(entry_type='sale')
+                        locked_scope_qs = scope_to_workspace(
+                            InventoryEntry.objects.select_for_update().filter(entry_type='sale'),
+                            current_workspace,
+                        )
                         if scope_bill_id:
                             locked_scope_qs = locked_scope_qs.filter(bill_id=scope_bill_id)
                         elif scope_invoice:
@@ -3456,9 +3716,9 @@ def _inventory_entry_dashboard(request, entry_type):
 
                         locked_products = {
                             product.id: product
-                            for product in Product.objects.select_for_update().filter(
+                            for product in scope_to_workspace(Product.objects.select_for_update().filter(
                                 pk__in={row.product_id for row in locked_entries}
-                            )
+                            ), current_workspace)
                         }
                         for old_entry in locked_entries:
                             product = locked_products.get(old_entry.product_id)
@@ -3508,7 +3768,7 @@ def _inventory_entry_dashboard(request, entry_type):
             new_product = None
 
             if entry_type in {'purchase', 'purchase_return'}:
-                valid_party_qs = InventoryParty.objects.filter(is_active=True)
+                valid_party_qs = scope_to_workspace(InventoryParty.objects.filter(is_active=True), current_workspace)
                 product_id_raw = (request.POST.get('edit_product_id') or '').strip()
                 quantity_raw = (request.POST.get('edit_quantity') or '').strip()
                 unit_price_raw = (request.POST.get('edit_unit_price') or '').strip()
@@ -3517,7 +3777,10 @@ def _inventory_entry_dashboard(request, entry_type):
                 if not product_id_raw:
                     messages.error(request, 'Product is required.')
                     return redirect(config['url_name'])
-                new_product = Product.objects.filter(pk=product_id_raw, is_active=True).first()
+                new_product = scope_to_workspace(
+                    Product.objects.filter(pk=product_id_raw, is_active=True),
+                    current_workspace,
+                ).first()
                 if not new_product:
                     messages.error(request, 'Selected product was not found.')
                     return redirect(config['url_name'])
@@ -3555,7 +3818,7 @@ def _inventory_entry_dashboard(request, entry_type):
                     messages.error(request, 'GST rate cannot be negative.')
                     return redirect(config['url_name'])
             else:
-                valid_party_qs = InventoryParty.objects.filter(is_active=True)
+                valid_party_qs = scope_to_workspace(InventoryParty.objects.filter(is_active=True), current_workspace)
             if is_service_linked_sale:
                 new_party = entry.party
             else:
@@ -3744,7 +4007,7 @@ def _inventory_entry_dashboard(request, entry_type):
             return redirect(config['url_name'])
 
     try:
-        default_gst_rate = CompanyProfile.get_profile().gst_rate
+        default_gst_rate = CompanyProfile.get_profile(current_workspace).gst_rate
     except Exception:
         default_gst_rate = Decimal('18.00')
 
@@ -3762,6 +4025,7 @@ def _inventory_entry_dashboard(request, entry_type):
         entry_form = InventoryEntryForm(
             entry_type=entry_type,
             initial=initial_data,
+            workspace=current_workspace,
         )
 
     sale_invoice_preview = ''
@@ -3784,7 +4048,14 @@ def _inventory_entry_dashboard(request, entry_type):
 
         sale_invoice_preview = _generate_inventory_invoice_number('sale', preview_entry_date)
 
-    edit_party_options = InventoryParty.objects.filter(is_active=True).order_by('name')
+    edit_party_options = scope_to_workspace(
+        InventoryParty.objects.filter(is_active=True),
+        current_workspace,
+    ).order_by('name')
+    line_products = scope_to_workspace(
+        Product.objects.filter(is_active=True),
+        current_workspace,
+    ).order_by('name')
 
     ordered_entries = entries.order_by('-entry_date', '-id')
     register_is_grouped = True
@@ -3854,7 +4125,7 @@ def _inventory_entry_dashboard(request, entry_type):
         'entry_type': entry_type,
         'entry_form': entry_form,
         'edit_party_options': edit_party_options,
-        'line_products': Product.objects.filter(is_active=True).order_by('name'),
+        'line_products': line_products,
         'default_gst_rate': default_gst_rate,
         'line_entry_error': line_entry_error,
         'entries': ordered_entries,

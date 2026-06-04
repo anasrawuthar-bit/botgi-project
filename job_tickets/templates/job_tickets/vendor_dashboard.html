@@ -40,6 +40,7 @@
                                     <th>Job Code</th>
                                     <th>Customer</th>
                                     <th>Device</th>
+                                    <th class="text-end">Amount</th>
                                     <th>Date Sent</th>
                                     <th style="width: 15%;">Action</th>
                                 </tr>
@@ -50,6 +51,7 @@
                                     <td><a href="{% url 'staff_job_detail' service.job_ticket.job_code %}">{{ service.job_ticket.job_code }}</a></td>
                                     <td>{{ service.job_ticket.customer_name }}</td>
                                     <td>{{ service.job_ticket.device_type }}</td>
+                                    <td class="text-end fw-semibold">&#8377;{{ service.job_ticket.net_total|default_if_none:0|floatformat:2 }}</td>
                                     <td>{{ service.sent_date|date:"Y-m-d" }}</td>
                                     <td>
                                         <button type="button" class="btn btn-success btn-sm w-100" data-bs-toggle="modal" data-bs-target="#returnModal{{ service.id }}">
