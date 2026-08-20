@@ -1,0 +1,25 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Job Created | Service Billing{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="section-container text-center">
+            <h2 class="mb-3 text-success"><i class="fas fa-circle-check me-2"></i>Job Ticket Created</h2>
+            <p class="mb-1">Job code:</p>
+            <h3 class="fw-bold mb-3">{{ job_ticket.job_code }}</h3>
+            <p class="text-muted">Please share this job code with the customer for status tracking.</p>
+
+            <div class="d-flex justify-content-center flex-wrap gap-2 mt-4">
+                <a href="{% url 'job_creation_receipt_print' job_code=job_ticket.job_code %}" class="btn btn-primary">
+                    <i class="fas fa-print me-1"></i>Print Receipt
+                </a>
+                <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-primary">
+                    <i class="fas fa-table-columns me-1"></i>Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

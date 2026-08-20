@@ -1,0 +1,33 @@
+{% extends "job_tickets/base.html" %}
+{% block title %}Technician Reports{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Technician Reports</h2>
+  <p>Manager view: printable reports and quick totals per technician.</p>
+
+  <table class="table table-bordered mt-3">
+    <thead class="thead-light">
+      <tr>
+        <th>Technician</th>
+        <th>Completed Jobs</th>
+        <th>Parts Total</th>
+        <th>Service Total</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in tech_rows %}
+      <tr>
+        <td>{{ row.tech.user.get_full_name|default:row.tech.user.username }}</td>
+        <td>{{ row.completed_count }}</td>
+        <td>₹{{ row.parts_total|floatformat:2 }}</td>
+        <td>₹{{ row.service_total|floatformat:2 }}</td>
+        <td>
+          <a href="{% url 'technician_report_print' row.tech.id %}" class="btn btn-sm btn-primary">Print Report</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

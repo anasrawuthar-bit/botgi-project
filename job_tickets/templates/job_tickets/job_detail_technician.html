@@ -1,0 +1,637 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+{% block title %}Job Detail{% endblock %}
+
+{% block content %}
+<style>
+    .technician-job-page .card {
+        border: 1px solid #dbe5f2;
+        border-radius: 14px;
+        box-shadow: 0 8px 20px rgba(18, 50, 94, 0.08);
+    }
+    .technician-job-page .card-header {
+        background: linear-gradient(180deg, #f7fbff, #eef5ff);
+        border-bottom: 1px solid #dbe5f2;
+        font-weight: 700;
+        color: #143460;
+    }
+    .technician-job-page .stat-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+        background: #eef4ff;
+        color: #164683;
+        border: 1px solid #d3e1f7;
+        margin-right: 8px;
+        margin-top: 6px;
+    }
+    .technician-job-page .section-note {
+        font-size: 13px;
+        color: #5b6d87;
+    }
+    .technician-job-page .checklist-wrap {
+        border: 1px solid #d9e5f5;
+        border-radius: 12px;
+        background: #f9fcff;
+    }
+    .technician-job-page .quick-action-btn {
+        min-width: 220px;
+    }
+    .technician-job-page .service-entry-shell {
+        border: 1px solid #dbe6f6;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #fcfeff, #f4f8ff);
+        padding: 12px;
+    }
+    .technician-job-page .service-entry-shell .form-label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #4f617d;
+        margin-bottom: 6px;
+    }
+    .technician-job-page .service-entry-shell .form-control {
+        border-radius: 10px;
+    }
+    .technician-job-page .service-entry-shell .input-group-text {
+        border-radius: 10px 0 0 10px;
+        background: #eaf2ff;
+        color: #244b84;
+        border-color: #cddcf3;
+        font-weight: 700;
+    }
+    .technician-job-page .service-entry-shell .service-total-preview {
+        border: 1px dashed #bcd0ef;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-weight: 700;
+        color: #1d4f93;
+        background: #f2f7ff;
+        display: inline-block;
+    }
+</style>
+
+<div class="section-container technician-job-page">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start mb-3">
+        <div>
+            <h1 class="mb-1">Job Details: {{ job.job_code }}</h1>
+            <div>
+                <span class="stat-pill">Status: <span class="badge badge-status badge-info">{{ job.status }}</span></span>
+                <span class="stat-pill">Warranty: {{ job.is_under_warranty|yesno:"Yes,No" }}</span>
+            </div>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <a href="{% url 'technician_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header">Customer & Device</div>
+                <div class="card-body">
+                    <p><strong>Name:</strong> {{ job.customer_name }}</p>
+                    <p><strong>Phone:</strong> {{ job.customer_phone }}</p>
+                    <p><strong>Device:</strong> {{ job.device_type }} ({{ job.device_brand }} {{ job.device_model }})</p>
+                    <p><strong>Serial:</strong> {{ job.device_serial|default:"N/A" }}</p>
+                    <p class="mb-0"><strong>Reported Issue:</strong> {{ job.reported_issue }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header">Technician Summary</div>
+                <div class="card-body">
+                    <p><strong>Additional Items:</strong> {{ job.additional_items|default:"None" }}</p>
+                    <p class="mb-0"><strong>Technician Notes:</strong> {{ job.technician_notes|default:"No notes yet." }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card">
+                <div class="card-header">Update Status & Inspection</div>
+                <div class="card-body">
+                    {% if not can_change_status %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Status Locked</strong><br>
+                            This job is with vendor for specialized service. Status cannot be changed until it is returned.
+                        </div>
+                    {% endif %}
+                    <form method="post" id="update-status-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_status">
+
+                        <div class="mb-3">
+                            <label for="status" class="form-label">Change Status</label>
+                            <select name="status" id="id_status" class="form-select" {% if not can_change_status %}disabled{% endif %}>
+                                {% for value, label in status_choices %}
+                                    <option value="{{ value }}" {% if value == job.status %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="technician_notes" class="form-label">Technician Notes</label>
+                            <textarea name="technician_notes" id="technician_notes" class="form-control" rows="4">{{ job.technician_notes }}</textarea>
+                        </div>
+
+                        {% if checklist_schema %}
+                            <div class="checklist-wrap p-3 mb-3">
+                                <h5 class="mb-2">{{ checklist_title|default:"Device Checklist" }}</h5>
+                                {% if checklist_notes %}
+                                    <p class="section-note mb-2">{{ checklist_notes }}</p>
+                                {% endif %}
+                                <p class="section-note mb-3">
+                                    {% if checklist_required_for_completion %}
+                                    Fill all required fields before setting status to <strong>Completed</strong>.
+                                    {% else %}
+                                    Checklist is optional for this job. Technician can mark the ticket <strong>Completed</strong> even without filling it.
+                                    {% endif %}
+                                </p>
+
+                                <div class="row g-3">
+                                    {% for field in checklist_schema %}
+                                        <div class="{% if field.type == 'textarea' %}col-12{% else %}col-md-6{% endif %}">
+                                            <label for="id_checklist_{{ field.key }}" class="form-label">
+                                                {{ field.label }}{% if field.required %} <span class="text-danger">*</span>{% endif %}
+                                            </label>
+
+                                            {% if field.type == 'textarea' %}
+                                                <textarea
+                                                    id="id_checklist_{{ field.key }}"
+                                                    name="checklist_{{ field.key }}"
+                                                    class="form-control checklist-field"
+                                                    rows="2"
+                                                    placeholder="{{ field.placeholder }}"
+                                                    data-check-required="{% if field.required %}1{% else %}0{% endif %}"
+                                                    data-check-label="{{ field.label }}"
+                                                >{{ field.value }}</textarea>
+                                            {% elif field.type == 'select' %}
+                                                <select
+                                                    id="id_checklist_{{ field.key }}"
+                                                    name="checklist_{{ field.key }}"
+                                                    class="form-select checklist-field"
+                                                    data-check-required="{% if field.required %}1{% else %}0{% endif %}"
+                                                    data-check-label="{{ field.label }}"
+                                                >
+                                                    <option value="">-- Select --</option>
+                                                    {% for option in field.options %}
+                                                        <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            {% elif field.type == 'checkbox' %}
+                                                <div class="form-check">
+                                                    <input type="hidden" name="checklist_{{ field.key }}" value="0">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="id_checklist_{{ field.key }}"
+                                                        name="checklist_{{ field.key }}"
+                                                        class="form-check-input checklist-field"
+                                                        value="1"
+                                                        {% if field.value == '1' %}checked{% endif %}
+                                                        data-check-required="{% if field.required %}1{% else %}0{% endif %}"
+                                                        data-check-label="{{ field.label }}"
+                                                    >
+                                                    <label class="form-check-label" for="id_checklist_{{ field.key }}">
+                                                        Mark as verified
+                                                    </label>
+                                                </div>
+                                            {% else %}
+                                                <input
+                                                    type="{% if field.type == 'number' %}number{% else %}text{% endif %}"
+                                                    id="id_checklist_{{ field.key }}"
+                                                    name="checklist_{{ field.key }}"
+                                                    class="form-control checklist-field"
+                                                    value="{{ field.value }}"
+                                                    placeholder="{{ field.placeholder }}"
+                                                    {% if field.type == 'number' %}step="0.01"{% endif %}
+                                                    data-check-required="{% if field.required %}1{% else %}0{% endif %}"
+                                                    data-check-label="{{ field.label }}"
+                                                >
+                                            {% endif %}
+
+                                            {% if field.help_text %}
+                                                <div class="form-text">{{ field.help_text }}</div>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        <button type="submit" class="btn btn-primary" id="update-status-btn" {% if not can_change_status %}disabled{% endif %}>
+                            <i class="fas fa-edit"></i> {% if can_change_status %}Update Job{% else %}Status Locked{% endif %}
+                        </button>
+                        <span id="update-status-message" class="ms-2"></span>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <div class="card mb-3">
+                <div class="card-header">Service Log Actions</div>
+                <div class="card-body">
+                    {% if job.status == 'Specialized Service' %}
+                        <div class="alert alert-warning mb-2">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Manual service log entry is disabled while this job is in Specialized Service.
+                        </div>
+                    {% else %}
+                        <form id="quick-add-service-form" class="service-entry-shell">
+                            <input type="hidden" name="action" value="add_service_log">
+                            <div class="mb-2">
+                                <label for="quick_service_description" class="form-label">Description</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    id="quick_service_description"
+                                    name="description"
+                                    placeholder="Example: Replaced charging IC / Display connector fix"
+                                    maxlength="255"
+                                >
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label for="quick_part_cost" class="form-label">Part Cost</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">&#8377;</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            class="form-control"
+                                            id="quick_part_cost"
+                                            name="part_cost"
+                                            placeholder="0.00"
+                                            value="0"
+                                        >
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <label for="quick_service_charge" class="form-label">Service Charge</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">&#8377;</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            class="form-control"
+                                            id="quick_service_charge"
+                                            name="service_charge"
+                                            placeholder="0.00"
+                                            value="0"
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <span class="service-total-preview">Line Total: &#8377;<span id="quick_line_total">0.00</span></span>
+                                <button type="submit" class="btn btn-primary quick-action-btn" id="quick-add-service-btn">
+                                    <i class="fas fa-plus"></i> Add Service
+                                </button>
+                            </div>
+                        </form>
+                        <p class="section-note mt-2 mb-0">Use this quick entry to add parts and labor in one step.</p>
+                    {% endif %}
+                    <span id="add-service-message" class="d-block mt-2"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Specialized Service Request</div>
+                <div class="card-body">
+                    <p class="section-note">
+                        For chip-level repair or external vendor work, send this job to staff.
+                    </p>
+                    <form method="post" action="{% url 'request_specialized_service' job.job_code %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-warning w-100" onclick="return confirm('Send this job for Specialized Service?')">
+                            <i class="fas fa-share-square"></i> Request Specialized Service
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Service Logs</div>
+        <div class="card-body">
+            {% if job.status == 'Specialized Service' %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Service charges will be automatically added when the job returns from vendor.
+                </div>
+            {% endif %}
+            <div id="service-logs-container">
+                {% if service_logs %}
+                    {% include 'job_tickets/_service_logs_table.html' %}
+                {% else %}
+                    <p class="mb-0">No service logs for this job yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+    function getCsrf() {
+        const el = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        return el ? el.value : '';
+    }
+
+    function showMessage(elementId, message, type) {
+        const msgEl = document.getElementById(elementId);
+        if (!msgEl) return;
+        msgEl.textContent = message;
+        msgEl.className = (elementId === 'add-service-message' ? 'd-block mt-2 ' : 'ms-2 ')
+            + (type === 'success' ? 'text-success' : type === 'error' ? 'text-danger' : 'text-warning');
+        setTimeout(() => {
+            msgEl.textContent = '';
+            msgEl.className = elementId === 'add-service-message' ? 'd-block mt-2' : 'ms-2';
+        }, 3500);
+    }
+
+    function showToast(message, title, type) {
+        const kind = (type === 'danger') ? 'error' : (type === 'success' ? 'success' : 'warning');
+        showMessage('add-service-message', message || title || 'Action completed.', kind);
+    }
+
+    // Handle Update Status & Notes form
+    const updateStatusForm = document.getElementById('update-status-form');
+    if (updateStatusForm) {
+        updateStatusForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const statusSelect = document.getElementById('id_status');
+            const selectedStatus = statusSelect ? (statusSelect.value || '').trim() : '';
+            if (selectedStatus === 'Completed') {
+                const missingChecklist = [];
+                updateStatusForm.querySelectorAll('.checklist-field[data-check-required="1"]').forEach(field => {
+                    const value = field.type === 'checkbox' ? (field.checked ? '1' : '') : (field.value || '').trim();
+                    if (!value) {
+                        missingChecklist.push(field.dataset.checkLabel || field.name || 'Required field');
+                        field.classList.add('is-invalid');
+                    } else {
+                        field.classList.remove('is-invalid');
+                    }
+                });
+                if (missingChecklist.length > 0) {
+                    const preview = missingChecklist.slice(0, 6).join(', ');
+                    const suffix = missingChecklist.length > 6 ? '...' : '';
+                    showMessage('update-status-message', `Complete required checklist fields before marking completed: ${preview}${suffix}`, 'error');
+                    return;
+                }
+            } else {
+                updateStatusForm.querySelectorAll('.checklist-field').forEach(field => field.classList.remove('is-invalid'));
+            }
+
+            const submitBtn = document.getElementById('update-status-btn');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+
+            const formData = new FormData(updateStatusForm);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrf(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+
+                if (data.ok) {
+                    showMessage('update-status-message', data.message || 'Updated successfully!', 'success');
+
+                    const statusBadge = document.querySelector('.badge-status');
+                    if (statusBadge && data.status_display) {
+                        statusBadge.textContent = data.status_display;
+                    }
+
+                    const notesParagraph = Array.from(document.querySelectorAll('.card-body p')).find(p =>
+                        p.textContent.includes('Technician Notes')
+                    );
+                    if (notesParagraph && data.technician_notes !== undefined) {
+                        const notesText = data.technician_notes || 'No notes yet.';
+                        notesParagraph.innerHTML = '<strong>Technician Notes:</strong> ' + notesText.replace(/\n/g, '<br>');
+                    }
+                } else {
+                    if (Array.isArray(data.missing_checklist_fields)) {
+                        const preview = data.missing_checklist_fields.slice(0, 6).join(', ');
+                        const suffix = data.missing_checklist_fields.length > 6 ? '...' : '';
+                        showMessage('update-status-message', data.message || `Complete required checklist fields before marking completed: ${preview}${suffix}`, 'error');
+                    } else {
+                        showMessage('update-status-message', data.message || 'Error updating job.', 'error');
+                    }
+                }
+            })
+            .catch(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+                showMessage('update-status-message', 'Network error. Please try again.', 'error');
+            });
+        });
+    }
+
+    // Quick Add Service Log via inline form
+    const quickAddServiceForm = document.getElementById('quick-add-service-form');
+    const quickPartCostInput = document.getElementById('quick_part_cost');
+    const quickServiceChargeInput = document.getElementById('quick_service_charge');
+    const quickLineTotalEl = document.getElementById('quick_line_total');
+
+    function updateQuickLineTotal() {
+        if (!quickLineTotalEl) return;
+        const part = parseFloat((quickPartCostInput && quickPartCostInput.value) || '0');
+        const service = parseFloat((quickServiceChargeInput && quickServiceChargeInput.value) || '0');
+        const total = (isNaN(part) ? 0 : part) + (isNaN(service) ? 0 : service);
+        quickLineTotalEl.textContent = total.toFixed(2);
+    }
+    updateQuickLineTotal();
+
+    if (quickPartCostInput) quickPartCostInput.addEventListener('input', updateQuickLineTotal);
+    if (quickServiceChargeInput) quickServiceChargeInput.addEventListener('input', updateQuickLineTotal);
+
+    if (quickAddServiceForm) {
+        quickAddServiceForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const descriptionEl = document.getElementById('quick_service_description');
+            const submitBtn = document.getElementById('quick-add-service-btn');
+            const description = (descriptionEl ? descriptionEl.value : '').trim();
+            const partCost = ((quickPartCostInput && quickPartCostInput.value) || '0').trim();
+            const serviceCharge = ((quickServiceChargeInput && quickServiceChargeInput.value) || '0').trim();
+
+            if (!description) {
+                showMessage('add-service-message', 'Description is required.', 'error');
+                if (descriptionEl) descriptionEl.focus();
+                return;
+            }
+            if (partCost === '' || isNaN(partCost)) {
+                showMessage('add-service-message', 'Part cost must be a valid number.', 'error');
+                if (quickPartCostInput) quickPartCostInput.focus();
+                return;
+            }
+            if (serviceCharge === '' || isNaN(serviceCharge)) {
+                showMessage('add-service-message', 'Service charge must be a valid number.', 'error');
+                if (quickServiceChargeInput) quickServiceChargeInput.focus();
+                return;
+            }
+
+            submitBtn.disabled = true;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+
+            const formData = new FormData(quickAddServiceForm);
+            formData.set('description', description);
+            formData.set('part_cost', partCost);
+            formData.set('service_charge', serviceCharge);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrf(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+
+                if (!data.ok) {
+                    showMessage('add-service-message', data.message || 'Error adding service log.', 'error');
+                    return;
+                }
+
+                showMessage('add-service-message', data.message || 'Service log added successfully!', 'success');
+                quickAddServiceForm.reset();
+                if (quickPartCostInput) quickPartCostInput.value = '0';
+                if (quickServiceChargeInput) quickServiceChargeInput.value = '0';
+                updateQuickLineTotal();
+
+                if (data.html) {
+                    const serviceLogsContainer = document.getElementById('service-logs-container');
+                    if (serviceLogsContainer) {
+                        serviceLogsContainer.innerHTML = data.html;
+                        bindServiceLogsForm();
+                    }
+                }
+            })
+            .catch(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+                showMessage('add-service-message', 'Network error. Please try again.', 'error');
+            });
+        });
+    }
+
+    // Existing editable service-logs table submit
+    function clearValidation() {
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        document.querySelectorAll('.invalid-feedback').forEach(el => el.textContent = '');
+    }
+
+    function validateForm(formEl) {
+        clearValidation();
+        let valid = true;
+        if (!formEl) return true;
+        formEl.querySelectorAll('input[type="number"]').forEach(inp => {
+            const val = inp.value.trim();
+            if (val === '') return;
+            if (isNaN(val)) {
+                inp.classList.add('is-invalid');
+                const fb = inp.parentElement.querySelector('.invalid-feedback') || document.querySelector(`[data-field="${inp.name}"]`);
+                if (fb) fb.textContent = 'Enter a valid number';
+                valid = false;
+            }
+        });
+        return valid;
+    }
+
+    function bindServiceLogsForm() {
+        const formEl = document.getElementById('service-logs-form');
+        if (!formEl || formEl.dataset.bound === '1') return;
+        formEl.dataset.bound = '1';
+
+        formEl.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (!validateForm(formEl)) {
+                showToast('Please fix errors before saving.', 'Validation', 'warning');
+                return;
+            }
+
+            const formData = new FormData(formEl);
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) {
+                    showToast(data.message || 'Error saving service logs', 'Error', 'danger');
+                    return;
+                }
+                showToast(data.message || 'Saved', 'Success', 'success');
+                if (data.html) {
+                    const container = document.getElementById('service-logs-container');
+                    if (container) {
+                        container.innerHTML = data.html;
+                        bindServiceLogsForm();
+                    }
+                }
+            })
+            .catch(() => showToast('Network error saving service logs', 'Error', 'danger'));
+        });
+    }
+    bindServiceLogsForm();
+
+    // Delete buttons (delegated)
+    document.addEventListener('click', function (e) {
+        const del = e.target.closest('.delete-log-btn');
+        if (!del) return;
+        const id = del.getAttribute('data-log-id');
+        if (!confirm('Delete this service log? This action cannot be undone.')) return;
+
+        const deleteUrl = del.dataset.deleteUrl || ('{% url "technician_delete_service_log" 0 %}'.replace('/0/', '/' + id + '/'));
+        fetch(deleteUrl, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                const row = document.getElementById('service-log-' + id);
+                if (row) row.remove();
+                showToast(data.message || 'Deleted', 'Success', 'success');
+            } else {
+                showToast(data.message || 'Could not delete', 'Error', 'danger');
+            }
+        })
+        .catch(() => showToast('Network error deleting log', 'Error', 'danger'));
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | GI Hostings Admin{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/custom_admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+<div class="brand-wrap">
+    <h1 id="site-name">
+        <a href="{% url 'admin:index' %}">GI Hostings | Service Billing Administration</a>
+    </h1>
+    <div class="brand-chip">Operations Console</div>
+    <div class="admin-support">Support: +919567227005 | gihostings.com</div>
+</div>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
