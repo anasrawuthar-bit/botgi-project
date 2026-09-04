@@ -1,0 +1,54 @@
+<div class="inventory-sidebar sticky-lg-top">
+    <div class="inventory-sidebar-head">
+        <div class="inventory-sidebar-copy">
+            <p class="inventory-sidebar-title mb-2">Inventory Module</p>
+            <p class="inventory-sidebar-subtitle mb-0">Stock, parties, and movement vouchers</p>
+        </div>
+        <button
+            class="inventory-sidebar-toggle"
+            type="button"
+            data-inventory-sidebar-toggle
+            aria-label="Collapse inventory module"
+            aria-expanded="true"
+            title="Collapse inventory module"
+        >
+            <i class="fa-solid fa-angles-left"></i>
+        </button>
+    </div>
+    <div class="nav inventory-sidebar-nav flex-lg-column gap-2" aria-label="Inventory Navigation">
+        {% if user.is_staff and staff_access.staff_dashboard %}
+        <a class="nav-link inventory-dashboard-return" href="{% url 'staff_dashboard' %}" title="Main Dashboard">
+            <i class="fa-solid fa-table-columns inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Main Dashboard</span>
+        </a>
+        {% endif %}
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_dashboard' %}active{% endif %}" href="{% url 'inventory_dashboard' %}" title="Overview" hx-get="{% url 'inventory_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-chart-simple inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Overview</span>
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_product_dashboard' or request.resolver_match.url_name == 'product_dashboard' or request.resolver_match.url_name == 'inventory_product_ledger' %}active{% endif %}" href="{% url 'inventory_product_dashboard' %}" title="Products" hx-get="{% url 'inventory_product_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-boxes-stacked inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Products</span>
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_party_dashboard' or request.resolver_match.url_name == 'inventory_party_ledger' %}active{% endif %}" href="{% url 'inventory_party_dashboard' %}" title="Parties" hx-get="{% url 'inventory_party_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-users inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Parties</span>
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_purchase_dashboard' %}active{% endif %}" href="{% url 'inventory_purchase_dashboard' %}" title="Purchase" hx-get="{% url 'inventory_purchase_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-cart-arrow-down inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Purchase</span>
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_purchase_return_dashboard' %}active{% endif %}" href="{% url 'inventory_purchase_return_dashboard' %}" title="Purchase Return" hx-get="{% url 'inventory_purchase_return_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-rotate-left inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Purchase Return</span>
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_sales_dashboard' %}active{% endif %}" href="{% url 'inventory_sales_dashboard' %}" title="Sales" hx-get="{% url 'inventory_sales_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-cart-shopping inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Sales</span>
+        </a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}" href="{% url 'inventory_sales_return_dashboard' %}" title="Sales Return" hx-get="{% url 'inventory_sales_return_dashboard' %}" hx-target=".app-main > .container" hx-select=".app-main > .container" hx-swap="outerHTML show:top" hx-push-url="true">
+            <i class="fa-solid fa-rotate-right inventory-sidebar-icon"></i>
+            <span class="inventory-sidebar-link-label">Sales Return</span>
+        </a>
+    </div>
+</div>

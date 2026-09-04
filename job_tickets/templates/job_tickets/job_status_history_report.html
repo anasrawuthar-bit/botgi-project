@@ -1,0 +1,191 @@
+{% extends "job_tickets/base.html" %}
+{% load static job_tickets_extras %}
+{% block title %}Job Status History Report{% endblock %}
+
+{% block extra_css %}
+<style>
+  .rpt { --ink:#071833; --muted:#667085; --line:#d8e0eb; --soft:#f6f8fb; --accent:#f59e0b; color:var(--ink); }
+  .rpt-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; border-left:4px solid var(--accent); padding:.25rem 0 .25rem 1rem; margin-bottom:1rem; }
+  .rpt-title { margin:0; font-size:1.9rem; font-weight:800; line-height:1.15; }
+  .rpt-subtitle { margin:.25rem 0 0; color:var(--muted); font-size:.93rem; }
+  .rpt-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; }
+  .rpt-filter { display:flex; align-items:flex-end; gap:.75rem; flex-wrap:wrap; padding:.9rem; margin-bottom:1rem; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .ff { display:flex; flex-direction:column; gap:.28rem; }
+  .ff label { font-size:.76rem; font-weight:700; color:#344054; text-transform:uppercase; }
+  .ff input { min-width:150px; border:1px solid #c8d2e0; border-radius:7px; padding:.44rem .6rem; font-size:.9rem; }
+  .brand-line { display:flex; align-items:center; gap:.85rem; padding:1rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin-bottom:1rem; }
+  .brand-logo { width:50px; height:50px; object-fit:contain; }
+  .brand-name { font-weight:700; font-size:1rem; }
+  .brand-meta { color:var(--muted); font-size:.88rem; }
+  .kpi-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; margin-bottom:1rem; }
+  .kpi { border:1px solid var(--line); border-radius:8px; padding:.85rem; background:#fff; }
+  .kpi-lbl { margin:0; color:var(--muted); font-size:.78rem; font-weight:700; }
+  .kpi-val { margin:.25rem 0 0; font-size:1.5rem; font-weight:800; }
+  .tbl-wrap { border:1px solid var(--line); border-radius:8px; overflow:auto; background:#fff; }
+  .rpt-tbl { width:100%; border-collapse:collapse; min-width:750px; font-size:.88rem; }
+  .rpt-tbl th, .rpt-tbl td { border-bottom:1px solid var(--line); padding:.65rem .7rem; vertical-align:top; }
+  .rpt-tbl thead th { background:#071833; color:#fff; font-size:.75rem; text-transform:uppercase; white-space:nowrap; }
+  .rpt-tbl tbody tr:nth-child(even) { background:var(--soft); }
+  .rpt-tbl tfoot th { background:#fff7e8; font-weight:800; border-bottom:0; }
+  .job-link { font-weight:700; color:#0b5ed7; text-decoration:none; }
+  .job-link:hover { text-decoration:underline; }
+  .pill { display:inline-flex; align-items:center; border-radius:999px; padding:.2rem .55rem; font-size:.76rem; font-weight:700; white-space:nowrap; }
+  .pill-old { background:#f0f0f0; color:#555; }
+  .pill-new { background:#eaf7ef; color:#067647; }
+  .pill-new-closed { background:#f0f0f0; color:#333; }
+  .pill-new-repairing { background:#e8f1ff; color:#175cd3; }
+  .pill-new-pending { background:#fff3cd; color:#856404; }
+  .sub { display:block; margin-top:.15rem; color:var(--muted); font-size:.81rem; }
+  @media(max-width:900px){ .rpt-head{flex-direction:column;} .rpt-actions{justify-content:flex-start;} .kpi-grid{grid-template-columns:1fr 1fr;} }
+  @media print{
+    .app-sidebar,.sidebar-topbar,.sidebar-backdrop,.sidebar-desktop-toggle,.rpt-filter,.rpt-actions,.screen-only,footer{display:none!important;}
+    body{background:#fff!important;}
+    .app-layout,.app-main,.container{margin:0!important;padding:0!important;width:100%!important;max-width:none!important;}
+    .rpt{font-size:9pt;} .rpt-title{font-size:15pt;}
+    .kpi-grid{grid-template-columns:repeat(3,1fr);gap:.35rem;} .kpi{padding:.4rem;}
+    .kpi-val{font-size:12pt;}
+    .tbl-wrap{overflow:visible;border-radius:0;}
+    .rpt-tbl{min-width:0;font-size:8pt;}
+    .rpt-tbl th,.rpt-tbl td{padding:.3rem;}
+    .rpt a::after{content:""!important;}
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rpt">
+
+  <!-- Header -->
+  <div class="rpt-head">
+    <div>
+      <h1 class="rpt-title">Job Status History Report</h1>
+      <p class="rpt-subtitle">
+        Status changes recorded between {{ report_start_date }} and {{ report_end_date }}
+        {% if job_code_filter %}&nbsp;·&nbsp; Job: {{ job_code_filter }}{% endif %}
+      </p>
+    </div>
+    <div class="rpt-actions screen-only">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'reports_dashboard' %}">
+        <i class="fa-solid fa-arrow-left me-1"></i>Reports
+      </a>
+      <a class="btn btn-outline-success btn-sm"
+         href="{% url 'job_status_history_report_export_csv' %}?start_date={{ report_start_date }}&end_date={{ report_end_date }}{% if job_code_filter %}&job_code={{ job_code_filter }}{% endif %}">
+        <i class="fa-solid fa-file-csv me-1"></i>CSV
+      </a>
+      <button type="button" class="btn btn-dark btn-sm" onclick="window.print()">
+        <i class="fa-solid fa-print me-1"></i>Print
+      </button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form class="rpt-filter screen-only" method="get">
+    <div class="ff">
+      <label for="jsh-start">Start Date</label>
+      <input id="jsh-start" type="date" name="start_date" value="{{ report_start_date }}">
+    </div>
+    <div class="ff">
+      <label for="jsh-end">End Date</label>
+      <input id="jsh-end" type="date" name="end_date" value="{{ report_end_date }}">
+    </div>
+    <div class="ff">
+      <label for="jsh-job">Job Code</label>
+      <input id="jsh-job" type="text" name="job_code" value="{{ job_code_filter }}" placeholder="e.g. GI-250104-001">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm align-self-end">
+      <i class="fa-solid fa-filter me-1"></i>Apply
+    </button>
+    {% if job_code_filter %}
+    <a class="btn btn-outline-secondary btn-sm align-self-end"
+       href="{% url 'job_status_history_report' %}?start_date={{ report_start_date }}&end_date={{ report_end_date %}">
+      <i class="fa-solid fa-times me-1"></i>Clear
+    </a>
+    {% endif %}
+  </form>
+
+  <!-- Brand line -->
+  <div class="brand-line">
+    {% if company.logo %}
+      <img class="brand-logo" src="{{ company.logo.url }}" alt="Logo">
+    {% elif company.logo_url %}
+      <img class="brand-logo" src="{{ company.logo_url }}" alt="Logo">
+    {% endif %}
+    <div>
+      <div class="brand-name">{{ company.company_name }}</div>
+      <div class="brand-meta">{{ company.address }}{% if company.phone1 %} &nbsp;·&nbsp; {{ company.phone1 }}{% endif %}</div>
+      <div class="brand-meta">Generated: {{ generated_at|date:"Y-m-d H:i" }}</div>
+    </div>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <p class="kpi-lbl">Total Status Changes</p>
+      <p class="kpi-val">{{ total_rows }}</p>
+    </div>
+    <div class="kpi">
+      <p class="kpi-lbl">Period</p>
+      <p class="kpi-val" style="font-size:1rem;margin-top:.4rem;">{{ report_start_date }}<br>→ {{ report_end_date }}</p>
+    </div>
+    <div class="kpi">
+      <p class="kpi-lbl">Job Code Filter</p>
+      <p class="kpi-val" style="font-size:1rem;margin-top:.4rem;">{{ job_code_filter|default:"All Jobs" }}</p>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="tbl-wrap">
+    <table class="rpt-tbl">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Job ID</th>
+          <th>Old Status</th>
+          <th>New Status</th>
+          <th>Status Changed Date/Time</th>
+          <th>Changed By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in history_rows %}
+        <tr>
+          <td style="color:var(--muted);font-size:.8rem;">{{ forloop.counter }}</td>
+          <td>
+            <a class="job-link" href="{% url 'staff_job_detail' row.job_id %}">{{ row.job_id }}</a>
+          </td>
+          <td><span class="pill pill-old">{{ row.old_status }}</span></td>
+          <td>
+            <span class="pill
+              {% if row.new_status == 'Closed' %}pill-new-closed
+              {% elif row.new_status == 'Pending' %}pill-new-pending
+              {% elif row.new_status == 'Repairing' or row.new_status == 'Under Inspection' %}pill-new-repairing
+              {% else %}pill-new{% endif %}">
+              {{ row.new_status }}
+            </span>
+          </td>
+          <td>
+            {{ row.changed_at|date:"Y-m-d" }}
+            <span class="sub">{{ row.changed_at|date:"H:i:s" }}</span>
+          </td>
+          <td>{{ row.changed_by }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center py-4" style="color:var(--muted);">
+            No status changes recorded for this period.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if history_rows %}
+      <tfoot>
+        <tr>
+          <th colspan="6">{{ total_rows }} status change{{ total_rows|pluralize }} in period</th>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+</div>
+{% endblock %}

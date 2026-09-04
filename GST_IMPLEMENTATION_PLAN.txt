@@ -1,0 +1,466 @@
+BOTGI GST BILLING IMPLEMENTATION PLAN
+Date: 2026-04-01
+Project: botgi_project Django web app
+
+1. DECISION FIRST
+
+Yes, this can be implemented successfully in the current web app.
+
+Recommended direction:
+- Continue with the existing Django web app.
+- Do not rebuild the whole system as a separate PC app now.
+- If needed later, package the same web app as a Windows desktop wrapper only after the GST workflow is stable.
+
+Why the current web app is the right base:
+- The project already has inventory, party master, product master, invoice numbering, billing screens, print views, roles, and admin controls.
+- The missing work is GST compliance logic and document structure, not a platform problem.
+- A web app is easier to update when GST rules change.
+- Multi-user staff access is easier in a web app than in a single-machine desktop build.
+
+When a PC app makes sense:
+- You need full offline-first billing on one machine.
+- You need deep printer, barcode scanner, local device, or local database integration.
+- You want a single-shop installation with no browser/server workflow.
+
+Current recommendation:
+- Build GST billing in this Django app.
+- Improve the backend architecture and database before calling it production-ready.
+
+
+2. CURRENT CODEBASE ASSESSMENT
+
+Existing reusable foundation already present:
+- Product master
+- Inventory party master
+- Inventory bill header and line entries
+- Sales invoice number sequencing
+- Job billing workflow
+- Product sale ledger
+- Company profile with GST toggle and default GST rate
+- Inventory print views and staff permission system
+
+Main gaps for full GST billing:
+- No proper GST master data on product and party records
+- No canonical GST document layer for mixed service + product billing
+- No CGST/SGST/IGST split engine based on place of supply
+- No HSN/SAC, UQC, tax category, cess, reverse charge support
+- No GSTR-1 table mapping
+- No GSTR-2B / IMS / purchase reconciliation flow
+- No filing-period lock, amendment tracking, or audit-level return workflow
+- Current database is SQLite, which is not ideal for serious concurrent billing usage
+
+Important architecture note:
+- Inventory stock movement and GST return documents are related, but they are not the same thing.
+- The current app stores stock movement well, but GST needs a stronger invoice/document model on top of that.
+
+
+3. MUST-DO TECHNICAL CHANGES BEFORE FULL ROLLOUT
+
+3.1 Database
+- Move from SQLite to PostgreSQL or MySQL before production GST billing rollout.
+- Reason: concurrent edits, locking, reporting load, and financial reliability.
+
+3.2 Code Organization
+- Move tax calculation and GST validation into dedicated helper/service modules.
+- Do not leave tax logic spread across templates and views only.
+
+3.3 Testing
+- Add model, service, and workflow tests for:
+  - GST calculations
+  - invoice numbering
+  - inter-state vs intra-state tax split
+  - credit/debit note reversal
+  - stock reversal
+  - GSTR summaries
+
+3.4 Audit and Locking
+- Add filing period lock.
+- Add audit log for invoice changes, cancellations, notes, GST edits, and return regeneration.
+
+
+4. TARGET IMPLEMENTATION ARCHITECTURE
+
+Recommended approach:
+- Keep current inventory models for stock ledger operations.
+- Add a proper GST document layer for compliance-ready billing.
+
+Suggested model direction:
+- Keep using Product, InventoryParty, InventoryBill, InventoryEntry for stock and operational register use.
+- Introduce a new canonical sales/purchase tax document structure for GST compliance.
+
+Suggested new document models:
+- GstDocument
+- GstDocumentLine
+- GstReturnPeriod
+- GstReturnSnapshot
+- GstReconciliationImport
+- GstReconciliationLine
+- CreditDebitNote
+- EInvoiceLog
+
+Why a separate GST document layer is safer:
+- Current job billing mixes service lines and product sale lines.
+- InventoryEntry is good for stock movement but not ideal as the only tax document source.
+- A GST document layer can represent:
+  - service-only invoices
+  - product-only invoices
+  - mixed job invoices with service + spare parts
+  - credit notes and debit notes
+  - exports, SEZ, reverse charge, exempt lines
+
+
+5. PHASED IMPLEMENTATION PLAN
+
+PHASE 0 - FOUNDATION AND SAFETY
+Goal:
+- Prepare the app so GST work does not become messy or unsafe later.
+
+Tasks:
+- Choose production database target: PostgreSQL or MySQL
+- Create a GST module area inside the app for models/services/tests
+- Define coding rules for decimal handling, invoice sequencing, and period locking
+- Add test helpers and seed data strategy
+- Add a small internal document describing GST vocabulary used in the codebase
+
+Done when:
+- The project has a dedicated GST architecture path
+- Database migration plan is approved
+- Base test scaffolding is ready
+
+
+PHASE 1 - GST MASTER DATA FOUNDATION
+Goal:
+- Make company, party, and product masters GST-ready.
+
+Company profile fields to add:
+- legal_name
+- trade_name
+- state_code
+- registration_type
+- filing_frequency
+- qrmp_enabled
+- lut_bond_enabled
+- annual_turnover_band
+- e_invoice_applicable
+- e_way_bill_enabled
+- default_place_of_supply_state
+
+Party fields to add:
+- legal_name
+- trade_name
+- gst_registration_type
+- gstin_or_uin
+- state_code
+- country
+- default_place_of_supply_state
+- shipping_address
+- billing_address
+- contact_person
+- is_composition_dealer
+
+Product fields to add:
+- item_type (goods/service)
+- hsn_sac_code
+- uqc
+- gst_rate
+- cess_rate
+- tax_category
+- is_tax_inclusive_default
+- is_reverse_charge_applicable
+
+Forms/UI work:
+- Update product master form
+- Update inventory party form
+- Update company profile settings page
+- Add field validations for GSTIN, PAN, state code, HSN/SAC length
+
+Migration strategy:
+- Existing products can default to taxable goods with empty HSN/SAC
+- Existing parties can remain usable with blank GST fields until updated
+- Existing company profile can inherit current GST enable/rate values
+
+Done when:
+- All master data needed for tax calculation exists in the database
+- Users can maintain GST-ready product and party records
+
+
+PHASE 2 - GST CALCULATION ENGINE
+Goal:
+- Centralize all tax calculations in one reliable engine.
+
+Features:
+- inclusive and exclusive price handling
+- discount before tax
+- discount after tax if business rules allow
+- CGST/SGST split for intra-state
+- IGST for inter-state
+- cess calculation
+- zero-rated, nil-rated, exempt, and non-GST handling
+- reverse charge flag support
+- round-off handling
+
+Core service outputs per line:
+- assessable value
+- taxable value
+- CGST amount
+- SGST amount
+- IGST amount
+- cess amount
+- total line amount
+
+Core validations:
+- seller state vs place of supply logic
+- invoice date validity
+- duplicate invoice number prevention
+- GSTIN format validation
+- HSN/SAC minimum length validation
+
+Done when:
+- All tax values come from one tested calculation layer
+- Manual template-side tax math is no longer trusted as the main source
+
+
+PHASE 3 - GST DOCUMENT ENGINE
+Goal:
+- Create canonical billing documents that can be used for invoices, notes, and returns.
+
+Document types:
+- sales invoice
+- purchase bill
+- credit note
+- debit note
+- advance receipt
+- advance adjustment
+
+Document header fields:
+- document type
+- financial year
+- invoice series
+- invoice number
+- invoice date
+- seller GSTIN
+- buyer GSTIN
+- buyer registration type
+- place of supply
+- reverse charge flag
+- export flag
+- SEZ flag
+- e-commerce GSTIN
+- linked job ticket
+- linked original document for notes/amendments
+- filing status
+- cancelled status
+
+Document line fields:
+- item or service reference
+- description
+- goods/service flag
+- HSN/SAC
+- quantity
+- UQC
+- rate
+- discount
+- taxable value
+- tax rate
+- CGST
+- SGST
+- IGST
+- cess
+- total
+- stock effect reference if applicable
+
+Integration with current app:
+- JobTicket billing should generate GST documents
+- ProductSale should link to GST document lines
+- InventoryBill and InventoryEntry should remain stock ledger references
+
+Done when:
+- Every taxable document exists as a proper GST document
+- Service billing and spare-part billing can live in the same invoice cleanly
+
+
+PHASE 4 - PURCHASE AND ITC COMPLIANCE
+Goal:
+- Make purchase entries useful for tax credit and reconciliation.
+
+Add purchase features:
+- supplier invoice metadata
+- ITC eligibility
+- blocked ITC reason
+- reverse charge
+- import of goods/services
+- bill of entry details
+- SEZ flags
+- match status against GSTR-2B
+
+Outputs:
+- purchase register
+- ITC eligible summary
+- ITC blocked summary
+- pending reconciliation summary
+
+Done when:
+- Purchase module can support ITC tracking and later reconciliation
+
+
+PHASE 5 - GSTR-1 AND GSTR-3B WORKING REPORTS
+Goal:
+- Generate filing-ready internal reports from transaction data.
+
+GSTR-1 outputs:
+- B2B
+- B2CL
+- B2CS
+- exports
+- SEZ
+- nil/exempt/non-GST summary
+- credit/debit notes
+- HSN summary
+- document issued summary
+
+GSTR-3B working outputs:
+- outward taxable supplies
+- zero-rated supplies
+- exempt/nil/non-GST supplies
+- reverse charge inward supplies
+- eligible ITC
+- ineligible ITC
+
+Export targets:
+- JSON-ready export structure for future portal upload mapping
+- CSV/Excel working sheets
+
+Done when:
+- Staff can generate GST working reports without manual spreadsheet rebuilding
+
+
+PHASE 6 - GSTR-2B / IMS RECONCILIATION
+Goal:
+- Compare purchase register with supplier-filed data.
+
+Features:
+- import GSTR-2B data
+- import IMS action data
+- auto-match by GSTIN + invoice number + date + value
+- mismatch buckets
+- accept/reject/pending workflow
+- reconciliation dashboard
+
+Done when:
+- Purchase tax credit can be reviewed using system reconciliation instead of only manual checking
+
+
+PHASE 7 - E-INVOICE AND E-WAY BILL
+Goal:
+- Add compliance for businesses that need IRN/e-invoice flow.
+
+Features:
+- IRN storage
+- ack number and date
+- signed QR data
+- e-invoice status
+- cancellation flow
+- 30-day reporting validation where applicable
+- e-way bill number and transporter details if needed
+
+Done when:
+- The app can support e-invoice-enabled businesses without side systems
+
+
+PHASE 8 - PERIOD LOCK, AUDIT, AND ADMIN TOOLS
+Goal:
+- Make the system safe for real-world accounting use.
+
+Features:
+- lock filed periods
+- allow controlled reopen
+- change history for invoices and GST values
+- admin reconciliation tools
+- correction workflow before return finalization
+- role-based permission for GST actions
+
+Done when:
+- Users cannot casually change already-filed tax data
+
+
+6. BEST IMPLEMENTATION ORDER FOR THIS PROJECT
+
+Recommended order:
+1. Phase 1 - GST master data foundation
+2. Phase 2 - GST calculation engine
+3. Phase 3 - GST document engine
+4. Phase 4 - purchase and ITC support
+5. Phase 5 - GSTR-1 and GSTR-3B reports
+6. Phase 6 - 2B and IMS reconciliation
+7. Phase 8 - lock and audit controls
+8. Phase 7 - e-invoice and e-way bill
+
+Reason for this order:
+- Master data and tax engine are prerequisites for everything else.
+- Document structure must be correct before reports and returns are trusted.
+- Reconciliation and e-invoice come after the core invoice workflow is stable.
+
+
+7. WHAT WE SHOULD START WITH NOW
+
+Start with PHASE 1 - GST MASTER DATA FOUNDATION.
+
+Why this is the best first slice:
+- Lowest risk
+- High future value
+- Does not break current billing flow badly
+- Unlocks tax engine and GST reporting work
+
+Phase 1 immediate task list:
+- Extend Product model with GST fields
+- Extend InventoryParty model with GST identity and state fields
+- Extend CompanyProfile with filing and tax profile fields
+- Update related forms
+- Update admin screens
+- Update inventory and settings templates
+- Add validations and tests
+- Create safe migrations for existing records
+
+Expected output of the first implementation slice:
+- GST-ready masters
+- No return filing yet
+- No portal integration yet
+- Current app remains usable while we prepare the foundation
+
+
+8. RISKS TO WATCH
+
+- SQLite concurrency issues if multiple users edit billing together
+- Mixing stock ledger and tax document logic too tightly
+- Keeping tax math in JavaScript only
+- Missing audit trail for edited invoices
+- Trying to build GSTR exports before master data and tax engine are stable
+
+
+9. ROUGH SOLO IMPLEMENTATION ESTIMATE
+
+If done carefully in this codebase by one developer:
+- Phase 0 to Phase 3: 2 to 4 weeks
+- Phase 4 to Phase 6: 2 to 4 weeks
+- Phase 7 and Phase 8: 1 to 2 weeks
+
+Rough total:
+- 5 to 10 weeks depending on revisions and testing depth
+
+
+10. FINAL RECOMMENDATION
+
+Do this in the current Django web app.
+
+Do not switch to a PC app now.
+
+First build:
+- GST-ready master data
+- tax engine
+- canonical GST document flow
+
+Only after that, decide whether you also want:
+- desktop packaging
+- offline mode
+- GST portal upload automation
+

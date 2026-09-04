@@ -1,0 +1,181 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Track Service Status | Service Billing{% endblock %}
+
+{% block content %}
+<style>
+.client-track-wrap {
+    background: linear-gradient(135deg, #eef6ff, #fff8ec);
+    border: 1px solid #e4ebf5;
+}
+.client-track-title {
+    font-size: clamp(1.6rem, 2.4vw, 2.3rem);
+}
+.client-track-sub {
+    color: #5f6778;
+}
+.client-track-card {
+    background: #fff;
+    border: 1px solid #e5eaf2;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(12, 22, 36, 0.08);
+}
+.track-help {
+    background: #f8fbff;
+    border: 1px dashed #cfd9e7;
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+</style>
+
+<div class="row g-4 align-items-stretch">
+    <div class="col-lg-6">
+        <div class="section-container client-track-wrap h-100">
+            <span class="hero-kicker">Client Portal</span>
+            <h1 class="client-track-title mt-2 mb-2">Track Your Service Job</h1>
+            <p class="client-track-sub">
+                Enter your job code and phone number to view live service status, billing updates, and feedback options.
+            </p>
+            <div class="track-help mt-3">
+                <p class="mb-1"><strong>Need support?</strong></p>
+                <p class="mb-1">{{ company.company_name }} | {{ company.phone1 }}</p>
+                {% if company.website %}
+                    <p class="mb-0"><a href="{{ company.website }}" target="_blank" rel="noopener">{{ company.website }}</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="section-container client-track-card h-100">
+            <h3 class="mb-3"><i class="fas fa-magnifying-glass me-2"></i>Track Status</h3>
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="job_code" class="form-label fw-semibold">Job Ticket Number</label>
+                    <input type="text" id="job_code" name="job_code" class="form-control" required autocomplete="off" placeholder="Example: {{ company.job_code_prefix|default:'GI'|upper }}-YYMMDD-001">
+                </div>
+                <div class="mb-3">
+                    <label for="phone_number" class="form-label fw-semibold">Phone Number</label>
+                    <div class="input-group">
+                        <span class="input-group-text">+91</span>
+                        <input type="text" id="phone_number" name="phone_number" class="form-control" required autocomplete="off" inputmode="numeric" placeholder="98765 43210">
+                    </div>
+                    <div id="client-phone-error" class="small text-danger mt-1"></div>
+                    <div class="form-text">Enter the same 10-digit phone number used while creating the job.</div>
+                </div>
+
+                {% if error %}
+                    <div class="alert alert-danger" role="alert">
+                        <strong>Unable to login:</strong> {{ error }}
+                        {% if attempts_left and not locked %}
+                            <br><small>Attempts remaining: {{ attempts_left }}</small>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if locked %}
+                    <div class="alert alert-warning">
+                        Too many attempts detected. Please wait before trying again.
+                    </div>
+                {% endif %}
+
+                <button type="submit" class="btn btn-primary w-100 mt-2">
+                    <i class="fas fa-arrow-right me-1"></i>Open My Job Status
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const loginForm = document.querySelector('form[method="post"]');
+    const phoneInput = document.getElementById('phone_number');
+    const phoneError = document.getElementById('client-phone-error');
+
+    function parseIndianPhoneInput(rawValue) {
+        const trimmedValue = String(rawValue || '').trim();
+        const hasLetters = /[A-Za-z]/.test(trimmedValue);
+        const hasInvalidSymbols = /[^0-9+\s]/.test(trimmedValue);
+        const hasInvalidPlusPrefix = trimmedValue.startsWith('+') && !trimmedValue.startsWith('+91');
+        let digits = trimmedValue.replace(/\D/g, '');
+        if (digits.length > 10 && digits.startsWith('91')) {
+            digits = digits.slice(2);
+        }
+        digits = digits.slice(0, 10);
+        return {
+            digits,
+            hasLetters,
+            hasInvalidSymbols,
+            hasInvalidPlusPrefix,
+        };
+    }
+
+    function formatIndianPhoneDisplay(digits) {
+        const cleanDigits = String(digits || '').replace(/\D/g, '').slice(0, 10);
+        if (cleanDigits.length <= 5) {
+            return cleanDigits;
+        }
+        return `${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
+    }
+
+    function syncPhoneInput() {
+        if (!phoneInput) return '';
+        const parsed = parseIndianPhoneInput(phoneInput.value);
+        phoneInput.value = formatIndianPhoneDisplay(parsed.digits);
+        return parsed.digits;
+    }
+
+    function validatePhoneInput() {
+        if (!phoneInput || !phoneError) return true;
+        const trimmedValue = String(phoneInput.value || '').trim();
+        const parsed = parseIndianPhoneInput(trimmedValue);
+
+        let message = '';
+        if (!trimmedValue) {
+            message = 'Phone Number is required.';
+        } else if (parsed.hasLetters) {
+            message = 'Phone Number can contain numbers only. Alphabets are not allowed.';
+        } else if (parsed.hasInvalidSymbols) {
+            message = 'Phone Number can contain numbers only. Symbols are not allowed.';
+        } else if (parsed.hasInvalidPlusPrefix) {
+            message = 'Phone Number must be an Indian number. Use +91 or enter 10 digits.';
+        } else if (parsed.digits.length !== 10) {
+            message = 'Phone Number must be exactly 10 digits.';
+        }
+
+        phoneInput.classList.toggle('is-invalid', Boolean(message));
+        phoneError.textContent = message;
+        return !message;
+    }
+
+    if (phoneInput) {
+        phoneInput.addEventListener('input', function () {
+            syncPhoneInput();
+            phoneInput.classList.remove('is-invalid');
+            if (phoneError) {
+                phoneError.textContent = '';
+            }
+        });
+
+        phoneInput.addEventListener('blur', function () {
+            validatePhoneInput();
+        });
+    }
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', function (event) {
+            const normalizedDigits = syncPhoneInput();
+            if (!validatePhoneInput()) {
+                event.preventDefault();
+                return;
+            }
+            if (phoneInput) {
+                phoneInput.value = normalizedDigits;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "job_tickets/base.html" %}
+{% block title %} Unauthorized Access {% endblock %}
+
+{% block content %}
+    <title>Unauthorized Access</title>
+</head>
+<body>
+    <h1>Access Denied</h1>
+    <p>You do not have permission to view this page.</p>
+    <a href="{% url 'home' %}">Go to Home</a>
+{% endblock %}

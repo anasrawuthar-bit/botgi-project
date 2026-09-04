@@ -1,0 +1,219 @@
+{% extends "job_tickets/base.html" %}
+{% load static job_tickets_extras %}
+{% block title %}Service Job Report{% endblock %}
+
+{% block extra_css %}
+<style>
+  .rpt { --ink: #071833; --muted: #667085; --line: #d8e0eb; --soft: #f6f8fb; --accent: #f59e0b; --green: #067647; color: var(--ink); }
+  .rpt-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; border-left:4px solid var(--accent); padding:.25rem 0 .25rem 1rem; margin-bottom:1rem; }
+  .rpt-title { margin:0; font-size:1.9rem; font-weight:800; line-height:1.15; }
+  .rpt-subtitle { margin:.25rem 0 0; color:var(--muted); font-size:.93rem; }
+  .rpt-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; }
+  .rpt-filter { display:flex; align-items:flex-end; gap:.75rem; flex-wrap:wrap; padding:.9rem; margin-bottom:1rem; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .ff { display:flex; flex-direction:column; gap:.28rem; }
+  .ff label { font-size:.76rem; font-weight:700; color:#344054; text-transform:uppercase; }
+  .ff input, .ff select { min-width:150px; border:1px solid #c8d2e0; border-radius:7px; padding:.44rem .6rem; font-size:.9rem; }
+  .brand-line { display:flex; align-items:center; gap:.85rem; padding:1rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin-bottom:1rem; }
+  .brand-logo { width:50px; height:50px; object-fit:contain; }
+  .brand-name { font-weight:700; font-size:1rem; }
+  .brand-meta { color:var(--muted); font-size:.88rem; }
+  .kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.7rem; margin-bottom:1rem; }
+  .kpi { border:1px solid var(--line); border-radius:8px; padding:.85rem; background:#fff; }
+  .kpi-lbl { margin:0; color:var(--muted); font-size:.78rem; font-weight:700; }
+  .kpi-val { margin:.25rem 0 0; font-size:1.3rem; font-weight:800; }
+  .kpi.green .kpi-val { color:var(--green); }
+  .tbl-wrap { border:1px solid var(--line); border-radius:8px; overflow:auto; background:#fff; }
+  .rpt-tbl { width:100%; border-collapse:collapse; min-width:1100px; font-size:.88rem; }
+  .rpt-tbl th, .rpt-tbl td { border-bottom:1px solid var(--line); padding:.65rem .7rem; vertical-align:top; }
+  .rpt-tbl thead th { background:#071833; color:#fff; font-size:.75rem; text-transform:uppercase; white-space:nowrap; }
+  .rpt-tbl tbody tr:nth-child(even) { background:var(--soft); }
+  .rpt-tbl tfoot th, .rpt-tbl tfoot td { background:#fff7e8; font-weight:800; border-bottom:0; }
+  .mc { text-align:right; white-space:nowrap; }
+  .job-link { font-weight:700; color:#0b5ed7; text-decoration:none; }
+  .job-link:hover { text-decoration:underline; }
+  .pill { display:inline-flex; align-items:center; border-radius:999px; padding:.2rem .5rem; font-size:.74rem; font-weight:700; background:#eaf7ef; color:#067647; white-space:nowrap; }
+  .pill-closed { background:#f0f0f0; color:#555; }
+  .pill-pending { background:#fff3cd; color:#856404; }
+  .pill-repairing { background:#e8f1ff; color:#175cd3; }
+  .sub { display:block; margin-top:.15rem; color:var(--muted); font-size:.81rem; }
+  @media(max-width:900px){ .rpt-head{flex-direction:column;} .rpt-actions{justify-content:flex-start;} .kpi-grid{grid-template-columns:repeat(2,1fr);} }
+  @media print{
+    .app-sidebar,.sidebar-topbar,.sidebar-backdrop,.sidebar-desktop-toggle,.rpt-filter,.rpt-actions,.screen-only,footer{display:none!important;}
+    body,body.sidebar-collapsed{background:#fff!important;}
+    .app-layout,.app-main,.container{margin:0!important;padding:0!important;width:100%!important;max-width:none!important;}
+    .rpt{font-size:9pt;}
+    .rpt-title{font-size:15pt;}
+    .kpi-grid{grid-template-columns:repeat(5,1fr);gap:.35rem;}
+    .kpi{min-height:auto;padding:.4rem;}
+    .kpi-val{font-size:11pt;}
+    .tbl-wrap{overflow:visible;border-radius:0;}
+    .rpt-tbl{min-width:0;font-size:8pt;}
+    .rpt-tbl th,.rpt-tbl td{padding:.3rem;}
+    .rpt a::after{content:""!important;}
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rpt">
+
+  <!-- Header -->
+  <div class="rpt-head">
+    <div>
+      <h1 class="rpt-title">Service Job Report</h1>
+      <p class="rpt-subtitle">Period: {{ report_start_date }} to {{ report_end_date }}{% if status_filter %} &nbsp;·&nbsp; Status: {{ status_filter }}{% endif %}</p>
+    </div>
+    <div class="rpt-actions screen-only">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'reports_dashboard' %}">
+        <i class="fa-solid fa-arrow-left me-1"></i>Reports
+      </a>
+      <a class="btn btn-outline-success btn-sm"
+         href="{% url 'service_job_report_export_csv' %}?start_date={{ report_start_date }}&end_date={{ report_end_date }}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}">
+        <i class="fa-solid fa-file-csv me-1"></i>CSV
+      </a>
+      <button type="button" class="btn btn-dark btn-sm" onclick="window.print()">
+        <i class="fa-solid fa-print me-1"></i>Print
+      </button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form class="rpt-filter screen-only" method="get">
+    <div class="ff">
+      <label for="sjr-start">Start Date</label>
+      <input id="sjr-start" type="date" name="start_date" value="{{ report_start_date }}">
+    </div>
+    <div class="ff">
+      <label for="sjr-end">End Date</label>
+      <input id="sjr-end" type="date" name="end_date" value="{{ report_end_date }}">
+    </div>
+    <div class="ff">
+      <label for="sjr-status">Status</label>
+      <select id="sjr-status" name="status_filter">
+        <option value="">All Statuses</option>
+        {% for s in status_choices %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm align-self-end">
+      <i class="fa-solid fa-filter me-1"></i>Apply
+    </button>
+  </form>
+
+  <!-- Brand line -->
+  <div class="brand-line">
+    {% if company.logo %}
+      <img class="brand-logo" src="{{ company.logo.url }}" alt="Logo">
+    {% elif company.logo_url %}
+      <img class="brand-logo" src="{{ company.logo_url }}" alt="Logo">
+    {% endif %}
+    <div>
+      <div class="brand-name">{{ company.company_name }}</div>
+      <div class="brand-meta">{{ company.address }}{% if company.phone1 %} &nbsp;·&nbsp; {{ company.phone1 }}{% endif %}</div>
+      <div class="brand-meta">Generated: {{ generated_at|date:"Y-m-d H:i" }}</div>
+    </div>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <p class="kpi-lbl">Total Jobs</p>
+      <p class="kpi-val">{{ total_jobs }}</p>
+    </div>
+    <div class="kpi">
+      <p class="kpi-lbl">Service Charge</p>
+      <p class="kpi-val">&#8377;{{ total_service_charge|floatformat:2 }}</p>
+    </div>
+    <div class="kpi">
+      <p class="kpi-lbl">Parts Cost</p>
+      <p class="kpi-val">&#8377;{{ total_parts_cost|floatformat:2 }}</p>
+    </div>
+    <div class="kpi">
+      <p class="kpi-lbl">Discounts</p>
+      <p class="kpi-val">&#8377;{{ total_discounts|floatformat:2 }}</p>
+    </div>
+    <div class="kpi green">
+      <p class="kpi-lbl">Net Amount</p>
+      <p class="kpi-val">&#8377;{{ total_net|floatformat:2 }}</p>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="tbl-wrap">
+    <table class="rpt-tbl">
+      <thead>
+        <tr>
+          <th>Job ID</th>
+          <th>Created Date/Time</th>
+          <th>Customer</th>
+          <th>Device</th>
+          <th>Service Type / Problem</th>
+          <th>Tech ID</th>
+          <th>Technician</th>
+          <th>Status</th>
+          <th>Completed</th>
+          <th>Ready for Pickup</th>
+          <th>Closed</th>
+          <th class="mc">Service &#8377;</th>
+          <th class="mc">Parts &#8377;</th>
+          <th class="mc">Discount &#8377;</th>
+          <th class="mc">Net &#8377;</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>
+            <a class="job-link" href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a>
+            {% if job.is_under_warranty %}<span class="sub">Warranty</span>{% endif %}
+          </td>
+          <td>{{ job.created_at|date:"Y-m-d" }}<span class="sub">{{ job.created_at|date:"H:i" }}</span></td>
+          <td>
+            <span style="font-weight:600;">{{ job.customer_name }}</span>
+            <span class="sub">{{ job.customer_phone }}</span>
+          </td>
+          <td>
+            {{ job.device_type }}
+            <span class="sub">{{ job.device_brand }} {{ job.device_model }}</span>
+          </td>
+          <td style="max-width:200px;">{{ job.service_summary|truncatechars:80 }}</td>
+          <td>{{ job.technician_id|default:"—" }}</td>
+          <td>{{ job.technician_name|default:"—" }}</td>
+          <td>
+            <span class="pill {% if job.status == 'Closed' %}pill-closed{% elif job.status == 'Pending' %}pill-pending{% elif job.status == 'Repairing' %}pill-repairing{% endif %}">
+              {{ job.status }}
+            </span>
+          </td>
+          <td>{% if job.completed_date %}{{ job.completed_date|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+          <td>{% if job.ready_date %}{{ job.ready_date|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+          <td>{% if job.closed_date %}{{ job.closed_date|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+          <td class="mc">{{ job.service_total|floatformat:2 }}</td>
+          <td class="mc">{{ job.part_total|floatformat:2 }}</td>
+          <td class="mc">{{ job.discount_total|floatformat:2 }}</td>
+          <td class="mc" style="font-weight:700;">{{ job.net_amount|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="15" class="text-center py-4" style="color:var(--muted);">
+            No jobs found for this period.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if jobs %}
+      <tfoot>
+        <tr>
+          <th colspan="11">Totals ({{ total_jobs }} jobs)</th>
+          <th class="mc">&#8377;{{ total_service_charge|floatformat:2 }}</th>
+          <th class="mc">&#8377;{{ total_parts_cost|floatformat:2 }}</th>
+          <th class="mc">&#8377;{{ total_discounts|floatformat:2 }}</th>
+          <th class="mc">&#8377;{{ total_net|floatformat:2 }}</th>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+</div>
+{% endblock %}

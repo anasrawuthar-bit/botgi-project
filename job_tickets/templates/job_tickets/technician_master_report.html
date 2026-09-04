@@ -1,0 +1,209 @@
+{% extends "job_tickets/base.html" %}
+{% load static job_tickets_extras %}
+{% block title %}Technician Master Report{% endblock %}
+
+{% block extra_css %}
+<style>
+  .rpt { --ink:#071833; --muted:#667085; --line:#d8e0eb; --soft:#f6f8fb; --accent:#f59e0b; --green:#067647; color:var(--ink); }
+  .rpt-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; border-left:4px solid var(--accent); padding:.25rem 0 .25rem 1rem; margin-bottom:1rem; }
+  .rpt-title { margin:0; font-size:1.9rem; font-weight:800; line-height:1.15; }
+  .rpt-subtitle { margin:.25rem 0 0; color:var(--muted); font-size:.93rem; }
+  .rpt-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; }
+  .rpt-filter { display:flex; align-items:flex-end; gap:.75rem; flex-wrap:wrap; padding:.9rem; margin-bottom:1rem; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .ff { display:flex; flex-direction:column; gap:.28rem; }
+  .ff label { font-size:.76rem; font-weight:700; color:#344054; text-transform:uppercase; }
+  .ff input { min-width:200px; border:1px solid #c8d2e0; border-radius:7px; padding:.44rem .6rem; font-size:.9rem; }
+  .brand-line { display:flex; align-items:center; gap:.85rem; padding:1rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin-bottom:1rem; }
+  .brand-logo { width:50px; height:50px; object-fit:contain; }
+  .brand-name { font-weight:700; font-size:1rem; }
+  .brand-meta { color:var(--muted); font-size:.88rem; }
+  .kpi-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; margin-bottom:1rem; }
+  .kpi { border:1px solid var(--line); border-radius:8px; padding:.85rem; background:#fff; }
+  .kpi-lbl { margin:0; color:var(--muted); font-size:.78rem; font-weight:700; }
+  .kpi-val { margin:.25rem 0 0; font-size:1.5rem; font-weight:800; }
+  .kpi.green .kpi-val { color:var(--green); }
+  .kpi.red .kpi-val { color:#d32f2f; }
+  .tbl-wrap { border:1px solid var(--line); border-radius:8px; overflow:auto; background:#fff; }
+  .rpt-tbl { width:100%; border-collapse:collapse; min-width:900px; font-size:.88rem; }
+  .rpt-tbl th, .rpt-tbl td { border-bottom:1px solid var(--line); padding:.65rem .7rem; vertical-align:top; }
+  .rpt-tbl thead th { background:#071833; color:#fff; font-size:.75rem; text-transform:uppercase; white-space:nowrap; }
+  .rpt-tbl tbody tr:nth-child(even) { background:var(--soft); }
+  .rpt-tbl tfoot th { background:#fff7e8; font-weight:800; border-bottom:0; }
+  .tc { text-align:center; }
+  .badge-active { display:inline-flex; align-items:center; border-radius:999px; padding:.2rem .55rem; font-size:.76rem; font-weight:700; background:#eaf7ef; color:#067647; }
+  .badge-inactive { display:inline-flex; align-items:center; border-radius:999px; padding:.2rem .55rem; font-size:.76rem; font-weight:700; background:#fce8e8; color:#c62828; }
+  .tech-id { font-family:monospace; font-size:.88rem; font-weight:700; color:var(--ink); }
+  .sub { display:block; margin-top:.15rem; color:var(--muted); font-size:.81rem; }
+  .view-link { display:inline-flex; align-items:center; gap:.3rem; font-size:.82rem; font-weight:700; color:#0b5ed7; text-decoration:none; border:1px solid #c8d2e0; border-radius:6px; padding:.22rem .5rem; }
+  .view-link:hover { border-color:#071833; color:#071833; }
+  @media(max-width:900px){ .rpt-head{flex-direction:column;} .rpt-actions{justify-content:flex-start;} .kpi-grid{grid-template-columns:1fr 1fr;} }
+  @media print{
+    .app-sidebar,.sidebar-topbar,.sidebar-backdrop,.sidebar-desktop-toggle,.rpt-filter,.rpt-actions,.screen-only,footer{display:none!important;}
+    body{background:#fff!important;}
+    .app-layout,.app-main,.container{margin:0!important;padding:0!important;width:100%!important;max-width:none!important;}
+    .rpt{font-size:9pt;} .rpt-title{font-size:15pt;}
+    .kpi-grid{grid-template-columns:repeat(3,1fr);gap:.35rem;} .kpi{padding:.4rem;}
+    .kpi-val{font-size:13pt;}
+    .tbl-wrap{overflow:visible;border-radius:0;}
+    .rpt-tbl{min-width:0;font-size:8pt;}
+    .rpt-tbl th,.rpt-tbl td{padding:.3rem;}
+    .view-link{display:none!important;}
+    .rpt a::after{content:""!important;}
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rpt">
+
+  <!-- Header -->
+  <div class="rpt-head">
+    <div>
+      <h1 class="rpt-title">Technician Master</h1>
+      <p class="rpt-subtitle">
+        All technicians registered in the system
+        {% if search_q %}&nbsp;·&nbsp; Search: &ldquo;{{ search_q }}&rdquo;{% endif %}
+      </p>
+    </div>
+    <div class="rpt-actions screen-only">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'reports_dashboard' %}">
+        <i class="fa-solid fa-arrow-left me-1"></i>Reports
+      </a>
+      <a class="btn btn-outline-success btn-sm"
+         href="{% url 'technician_master_report_export_csv' %}{% if search_q %}?q={{ search_q }}{% endif %}">
+        <i class="fa-solid fa-file-csv me-1"></i>CSV
+      </a>
+      <button type="button" class="btn btn-dark btn-sm" onclick="window.print()">
+        <i class="fa-solid fa-print me-1"></i>Print
+      </button>
+    </div>
+  </div>
+
+  <!-- Search filter -->
+  <form class="rpt-filter screen-only" method="get">
+    <div class="ff">
+      <label for="tm-q">Search</label>
+      <input id="tm-q" type="text" name="q" value="{{ search_q }}"
+             placeholder="Name, username or tech ID…">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm align-self-end">
+      <i class="fa-solid fa-search me-1"></i>Search
+    </button>
+    {% if search_q %}
+    <a class="btn btn-outline-secondary btn-sm align-self-end" href="{% url 'technician_master_report' %}">
+      <i class="fa-solid fa-times me-1"></i>Clear
+    </a>
+    {% endif %}
+  </form>
+
+  <!-- Brand line -->
+  <div class="brand-line">
+    {% if company.logo %}
+      <img class="brand-logo" src="{{ company.logo.url }}" alt="Logo">
+    {% elif company.logo_url %}
+      <img class="brand-logo" src="{{ company.logo_url }}" alt="Logo">
+    {% endif %}
+    <div>
+      <div class="brand-name">{{ company.company_name }}</div>
+      <div class="brand-meta">{{ company.address }}{% if company.phone1 %} &nbsp;·&nbsp; {{ company.phone1 }}{% endif %}</div>
+      <div class="brand-meta">Generated: {{ generated_at|date:"Y-m-d H:i" }}</div>
+    </div>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <p class="kpi-lbl">Total Technicians</p>
+      <p class="kpi-val">{{ total_technicians }}</p>
+    </div>
+    <div class="kpi green">
+      <p class="kpi-lbl">Active</p>
+      <p class="kpi-val">{{ active_count }}</p>
+    </div>
+    <div class="kpi {% if inactive_count > 0 %}red{% endif %}">
+      <p class="kpi-lbl">Inactive</p>
+      <p class="kpi-val">{{ inactive_count }}</p>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="tbl-wrap">
+    <table class="rpt-tbl">
+      <thead>
+        <tr>
+          <th>Tech ID</th>
+          <th>Name</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Branch</th>
+          <th>Department</th>
+          <th>Joining Date</th>
+          <th class="tc">Active</th>
+          <th class="tc">Total Assigned</th>
+          <th class="tc">Active Jobs</th>
+          <th class="tc">Completed / Closed</th>
+          <th class="screen-only">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><span class="tech-id">{{ row.technician_id }}</span></td>
+          <td style="font-weight:600;">{{ row.name }}</td>
+          <td>{{ row.username }}</td>
+          <td>{{ row.email|default:"—" }}</td>
+          <td>{{ row.branch|default:"—" }}</td>
+          <td>{{ row.department|default:"—" }}</td>
+          <td>
+            {{ row.joining_date|date:"Y-m-d" }}
+            <span class="sub">{{ row.joining_date|date:"H:i" }}</span>
+          </td>
+          <td class="tc">
+            {% if row.is_active %}
+              <span class="badge-active"><i class="fa-solid fa-check me-1"></i>Active</span>
+            {% else %}
+              <span class="badge-inactive"><i class="fa-solid fa-ban me-1"></i>Inactive</span>
+            {% endif %}
+          </td>
+          <td class="tc">{{ row.total_jobs }}</td>
+          <td class="tc">
+            <span style="color:{% if row.active_jobs > 0 %}#175cd3{% else %}var(--muted){% endif %};font-weight:{% if row.active_jobs > 0 %}700{% else %}400{% endif %};">
+              {{ row.active_jobs }}
+            </span>
+          </td>
+          <td class="tc">
+            <span style="color:{% if row.completed_jobs > 0 %}var(--green){% else %}var(--muted){% endif %};font-weight:{% if row.completed_jobs > 0 %}700{% else %}400{% endif %};">
+              {{ row.completed_jobs }}
+            </span>
+          </td>
+          <td class="tc screen-only">
+            <a class="view-link" href="{% url 'technician_report_print' row.tp_id %}">
+              <i class="fa-solid fa-chart-bar"></i> Report
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="12" class="text-center py-4" style="color:var(--muted);">
+            No technicians found{% if search_q %} matching &ldquo;{{ search_q }}&rdquo;{% endif %}.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot>
+        <tr>
+          <th colspan="7">{{ total_technicians }} technician{{ total_technicians|pluralize }}</th>
+          <th class="tc">{{ active_count }} active</th>
+          <th class="tc">—</th>
+          <th class="tc">—</th>
+          <th class="tc">—</th>
+          <th class="screen-only"></th>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+</div>
+{% endblock %}
