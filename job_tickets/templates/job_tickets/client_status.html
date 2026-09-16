@@ -173,31 +173,86 @@
 
     {% if job_ticket.status == 'Ready for Pickup' or job_ticket.status == 'Completed' or job_ticket.status == 'Closed' %}
     <div class="status-card mb-3">
-        <h5 class="mb-2">Billing Summary</h5>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0"><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Billing & Payment Summary</h5>
+            {% if balance_due <= 0 and grand_total > 0 %}
+            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Paid in Full</span>
+            {% elif amount_paid > 0 %}
+            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Partially Paid</span>
+            {% else %}
+            <span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i>Payment Pending</span>
+            {% endif %}
+        </div>
         <div class="table-responsive">
             <table class="table table-striped mb-2">
                 <thead>
                     <tr>
                         <th>Description</th>
-                        <th>Part Cost</th>
-                        <th>Service Charge</th>
+                        <th class="text-end">Part Cost</th>
+                        <th class="text-end">Service Charge</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for log in service_logs %}
                     <tr>
                         <td>{{ log.description }}</td>
-                        <td>&#8377;{{ log.part_cost|floatformat:2 }}</td>
-                        <td>&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ log.part_cost|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-3">No billing items recorded.</td>
                     </tr>
                     {% endfor %}
-                    <tr class="fw-bold">
-                        <td colspan="2" class="text-end">Grand Total:</td>
-                        <td>&#8377;{{ grand_total|floatformat:2 }}</td>
+                    <tr class="table-light">
+                        <td class="text-end fw-bold">Grand Total:</td>
+                        <td colspan="2" class="text-end fw-bold">&#8377;{{ grand_total|floatformat:2 }}</td>
+                    </tr>
+                    {% if amount_paid > 0 %}
+                    <tr class="table-light text-success">
+                        <td class="text-end">Amount Paid:</td>
+                        <td colspan="2" class="text-end fw-bold">- &#8377;{{ amount_paid|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr class="table-light fs-6">
+                        <td class="text-end fw-bold">Balance Due:</td>
+                        <td colspan="2" class="text-end fw-bold {% if balance_due > 0 %}text-danger{% else %}text-success{% endif %}">&#8377;{{ balance_due|floatformat:2 }}</td>
                     </tr>
                 </tbody>
             </table>
         </div>
+
+        {% if balance_due <= 0 and grand_total > 0 %}
+        <div class="alert alert-success d-flex align-items-center mb-0 mt-3">
+            <i class="fas fa-check-circle fs-4 me-3"></i>
+            <div>
+                <strong>Payment Settled: Paid in Full</strong>
+                <div class="small">Thank you! Your repair bill has been fully settled.</div>
+            </div>
+        </div>
+        {% elif balance_due > 0 %}
+        <div class="alert alert-warning d-flex align-items-center mb-0 mt-3">
+            <i class="fas fa-wallet fs-4 me-3"></i>
+            <div class="flex-grow-1">
+                <strong>Balance Due: &#8377;{{ balance_due|floatformat:2 }}</strong>
+                <div class="small">Payable upon device pickup or via digital payment options below.</div>
+            </div>
+        </div>
+        {% if company and company.upi_id %}
+        <div class="mt-3 p-3 bg-light rounded border">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                    <span class="badge bg-primary me-2">Instant UPI</span>
+                    <span class="text-muted small">Pay securely via GPay / PhonePe / Paytm to:</span>
+                    <strong class="text-dark">{{ company.upi_id }}</strong>
+                </div>
+                <a href="upi://pay?pa={{ company.upi_id }}&pn={{ company.company_name|urlencode }}&am={{ balance_due|floatformat:2 }}&cu=INR&tn=Job+{{ job_ticket.job_code }}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-mobile-alt me-1"></i>Pay via UPI App
+                </a>
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
     </div>
     {% endif %}
 

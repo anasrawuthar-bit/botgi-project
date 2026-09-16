@@ -1,4 +1,10 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _money_or_zero,
+    _net_amount_after_discount,
+    _staff_access_required,
+    _sum_job_discounts,
+)
 
 
 @login_required
@@ -10,13 +16,15 @@ def reports_dashboard(request):
     if not user_can_view_financial_reports(request.user):
         return redirect('unauthorized')
 
+    current_workspace = getattr(request, 'current_workspace', None)
+    report_jobs = scope_to_workspace(JobTicket.objects, current_workspace)
     period = get_report_period(request)
     start_of_period = period['start']
     end_of_period = period['end']
     status_filter = request.GET.get('status_filter')
 
     # --- 1. ALL-TIME STATUS COUNTS (single aggregate query) ---
-    status_counts = JobTicket.objects.aggregate(
+    status_counts = report_jobs.aggregate(
         all_jobs_count=Count('id'),
         pending_count=Count('id', filter=Q(status='Pending')),
         in_progress_count=Count('id', filter=Q(status__in=['Under Inspection', 'Repairing', 'Specialized Service'])),
@@ -36,7 +44,7 @@ def reports_dashboard(request):
     start_of_day = timezone.make_aware(datetime.combine(today, datetime.min.time()))
     end_of_day = timezone.make_aware(datetime.combine(today, datetime.max.time()))
 
-    todays_jobs_in = JobTicket.objects.filter(created_at__range=(start_of_day, end_of_day)).count()
+    todays_jobs_in = report_jobs.filter(created_at__range=(start_of_day, end_of_day)).count()
 
     # Count only jobs with an audited transition to Closed today. The closure
     # timestamp can be backfilled when an older already-closed job is edited, which must
@@ -51,7 +59,7 @@ def reports_dashboard(request):
         .values_list('job_ticket_id', flat=True)
         .distinct()
     )
-    todays_jobs_out_qs = JobTicket.objects.filter(
+    todays_jobs_out_qs = report_jobs.filter(
         id__in=closed_today_ids,
         status='Closed',
         created_at__range=(start_of_day, end_of_day),
@@ -70,7 +78,7 @@ def reports_dashboard(request):
         .values_list('job_ticket_id', flat=True)
         .distinct()
     )
-    todays_completed_jobs_qs = JobTicket.objects.filter(
+    todays_completed_jobs_qs = report_jobs.filter(
         id__in=completed_today_ids,
         status='Completed',
     )
@@ -112,11 +120,16 @@ def reports_dashboard(request):
     vendor_start, vendor_end, vendor_start_date_str, vendor_end_date_str = parse_section_dates(vendor_start_str, vendor_end_str)
 
     # Monthly period jobs (for summary counts/financials)
-    monthly_finished_jobs_list = get_jobs_for_report_period(start_of_period, end_of_period, status_filter)
+    monthly_finished_jobs_list = get_jobs_for_report_period(
+        start_of_period,
+        end_of_period,
+        status_filter,
+        workspace=current_workspace,
+    )
     monthly_finished_ids = [job.id for job in monthly_finished_jobs_list]
-    monthly_finished_jobs = JobTicket.objects.filter(id__in=monthly_finished_ids)
+    monthly_finished_jobs = report_jobs.filter(id__in=monthly_finished_ids)
 
-    jobs_in_period = JobTicket.objects.filter(
+    jobs_in_period = report_jobs.filter(
         created_at__gte=start_of_period,
         created_at__lt=end_of_period,
     ).count()
@@ -139,7 +152,13 @@ def reports_dashboard(request):
     monthly_net_profit = monthly_total_income - monthly_vendor_expense
 
     # Technician performance
-    tech_finished_ids = [job.id for job in get_jobs_for_report_period(tech_start, tech_end)]
+    tech_finished_ids = [
+        job.id for job in get_jobs_for_report_period(
+            tech_start,
+            tech_end,
+            workspace=current_workspace,
+        )
+    ]
     tech_log_agg = (
         ServiceLog.objects.filter(job_ticket__in=tech_finished_ids)
         .exclude(description__icontains='Specialized Service')
@@ -153,7 +172,7 @@ def reports_dashboard(request):
     tech_count_map = {
         row['assigned_to']: row['cnt']
         for row in (
-            JobTicket.objects.filter(id__in=tech_finished_ids, assigned_to__isnull=False)
+            report_jobs.filter(id__in=tech_finished_ids, assigned_to__isnull=False)
             .values('assigned_to')
             .annotate(cnt=Count('id'))
         )
@@ -170,9 +189,13 @@ def reports_dashboard(request):
 
     # Vendor performance
     vendor_finished_ids = [
-        job.id for job in get_jobs_for_report_period(vendor_start, vendor_end)
+        job.id for job in get_jobs_for_report_period(
+            vendor_start,
+            vendor_end,
+            workspace=current_workspace,
+        )
     ]
-    vendor_finished_jobs = JobTicket.objects.filter(
+    vendor_finished_jobs = report_jobs.filter(
         id__in=vendor_finished_ids, specialized_service__isnull=False
     )
     vendor_performance = Vendor.objects.annotate(
@@ -284,8 +307,16 @@ def reports_chart_data(request):
             next_month = month_start.replace(month=month_start.month + 1, day=1)
 
         # Get jobs for this month using vendor concept
-        monthly_jobs_list = get_jobs_for_report_period(month_start, next_month, status_filter)
-        jobs_qs = JobTicket.objects.filter(id__in=[job.id for job in monthly_jobs_list])
+        monthly_jobs_list = get_jobs_for_report_period(
+            month_start,
+            next_month,
+            status_filter,
+            workspace=getattr(request, 'current_workspace', None),
+        )
+        jobs_qs = scope_to_workspace(
+            JobTicket.objects,
+            getattr(request, 'current_workspace', None),
+        ).filter(id__in=[job.id for job in monthly_jobs_list])
         jobs_count = len(monthly_jobs_list)
 
         logs_qs = ServiceLog.objects.filter(job_ticket__in=jobs_qs)
@@ -319,8 +350,16 @@ def reports_chart_data(request):
         y_end = timezone.make_aware(datetime(yr + 1, 1, 1))
         
         # Get jobs for this year using vendor concept
-        yearly_jobs_list = get_jobs_for_report_period(y_start, y_end, status_filter)
-        jobs_qs = JobTicket.objects.filter(id__in=[job.id for job in yearly_jobs_list])
+        yearly_jobs_list = get_jobs_for_report_period(
+            y_start,
+            y_end,
+            status_filter,
+            workspace=getattr(request, 'current_workspace', None),
+        )
+        jobs_qs = scope_to_workspace(
+            JobTicket.objects,
+            getattr(request, 'current_workspace', None),
+        ).filter(id__in=[job.id for job in yearly_jobs_list])
         jobs_count = len(yearly_jobs_list)
 
         logs_qs = ServiceLog.objects.filter(job_ticket__in=jobs_qs)
@@ -387,7 +426,10 @@ def _build_technician_report_context(request, tech_id):
 
     # 3. Fetch Jobs
     jobs = list(
-        JobTicket.objects.filter(jobs_filter)
+        scope_to_workspace(
+            JobTicket.objects,
+            getattr(request, 'current_workspace', None),
+        ).filter(jobs_filter)
         .prefetch_related('service_logs')
         .order_by('-updated_at', '-id')
     )
@@ -531,7 +573,13 @@ def print_pending_jobs_report(request):
     if not request.user.is_staff or not access.get("reports_overview"):
         return redirect('unauthorized')
     
-    pending_jobs = list(JobTicket.objects.filter(status='Pending').prefetch_related('service_logs').order_by('created_at'))
+    current_workspace = getattr(request, 'current_workspace', None)
+    pending_jobs = list(
+        scope_to_workspace(JobTicket.objects, current_workspace)
+        .filter(status='Pending')
+        .prefetch_related('service_logs')
+        .order_by('created_at')
+    )
     calculate_job_totals(pending_jobs)
     for job in pending_jobs:
         job.discount_total = _money_or_zero(job.discount_amount)
@@ -561,6 +609,7 @@ def print_monthly_summary_report(request):
         period['end_date_str'],
         preset=period['preset'],
         show_jobs=period['show_jobs'],
+        workspace=getattr(request, 'current_workspace', None),
     )
     return render(request, 'job_tickets/print_monthly_summary_report.html', context)
 
@@ -580,6 +629,7 @@ def export_monthly_summary_csv(request):
         period['end_date_str'],
         preset=period['preset'],
         show_jobs='',
+        workspace=getattr(request, 'current_workspace', None),
     )
 
     def money(value):
@@ -631,6 +681,9 @@ def export_monthly_summary_csv(request):
     writer.writerow(['Overall Margin %', f"{(context['overall_margin'] or Decimal('0.00')):.2f}"])
     writer.writerow(['Gross Revenue Before Discount', money(context['closed_gross_revenue'])])
     writer.writerow(['Total Discount Applied Once', money(context['total_discounts'])])
+    writer.writerow(['Closed Bill Total', money(context['closed_receivable_bill_total'])])
+    writer.writerow(['Closed Bill Paid', money(context['closed_receivable_paid'])])
+    writer.writerow(['Closed Bill Balance', money(context['closed_receivable_balance'])])
     writer.writerow([])
 
     writer.writerow(['Closed Job Financial Blocks'])

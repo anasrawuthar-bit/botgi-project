@@ -210,6 +210,20 @@
                         <td colspan="2" style="text-align:right;"><strong>Grand Total:</strong></td>
                         <td style="text-align:right;"><strong>&#8377;{{ grand_total|floatformat:2 }}</strong></td>
                     </tr>
+                    {% if job.payment_status %}
+                    <tr>
+                        <td colspan="2" style="text-align:right;"><strong>Payment Status:</strong></td>
+                        <td style="text-align:right;"><strong>{{ job.get_payment_status_display }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align:right;"><strong>Amount Paid ({{ job.get_payment_method_display|default:job.payment_method|default:"N/A" }}):</strong></td>
+                        <td style="text-align:right;"><strong>&#8377;{{ job.amount_paid|floatformat:2 }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align:right;"><strong>Balance Due:</strong></td>
+                        <td style="text-align:right;"><strong style="{% if job.balance_due > 0 %}color:#c0392b;{% endif %}">&#8377;{{ job.balance_due|floatformat:2 }}</strong></td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>

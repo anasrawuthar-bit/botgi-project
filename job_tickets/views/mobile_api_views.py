@@ -1,4 +1,41 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _build_checklist_schema_for_job,
+    _build_inventory_dashboard_metrics,
+    _build_inventory_party_directory,
+    _build_inventory_product_catalog,
+    _build_inventory_register_snapshot,
+    _checklist_requires_completion,
+    _format_checklist_required_error,
+    _get_job_checklist_answers,
+    _inventory_form_errors,
+    _inventory_party_form_payload_from_api,
+    _merge_checklist_answers,
+    _missing_required_checklist_labels,
+    _mobile_parse_bool,
+    _mobile_parse_decimal,
+    _money_text,
+    _normalize_checkbox_answer,
+    _normalize_checklist_answer,
+    _normalize_tax_mode_price,
+    _serialize_inventory_party_for_api,
+    _serialize_inventory_product_for_api,
+    _serialize_inventory_register_bill_for_api,
+)
+
+
+def _mobile_request_workspace(request, user):
+    workspace = getattr(request, 'current_workspace', None)
+    if workspace:
+        return workspace
+    membership = (
+        CompanyUserMembership.objects
+        .filter(user=user, is_active=True)
+        .select_related('workspace')
+        .order_by('workspace_id')
+        .first()
+    )
+    return membership.workspace if membership else None
 
 
 @csrf_exempt
@@ -54,7 +91,6 @@ def mobile_api_me(request):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
-
     role = 'staff' if user.is_staff else 'technician'
     tech_id = ''
     if hasattr(user, 'technician_profile'):
@@ -79,13 +115,19 @@ def mobile_api_jobs(request):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
 
     if user.is_staff:
         if not user_has_staff_access(user, "staff_dashboard"):
             return JsonResponse({'error': 'forbidden', 'message': 'Staff dashboard access required.'}, status=403)
         jobs_qs = JobTicket.objects.all()
+        if workspace:
+            jobs_qs = jobs_qs.filter(workspace=workspace)
     elif hasattr(user, 'technician_profile'):
-        jobs_qs = JobTicket.objects.filter(assigned_to=user.technician_profile)
+        jobs_qs = JobTicket.objects.filter(
+            assigned_to=user.technician_profile,
+            workspace_id=user.technician_profile.workspace_id,
+        )
     else:
         jobs_qs = JobTicket.objects.none()
 
@@ -124,6 +166,8 @@ def mobile_api_jobs(request):
                     if job.assigned_to and getattr(job.assigned_to, 'user', None)
                     else ''
                 ),
+                'priority': 'medium',
+                'due_date': '',
             }
         )
 
@@ -246,6 +290,7 @@ def mobile_api_job_detail(request, job_code):
                 'created_at': timezone.localtime(job.created_at).strftime('%Y-%m-%d %H:%M'),
                 'technician_checklist': _get_job_checklist_answers(job),
             },
+
             'financials': {
                 'part_total': str(job.part_total or Decimal('0.00')),
                 'service_total': str(job.service_total or Decimal('0.00')),
@@ -422,7 +467,7 @@ def mobile_api_job_technician_update(request, job_code):
 
     with transaction.atomic():
         job = get_object_or_404(
-            JobTicket.objects.select_for_update().select_related('assigned_to__user', 'specialized_service'),
+            JobTicket.objects.select_for_update(),
             job_code=job_code,
         )
         permissions = get_mobile_job_permissions(user, job)
@@ -532,12 +577,9 @@ def mobile_api_job_photos(request, job_code):
     with transaction.atomic():
         locked_job = JobTicket.objects.select_for_update().get(id=job.id)
         for photo_file in photo_files:
-            content_type = (getattr(photo_file, 'content_type', '') or '').strip()
-            if not content_type:
-                guessed_type, _ = mimetypes.guess_type(getattr(photo_file, 'name', ''))
-                content_type = guessed_type or 'application/octet-stream'
-            if not content_type.startswith('image/'):
-                return JsonResponse({'error': 'invalid_photo', 'message': 'Only image uploads are allowed.'}, status=400)
+            content_type, upload_error = validate_job_photo_upload(photo_file)
+            if upload_error:
+                return JsonResponse({'error': 'invalid_photo', 'message': upload_error}, status=400)
 
             created_photos.append(
                 JobTicketPhoto.objects.create(
@@ -580,12 +622,22 @@ def mobile_api_job_photo_file(request, job_code, photo_id):
 
     photo = get_object_or_404(JobTicketPhoto, id=photo_id, job_ticket=job)
     if photo.image_data:
-        response = HttpResponse(photo.image_data, content_type=photo.image_content_type or 'application/octet-stream')
+        response = HttpResponse(
+            bytes(photo.image_data),
+            content_type=photo.image_content_type or 'application/octet-stream',
+        )
         response['Content-Disposition'] = f'inline; filename="{photo.image_name or f"{job.job_code}-photo-{photo.id}.jpg"}"'
         return response
 
     if photo.image:
-        return redirect(photo.image.url)
+        with photo.image.open('rb') as image_file:
+            image_bytes = image_file.read()
+        response = HttpResponse(
+            image_bytes,
+            content_type=photo.image_content_type or mimetypes.guess_type(photo.image.name)[0] or 'application/octet-stream',
+        )
+        response['Content-Disposition'] = f'inline; filename="{photo.image_name or f"{job.job_code}-photo-{photo.id}.jpg"}"'
+        return response
 
     return HttpResponse(status=404)
 
@@ -608,7 +660,7 @@ def mobile_api_job_action(request, job_code):
 
     with transaction.atomic():
         job = get_object_or_404(
-            JobTicket.objects.select_for_update().select_related('assigned_to__user', 'specialized_service'),
+            JobTicket.objects.select_for_update(),
             job_code=job_code,
         )
 
@@ -1046,10 +1098,11 @@ def mobile_api_inventory_summary(request):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
     if not user.is_staff or not user_has_staff_access(user, "inventory"):
         return JsonResponse({'error': 'forbidden', 'message': 'Inventory access required.'}, status=403)
 
-    metrics = _build_inventory_dashboard_metrics()
+    metrics = _build_inventory_dashboard_metrics(workspace)
     return JsonResponse(
         {
             'summary': {
@@ -1109,6 +1162,7 @@ def mobile_api_inventory_parties(request):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
     if not user.is_staff or not user_has_staff_access(user, "inventory"):
         return JsonResponse({'error': 'forbidden', 'message': 'Inventory access required.'}, status=403)
 
@@ -1136,6 +1190,7 @@ def mobile_api_inventory_parties(request):
             query=query,
             start_date=start_date,
             end_date=end_date,
+            workspace=workspace,
         )
         return JsonResponse(
             {
@@ -1169,7 +1224,9 @@ def mobile_api_inventory_parties(request):
             status=400,
         )
 
-    party = party_form.save()
+    party = party_form.save(commit=False)
+    party.workspace = workspace
+    party.save()
     return JsonResponse(
         {
             'ok': True,
@@ -1184,10 +1241,14 @@ def mobile_api_inventory_party_update(request, party_id):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
     if not user.is_staff or not user_has_staff_access(user, "inventory"):
         return JsonResponse({'error': 'forbidden', 'message': 'Inventory access required.'}, status=403)
 
-    party = get_object_or_404(InventoryParty, id=party_id)
+    party = get_object_or_404(
+        scope_to_workspace(InventoryParty.objects.all(), workspace),
+        id=party_id,
+    )
 
     try:
         payload = json.loads((request.body or b'{}').decode('utf-8'))
@@ -1285,12 +1346,13 @@ def mobile_api_products(request):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
     if user.is_staff and not user_has_staff_access(user, "inventory"):
         return JsonResponse({'error': 'forbidden', 'message': 'Inventory access required.'}, status=403)
 
     if request.method == 'GET':
         query = (request.GET.get('q') or '').strip()
-        catalog = _build_inventory_product_catalog(query=query)
+        catalog = _build_inventory_product_catalog(query=query, workspace=workspace)
         products_data = [
             _serialize_inventory_product_for_api(product)
             for product in catalog['products'][:200]
@@ -1319,7 +1381,11 @@ def mobile_api_products(request):
         return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
 
     sku = (payload.get('sku') or '').strip()
-    if sku and Product.objects.filter(sku__iexact=sku).exists():
+    products_scope = scope_to_workspace(
+        Product.objects.all(),
+        workspace,
+    )
+    if sku and products_scope.filter(sku__iexact=sku).exists():
         return JsonResponse({'error': 'duplicate_sku', 'message': 'SKU already exists.'}, status=400)
 
     try:
@@ -1360,6 +1426,7 @@ def mobile_api_products(request):
     product = product_form.save(commit=False)
     product.sku = sku or None
     product.is_active = _mobile_parse_bool(payload.get('is_active', True))
+    product.workspace = workspace
     effective_rate = effective_tax_rate(
         product_form.cleaned_data.get('gst_rate'),
         product_form.cleaned_data.get('tax_category'),
@@ -1390,6 +1457,7 @@ def mobile_api_product_update(request, product_id):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
     if not user.is_staff or not user_has_staff_access(user, "inventory"):
         return JsonResponse({'error': 'forbidden', 'message': 'Only staff can update products.'}, status=403)
 
@@ -1398,9 +1466,16 @@ def mobile_api_product_update(request, product_id):
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
 
-    product = get_object_or_404(Product, pk=product_id)
+    products_scope = scope_to_workspace(
+        Product.objects.all(),
+        workspace,
+    )
+    product = get_object_or_404(
+        products_scope,
+        pk=product_id,
+    )
     sku = (payload.get('sku') or product.sku or '').strip()
-    if sku and Product.objects.exclude(pk=product.pk).filter(sku__iexact=sku).exists():
+    if sku and products_scope.exclude(pk=product.pk).filter(sku__iexact=sku).exists():
         return JsonResponse({'error': 'duplicate_sku', 'message': 'SKU already exists.'}, status=400)
 
     form_payload = {
@@ -1516,12 +1591,16 @@ def mobile_api_clients(request):
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
+    workspace = _mobile_request_workspace(request, user)
     if user.is_staff and not user_has_staff_access(user, "staff_dashboard"):
         return JsonResponse({'error': 'forbidden', 'message': 'Staff dashboard access required.'}, status=403)
 
     if request.method == 'GET':
         query = (request.GET.get('q') or '').strip()
-        clients_qs = Client.objects.all().order_by('name')
+        clients_qs = scope_to_workspace(
+            Client.objects.all(),
+            workspace,
+        ).order_by('name')
         if query:
             clients_qs = clients_qs.filter(
                 Q(name__icontains=query)
@@ -1568,10 +1647,15 @@ def mobile_api_clients(request):
         return JsonResponse({'error': 'missing_name', 'message': 'Client name is required.'}, status=400)
     if phone_error:
         return JsonResponse({'error': 'invalid_phone', 'message': phone_error}, status=400)
-    if Client.objects.filter(phone__in=phone_lookup_variants(phone)).exists():
+    clients_scope = scope_to_workspace(
+        Client.objects.all(),
+        workspace,
+    )
+    if clients_scope.filter(phone__in=phone_lookup_variants(phone)).exists():
         return JsonResponse({'error': 'duplicate_phone', 'message': 'A client with this phone already exists.'}, status=400)
 
     client = Client.objects.create(
+        workspace=workspace,
         name=name,
         phone=phone,
         email=(payload.get('email') or '').strip(),
@@ -1597,12 +1681,18 @@ def mobile_api_client_update(request, client_id):
     if not user.is_staff or not user_has_staff_access(user, "staff_dashboard"):
         return JsonResponse({'error': 'forbidden', 'message': 'Only staff can update clients.'}, status=403)
 
+    workspace = _mobile_request_workspace(request, user)
+    clients_scope = scope_to_workspace(Client.objects.all(), workspace)
+
     try:
         payload = json.loads((request.body or b'{}').decode('utf-8'))
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
 
-    client = get_object_or_404(Client, pk=client_id)
+    client = get_object_or_404(
+        clients_scope,
+        pk=client_id,
+    )
     update_fields = []
 
     if 'name' in payload:
@@ -1617,7 +1707,7 @@ def mobile_api_client_update(request, client_id):
         phone, phone_error = normalize_indian_phone(payload.get('phone'), field_label='Phone number')
         if phone_error:
             return JsonResponse({'error': 'invalid_phone', 'message': phone_error}, status=400)
-        if Client.objects.filter(phone__in=phone_lookup_variants(phone)).exclude(id=client.id).exists():
+        if clients_scope.exclude(id=client.id).filter(phone__in=phone_lookup_variants(phone)).exists():
             return JsonResponse({'error': 'duplicate_phone', 'message': 'A client with this phone already exists.'}, status=400)
         if client.phone != phone:
             client.phone = phone
@@ -1704,7 +1794,7 @@ def mobile_api_pending_approval_action(request, assignment_id):
 
     with transaction.atomic():
         assignment = get_object_or_404(
-            Assignment.objects.select_for_update().select_related('job', 'technician__user'),
+            Assignment.objects.select_for_update(),
             pk=assignment_id,
         )
 
@@ -1821,3 +1911,258 @@ def mobile_api_reports_summary(request):
             'top_products': top_products,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Mobile Task API Endpoints (Phase 5)
+# ---------------------------------------------------------------------------
+
+def _serialize_task_for_mobile(task, user=None, detailed=False):
+    """Serialize a Task for the Flutter mobile app."""
+    data = {
+        'id': task.id,
+        'title': task.title,
+        'description': task.description,
+        'priority': task.priority,
+        'priority_display': task.get_priority_display(),
+        'status': task.status,
+        'status_display': task.get_status_display(),
+        'due_date': timezone.localtime(task.due_date).strftime('%Y-%m-%d %H:%M') if task.due_date else '',
+        'created_at': timezone.localtime(task.created_at).strftime('%Y-%m-%d %H:%M'),
+        'completed_at': timezone.localtime(task.completed_at).strftime('%Y-%m-%d %H:%M') if task.completed_at else '',
+        'created_by': task.created_by.username if task.created_by else 'System',
+        'assigned_to': task.assigned_to.user.username if task.assigned_to and task.assigned_to.user else '',
+        'job_reference': {
+            'id': task.job_reference.id,
+            'job_code': task.job_reference.job_code,
+            'status': task.job_reference.status,
+            'customer_name': task.job_reference.customer_name,
+            'device': f"{task.job_reference.device_type} {task.job_reference.device_brand or ''}".strip(),
+        } if task.job_reference else None,
+        'attachments_count': task.attachments.count(),
+        'messages_count': task.messages.count(),
+    }
+    if detailed:
+        data['attachments'] = [
+            {
+                'id': att.id,
+                'file_name': att.file_name or (att.file.name.split('/')[-1] if att.file else f"attachment_{att.id}"),
+                'file_size': att.file_size,
+                'file_url': att.file.url if att.file else '',
+                'uploaded_at': timezone.localtime(att.uploaded_at).strftime('%Y-%m-%d %H:%M'),
+                'uploaded_by': att.uploaded_by.username if att.uploaded_by else '',
+            }
+            for att in task.attachments.all()
+        ]
+        data['messages'] = [
+            {
+                'id': msg.id,
+                'sender': msg.sender.username,
+                'sender_is_self': bool(user and msg.sender_id == user.id),
+                'body': msg.body,
+                'sent_at': timezone.localtime(msg.sent_at).strftime('%Y-%m-%d %H:%M'),
+            }
+            for msg in task.messages.select_related('sender').all()
+        ]
+    return data
+
+
+def mobile_api_tasks(request):
+    """List standalone tasks for technician or staff, ordered by priority."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    workspace = _mobile_request_workspace(request, user)
+    is_tech = hasattr(user, 'technician_profile')
+
+    if is_tech and not user.is_staff:
+        qs = Task.objects.filter(assigned_to=user.technician_profile)
+    else:
+        qs = scope_to_workspace(Task.objects.all(), workspace)
+
+    # Search
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        qs = qs.filter(
+            Q(title__icontains=q) |
+            Q(description__icontains=q) |
+            Q(job_reference__job_code__icontains=q)
+        )
+
+    # Status filter
+    status = (request.GET.get('status') or '').strip().lower()
+    if status in dict(Task.STATUS_CHOICES):
+        qs = qs.filter(status=status)
+    elif status == 'all':
+        pass
+    else:
+        # Default: active (open + in_progress)
+        qs = qs.filter(status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS])
+
+    # Priority filter
+    priority = (request.GET.get('priority') or '').strip().lower()
+    if priority in dict(Task.PRIORITY_CHOICES):
+        qs = qs.filter(priority=priority)
+
+    tasks_list = list(
+        qs.select_related('assigned_to__user', 'created_by', 'job_reference')
+        .prefetch_related('attachments', 'messages')[:200]
+    )
+
+    tasks_data = [_serialize_task_for_mobile(t, user=user) for t in tasks_list]
+    return JsonResponse({'count': len(tasks_data), 'tasks': tasks_data})
+
+
+def mobile_api_task_detail(request, task_id):
+    """Get full task details including attachments and messages."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    workspace = _mobile_request_workspace(request, user)
+    is_tech = hasattr(user, 'technician_profile')
+
+    task = get_object_or_404(
+        Task.objects.select_related('assigned_to__user', 'created_by', 'job_reference'),
+        pk=task_id,
+    )
+
+    if is_tech and not user.is_staff and task.assigned_to != user.technician_profile:
+        return JsonResponse({'error': 'forbidden', 'message': 'You are not assigned to this task.'}, status=403)
+
+    return JsonResponse({
+        'ok': True,
+        'task': _serialize_task_for_mobile(task, user=user, detailed=True),
+    })
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_task_update_status(request, task_id):
+    """Update task status from mobile (in_progress, done, open, cancelled)."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    task = get_object_or_404(Task, pk=task_id)
+    is_tech = hasattr(user, 'technician_profile') and task.assigned_to == user.technician_profile
+    if not user.is_staff and not is_tech:
+        return JsonResponse({'error': 'forbidden', 'message': 'Access denied.'}, status=403)
+
+    try:
+        payload = json.loads((request.body or b'{}').decode('utf-8'))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        payload = request.POST
+
+    old_status = task.status
+    new_status = (payload.get('status') or '').strip().lower()
+    if new_status not in dict(Task.STATUS_CHOICES):
+        return JsonResponse({'error': 'invalid_status', 'message': f"Invalid status '{new_status}'."}, status=400)
+
+    if new_status == Task.STATUS_IN_PROGRESS:
+        task.mark_in_progress()
+    elif new_status == Task.STATUS_DONE:
+        task.mark_done()
+    elif new_status == Task.STATUS_CANCELLED:
+        task.mark_cancelled()
+    elif new_status == Task.STATUS_OPEN:
+        task.status = Task.STATUS_OPEN
+        task.completed_at = None
+        task.save(update_fields=['status', 'completed_at', 'updated_at'])
+
+    if new_status != old_status:
+        broadcast_task_status(task, old_status, new_status, user)
+
+    return JsonResponse({
+        'ok': True,
+        'status': task.status,
+        'status_display': task.get_status_display(),
+        'completed_at': timezone.localtime(task.completed_at).strftime('%Y-%m-%d %H:%M') if task.completed_at else '',
+    })
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_task_message_send(request, task_id):
+    """Send a message on a task thread from mobile."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    task = get_object_or_404(Task, pk=task_id)
+    is_tech = hasattr(user, 'technician_profile') and task.assigned_to == user.technician_profile
+    if not user.is_staff and not is_tech:
+        return JsonResponse({'error': 'forbidden', 'message': 'Access denied.'}, status=403)
+
+    body = ''
+    if 'application/json' in (request.content_type or ''):
+        try:
+            payload = json.loads((request.body or b'{}').decode('utf-8'))
+            body = (payload.get('body') or payload.get('message') or '').strip()
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
+    else:
+        body = (request.POST.get('body') or request.POST.get('message') or '').strip()
+
+    if not body:
+        return JsonResponse({'error': 'missing_body', 'message': 'Message body cannot be empty.'}, status=400)
+
+    msg = TaskMessage.objects.create(
+        task=task,
+        sender=user,
+        body=body,
+    )
+
+    # Handle optional file upload
+    files = request.FILES.getlist('attachments')
+    for f in files:
+        TaskAttachment.objects.create(
+            task=task,
+            file=f,
+            file_name=f.name,
+            file_size=f.size,
+            uploaded_by=user,
+        )
+
+    broadcast_task_message(task, msg)
+
+    return JsonResponse({
+        'ok': True,
+        'message': {
+            'id': msg.id,
+            'sender': user.username,
+            'sender_is_self': True,
+            'body': msg.body,
+            'sent_at': timezone.localtime(msg.sent_at).strftime('%Y-%m-%d %H:%M'),
+        }
+    })
+
+
+def mobile_api_task_messages(request, task_id):
+    """Poll messages for a task, optionally filtering since_id."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    task = get_object_or_404(Task, pk=task_id)
+    is_tech = hasattr(user, 'technician_profile') and task.assigned_to == user.technician_profile
+    if not user.is_staff and not is_tech:
+        return JsonResponse({'error': 'forbidden', 'message': 'Access denied.'}, status=403)
+
+    qs = task.messages.select_related('sender').all()
+    since_id = request.GET.get('since_id')
+    if since_id and since_id.isdigit():
+        qs = qs.filter(id__gt=int(since_id))
+
+    messages_data = [
+        {
+            'id': msg.id,
+            'sender': msg.sender.username,
+            'sender_is_self': bool(msg.sender_id == user.id),
+            'body': msg.body,
+            'sent_at': timezone.localtime(msg.sent_at).strftime('%Y-%m-%d %H:%M'),
+        }
+        for msg in qs
+    ]
+    return JsonResponse({'count': len(messages_data), 'messages': messages_data})

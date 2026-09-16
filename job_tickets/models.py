@@ -478,6 +478,51 @@ class InventoryBill(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # --- Reversal fields ---
+    is_reversed = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True when this bill has been formally reversed. A reversed bill cannot be reversed again.",
+    )
+    reversal_of = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reversal_bills',
+        help_text="Points to the original bill this bill was created to reverse.",
+    )
+    reversal_note = models.TextField(
+        blank=True,
+        help_text="Reason recorded at the time of reversal.",
+    )
+    reversed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when the original bill was marked as reversed.",
+    )
+    reversed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reversed_inventory_bills',
+        help_text="User who performed the reversal.",
+    )
+
+    # --- Return linkage ---
+    source_bill = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='return_bills',
+        help_text=(
+            "For purchase_return and sale_return bills: the original purchase/sale bill "
+            "this return is against. Used to compute vendor credits and customer refunds."
+        ),
+    )
+
     class Meta:
         ordering = ['-entry_date', '-id']
 
@@ -555,9 +600,13 @@ class InventoryCreditPayment(models.Model):
     ]
 
     METHOD_CASH = 'cash'
+    METHOD_UPI = 'upi'
+    METHOD_CARD = 'card'
     METHOD_TRANSFER = 'transfer'
     METHOD_CHOICES = [
         (METHOD_CASH, 'Cash'),
+        (METHOD_UPI, 'UPI / QR'),
+        (METHOD_CARD, 'Card'),
         (METHOD_TRANSFER, 'Transfer'),
     ]
 
@@ -599,6 +648,248 @@ class InventoryCreditPayment(models.Model):
         return f"{self.get_direction_display()} {self.party.name} - {self.amount}"
 
 
+class InventoryNumberSequence(models.Model):
+    """Concurrency-safe counters for human-readable inventory identifiers."""
+    sequence_key = models.CharField(max_length=180, unique=True)
+    last_counter = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sequence_key']
+
+    def __str__(self):
+        return f"{self.sequence_key}: {self.last_counter}"
+
+
+class InventoryBillLog(models.Model):
+    """
+    Append-only audit log for inventory bill lifecycle events.
+
+    Every accounting action that creates, reverses, or links a bill must write
+    a row here.  Do not update or delete rows — append only.
+    """
+    ACTION_BILL_CREATED = 'BILL_CREATED'
+    ACTION_BILL_EDITED = 'BILL_EDITED'
+    ACTION_BILL_REVERSED = 'BILL_REVERSED'
+    ACTION_REVERSAL_CREATED = 'REVERSAL_CREATED'
+    ACTION_PAYMENT_RECORDED = 'PAYMENT_RECORDED'
+    ACTION_RETURN_LINKED = 'RETURN_LINKED'
+    ACTION_VENDOR_CREDIT_CREATED = 'VENDOR_CREDIT_CREATED'
+    ACTION_VENDOR_CREDIT_APPLIED = 'VENDOR_CREDIT_APPLIED'
+
+    ACTION_CHOICES = [
+        (ACTION_BILL_CREATED, 'Bill Created'),
+        (ACTION_BILL_EDITED, 'Bill Edited'),
+        (ACTION_BILL_REVERSED, 'Bill Reversed'),
+        (ACTION_REVERSAL_CREATED, 'Reversal Bill Created'),
+        (ACTION_PAYMENT_RECORDED, 'Payment Recorded'),
+        (ACTION_RETURN_LINKED, 'Return Linked to Source Bill'),
+        (ACTION_VENDOR_CREDIT_CREATED, 'Vendor Credit Created'),
+        (ACTION_VENDOR_CREDIT_APPLIED, 'Vendor Credit Applied'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_bill_logs',
+        db_index=True,
+    )
+    bill = models.ForeignKey(
+        'InventoryBill',
+        on_delete=models.CASCADE,
+        related_name='audit_logs',
+        help_text="The bill this log entry is associated with.",
+    )
+    action = models.CharField(max_length=40, choices=ACTION_CHOICES, db_index=True)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="User who performed the action.",
+    )
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    details = models.TextField(
+        blank=True,
+        help_text="Human-readable description of the event. Include before/after values for edits.",
+    )
+    related_bill = models.ForeignKey(
+        'InventoryBill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='related_audit_logs',
+        help_text="For reversals: the reversal bill. For returns: the source bill.",
+    )
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.bill.bill_number} — {self.action} at {self.timestamp:%Y-%m-%d %H:%M}"
+
+
+class InventoryVendorCredit(models.Model):
+    """
+    Represents a credit owed to the company by a vendor, arising from a purchase return.
+
+    A vendor credit is created when a purchase_return bill is linked to an original
+    purchase bill (source_bill).  The credit amount equals the return bill's total.
+    It can be:
+      - Applied to a future purchase bill from the same vendor (reduces amount payable).
+      - Carried forward (credit balance remains open).
+      - Refunded (creates a DIRECTION_RECEIVABLE InventoryCreditPayment against this record).
+
+    The credit is considered settled when applied_amount >= credit_amount.
+    """
+    STATUS_OPEN = 'open'
+    STATUS_PARTIALLY_APPLIED = 'partially_applied'
+    STATUS_FULLY_APPLIED = 'fully_applied'
+    STATUS_VOIDED = 'voided'
+    STATUS_CHOICES = [
+        (STATUS_OPEN, 'Open'),
+        (STATUS_PARTIALLY_APPLIED, 'Partially Applied'),
+        (STATUS_FULLY_APPLIED, 'Fully Applied'),
+        (STATUS_VOIDED, 'Voided'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_vendor_credits',
+        db_index=True,
+    )
+    party = models.ForeignKey(
+        InventoryParty,
+        on_delete=models.PROTECT,
+        related_name='vendor_credits',
+        help_text="The vendor (supplier) party this credit belongs to.",
+    )
+    return_bill = models.OneToOneField(
+        'InventoryBill',
+        on_delete=models.CASCADE,
+        related_name='vendor_credit',
+        help_text="The purchase_return bill that generated this vendor credit.",
+    )
+    source_bill = models.ForeignKey(
+        'InventoryBill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vendor_credits_from_returns',
+        help_text="The original purchase bill this return is against. Null when the return is not tied to a specific bill.",
+    )
+    credit_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Total credit value (= return bill total at time of creation). Immutable after creation.",
+    )
+    applied_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text="Total amount of this credit that has been applied to purchase bills or refunded.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_OPEN,
+        db_index=True,
+    )
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vendor_credits_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Vendor Credit {self.return_bill.bill_number} — {self.party.name} Rs.{self.credit_amount}"
+
+    @property
+    def balance_amount(self):
+        """Remaining credit not yet applied."""
+        return (self.credit_amount or Decimal('0.00')) - (self.applied_amount or Decimal('0.00'))
+
+    def _recompute_status(self):
+        """Recompute and save status based on applied_amount. Call inside a transaction."""
+        balance = self.balance_amount
+        if self.status == self.STATUS_VOIDED:
+            return
+        if balance <= Decimal('0.00'):
+            new_status = self.STATUS_FULLY_APPLIED
+        elif (self.applied_amount or Decimal('0.00')) > Decimal('0.00'):
+            new_status = self.STATUS_PARTIALLY_APPLIED
+        else:
+            new_status = self.STATUS_OPEN
+        if new_status != self.status:
+            self.status = new_status
+            self.save(update_fields=['status', 'updated_at'])
+
+
+class InventoryVendorCreditApplication(models.Model):
+    """
+    Records a single application of a vendor credit against a purchase bill.
+
+    Each row reduces vendor_credit.applied_amount and reduces the effective
+    payable on the target_bill.
+    """
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vendor_credit_applications',
+        db_index=True,
+    )
+    vendor_credit = models.ForeignKey(
+        InventoryVendorCredit,
+        on_delete=models.CASCADE,
+        related_name='applications',
+    )
+    target_bill = models.ForeignKey(
+        'InventoryBill',
+        on_delete=models.CASCADE,
+        related_name='credit_applications',
+        help_text="The purchase bill this credit is being applied against.",
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Amount of the credit applied. Cannot exceed credit balance or bill balance.",
+    )
+    applied_date = models.DateField(default=timezone.localdate)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vendor_credit_applications_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-applied_date', '-created_at']
+
+    def __str__(self):
+        return (
+            f"Credit {self.vendor_credit.return_bill.bill_number} "
+            f"→ Bill {self.target_bill.bill_number} Rs.{self.amount}"
+        )
+
+
 class JobTicket(models.Model):
     FEEDBACK_PENDING = 'pending'
     FEEDBACK_MESSAGE_SENT = 'message_sent'
@@ -627,6 +918,15 @@ class JobTicket(models.Model):
         ('Ready for Pickup', 'Ready for Pickup'),
         ('Closed', 'Closed'),
 
+    ]
+
+    PAYMENT_STATUS_UNPAID = 'unpaid'
+    PAYMENT_STATUS_PART_PAID = 'part_paid'
+    PAYMENT_STATUS_PAID = 'paid'
+    PAYMENT_STATUS_CHOICES = [
+        (PAYMENT_STATUS_UNPAID, 'Unpaid'),
+        (PAYMENT_STATUS_PART_PAID, 'Partially Paid'),
+        (PAYMENT_STATUS_PAID, 'Paid'),
     ]
 
     workspace = models.ForeignKey(
@@ -697,6 +997,38 @@ class JobTicket(models.Model):
         help_text="ID used to group multiple jobs from one customer submission."
     )
     
+    # Payment Settlement
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PAYMENT_STATUS_CHOICES,
+        default=PAYMENT_STATUS_UNPAID,
+        db_index=True,
+        help_text="Settlement status of this repair ticket.",
+    )
+    payment_method = models.CharField(
+        max_length=20,
+        choices=InventoryCreditPayment.METHOD_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Payment method used for settlement.",
+    )
+    amount_paid = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Total amount collected from the customer for this job.",
+    )
+    payment_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Transaction ID, UPI reference, or check number.",
+    )
+    payment_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the payment or settlement occurred.",
+    )
+
     # Feedback fields
     feedback_rating = models.IntegerField(
         null=True, 
@@ -780,25 +1112,21 @@ class JobTicket(models.Model):
             }
         )
 
-    # Helper: return the active (accepted) assignment or None
-    def active_assignment(self):
-        return self.assignments.filter(status='accepted').first()
+    @property
+    def total_cost(self):
+        """Calculates total cost from service logs minus discount."""
+        service_logs = self.service_logs.all()
+        parts = sum(((log.part_cost or Decimal('0.00')) for log in service_logs), Decimal('0.00'))
+        services = sum(((log.service_charge or Decimal('0.00')) for log in service_logs), Decimal('0.00'))
+        discount = self.discount_amount or Decimal('0.00')
+        return max(Decimal('0.00'), (parts + services) - discount)
 
-    # Helper: called when an assignment is accepted to update job-level fields
-    def _on_assignment_accepted(self, assignment):
-        # Set assigned_to and move status to a progress state
-        self.assigned_to = assignment.technician
-        # Map acceptance to a job status — adjust if you prefer a different status
-        self.status = 'Repairing'
-        self.save(update_fields=['assigned_to', 'status', 'updated_at'])
+    @property
+    def balance_due(self):
+        paid = self.amount_paid or Decimal('0.00')
+        return max(Decimal('0.00'), self.total_cost - paid)
 
-    # Helper: called when assignments are rejected to possibly revert the job status
-    def _on_assignment_rejected(self):
-        # If no accepted assignments remain, set job back to Pending (or another desired status)
-        if not self.assignments.filter(status='accepted').exists():
-            self.assigned_to = None
-            self.status = 'Pending'
-            self.save(update_fields=['assigned_to', 'status', 'updated_at'])
+
 
 
 class JobReminder(models.Model):
@@ -859,6 +1187,7 @@ class JobTicketPhoto(models.Model):
 
 
 class Assignment(models.Model):
+    """Tracks technician acknowledgement of a job (accept/reject). Status-only; does not drive job state."""
     ASSIGNMENT_STATUS = [
         ('pending', 'Pending'),
         ('accepted', 'Accepted'),
@@ -873,61 +1202,166 @@ class Assignment(models.Model):
     response_note = models.TextField(blank=True)
 
     class Meta:
-        unique_together = ('job', 'technician')
         ordering = ['-created_at']
+        unique_together = [('job', 'technician')]
 
     def __str__(self):
         return f"{self.job.job_code} → {self.technician.user.username} ({self.status})"
 
-    def accept(self, note: str = ""):
-        """
-        Mark this assignment accepted. Updates job.assigned_to and job.status.
-        Uses a transaction to reduce race conditions (but view-level locking recommended).
-        """
-        if self.status != 'pending':
-            raise ValueError("Assignment already responded")
+    def accept(self, note=""):
+        """Mark accepted — no side-effects on job status."""
+        self.status = 'accepted'
+        self.responded_at = timezone.now()
+        self.response_note = note or ""
+        self.save(update_fields=['status', 'responded_at', 'response_note'])
 
-        with transaction.atomic():
-            # refresh from DB to reduce race conditions
-            self.refresh_from_db()
-            if self.status != 'pending':
-                raise ValueError("Assignment already responded")
+    def reject(self, note=""):
+        """Mark rejected — no side-effects on job status."""
+        self.status = 'rejected'
+        self.responded_at = timezone.now()
+        self.response_note = note or ""
+        self.save(update_fields=['status', 'responded_at', 'response_note'])
 
-            self.status = 'accepted'
-            self.responded_at = timezone.now()
-            self.response_note = note
-            self.save(update_fields=['status', 'responded_at', 'response_note'])
 
-            # Update the job ticket to reflect acceptance
-            self.job._on_assignment_accepted(self)
-            # Technician accepted the assignment — clear the new-assignment flag
-            try:
-                self.job.is_new_assignment = False
-                self.job.save(update_fields=['is_new_assignment'])
-            except Exception:
-                # Keep acceptance even if clearing flag fails
-                pass
+# ---------------------------------------------------------------------------
+# Standalone Task Management System
+# ---------------------------------------------------------------------------
 
-    def reject(self, note: str = ""):
-        """
-        Mark this assignment rejected. If all assignments are rejected and none accepted,
-        the job is reverted to Pending.
-        """
-        if self.status != 'pending':
-            raise ValueError("Assignment already responded")
+class Task(models.Model):
+    """A standalone work item that can be assigned to a technician, independent of job status."""
 
-        with transaction.atomic():
-            self.refresh_from_db()
-            if self.status != 'pending':
-                raise ValueError("Assignment already responded")
+    PRIORITY_LOW = 'low'
+    PRIORITY_MEDIUM = 'medium'
+    PRIORITY_HIGH = 'high'
+    PRIORITY_URGENT = 'urgent'
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, 'Low'),
+        (PRIORITY_MEDIUM, 'Medium'),
+        (PRIORITY_HIGH, 'High'),
+        (PRIORITY_URGENT, 'Urgent / Rush'),
+    ]
 
-            self.status = 'rejected'
-            self.responded_at = timezone.now()
-            self.response_note = note
-            self.save(update_fields=['status', 'responded_at', 'response_note'])
+    STATUS_OPEN = 'open'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_DONE = 'done'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_OPEN, 'Open'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_DONE, 'Done'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
 
-            # If there are no accepted assignments, update job status
-            self.job._on_assignment_rejected()
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.CASCADE,
+        related_name='tasks',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    priority = models.CharField(
+        max_length=16,
+        choices=PRIORITY_CHOICES,
+        default=PRIORITY_MEDIUM,
+        db_index=True,
+    )
+    due_date = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default=STATUS_OPEN,
+        db_index=True,
+    )
+    assigned_to = models.ForeignKey(
+        TechnicianProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks',
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_tasks',
+    )
+    job_reference = models.ForeignKey(
+        JobTicket,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks',
+        help_text='Optional: link this task to a job ticket for traceability.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = [
+            models.Case(
+                models.When(priority='urgent', then=models.Value(0)),
+                models.When(priority='high', then=models.Value(1)),
+                models.When(priority='medium', then=models.Value(2)),
+                models.When(priority='low', then=models.Value(3)),
+                default=models.Value(4),
+                output_field=models.IntegerField(),
+            ),
+            models.F('due_date').asc(nulls_last=True),
+            '-created_at',
+        ]
+
+    def __str__(self):
+        tech = self.assigned_to.user.username if self.assigned_to else 'Unassigned'
+        return f"[{self.get_priority_display()}] {self.title} → {tech} ({self.status})"
+
+    def mark_in_progress(self):
+        self.status = self.STATUS_IN_PROGRESS
+        self.save(update_fields=['status', 'updated_at'])
+
+    def mark_done(self):
+        self.status = self.STATUS_DONE
+        self.completed_at = timezone.now()
+        self.save(update_fields=['status', 'completed_at', 'updated_at'])
+
+    def mark_cancelled(self):
+        self.status = self.STATUS_CANCELLED
+        self.save(update_fields=['status', 'updated_at'])
+
+
+class TaskAttachment(models.Model):
+    """File attachment for a standalone Task."""
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='attachments')
+    file = models.FileField(upload_to='task_attachments/%Y/%m/', blank=True, null=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    file_size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return f"Attachment {self.file_name or self.id} for Task {self.task_id}"
+
+
+class TaskMessage(models.Model):
+    """Chat message on a Task thread between staff and technician."""
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_messages')
+    body = models.TextField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['sent_at']
+
+    def __str__(self):
+        return f"[Task {self.task_id}] {self.sender.username}: {self.body[:40]}"
 
 
 class ServiceLog(models.Model):
@@ -1342,12 +1776,13 @@ class CompanyProfile(models.Model):
     def get_profile(cls, workspace=None):
         """Get or create the company profile for the active workspace."""
         if workspace:
-            profile, created = cls.objects.get_or_create(
-                workspace=workspace,
-                defaults={'company_name': workspace.name},
-            )
+            profile = cls.objects.filter(workspace=workspace).first()
+            if not profile:
+                profile = cls.objects.create(workspace=workspace, company_name=workspace.name)
             return profile
-        profile, created = cls.objects.get_or_create(id=1)
+        profile = cls.objects.filter(workspace__isnull=True).first() or cls.objects.first()
+        if not profile:
+            profile = cls.objects.create(id=1)
         return profile
 
 

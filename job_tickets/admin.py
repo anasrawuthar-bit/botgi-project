@@ -25,9 +25,12 @@ from .models import (
     DeviceChecklistField,
     DeviceChecklistTemplate,
     InventoryBill,
+    InventoryBillLog,
     InventoryCreditPayment,
     InventoryEntry,
     InventoryParty,
+    InventoryVendorCredit,
+    InventoryVendorCreditApplication,
     JobFieldPreset,
     MessageQueue,
     JobTicket,
@@ -93,7 +96,6 @@ def _reverse_inventory_entries(entries):
         locked_entries = list(
             InventoryEntry.objects.select_for_update()
             .filter(pk__in=entry_ids)
-            .select_related('bill', 'job_ticket', 'party', 'product')
             .order_by('id')
         )
         if not locked_entries:
@@ -1419,3 +1421,64 @@ admin.site.site_title = "GI Hostings Admin"
 admin.site.index_title = "Operations Control Panel"
 admin.site.site_url = "/"
 admin.site.disable_action('delete_selected')
+
+
+@admin.register(InventoryBillLog)
+class InventoryBillLogAdmin(admin.ModelAdmin):
+    list_display = ('bill', 'action', 'user', 'timestamp', 'related_bill')
+    list_filter = ('action', 'timestamp')
+    search_fields = ('bill__bill_number', 'details', 'user__username')
+    readonly_fields = ('workspace', 'bill', 'action', 'user', 'timestamp', 'details', 'related_bill')
+    ordering = ('-timestamp',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(InventoryVendorCredit)
+class InventoryVendorCreditAdmin(admin.ModelAdmin):
+    list_display = ('return_bill', 'party', 'credit_amount', 'applied_amount', 'status', 'created_at')
+    list_filter = ('status', 'created_at')
+    search_fields = ('party__name', 'return_bill__bill_number')
+    readonly_fields = (
+        'workspace', 'party', 'return_bill', 'source_bill',
+        'credit_amount', 'applied_amount', 'status',
+        'created_by', 'created_at', 'updated_at',
+    )
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(InventoryVendorCreditApplication)
+class InventoryVendorCreditApplicationAdmin(admin.ModelAdmin):
+    list_display = ('vendor_credit', 'target_bill', 'amount', 'applied_date', 'created_by')
+    list_filter = ('applied_date',)
+    search_fields = ('target_bill__bill_number', 'vendor_credit__return_bill__bill_number')
+    readonly_fields = (
+        'workspace', 'vendor_credit', 'target_bill',
+        'amount', 'applied_date', 'notes', 'created_by', 'created_at',
+    )
+    ordering = ('-applied_date',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

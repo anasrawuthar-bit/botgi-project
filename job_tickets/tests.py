@@ -2,19 +2,26 @@ import asyncio
 import hashlib
 import hmac
 import json
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest import skipUnless
 from unittest.mock import Mock, patch
 
 from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import Group, User
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import close_old_connections, connection
 from django.http import HttpResponse
-from django.test import Client as DjangoTestClient, RequestFactory, TestCase, override_settings
+from django.test import Client as DjangoTestClient, RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from channels.routing import URLRouter
+from channels.testing import WebsocketCommunicator
 
 from .admin import InventoryEntryAdmin, JobTicketAdmin
 from .access_control import apply_staff_access
@@ -32,6 +39,8 @@ from .forms import (
 from .models import (
     Client,
     CompanyProfile,
+    CompanyUserMembership,
+    CompanyWorkspace,
     InventoryBill,
     InventoryCreditPayment,
     InventoryEntry,
@@ -45,6 +54,9 @@ from .models import (
     ProductSale,
     ServiceLog,
     SpecializedService,
+    Task,
+    TaskAttachment,
+    TaskMessage,
     TechnicianProfile,
     UserSessionActivity,
     Vendor,
@@ -52,8 +64,332 @@ from .models import (
     WhatsAppIntegrationSettings,
 )
 from .phone_utils import normalize_indian_phone
-from .whatsapp_service import send_job_whatsapp_notification
+from .whatsapp_service import create_receipt_access_token, send_job_whatsapp_notification
 from .views import client_login, get_phone_service_snapshot, issue_mobile_jwt, staff_job_detail, technician_report_print
+from .views.helpers import get_monthly_summary_context
+from .views.helpers import (
+    _generate_inventory_bill_number,
+    _generate_inventory_entry_number,
+    _get_or_create_inventory_customer_party_for_job,
+    _process_inventory_grouped_bill_edit,
+)
+from .consumers import staff_group_name
+from .routing import websocket_urlpatterns
+
+
+class WorkspaceIsolationSecurityTests(TransactionTestCase):
+
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='workspace-staff',
+            password='StrongPass123!',
+            is_staff=True,
+        )
+        apply_staff_access(self.user, {'staff_dashboard', 'inventory'})
+        self.workspace_a = CompanyWorkspace.objects.create(name='Workspace A', owner=self.user)
+        self.workspace_b = CompanyWorkspace.objects.create(name='Workspace B', owner=self.user)
+        CompanyUserMembership.objects.create(
+            workspace=self.workspace_a,
+            user=self.user,
+            role=CompanyUserMembership.ROLE_ADMIN,
+        )
+        self.job_a = JobTicket.objects.create(
+            workspace=self.workspace_a,
+            job_code='GI-260501-001',
+            customer_name='Workspace A Customer',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            reported_issue='A issue',
+        )
+        self.job_b = JobTicket.objects.create(
+            workspace=self.workspace_b,
+            job_code='GI-260501-002',
+            customer_name='Workspace B Customer',
+            customer_phone='9876543211',
+            device_type='Phone',
+            reported_issue='B issue',
+        )
+        self.token = issue_mobile_jwt(self.user)
+
+    def test_mobile_job_list_is_limited_to_current_workspace(self):
+        response = self.client.get(
+            reverse('mobile_api_jobs'),
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        job_codes = {job['job_code'] for job in response.json()['jobs']}
+        self.assertIn(self.job_a.job_code, job_codes)
+        self.assertNotIn(self.job_b.job_code, job_codes)
+
+    def test_mobile_job_detail_rejects_other_workspace(self):
+        response = self.client.get(
+            reverse('mobile_api_job_detail', kwargs={'job_code': self.job_b.job_code}),
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_financial_dashboard_is_limited_to_current_workspace(self):
+        context = get_monthly_summary_context(
+            timezone.make_aware(datetime(2020, 1, 1)),
+            timezone.make_aware(datetime(2030, 1, 1)),
+            '2020-01-01',
+            '2029-12-31',
+            workspace=self.workspace_a,
+        )
+
+        self.assertEqual(context['jobs_created_count'], 1)
+        self.assertEqual(context['pending_completed_count'], 0)
+
+    def test_authenticated_non_staff_cannot_open_job_creation_success(self):
+        technician = User.objects.create_user(
+            username='workspace-technician',
+            password='StrongPass123!',
+        )
+        self.client.force_login(technician)
+
+        response = self.client.get(
+            reverse('job_creation_success', kwargs={'job_code': self.job_a.job_code}),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('unauthorized'))
+
+    def test_vendor_unlock_does_not_accept_default_password(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('unlock_vendor_details', kwargs={'job_code': self.job_a.job_code}),
+            {'vendor_password': 'vendor123'},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('staff_job_detail', args=[self.job_a.job_code]))
+        self.assertFalse(self.client.session.get('vendor_details_unlocked', False))
+
+    def test_staff_websocket_does_not_receive_other_workspace_events(self):
+        async def exercise():
+            application = URLRouter(websocket_urlpatterns)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/staff_updates/?workspace={self.workspace_a.id}',
+            )
+            communicator.scope['user'] = self.user
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            channel_layer = get_channel_layer()
+
+            await channel_layer.group_send(
+                staff_group_name(self.workspace_b.id),
+                {
+                    'type': 'job_status_update',
+                    'job_code': self.job_b.job_code,
+                    'status': 'Closed',
+                },
+            )
+            with self.assertRaises(asyncio.TimeoutError):
+                await asyncio.wait_for(communicator.receive_json_from(), timeout=0.2)
+
+            await channel_layer.group_send(
+                staff_group_name(self.workspace_a.id),
+                {
+                    'type': 'job_status_update',
+                    'job_code': self.job_a.job_code,
+                    'status': 'Ready for Pickup',
+                },
+            )
+            event = await asyncio.wait_for(communicator.receive_json_from(), timeout=1)
+            self.assertEqual(event['job_code'], self.job_a.job_code)
+            await communicator.disconnect()
+
+        async_to_sync(exercise)()
+        connection.close()
+        close_old_connections()
+
+
+class BusinessIntegrityRegressionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='integrity-staff',
+            password='StrongPass123!',
+            is_staff=True,
+        )
+        apply_staff_access(self.user, {'staff_dashboard', 'reports_vendor', 'inventory'})
+        self.workspace = CompanyWorkspace.objects.create(name='Integrity Workspace', owner=self.user)
+        CompanyUserMembership.objects.create(
+            workspace=self.workspace,
+            user=self.user,
+            role=CompanyUserMembership.ROLE_ADMIN,
+        )
+
+    def test_customer_party_name_does_not_override_different_phone(self):
+        existing = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Same Customer',
+            phone='9876543200',
+            party_type='both',
+        )
+        job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='GI-260913-001',
+            customer_name='Same Customer',
+            customer_phone='9876543201',
+            device_type='Laptop',
+            reported_issue='Different phone',
+        )
+
+        party = _get_or_create_inventory_customer_party_for_job(job)
+
+        self.assertNotEqual(party.id, existing.id)
+        self.assertEqual(party.phone, '9876543201')
+        self.assertEqual(
+            InventoryParty.objects.filter(
+                workspace=self.workspace,
+                name='Same Customer',
+            ).count(),
+            2,
+        )
+
+    def test_repeated_vendor_payment_reference_is_rejected(self):
+        vendor = Vendor.objects.create(
+            workspace=self.workspace,
+            company_name='Integrity Vendor',
+            name='Vendor Contact',
+        )
+        job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='GI-260913-002',
+            customer_name='Vendor Customer',
+            customer_phone='9876543202',
+            device_type='Laptop',
+            reported_issue='Vendor service',
+        )
+        service = SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('1000.00'),
+            vendor_balance_amount=Decimal('1000.00'),
+        )
+        self.client.force_login(self.user)
+        payload = {
+            'payment_scope': 'single',
+            'specialized_service_id': str(service.id),
+            'payment_amount': '400.00',
+            'payment_method': VendorPayment.METHOD_TRANSFER,
+            'payment_date': timezone.localdate().isoformat(),
+            'reference_no': 'RETRY-001',
+        }
+
+        first = self.client.post(reverse('record_vendor_payment', args=[vendor.id]), payload)
+        second = self.client.post(reverse('record_vendor_payment', args=[vendor.id]), payload)
+
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 302)
+        service.refresh_from_db()
+        self.assertEqual(service.vendor_paid_amount, Decimal('400.00'))
+        self.assertEqual(service.vendor_balance_amount, Decimal('600.00'))
+        self.assertEqual(
+            VendorPayment.objects.filter(
+                specialized_service=service,
+                reference_no='RETRY-001',
+            ).count(),
+            1,
+        )
+
+    def test_inventory_numbers_are_unique_across_workspaces(self):
+        entry_date = timezone.localdate()
+        bill_a = _generate_inventory_bill_number('purchase', entry_date, self.workspace)
+        bill_b = _generate_inventory_bill_number('purchase', entry_date, None)
+        entry_a = _generate_inventory_entry_number('purchase', entry_date, self.workspace)
+        entry_b = _generate_inventory_entry_number('purchase', entry_date, None)
+
+        self.assertNotEqual(bill_a, bill_b)
+        self.assertNotEqual(entry_a, entry_b)
+
+    def test_paid_bill_edit_is_rejected_before_stock_reconciliation(self):
+        party = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Paid Party',
+            party_type='supplier',
+        )
+        product = Product.objects.create(
+            workspace=self.workspace,
+            name='Paid Product',
+            stock_quantity=5,
+        )
+        bill = InventoryBill.objects.create(
+            workspace=self.workspace,
+            bill_number='PB-TEST-001',
+            entry_type='purchase',
+            entry_date=timezone.localdate(),
+            invoice_number='SUP-TEST-001',
+            party=party,
+        )
+        entry = InventoryEntry.objects.create(
+            workspace=self.workspace,
+            entry_number='PUR-TEST-001',
+            entry_type='purchase',
+            entry_date=timezone.localdate(),
+            bill=bill,
+            invoice_number=bill.invoice_number,
+            party=party,
+            product=product,
+            quantity=5,
+            unit_price=Decimal('100.00'),
+            taxable_amount=Decimal('500.00'),
+            total_amount=Decimal('500.00'),
+            stock_before=0,
+            stock_after=5,
+        )
+        InventoryCreditPayment.objects.create(
+            workspace=self.workspace,
+            party=party,
+            bill=bill,
+            direction=InventoryCreditPayment.DIRECTION_PAYABLE,
+            amount=Decimal('500.00'),
+            balance_before=Decimal('500.00'),
+            balance_after=Decimal('0.00'),
+        )
+        request = RequestFactory().post(
+            '/inventory/',
+            {
+                'bill_id': str(bill.id),
+                'entry_id': str(entry.id),
+                'edit_password': 'StrongPass123!',
+            },
+        )
+        request.user = self.user
+        request.current_workspace = self.workspace
+
+        with self.assertRaisesMessage(ValueError, 'Paid or partially paid bills cannot be edited'):
+            _process_inventory_grouped_bill_edit(request, entry_type='purchase')
+
+        self.assertTrue(InventoryEntry.objects.filter(pk=entry.id).exists())
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 5)
+
+
+@skipUnless(connection.vendor == 'postgresql', 'PostgreSQL concurrency test only')
+class PostgreSQLInventoryNumberingTests(TransactionTestCase):
+    def test_concurrent_bill_numbers_are_unique(self):
+        entry_date = timezone.localdate()
+
+        def issue_number(_index):
+            close_old_connections()
+            try:
+                return _generate_inventory_bill_number('sale', entry_date)
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            numbers = list(executor.map(issue_number, range(4)))
+
+        connection.close()
+        close_old_connections()
+        self.assertEqual(len(numbers), len(set(numbers)))
 
 
 class IndianPhoneUtilsTests(TestCase):
@@ -122,6 +458,69 @@ class ClientLoginPhoneNormalizationTests(TestCase):
         response = client_login(request)
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Phone Number must be exactly 10 digits.', response.content)
+
+    def test_customer_status_requires_session_or_ticket_bound_token(self):
+        response = self.client.get(reverse('client_status', args=[self.job.job_code]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('client_login'))
+
+        token = create_receipt_access_token(self.job)
+        authorized = self.client.get(
+            reverse('client_status', args=[self.job.job_code]),
+            {'token': token},
+        )
+        self.assertEqual(authorized.status_code, 200)
+
+    def test_receipt_token_cannot_be_reused_for_another_ticket(self):
+        other_job = JobTicket.objects.create(
+            job_code='GI-260324-003',
+            customer_name='Other Customer',
+            customer_phone='9876543211',
+            device_type='Laptop',
+            reported_issue='No boot',
+        )
+        token = create_receipt_access_token(self.job)
+
+        response = self.client.get(
+            reverse('client_status', args=[other_job.job_code]),
+            {'token': token},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('client_login'))
+
+    def test_customer_bill_requires_the_same_ticket_authorization(self):
+        response = self.client.get(reverse('client_bill_view', args=[self.job.job_code]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('client_login'))
+
+    def test_modified_receipt_token_is_rejected(self):
+        token = create_receipt_access_token(self.job)
+        payload, signature = token.split('.', 1)
+        modified_signature = f'{signature[:-1]}{("A" if signature[-1] != "A" else "B")}'
+        modified_token = f'{payload}.{modified_signature}'
+
+        response = self.client.get(
+            reverse('client_status', args=[self.job.job_code]),
+            {'token': modified_token},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('client_login'))
+
+    def test_expired_receipt_token_is_rejected(self):
+        token = create_receipt_access_token(
+            self.job,
+            issued_at=timezone.now() - timedelta(days=2),
+        )
+
+        response = self.client.get(
+            reverse('client_status', args=[self.job.job_code]),
+            {'token': token},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('client_login'))
 
 
 class PhoneLookupSnapshotTests(TestCase):
@@ -2888,7 +3287,23 @@ class MobileTechnicianApiTests(TestCase):
         stored_photo = JobTicketPhoto.objects.get(job_ticket=self.job)
         self.assertEqual(stored_photo.image_name, 'device.jpg')
         self.assertEqual(stored_photo.image_content_type, 'image/jpeg')
-        self.assertEqual(stored_photo.image_data, b'\xff\xd8\xff\xe0mobile-photo-bytes')
+        self.assertEqual(bytes(stored_photo.image_data), b'\xff\xd8\xff\xe0mobile-photo-bytes')
+
+    def test_mobile_technician_rejects_non_image_photo_content(self):
+        photo = SimpleUploadedFile(
+            'device.jpg',
+            b'not-an-image',
+            content_type='image/jpeg',
+        )
+
+        response = self.client.post(
+            reverse('mobile_api_job_photos', kwargs={'job_code': self.job.job_code}),
+            data={'photos': [photo]},
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_photo')
 
     def test_mobile_jobs_include_dashboard_totals_and_new_assignment_flag(self):
         self.job.is_new_assignment = True
@@ -3106,3 +3521,2059 @@ class StaffJobCreationWhatsAppTests(TestCase):
         self.assertEqual(payload['to'], '919876543210')
         self.assertEqual(payload['document']['link'], queue.pdf_url)
         self.assertIn('/client-receipt/', payload['document']['caption'])
+
+
+# =============================================================================
+# P3 Accounting Tests — Phases 2–10
+# Written against P2 baseline (117 existing tests preserved intact)
+# =============================================================================
+
+from .models import (
+    InventoryBillLog,
+    InventoryVendorCredit,
+    InventoryVendorCreditApplication,
+)
+from .views.helpers import (
+    _reverse_inventory_bill,
+    _link_return_to_source_bill,
+    _apply_vendor_credit_to_bill,
+    _check_duplicate_bill_submission,
+    _inventory_bill_total,
+    _inventory_bill_paid_total,
+    _inventory_bill_effective_balance,
+    _write_bill_log,
+    _record_inventory_entries,
+    _generate_inventory_bill_number,
+)
+import datetime as _dt
+
+
+# ---------------------------------------------------------------------------
+# Shared fixture helpers
+# ---------------------------------------------------------------------------
+
+def _make_workspace_and_user(username='p3-user'):
+    user = User.objects.create_user(
+        username=username,
+        password='StrongPass123!',
+        is_staff=True,
+    )
+    from job_tickets.access_control import apply_staff_access
+    apply_staff_access(user, {'staff_dashboard', 'inventory'})
+    ws = CompanyWorkspace.objects.create(name=f'P3 Workspace {username}', owner=user)
+    from job_tickets.models import CompanyUserMembership
+    CompanyUserMembership.objects.create(
+        workspace=ws,
+        user=user,
+        role=CompanyUserMembership.ROLE_ADMIN,
+    )
+    return ws, user
+
+
+def _make_party(workspace, name='Test Party'):
+    return InventoryParty.objects.create(
+        workspace=workspace,
+        name=name,
+        party_type='both',
+    )
+
+
+def _make_product(workspace, name='Widget', stock=100, cost_price='10.00', unit_price='20.00'):
+    return Product.objects.create(
+        workspace=workspace,
+        name=name,
+        stock_quantity=stock,
+        cost_price=Decimal(cost_price),
+        unit_price=Decimal(unit_price),
+        is_active=True,
+    )
+
+
+def _make_purchase_bill(workspace, party, product, quantity=5, unit_price='10.00', gst_rate='0.00', user=None):
+    """Create a purchase InventoryBill with one line using the service layer."""
+    from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+    from django.utils import timezone
+    import uuid as _uuid
+    entry_date = timezone.localdate()
+    bill = InventoryBill.objects.create(
+        workspace=workspace,
+        bill_number=_generate_inventory_bill_number('purchase', entry_date, workspace),
+        entry_type='purchase',
+        entry_date=entry_date,
+        invoice_number=f'PB-TEST-{_uuid.uuid4().hex[:8]}',
+        party=party,
+        created_by=user,
+    )
+    up = Decimal(unit_price)
+    gr = Decimal(gst_rate)
+    qty = int(quantity)
+    taxable = (Decimal(qty) * up).quantize(Decimal('0.01'))
+    gst_amt = (taxable * gr / Decimal('100')).quantize(Decimal('0.01'))
+    total = (taxable + gst_amt).quantize(Decimal('0.01'))
+    stock_before = product.stock_quantity
+    stock_after = stock_before + qty
+    InventoryEntry.objects.create(
+        workspace=workspace,
+        bill=bill,
+        entry_number=_generate_inventory_entry_number('purchase', entry_date, workspace),
+        entry_type='purchase',
+        entry_date=entry_date,
+        invoice_number=bill.invoice_number,
+        party=party,
+        product=product,
+        quantity=qty,
+        unit_price=up,
+        discount_amount=Decimal('0.00'),
+        gst_rate=gr,
+        taxable_amount=taxable,
+        gst_amount=gst_amt,
+        total_amount=total,
+        stock_before=stock_before,
+        stock_after=stock_after,
+        created_by=user,
+    )
+    product.stock_quantity = stock_after
+    product.save(update_fields=['stock_quantity'])
+    return bill
+
+
+def _make_sale_bill(workspace, party, product, quantity=2, unit_price='20.00', gst_rate='0.00', user=None):
+    """Create a sale InventoryBill with one line."""
+    from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+    from django.utils import timezone
+    import uuid as _uuid
+    entry_date = timezone.localdate()
+    bill = InventoryBill.objects.create(
+        workspace=workspace,
+        bill_number=_generate_inventory_bill_number('sale', entry_date, workspace),
+        entry_type='sale',
+        entry_date=entry_date,
+        invoice_number=f'SB-TEST-{_uuid.uuid4().hex[:8]}',
+        party=party,
+        created_by=user,
+    )
+    up = Decimal(unit_price)
+    gr = Decimal(gst_rate)
+    qty = int(quantity)
+    taxable = (Decimal(qty) * up).quantize(Decimal('0.01'))
+    gst_amt = (taxable * gr / Decimal('100')).quantize(Decimal('0.01'))
+    total = (taxable + gst_amt).quantize(Decimal('0.01'))
+    stock_before = product.stock_quantity
+    stock_after = stock_before - qty
+    InventoryEntry.objects.create(
+        workspace=workspace,
+        bill=bill,
+        entry_number=_generate_inventory_entry_number('sale', entry_date, workspace),
+        entry_type='sale',
+        entry_date=entry_date,
+        invoice_number=bill.invoice_number,
+        party=party,
+        product=product,
+        quantity=qty,
+        unit_price=up,
+        discount_amount=Decimal('0.00'),
+        gst_rate=gr,
+        taxable_amount=taxable,
+        gst_amount=gst_amt,
+        total_amount=total,
+        stock_before=stock_before,
+        stock_after=stock_after,
+        created_by=user,
+    )
+    product.stock_quantity = stock_after
+    product.save(update_fields=['stock_quantity'])
+    return bill
+
+
+def _pay_bill_fully(bill, user=None):
+    """Create a single InventoryCreditPayment that fully settles the bill."""
+    from job_tickets.views.helpers import (
+        _inventory_bill_total,
+        _inventory_credit_direction_for_entry_type,
+    )
+    from django.utils import timezone
+    total = _inventory_bill_total(bill)
+    direction = _inventory_credit_direction_for_entry_type(bill.entry_type)
+    if not direction or total <= Decimal('0.00'):
+        return None
+    return InventoryCreditPayment.objects.create(
+        workspace=bill.workspace,
+        party=bill.party,
+        bill=bill,
+        direction=direction,
+        payment_date=timezone.localdate(),
+        payment_method=InventoryCreditPayment.METHOD_CASH,
+        amount=total,
+        balance_before=total,
+        balance_after=Decimal('0.00'),
+        reference_no='',
+        notes='Test full payment',
+        created_by=user,
+    )
+
+
+def _pay_bill_partial(bill, amount, user=None):
+    """Create a partial InventoryCreditPayment against the bill."""
+    from job_tickets.views.helpers import (
+        _inventory_bill_total,
+        _inventory_credit_direction_for_entry_type,
+    )
+    from django.utils import timezone
+    total = _inventory_bill_total(bill)
+    direction = _inventory_credit_direction_for_entry_type(bill.entry_type)
+    if not direction:
+        return None
+    paid_so_far = _inventory_bill_paid_total(bill)
+    balance_before = total - paid_so_far
+    return InventoryCreditPayment.objects.create(
+        workspace=bill.workspace,
+        party=bill.party,
+        bill=bill,
+        direction=direction,
+        payment_date=timezone.localdate(),
+        payment_method=InventoryCreditPayment.METHOD_CASH,
+        amount=amount,
+        balance_before=balance_before,
+        balance_after=(balance_before - amount).quantize(Decimal('0.01')),
+        reference_no='',
+        notes='Test partial payment',
+        created_by=user,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 + 4: Paid-Bill Reversal & Stock Reversal
+# ---------------------------------------------------------------------------
+
+class BillReversalUnpaidTests(TestCase):
+    """An unpaid bill can be reversed; stock is restored; original is marked reversed."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-unpaid')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(self.ws, self.party, self.product, quantity=10, user=self.user)
+
+    def test_stock_increases_by_purchase_quantity_on_creation(self):
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 110)
+
+    def test_reversal_restores_stock(self):
+        reversal_bill, payment_state = _reverse_inventory_bill(
+            self.bill.pk, self.user, 'Test reversal', workspace=self.ws
+        )
+        self.product.refresh_from_db()
+        # Purchase adds stock; reversal (purchase_return) removes it back
+        self.assertEqual(self.product.stock_quantity, 100)
+
+    def test_reversal_creates_opposite_entry_type(self):
+        reversal_bill, _ = _reverse_inventory_bill(
+            self.bill.pk, self.user, 'Test reversal', workspace=self.ws
+        )
+        self.assertEqual(reversal_bill.entry_type, 'purchase_return')
+
+    def test_reversal_links_reversal_of_on_new_bill(self):
+        reversal_bill, _ = _reverse_inventory_bill(
+            self.bill.pk, self.user, 'Test reversal', workspace=self.ws
+        )
+        self.assertEqual(reversal_bill.reversal_of_id, self.bill.pk)
+
+    def test_original_bill_is_marked_reversed(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Test reversal', workspace=self.ws)
+        self.bill.refresh_from_db()
+        self.assertTrue(self.bill.is_reversed)
+
+    def test_original_bill_stores_reversal_metadata(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Correction note', workspace=self.ws)
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.reversal_note, 'Correction note')
+        self.assertIsNotNone(self.bill.reversed_at)
+        self.assertEqual(self.bill.reversed_by, self.user)
+
+    def test_payment_state_is_unpaid(self):
+        _, payment_state = _reverse_inventory_bill(
+            self.bill.pk, self.user, 'Test', workspace=self.ws
+        )
+        self.assertEqual(payment_state, 'unpaid')
+
+    def test_audit_log_written_on_original(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Test', workspace=self.ws)
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=self.bill,
+                action=InventoryBillLog.ACTION_BILL_REVERSED,
+            ).exists()
+        )
+
+    def test_audit_log_written_on_reversal(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Test', workspace=self.ws)
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=reversal_bill,
+                action=InventoryBillLog.ACTION_REVERSAL_CREATED,
+            ).exists()
+        )
+
+
+class BillReversalSaleUnpaidTests(TestCase):
+    """Reversing an unpaid sale bill restores stock (adds back)."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-sale-unpaid')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=50)
+        self.bill = _make_sale_bill(self.ws, self.party, self.product, quantity=5, user=self.user)
+
+    def test_sale_removes_stock(self):
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 45)
+
+    def test_reversal_adds_stock_back(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Return', workspace=self.ws)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 50)
+
+    def test_reversal_entry_type_is_sale_return(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Return', workspace=self.ws)
+        self.assertEqual(reversal_bill.entry_type, 'sale_return')
+
+
+class BillReversalPartiallyPaidTests(TestCase):
+    """A partially paid bill can be reversed; settlement is auto-applied on reversal bill."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-partial')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(
+            self.ws, self.party, self.product, quantity=10,
+            unit_price='10.00', gst_rate='0.00', user=self.user
+        )  # total = 100.00
+        _pay_bill_partial(self.bill, Decimal('40.00'), user=self.user)
+
+    def test_payment_state_is_partially_paid(self):
+        _, payment_state = _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        self.assertEqual(payment_state, 'partially_paid')
+
+    def test_reversal_creates_auto_settlement_on_reversal_bill(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        # Auto-settlement credit payment should exist on reversal bill
+        auto_payments = InventoryCreditPayment.objects.filter(bill=reversal_bill)
+        self.assertTrue(auto_payments.exists())
+        total_settled = sum(p.amount for p in auto_payments)
+        # Settlement should equal amount paid on original (40.00), capped at reversal total (100.00)
+        self.assertEqual(total_settled, Decimal('40.00'))
+
+    def test_original_bill_is_marked_reversed(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        self.bill.refresh_from_db()
+        self.assertTrue(self.bill.is_reversed)
+
+    def test_stock_is_restored(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 100)
+
+
+class BillReversalFullyPaidTests(TestCase):
+    """A fully paid bill can be reversed; full settlement is auto-applied on reversal bill."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-full')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(
+            self.ws, self.party, self.product, quantity=10,
+            unit_price='10.00', gst_rate='0.00', user=self.user
+        )  # total = 100.00
+        _pay_bill_fully(self.bill, user=self.user)
+
+    def test_payment_state_is_fully_paid(self):
+        _, payment_state = _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        self.assertEqual(payment_state, 'fully_paid')
+
+    def test_reversal_creates_full_settlement_on_reversal_bill(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        auto_payments = InventoryCreditPayment.objects.filter(bill=reversal_bill)
+        self.assertTrue(auto_payments.exists())
+        total_settled = sum(p.amount for p in auto_payments)
+        self.assertEqual(total_settled, Decimal('100.00'))
+
+    def test_original_bill_is_marked_reversed(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        self.bill.refresh_from_db()
+        self.assertTrue(self.bill.is_reversed)
+
+    def test_stock_is_restored(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Fix', workspace=self.ws)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 100)
+
+
+class BillDoubleReversalRejectionTests(TestCase):
+    """A reversed bill cannot be reversed again."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-double')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(self.ws, self.party, self.product, quantity=5, user=self.user)
+        _reverse_inventory_bill(self.bill.pk, self.user, 'First reversal', workspace=self.ws)
+
+    def test_second_reversal_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            _reverse_inventory_bill(self.bill.pk, self.user, 'Attempt again', workspace=self.ws)
+        self.assertIn('already been reversed', str(ctx.exception))
+
+    def test_reversal_of_reversal_raises(self):
+        reversal_bill = InventoryBill.objects.filter(reversal_of=self.bill).first()
+        self.assertIsNotNone(reversal_bill)
+        with self.assertRaises(ValueError) as ctx:
+            _reverse_inventory_bill(reversal_bill.pk, self.user, 'Attempt', workspace=self.ws)
+        self.assertIn('reversal bill', str(ctx.exception))
+
+
+class BillReversalPreservesHistoricalDataTests(TestCase):
+    """The original bill and its entries must not be modified by a reversal."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-history')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(
+            self.ws, self.party, self.product, quantity=8,
+            unit_price='15.00', gst_rate='0.00', user=self.user
+        )
+        self.original_entry = InventoryEntry.objects.filter(bill=self.bill).first()
+        self.original_entry_number = self.original_entry.entry_number
+        self.original_quantity = self.original_entry.quantity
+        self.original_total = self.original_entry.total_amount
+        self.original_stock_before = self.original_entry.stock_before
+        self.original_stock_after = self.original_entry.stock_after
+
+    def test_original_entry_survives_intact(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Test', workspace=self.ws)
+        self.original_entry.refresh_from_db()
+        self.assertEqual(self.original_entry.entry_number, self.original_entry_number)
+        self.assertEqual(self.original_entry.quantity, self.original_quantity)
+        self.assertEqual(self.original_entry.total_amount, self.original_total)
+        self.assertEqual(self.original_entry.stock_before, self.original_stock_before)
+        self.assertEqual(self.original_entry.stock_after, self.original_stock_after)
+
+    def test_original_bill_financial_fields_unchanged(self):
+        original_bill_number = self.bill.bill_number
+        original_party = self.bill.party_id
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Test', workspace=self.ws)
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.bill_number, original_bill_number)
+        self.assertEqual(self.bill.party_id, original_party)
+        # entry_type, entry_date, invoice_number all remain unchanged
+        self.assertEqual(self.bill.entry_type, 'purchase')
+
+
+class BillReversalStockSnapshotTests(TestCase):
+    """Reversal entry must carry correct stock_before and stock_after snapshots."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-snap')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(
+            self.ws, self.party, self.product, quantity=10, user=self.user
+        )  # stock: 100 → 110
+
+    def test_reversal_entry_snapshot_is_correct(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Test', workspace=self.ws)
+        rev_entry = InventoryEntry.objects.filter(bill=reversal_bill).first()
+        self.assertIsNotNone(rev_entry)
+        # stock before reversal entry = 110 (product was at 110 after purchase)
+        self.assertEqual(rev_entry.stock_before, 110)
+        # stock after reversal = 110 - 10 = 100
+        self.assertEqual(rev_entry.stock_after, 100)
+
+
+class BillReversalAtomicRollbackTests(TestCase):
+    """If reversal fails mid-way (e.g. stock underflow), nothing is committed."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('rev-rollback')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=5)
+        self.bill = _make_purchase_bill(
+            self.ws, self.party, self.product, quantity=5, user=self.user
+        )  # stock goes 5 → 10
+
+    def test_reversal_of_purchase_that_would_understock_via_intermediate_sale(self):
+        # Sell 8 units (beyond original 5 but within the 10 after purchase)
+        sale_bill = _make_sale_bill(
+            self.ws, self.party, self.product, quantity=8, user=self.user
+        )  # stock: 10 → 2
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 2)
+
+        # Now try to reverse the original purchase: would return 5 units → 2 - 5 = -3 → should fail
+        with self.assertRaises(ValueError) as ctx:
+            _reverse_inventory_bill(self.bill.pk, self.user, 'Attempt', workspace=self.ws)
+        self.assertIn('below zero', str(ctx.exception))
+
+        # Stock must be unchanged (rollback)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 2)
+
+        # Original bill must NOT be marked reversed
+        self.bill.refresh_from_db()
+        self.assertFalse(self.bill.is_reversed)
+
+        # No reversal bill created
+        self.assertFalse(InventoryBill.objects.filter(reversal_of=self.bill).exists())
+
+
+class BillReversalWorkspaceScopeTests(TestCase):
+    """A reversal cannot cross workspace boundaries."""
+
+    def setUp(self):
+        self.ws_a, self.user_a = _make_workspace_and_user('rev-ws-a')
+        self.ws_b, self.user_b = _make_workspace_and_user('rev-ws-b')
+        self.party_a = _make_party(self.ws_a, 'Party A')
+        self.product_a = _make_product(self.ws_a, stock=100)
+        self.bill_a = _make_purchase_bill(self.ws_a, self.party_a, self.product_a, user=self.user_a)
+
+    def test_reversal_from_wrong_workspace_fails(self):
+        with self.assertRaises(ValueError):
+            _reverse_inventory_bill(self.bill_a.pk, self.user_b, 'Cross attempt', workspace=self.ws_b)
+
+    def test_original_bill_not_marked_reversed_on_cross_workspace_attempt(self):
+        try:
+            _reverse_inventory_bill(self.bill_a.pk, self.user_b, 'Cross', workspace=self.ws_b)
+        except ValueError:
+            pass
+        self.bill_a.refresh_from_db()
+        self.assertFalse(self.bill_a.is_reversed)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5–6: Purchase Return → Vendor Credit Linkage
+# ---------------------------------------------------------------------------
+
+class PurchaseReturnLinkageTests(TestCase):
+    """A purchase_return bill can be linked to its source purchase bill."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('ret-link')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.purchase_bill = _make_purchase_bill(
+            self.ws, self.party, self.product, quantity=10,
+            unit_price='10.00', gst_rate='0.00', user=self.user
+        )
+        # Create a purchase_return bill manually
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        self.return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-TEST-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws,
+            bill=self.return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-TEST-001',
+            party=self.party,
+            product=self.product,
+            quantity=3,
+            unit_price=Decimal('10.00'),
+            discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'),
+            taxable_amount=Decimal('30.00'),
+            gst_amount=Decimal('0.00'),
+            total_amount=Decimal('30.00'),
+            stock_before=110,
+            stock_after=107,
+            created_by=self.user,
+        )
+        self.product.stock_quantity = 107
+        self.product.save(update_fields=['stock_quantity'])
+
+    def test_link_sets_source_bill(self):
+        _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.return_bill.refresh_from_db()
+        self.assertEqual(self.return_bill.source_bill_id, self.purchase_bill.pk)
+
+    def test_link_creates_vendor_credit(self):
+        _, vc = _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertIsNotNone(vc)
+        self.assertIsInstance(vc, InventoryVendorCredit)
+
+    def test_vendor_credit_amount_equals_return_total(self):
+        _, vc = _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertEqual(vc.credit_amount, Decimal('30.00'))
+
+    def test_vendor_credit_status_is_open(self):
+        _, vc = _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertEqual(vc.status, InventoryVendorCredit.STATUS_OPEN)
+
+    def test_vendor_credit_links_source_bill(self):
+        _, vc = _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertEqual(vc.source_bill_id, self.purchase_bill.pk)
+
+    def test_double_link_raises(self):
+        _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        with self.assertRaises(ValueError) as ctx:
+            _link_return_to_source_bill(
+                self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+            )
+        self.assertIn('already linked', str(ctx.exception))
+
+    def test_audit_log_written(self):
+        _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=self.return_bill,
+                action=InventoryBillLog.ACTION_RETURN_LINKED,
+            ).exists()
+        )
+
+    def test_vendor_credit_audit_log_written(self):
+        _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=self.return_bill,
+                action=InventoryBillLog.ACTION_VENDOR_CREDIT_CREATED,
+            ).exists()
+        )
+
+
+class PurchaseReturnWrongPartyTests(TestCase):
+    """A return bill cannot be linked to a source bill with a different party."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('ret-party')
+        self.party_a = _make_party(self.ws, 'Party A')
+        self.party_b = _make_party(self.ws, 'Party B')
+        self.product = _make_product(self.ws, stock=100)
+        self.purchase_bill = _make_purchase_bill(self.ws, self.party_a, self.product, user=self.user)
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        self.return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-DIFF-001',
+            party=self.party_b,  # Different party
+            created_by=self.user,
+        )
+
+    def test_cross_party_link_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            _link_return_to_source_bill(
+                self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+            )
+        self.assertIn('same party', str(ctx.exception))
+
+
+class PurchaseReturnCrossWorkspaceLinkTests(TestCase):
+    """A return bill cannot be linked to a source bill from another workspace."""
+
+    def setUp(self):
+        self.ws_a, self.user = _make_workspace_and_user('ret-cws')
+        self.ws_b, _ = _make_workspace_and_user('ret-cws-b')
+        self.party = _make_party(self.ws_a, 'Shared Party Name')
+        self.product = _make_product(self.ws_a, stock=100)
+        self.purchase_bill = _make_purchase_bill(self.ws_a, self.party, self.product, user=self.user)
+        from job_tickets.views.helpers import _generate_inventory_bill_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        self.return_bill = InventoryBill.objects.create(
+            workspace=self.ws_a,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws_a),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-CWS-001',
+            party=self.party,
+            created_by=self.user,
+        )
+
+    def test_source_bill_in_wrong_workspace_fails(self):
+        # Purchase bill is in ws_a; querying from ws_b scope should not find it
+        with self.assertRaises(ValueError) as ctx:
+            _link_return_to_source_bill(
+                self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws_b
+            )
+        # Either "Return bill not found" or "Source bill not found" is acceptable
+        self.assertIn('not found', str(ctx.exception))
+
+
+class ReturnBeforeVendorPaymentTests(TestCase):
+    """Return before any vendor payment: full credit available, balance on purchase unchanged (credit reduces it)."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('ret-before-pay')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.purchase_bill = _make_purchase_bill(
+            self.ws, self.party, self.product,
+            quantity=10, unit_price='10.00', gst_rate='0.00', user=self.user
+        )  # total = 100.00
+
+    def test_full_credit_available_before_payment(self):
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-BPY-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-BPY-001', party=self.party, product=self.product,
+            quantity=5, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('50.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('50.00'),
+            stock_before=110, stock_after=105, created_by=self.user,
+        )
+        _, vc = _link_return_to_source_bill(
+            return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        self.assertEqual(vc.balance_amount, Decimal('50.00'))
+        self.assertEqual(vc.status, InventoryVendorCredit.STATUS_OPEN)
+
+
+class ReturnAfterPartialVendorPaymentTests(TestCase):
+    """Return after partial payment: credit can be applied to remaining balance."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('ret-after-partial')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.purchase_bill = _make_purchase_bill(
+            self.ws, self.party, self.product,
+            quantity=10, unit_price='10.00', gst_rate='0.00', user=self.user
+        )  # total = 100.00
+        _pay_bill_partial(self.purchase_bill, Decimal('60.00'), user=self.user)
+        # balance remaining = 40.00
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        self.return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-APY-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=self.return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-APY-001', party=self.party, product=self.product,
+            quantity=3, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('30.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('30.00'),
+            stock_before=110, stock_after=107, created_by=self.user,
+        )
+
+    def test_effective_balance_after_partial_payment(self):
+        balance = _inventory_bill_effective_balance(self.purchase_bill)
+        self.assertEqual(balance, Decimal('40.00'))
+
+    def test_credit_can_be_applied_to_remaining_balance(self):
+        _, vc = _link_return_to_source_bill(
+            self.return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        app = _apply_vendor_credit_to_bill(
+            vc.pk, self.purchase_bill.pk, Decimal('30.00'), self.user, workspace=self.ws
+        )
+        self.assertEqual(app.amount, Decimal('30.00'))
+        # Effective balance should now be 40.00 - 30.00 = 10.00
+        eff = _inventory_bill_effective_balance(self.purchase_bill)
+        self.assertEqual(eff, Decimal('10.00'))
+
+
+class ReturnAfterFullVendorPaymentTests(TestCase):
+    """Return after full vendor payment: credit is an open positive balance (not silently negative)."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('ret-after-full')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.purchase_bill = _make_purchase_bill(
+            self.ws, self.party, self.product,
+            quantity=10, unit_price='10.00', gst_rate='0.00', user=self.user
+        )  # total = 100.00
+        _pay_bill_fully(self.purchase_bill, user=self.user)
+
+    def test_effective_balance_after_full_payment_is_zero(self):
+        balance = _inventory_bill_effective_balance(self.purchase_bill)
+        self.assertEqual(balance, Decimal('0.00'))
+
+    def test_vendor_credit_created_with_positive_balance(self):
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-FULL-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-FULL-001', party=self.party, product=self.product,
+            quantity=5, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('50.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('50.00'),
+            stock_before=110, stock_after=105, created_by=self.user,
+        )
+        _, vc = _link_return_to_source_bill(
+            return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        # Credit should be open and positive — NOT made negative or silently zeroed
+        self.assertEqual(vc.credit_amount, Decimal('50.00'))
+        self.assertEqual(vc.balance_amount, Decimal('50.00'))
+        self.assertEqual(vc.status, InventoryVendorCredit.STATUS_OPEN)
+
+    def test_vendor_credit_cannot_be_applied_to_fully_paid_bill(self):
+        """Applying credit to a bill with zero balance should raise."""
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-FULL-002',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-FULL-002', party=self.party, product=self.product,
+            quantity=5, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('50.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('50.00'),
+            stock_before=110, stock_after=105, created_by=self.user,
+        )
+        _, vc = _link_return_to_source_bill(
+            return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )
+        with self.assertRaises(ValueError) as ctx:
+            _apply_vendor_credit_to_bill(
+                vc.pk, self.purchase_bill.pk, Decimal('10.00'), self.user, workspace=self.ws
+            )
+        self.assertIn('balance', str(ctx.exception).lower())
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: Vendor Credit Application
+# ---------------------------------------------------------------------------
+
+class VendorCreditApplicationTests(TestCase):
+    """Core vendor credit application scenarios."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('vc-app')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=200)
+        self.purchase_bill = _make_purchase_bill(
+            self.ws, self.party, self.product,
+            quantity=10, unit_price='10.00', user=self.user
+        )  # total=100
+        # Create a second purchase bill to apply credit to
+        self.purchase_bill_2 = _make_purchase_bill(
+            self.ws, self.party, self.product,
+            quantity=5, unit_price='10.00', user=self.user
+        )  # total=50
+        # Create return and vendor credit
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-VC-APP-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-VC-APP-001', party=self.party, product=self.product,
+            quantity=8, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('80.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('80.00'),
+            stock_before=210, stock_after=202, created_by=self.user,
+        )
+        _, self.vc = _link_return_to_source_bill(
+            return_bill.pk, self.purchase_bill.pk, self.user, workspace=self.ws
+        )  # credit=80.00
+
+    def test_credit_balance_initial(self):
+        self.assertEqual(self.vc.balance_amount, Decimal('80.00'))
+
+    def test_partial_application_reduces_credit_balance(self):
+        _apply_vendor_credit_to_bill(
+            self.vc.pk, self.purchase_bill_2.pk, Decimal('30.00'), self.user, workspace=self.ws
+        )
+        self.vc.refresh_from_db()
+        self.assertEqual(self.vc.balance_amount, Decimal('50.00'))
+
+    def test_partial_application_sets_status_partially_applied(self):
+        _apply_vendor_credit_to_bill(
+            self.vc.pk, self.purchase_bill_2.pk, Decimal('30.00'), self.user, workspace=self.ws
+        )
+        self.vc.refresh_from_db()
+        self.assertEqual(self.vc.status, InventoryVendorCredit.STATUS_PARTIALLY_APPLIED)
+
+    def test_full_application_sets_status_fully_applied(self):
+        _apply_vendor_credit_to_bill(
+            self.vc.pk, self.purchase_bill_2.pk, Decimal('50.00'), self.user, workspace=self.ws
+        )
+        # Remaining balance: 80-50=30; apply remaining 30 to first bill
+        _apply_vendor_credit_to_bill(
+            self.vc.pk, self.purchase_bill.pk, Decimal('30.00'), self.user, workspace=self.ws
+        )
+        self.vc.refresh_from_db()
+        self.assertEqual(self.vc.status, InventoryVendorCredit.STATUS_FULLY_APPLIED)
+
+    def test_application_creates_application_record(self):
+        _apply_vendor_credit_to_bill(
+            self.vc.pk, self.purchase_bill_2.pk, Decimal('20.00'), self.user, workspace=self.ws
+        )
+        self.assertTrue(
+            InventoryVendorCreditApplication.objects.filter(
+                vendor_credit=self.vc,
+                target_bill=self.purchase_bill_2,
+            ).exists()
+        )
+
+    def test_exceeding_credit_balance_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            _apply_vendor_credit_to_bill(
+                self.vc.pk, self.purchase_bill_2.pk, Decimal('100.00'), self.user, workspace=self.ws
+            )
+        self.assertIn('credit balance', str(ctx.exception))
+
+    def test_exceeding_bill_balance_raises(self):
+        # purchase_bill_2 total = 50; try to apply 60
+        with self.assertRaises(ValueError) as ctx:
+            _apply_vendor_credit_to_bill(
+                self.vc.pk, self.purchase_bill_2.pk, Decimal('60.00'), self.user, workspace=self.ws
+            )
+        self.assertIn('balance', str(ctx.exception))
+
+    def test_cross_party_application_raises(self):
+        party_b = _make_party(self.ws, 'Party B')
+        product_b = _make_product(self.ws, name='Widget B', stock=100)
+        other_bill = _make_purchase_bill(self.ws, party_b, product_b, user=self.user)
+        with self.assertRaises(ValueError) as ctx:
+            _apply_vendor_credit_to_bill(
+                self.vc.pk, other_bill.pk, Decimal('10.00'), self.user, workspace=self.ws
+            )
+        self.assertIn('same party', str(ctx.exception))
+
+    def test_applying_to_reversed_bill_raises(self):
+        reversal_bill, _ = _reverse_inventory_bill(
+            self.purchase_bill_2.pk, self.user, 'Reverse for test', workspace=self.ws
+        )
+        self.purchase_bill_2.refresh_from_db()
+        with self.assertRaises(ValueError) as ctx:
+            _apply_vendor_credit_to_bill(
+                self.vc.pk, self.purchase_bill_2.pk, Decimal('10.00'), self.user, workspace=self.ws
+            )
+        self.assertIn('reversed', str(ctx.exception))
+
+    def test_audit_log_written_on_application(self):
+        _apply_vendor_credit_to_bill(
+            self.vc.pk, self.purchase_bill_2.pk, Decimal('20.00'), self.user, workspace=self.ws
+        )
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=self.purchase_bill_2,
+                action=InventoryBillLog.ACTION_VENDOR_CREDIT_APPLIED,
+            ).exists()
+        )
+
+
+class VendorCreditStatusTransitionTests(TestCase):
+    """Vendor credit status must track correctly through applications."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('vc-status')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=200)
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-STATUS-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        self.target = _make_purchase_bill(self.ws, self.party, self.product, quantity=10, unit_price='10.00', user=self.user)
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-STATUS-001', party=self.party, product=self.product,
+            quantity=5, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('50.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('50.00'),
+            stock_before=210, stock_after=205, created_by=self.user,
+        )
+        _, self.vc = _link_return_to_source_bill(
+            return_bill.pk, self.target.pk, self.user, workspace=self.ws
+        )  # credit=50.00
+
+    def test_initial_status_is_open(self):
+        self.assertEqual(self.vc.status, InventoryVendorCredit.STATUS_OPEN)
+
+    def test_partial_application_moves_to_partially_applied(self):
+        _apply_vendor_credit_to_bill(self.vc.pk, self.target.pk, Decimal('20.00'), self.user, workspace=self.ws)
+        self.vc.refresh_from_db()
+        self.assertEqual(self.vc.status, InventoryVendorCredit.STATUS_PARTIALLY_APPLIED)
+
+    def test_full_application_moves_to_fully_applied(self):
+        _apply_vendor_credit_to_bill(self.vc.pk, self.target.pk, Decimal('50.00'), self.user, workspace=self.ws)
+        self.vc.refresh_from_db()
+        self.assertEqual(self.vc.status, InventoryVendorCredit.STATUS_FULLY_APPLIED)
+
+    def test_fully_applied_credit_cannot_be_applied_again(self):
+        _apply_vendor_credit_to_bill(self.vc.pk, self.target.pk, Decimal('50.00'), self.user, workspace=self.ws)
+        target2 = _make_purchase_bill(self.ws, self.party, self.product, quantity=5, unit_price='10.00', user=self.user)
+        with self.assertRaises(ValueError) as ctx:
+            _apply_vendor_credit_to_bill(self.vc.pk, target2.pk, Decimal('10.00'), self.user, workspace=self.ws)
+        self.assertIn('fully_applied', str(ctx.exception))
+
+
+# ---------------------------------------------------------------------------
+# Phase 8: Idempotency
+# ---------------------------------------------------------------------------
+
+class DuplicateBillSubmissionDetectionTests(TestCase):
+    """_check_duplicate_bill_submission returns existing bill on same (type, invoice, party, workspace)."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('idem-det')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(self.ws, self.party, self.product, user=self.user)
+
+    def test_same_invoice_same_party_same_workspace_detected(self):
+        existing = _check_duplicate_bill_submission(
+            entry_type='purchase',
+            invoice_number=self.bill.invoice_number,
+            party_id=self.party.pk,
+            workspace=self.ws,
+        )
+        self.assertIsNotNone(existing)
+        self.assertEqual(existing.pk, self.bill.pk)
+
+    def test_different_invoice_not_detected(self):
+        existing = _check_duplicate_bill_submission(
+            entry_type='purchase',
+            invoice_number='TOTALLY-DIFFERENT-INV',
+            party_id=self.party.pk,
+            workspace=self.ws,
+        )
+        self.assertIsNone(existing)
+
+    def test_different_workspace_not_detected(self):
+        ws2, _ = _make_workspace_and_user('idem-ws2')
+        existing = _check_duplicate_bill_submission(
+            entry_type='purchase',
+            invoice_number=self.bill.invoice_number,
+            party_id=self.party.pk,
+            workspace=ws2,
+        )
+        self.assertIsNone(existing)
+
+    def test_sale_type_always_returns_none(self):
+        """Sale bills use auto-generated invoice numbers; the duplicate guard is skipped."""
+        existing = _check_duplicate_bill_submission(
+            entry_type='sale',
+            invoice_number=self.bill.invoice_number,
+            party_id=self.party.pk,
+            workspace=self.ws,
+        )
+        self.assertIsNone(existing)
+
+    def test_none_invoice_returns_none(self):
+        existing = _check_duplicate_bill_submission(
+            entry_type='purchase',
+            invoice_number=None,
+            party_id=self.party.pk,
+            workspace=self.ws,
+        )
+        self.assertIsNone(existing)
+
+
+class LegitimateRepeatSaleTests(TestCase):
+    """Two different sales to the same party are not treated as duplicates."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('idem-sale')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+
+    def test_two_sales_same_party_different_invoices(self):
+        bill1 = _make_sale_bill(self.ws, self.party, self.product, quantity=1, user=self.user)
+        bill2 = _make_sale_bill(self.ws, self.party, self.product, quantity=2, user=self.user)
+        self.assertNotEqual(bill1.pk, bill2.pk)
+        self.assertNotEqual(bill1.invoice_number, bill2.invoice_number)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: Audit Trail
+# ---------------------------------------------------------------------------
+
+class InventoryBillLogWriteTests(TestCase):
+    """_write_bill_log creates a record and does not raise on error."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('audit-log')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(self.ws, self.party, self.product, user=self.user)
+
+    def test_write_creates_log_row(self):
+        _write_bill_log(
+            self.bill,
+            InventoryBillLog.ACTION_BILL_CREATED,
+            user=self.user,
+            details='Created in test.',
+        )
+        self.assertEqual(
+            InventoryBillLog.objects.filter(
+                bill=self.bill,
+                action=InventoryBillLog.ACTION_BILL_CREATED,
+            ).count(),
+            1,
+        )
+
+    def test_log_stores_user(self):
+        _write_bill_log(self.bill, InventoryBillLog.ACTION_BILL_CREATED, user=self.user)
+        log = InventoryBillLog.objects.get(bill=self.bill, action=InventoryBillLog.ACTION_BILL_CREATED)
+        self.assertEqual(log.user, self.user)
+
+    def test_log_stores_details(self):
+        _write_bill_log(self.bill, InventoryBillLog.ACTION_PAYMENT_RECORDED, details='Rs.50 cash received.')
+        log = InventoryBillLog.objects.get(bill=self.bill, action=InventoryBillLog.ACTION_PAYMENT_RECORDED)
+        self.assertIn('Rs.50', log.details)
+
+    def test_log_does_not_raise_on_invalid_input(self):
+        """Audit failure must never abort a business transaction."""
+        try:
+            _write_bill_log(self.bill, 'INVALID_ACTION', details='Should not raise.')
+        except Exception as exc:
+            self.fail(f"_write_bill_log raised unexpectedly: {exc}")
+
+    def test_reversal_produces_two_log_rows(self):
+        _reverse_inventory_bill(self.bill.pk, self.user, 'Audit test', workspace=self.ws)
+        reversal_bill = InventoryBill.objects.filter(reversal_of=self.bill).first()
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=self.bill, action=InventoryBillLog.ACTION_BILL_REVERSED
+            ).exists()
+        )
+        self.assertTrue(
+            InventoryBillLog.objects.filter(
+                bill=reversal_bill, action=InventoryBillLog.ACTION_REVERSAL_CREATED
+            ).exists()
+        )
+
+
+class AuditLogLinksRelatedBillTests(TestCase):
+    """related_bill FK on log rows correctly identifies counterpart bill."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('audit-rel')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(self.ws, self.party, self.product, user=self.user)
+
+    def test_reversal_log_related_bill_is_reversal_bill(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Rel test', workspace=self.ws)
+        log = InventoryBillLog.objects.get(bill=self.bill, action=InventoryBillLog.ACTION_BILL_REVERSED)
+        self.assertEqual(log.related_bill_id, reversal_bill.pk)
+
+    def test_reversal_log_related_bill_on_reversal_is_original(self):
+        reversal_bill, _ = _reverse_inventory_bill(self.bill.pk, self.user, 'Rel test', workspace=self.ws)
+        log = InventoryBillLog.objects.get(bill=reversal_bill, action=InventoryBillLog.ACTION_REVERSAL_CREATED)
+        self.assertEqual(log.related_bill_id, self.bill.pk)
+
+
+# ---------------------------------------------------------------------------
+# Phase 10: PostgreSQL concurrency (environment-gated)
+# ---------------------------------------------------------------------------
+
+@skipUnless(connection.vendor == 'postgresql', 'PostgreSQL concurrency test only')
+class PostgreSQLReversalConcurrencyTests(TransactionTestCase):
+    """
+    Concurrent reversal attempts on the same bill must not both succeed.
+    """
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('pg-rev')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=100)
+        self.bill = _make_purchase_bill(self.ws, self.party, self.product, quantity=10, user=self.user)
+
+    def test_concurrent_reversal_only_one_succeeds(self):
+        results = []
+        errors = []
+
+        def attempt_reversal():
+            from django.db import close_old_connections
+            close_old_connections()
+            try:
+                reversal_bill, _ = _reverse_inventory_bill(
+                    self.bill.pk, self.user, 'Concurrent attempt', workspace=self.ws
+                )
+                results.append(reversal_bill.pk)
+            except ValueError as exc:
+                errors.append(str(exc))
+            finally:
+                connection.close()
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(attempt_reversal) for _ in range(2)]
+            for f in futures:
+                f.result()
+
+        connection.close()
+        close_old_connections()
+
+        # Exactly one should succeed, one should fail
+        self.assertEqual(len(results), 1, f"Expected 1 success, got {len(results)}: {results}")
+        self.assertEqual(len(errors), 1, f"Expected 1 error, got {len(errors)}: {errors}")
+
+        # Bill should be reversed exactly once
+        self.bill.refresh_from_db()
+        self.assertTrue(self.bill.is_reversed)
+        reversal_count = InventoryBill.objects.filter(reversal_of=self.bill).count()
+        self.assertEqual(reversal_count, 1)
+
+
+@skipUnless(connection.vendor == 'postgresql', 'PostgreSQL concurrency test only')
+class PostgreSQLVendorCreditConcurrencyTests(TransactionTestCase):
+    """
+    Concurrent applications of the same vendor credit must not over-apply.
+    Requires PostgreSQL (SELECT FOR UPDATE row locking).
+    """
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('pg-vc')
+        self.party = _make_party(self.ws)
+        self.product = _make_product(self.ws, stock=200)
+        from job_tickets.views.helpers import _generate_inventory_bill_number, _generate_inventory_entry_number
+        from django.utils import timezone
+        entry_date = timezone.localdate()
+        self.target1 = _make_purchase_bill(self.ws, self.party, self.product, quantity=5, unit_price='10.00', user=self.user)
+        self.target2 = _make_purchase_bill(self.ws, self.party, self.product, quantity=5, unit_price='10.00', user=self.user)
+        return_bill = InventoryBill.objects.create(
+            workspace=self.ws,
+            bill_number=_generate_inventory_bill_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return',
+            entry_date=entry_date,
+            invoice_number='PRN-PG-001',
+            party=self.party,
+            created_by=self.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=self.ws, bill=return_bill,
+            entry_number=_generate_inventory_entry_number('purchase_return', entry_date, self.ws),
+            entry_type='purchase_return', entry_date=entry_date,
+            invoice_number='PRN-PG-001', party=self.party, product=self.product,
+            quantity=5, unit_price=Decimal('10.00'), discount_amount=Decimal('0.00'),
+            gst_rate=Decimal('0.00'), taxable_amount=Decimal('50.00'),
+            gst_amount=Decimal('0.00'), total_amount=Decimal('50.00'),
+            stock_before=210, stock_after=205, created_by=self.user,
+        )
+        _, self.vc = _link_return_to_source_bill(
+            return_bill.pk, self.target1.pk, self.user, workspace=self.ws
+        )  # credit=50.00
+
+    def test_concurrent_applications_do_not_over_apply(self):
+        successes = []
+        errors = []
+
+        def apply(target_pk, amount):
+            from django.db import close_old_connections
+            close_old_connections()
+            try:
+                app = _apply_vendor_credit_to_bill(
+                    self.vc.pk, target_pk, amount, self.user, workspace=self.ws
+                )
+                successes.append(app.amount)
+            except ValueError as exc:
+                errors.append(str(exc))
+            finally:
+                connection.close()
+
+        from concurrent.futures import ThreadPoolExecutor
+        # Both try to apply 40.00 from a 50.00 credit — only one should fit both within credit and bill balance
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(apply, self.target1.pk, Decimal('40.00')),
+                pool.submit(apply, self.target2.pk, Decimal('40.00')),
+            ]
+            for f in futures:
+                f.result()
+
+        connection.close()
+        close_old_connections()
+
+        self.vc.refresh_from_db()
+        # Total applied must not exceed credit amount (50.00)
+        total_applied = sum(successes)
+        self.assertLessEqual(
+            total_applied, Decimal('50.00'),
+            f"Over-applied: total {total_applied} > credit {self.vc.credit_amount}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: Real Purchase Duplicate Integration & Concurrency Tests
+# ---------------------------------------------------------------------------
+
+class RealPurchaseDuplicateIntegrationTests(TestCase):
+    """Verify duplicate bill rejection directly within _record_inventory_entries."""
+
+    def setUp(self):
+        from django.test import RequestFactory
+        self.factory = RequestFactory()
+        self.ws, self.user = _make_workspace_and_user('pur-idem-user')
+        self.party = _make_party(self.ws, name='Unique Supplier')
+        self.product = _make_product(self.ws, name='Test Part', stock=50)
+
+    def _build_request(self, ws=None, user=None):
+        request = self.factory.post('/')
+        request.user = user or self.user
+        request.current_workspace = ws or self.ws
+        return request
+
+    def test_duplicate_purchase_submission_rejected(self):
+        entry_date = timezone.localdate()
+        req = self._build_request()
+        lines = [{
+            'product': self.product,
+            'quantity': 2,
+            'unit_price': Decimal('50.00'),
+            'discount_amount': Decimal('0.00'),
+            'gst_rate': Decimal('0.00'),
+            'notes': 'First purchase',
+        }]
+
+        entries = _record_inventory_entries(
+            request=req,
+            entry_type='purchase',
+            entry_date=entry_date,
+            party=self.party,
+            invoice_number='INV-REAL-101',
+            line_items=lines,
+        )
+        self.assertTrue(len(entries) > 0)
+
+        # Attempting identical purchase submission
+        with self.assertRaises(ValueError) as ctx:
+            _record_inventory_entries(
+                request=req,
+                entry_type='purchase',
+                entry_date=entry_date,
+                party=self.party,
+                invoice_number='INV-REAL-101',
+                line_items=lines,
+            )
+        self.assertIn('Duplicate bill detected', str(ctx.exception))
+
+    def test_different_reference_purchase_accepted(self):
+        entry_date = timezone.localdate()
+        req = self._build_request()
+        lines = [{
+            'product': self.product,
+            'quantity': 1,
+            'unit_price': Decimal('50.00'),
+            'discount_amount': Decimal('0.00'),
+            'gst_rate': Decimal('0.00'),
+            'notes': 'Separate bill',
+        }]
+
+        e1 = _record_inventory_entries(
+            request=req,
+            entry_type='purchase',
+            entry_date=entry_date,
+            party=self.party,
+            invoice_number='INV-SEP-001',
+            line_items=lines,
+        )
+        e2 = _record_inventory_entries(
+            request=req,
+            entry_type='purchase',
+            entry_date=entry_date,
+            party=self.party,
+            invoice_number='INV-SEP-002',
+            line_items=lines,
+        )
+        self.assertNotEqual(e1[0].bill_id, e2[0].bill_id)
+
+    def test_cross_workspace_duplicate_reference_accepted(self):
+        ws2, user2 = _make_workspace_and_user('pur-idem-user2')
+        party2 = _make_party(ws2, name='Supplier WS2')
+        product2 = _make_product(ws2, name='Part WS2', stock=50)
+
+        entry_date = timezone.localdate()
+        req1 = self._build_request(self.ws, self.user)
+        req2 = self._build_request(ws2, user2)
+
+        lines1 = [{'product': self.product, 'quantity': 1, 'unit_price': Decimal('50.00'), 'discount_amount': Decimal('0.00'), 'gst_rate': Decimal('0.00'), 'notes': ''}]
+        lines2 = [{'product': product2, 'quantity': 1, 'unit_price': Decimal('50.00'), 'discount_amount': Decimal('0.00'), 'gst_rate': Decimal('0.00'), 'notes': ''}]
+
+        e1 = _record_inventory_entries(req1, 'purchase', entry_date, self.party, 'SHARED-INV-99', lines1)
+        e2 = _record_inventory_entries(req2, 'purchase', entry_date, party2, 'SHARED-INV-99', lines2)
+        self.assertNotEqual(e1[0].bill_id, e2[0].bill_id)
+        self.assertNotEqual(e1[0].bill.workspace_id, e2[0].bill.workspace_id)
+
+
+class PostgreSQLPurchaseDuplicateConcurrencyTests(TransactionTestCase):
+    """Concurrent duplicate purchase submissions are cleanly serialized and rejected."""
+
+    def setUp(self):
+        from django.test import RequestFactory
+        self.factory = RequestFactory()
+        self.ws, self.user = _make_workspace_and_user('concur-pur')
+        self.party = _make_party(self.ws, name='Concur Supplier')
+        self.product = _make_product(self.ws, name='Concur Widget', stock=200)
+
+    def test_concurrent_duplicate_purchase_submissions(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from django.db import connection, close_old_connections
+
+        successes = []
+        duplicates = []
+        errors = []
+
+        def submit_purchase():
+            close_old_connections()
+            req = self.factory.post('/')
+            req.user = self.user
+            req.current_workspace = self.ws
+            lines = [{
+                'product': self.product,
+                'quantity': 2,
+                'unit_price': Decimal('30.00'),
+                'discount_amount': Decimal('0.00'),
+                'gst_rate': Decimal('0.00'),
+                'notes': 'Concurrent entry',
+            }]
+            try:
+                entries = _record_inventory_entries(
+                    request=req,
+                    entry_type='purchase',
+                    entry_date=timezone.localdate(),
+                    party=self.party,
+                    invoice_number='CONCUR-INV-DUPLICATE',
+                    line_items=lines,
+                )
+                successes.append(entries[0].bill_id)
+            except ValueError as exc:
+                if 'Duplicate bill detected' in str(exc):
+                    duplicates.append(str(exc))
+                else:
+                    errors.append(str(exc))
+            except Exception as e:
+                errors.append(str(e))
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(submit_purchase), pool.submit(submit_purchase)]
+            for f in futures:
+                f.result()
+
+        connection.close()
+        close_old_connections()
+
+        self.assertEqual(len(errors), 0, f"Unexpected errors: {errors}")
+        self.assertEqual(len(successes), 1, "Exactly one thread should have succeeded creating the purchase bill.")
+        self.assertEqual(len(duplicates), 1, "Exactly one thread should have been blocked by duplicate detection.")
+
+
+class OverTheCounterPartialPaymentTests(TestCase):
+    """Test partial payment on direct inventory bill creation."""
+
+    def setUp(self):
+        from django.test import RequestFactory
+        self.factory = RequestFactory()
+        self.ws, self.user = _make_workspace_and_user('otc-user')
+        self.party = _make_party(self.ws, name='Walk-in Customer')
+        self.product = _make_product(self.ws, name='Screen Protector', stock=50, unit_price='200.00')
+
+    def test_partial_payment_creates_credit_payment_and_computes_balance(self):
+        req = self.factory.post('/')
+        req.user = self.user
+        req.current_workspace = self.ws
+        lines = [{
+            'product': self.product,
+            'quantity': 1,
+            'unit_price': Decimal('200.00'),
+            'discount_amount': Decimal('0.00'),
+            'gst_rate': Decimal('0.00'),
+            'notes': 'Sale with partial payment',
+        }]
+        initial_pay = {
+            'status': 'part_paid',
+            'payment_method': 'upi',
+            'payment_date': timezone.localdate(),
+            'amount_paid': Decimal('120.00'),
+            'reference_no': 'UPI-OTC-789',
+        }
+        entries = _record_inventory_entries(
+            request=req,
+            entry_type='sale',
+            entry_date=timezone.localdate(),
+            party=self.party,
+            invoice_number='',
+            line_items=lines,
+            initial_payment=initial_pay,
+        )
+        bill = entries[0].bill
+        payments = InventoryCreditPayment.objects.filter(bill=bill)
+        self.assertEqual(payments.count(), 1)
+        p = payments.first()
+        self.assertEqual(p.amount, Decimal('120.00'))
+        self.assertEqual(p.balance_before, Decimal('200.00'))
+        self.assertEqual(p.balance_after, Decimal('80.00'))
+        self.assertEqual(p.payment_method, 'upi')
+        self.assertEqual(p.reference_no, 'UPI-OTC-789')
+        self.assertEqual(p.direction, InventoryCreditPayment.DIRECTION_RECEIVABLE)
+        self.assertEqual(_inventory_bill_paid_total(bill), Decimal('120.00'))
+
+
+class JobSettlementAndCreditLifecycleTests(TestCase):
+    """Test full payment, partial payment, and credit handling on job closure."""
+
+    def setUp(self):
+        self.ws, self.user = _make_workspace_and_user('job-settle-user')
+        self.client_obj = self.client
+        self.client_obj.force_login(self.user)
+
+        self.tech_user = User.objects.create_user(username='tech1', password='password123')
+        from django.contrib.auth.models import Group
+        tech_group, _ = Group.objects.get_or_create(name='Technicians')
+        self.tech_user.groups.add(tech_group)
+        self.tech_profile = TechnicianProfile.objects.create(
+            workspace=self.ws,
+            user=self.tech_user,
+            unique_id='TECH001',
+        )
+
+        self.job = JobTicket.objects.create(
+            workspace=self.ws,
+            job_code='JOB-SETTLE-001',
+            customer_name='John Customer',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            reported_issue='Won\'t boot',
+            status='Ready for Pickup',
+            discount_amount=Decimal('50.00'),
+            created_by=self.user,
+        )
+        ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Power IC replacement',
+            part_cost=Decimal('300.00'),
+            service_charge=Decimal('250.00'),
+        )
+        # Total cost = (300 + 250) - 50 = 500.00
+
+    def test_job_settlement_full_payment(self):
+        url = reverse('close_job', args=[self.job.job_code])
+        response = self.client_obj.post(url, {
+            'payment_status': 'paid',
+            'payment_method': 'upi',
+            'payment_reference': 'UPI-REF-999',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Closed')
+        self.assertEqual(self.job.payment_status, 'paid')
+        self.assertEqual(self.job.payment_method, 'upi')
+        self.assertEqual(self.job.amount_paid, Decimal('500.00'))
+        self.assertEqual(self.job.balance_due, Decimal('0.00'))
+        self.assertEqual(self.job.payment_reference, 'UPI-REF-999')
+        self.assertIsNotNone(self.job.payment_date)
+
+        # Verify receivable credit payment
+        payments = InventoryCreditPayment.objects.filter(party__phone=self.job.customer_phone)
+        self.assertEqual(payments.count(), 1)
+        self.assertEqual(payments.first().amount, Decimal('500.00'))
+        self.assertEqual(payments.first().balance_after, Decimal('0.00'))
+
+    def test_job_settlement_partial_payment(self):
+        url = reverse('close_job', args=[self.job.job_code])
+        response = self.client_obj.post(url, {
+            'payment_status': 'part_paid',
+            'payment_method': 'cash',
+            'amount_paid': '300.00',
+            'payment_reference': 'CASH-PART-1',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Closed')
+        self.assertEqual(self.job.payment_status, 'part_paid')
+        self.assertEqual(self.job.amount_paid, Decimal('300.00'))
+        self.assertEqual(self.job.balance_due, Decimal('200.00'))
+
+        payments = InventoryCreditPayment.objects.filter(party__phone=self.job.customer_phone)
+        self.assertEqual(payments.count(), 1)
+        self.assertEqual(payments.first().amount, Decimal('300.00'))
+        self.assertEqual(payments.first().balance_after, Decimal('200.00'))
+
+    def test_job_settlement_credit_unpaid(self):
+        url = reverse('close_job', args=[self.job.job_code])
+        response = self.client_obj.post(url, {
+            'payment_status': 'unpaid',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Closed')
+        self.assertEqual(self.job.payment_status, 'unpaid')
+        self.assertEqual(self.job.amount_paid, Decimal('0.00'))
+        self.assertEqual(self.job.balance_due, Decimal('500.00'))
+
+        payments = InventoryCreditPayment.objects.filter(party__phone=self.job.customer_phone)
+        self.assertEqual(payments.count(), 0)
+
+
+class TechnicianAssignmentAndCompletionTests(TestCase):
+    """Test technician assignment and job completion with labor charges and notes."""
+
+    def setUp(self):
+        self.ws, self.staff_user = _make_workspace_and_user('staff-assign-user')
+        self.client_obj = self.client
+        self.client_obj.force_login(self.staff_user)
+
+        self.tech_user = User.objects.create_user(username='technician_joe', password='password123')
+        from django.contrib.auth.models import Group
+        tech_group, _ = Group.objects.get_or_create(name='Technicians')
+        self.tech_user.groups.add(tech_group)
+        self.tech_profile = TechnicianProfile.objects.create(
+            workspace=self.ws,
+            user=self.tech_user,
+            unique_id='TECH002',
+        )
+
+        self.job = JobTicket.objects.create(
+            workspace=self.ws,
+            job_code='JOB-TECH-001',
+            customer_name='Alice Smith',
+            customer_phone='9123456780',
+            device_type='Laptop',
+            reported_issue='Blue screen of death',
+            status='Pending',
+            requires_laptop_inspection_checklist=False,
+            created_by=self.staff_user,
+        )
+
+    def test_staff_assigns_technician(self):
+        url = reverse('staff_dashboard')
+        response = self.client_obj.post(url, {
+            'assign_job_form_submit': '1',
+            'job_code': self.job.job_code,
+            'technician': self.tech_profile.pk,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.assigned_to, self.tech_profile)
+        self.assertEqual(self.job.status, 'Under Inspection')
+        self.assertTrue(self.job.is_new_assignment)
+
+    def test_technician_marks_completed_with_labor_charge_and_note(self):
+        self.job.assigned_to = self.tech_profile
+        self.job.status = 'Repairing'
+        self.job.save()
+
+        # Login as technician
+        self.client_obj.force_login(self.tech_user)
+        url = reverse('job_mark_completed', args=[self.job.job_code])
+        response = self.client_obj.post(url, {
+            'labor_charge': '450.00',
+            'completion_note': 'Replaced thermal paste and RAM module',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Completed')
+        self.assertIn('Replaced thermal paste and RAM module', self.job.technician_notes)
+
+        # Service log for labor created
+        labor_log = self.job.service_logs.filter(description='Technician Labor Charges').first()
+        self.assertIsNotNone(labor_log)
+        self.assertEqual(labor_log.service_charge, Decimal('450.00'))
+
+
+class StandaloneTaskSystemTests(TestCase):
+    def setUp(self):
+        self.workspace, self.staff_user = _make_workspace_and_user('task_staff')
+        self.tech_user = User.objects.create_user(
+            username='task_tech',
+            password='password123',
+            email='tech@tasks.com',
+        )
+        tech_group, _ = Group.objects.get_or_create(name='Technicians')
+        self.tech_user.groups.add(tech_group)
+        CompanyUserMembership.objects.create(
+            user=self.tech_user,
+            workspace=self.workspace,
+            role=CompanyUserMembership.ROLE_TECHNICIAN,
+        )
+        self.tech_profile = TechnicianProfile.objects.create(
+            user=self.tech_user,
+            workspace=self.workspace,
+            unique_id='TECH-001',
+        )
+        self.client = DjangoTestClient()
+        self.mobile_token = issue_mobile_jwt(self.tech_user)
+
+    def test_task_priority_ordering(self):
+        t_low = Task.objects.create(
+            workspace=self.workspace,
+            title='Low Priority Task',
+            priority='low',
+            created_by=self.staff_user,
+        )
+        t_urgent = Task.objects.create(
+            workspace=self.workspace,
+            title='Urgent Priority Task',
+            priority='urgent',
+            created_by=self.staff_user,
+        )
+        t_med = Task.objects.create(
+            workspace=self.workspace,
+            title='Medium Priority Task',
+            priority='medium',
+            created_by=self.staff_user,
+        )
+        t_high = Task.objects.create(
+            workspace=self.workspace,
+            title='High Priority Task',
+            priority='high',
+            created_by=self.staff_user,
+        )
+
+        tasks = list(Task.objects.filter(workspace=self.workspace))
+        self.assertEqual(tasks[0].id, t_urgent.id)
+        self.assertEqual(tasks[1].id, t_high.id)
+        self.assertEqual(tasks[2].id, t_med.id)
+        self.assertEqual(tasks[3].id, t_low.id)
+
+    def test_staff_task_web_flow(self):
+        self.client.force_login(self.staff_user)
+
+        # 1. Staff dashboard
+        response = self.client.get(reverse('task_dashboard'))
+        self.assertEqual(response.status_code, 200)
+
+        # 2. Staff creates task
+        response = self.client.post(reverse('task_create'), {
+            'title': 'Server Diagnostics',
+            'description': 'Inspect server cooling and disks',
+            'priority': 'urgent',
+            'assigned_to': self.tech_profile.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        task = Task.objects.filter(workspace=self.workspace, title='Server Diagnostics').first()
+        self.assertIsNotNone(task)
+        self.assertEqual(task.priority, 'urgent')
+        self.assertEqual(task.assigned_to, self.tech_profile)
+
+        # 3. Staff detail & sends message
+        msg_response = self.client.post(reverse('task_message_send', args=[task.id]), {
+            'body': 'Please bring replacement thermal paste.',
+        })
+        self.assertEqual(msg_response.status_code, 302)
+        self.assertEqual(task.messages.count(), 1)
+        self.assertEqual(task.messages.first().body, 'Please bring replacement thermal paste.')
+
+        # 4. Staff updates status
+        status_resp = self.client.post(reverse('task_update_status', args=[task.id]), {
+            'status': 'in_progress',
+        })
+        self.assertEqual(status_resp.status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual(task.status, 'in_progress')
+
+    def test_technician_task_web_flow(self):
+        task = Task.objects.create(
+            workspace=self.workspace,
+            title='Bench Test Device',
+            priority='high',
+            assigned_to=self.tech_profile,
+            created_by=self.staff_user,
+        )
+
+        self.client.force_login(self.tech_user)
+
+        # Technician task dashboard
+        resp = self.client.get(reverse('technician_task_dashboard'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Bench Test Device')
+
+        # Technician task detail
+        detail_resp = self.client.get(reverse('technician_task_detail', args=[task.id]))
+        self.assertEqual(detail_resp.status_code, 200)
+
+        # Technician marks completed
+        complete_resp = self.client.post(reverse('task_update_status', args=[task.id]), {
+            'status': 'done',
+        })
+        self.assertEqual(complete_resp.status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual(task.status, 'done')
+        self.assertIsNotNone(task.completed_at)
+
+    def test_mobile_task_api_flow(self):
+        task = Task.objects.create(
+            workspace=self.workspace,
+            title='Onsite Router Configuration',
+            description='Setup mesh Wi-Fi and VLANs',
+            priority='urgent',
+            assigned_to=self.tech_profile,
+            created_by=self.staff_user,
+        )
+
+        auth_headers = {'HTTP_AUTHORIZATION': f'Bearer {self.mobile_token}'}
+
+        # 1. List tasks
+        resp = self.client.get(reverse('mobile_api_tasks'), **auth_headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['tasks'][0]['id'], task.id)
+        self.assertEqual(data['tasks'][0]['priority'], 'urgent')
+
+        # 2. Detail
+        detail_resp = self.client.get(reverse('mobile_api_task_detail', args=[task.id]), **auth_headers)
+        self.assertEqual(detail_resp.status_code, 200)
+        self.assertEqual(detail_resp.json()['task']['title'], 'Onsite Router Configuration')
+
+        # 3. Update status to in_progress
+        upd_resp = self.client.post(
+            reverse('mobile_api_task_update_status', args=[task.id]),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json',
+            **auth_headers,
+        )
+        self.assertEqual(upd_resp.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.status, 'in_progress')
+
+        # 4. Send message
+        msg_resp = self.client.post(
+            reverse('mobile_api_task_message_send', args=[task.id]),
+            data=json.dumps({'message': 'Arrived at site, beginning configuration.'}),
+            content_type='application/json',
+            **auth_headers,
+        )
+        self.assertEqual(msg_resp.status_code, 200)
+        self.assertEqual(task.messages.count(), 1)
+        self.assertEqual(task.messages.first().body, 'Arrived at site, beginning configuration.')
+
+
+class TaskRealtimeWebSocketTests(TransactionTestCase):
+    def setUp(self):
+        self.workspace, self.staff_user = _make_workspace_and_user('task_ws_staff')
+        self.tech_user = User.objects.create_user(
+            username='task_ws_tech',
+            password='password123',
+            email='tech_ws@tasks.com',
+        )
+        tech_group, _ = Group.objects.get_or_create(name='Technicians')
+        self.tech_user.groups.add(tech_group)
+        CompanyUserMembership.objects.create(
+            user=self.tech_user,
+            workspace=self.workspace,
+            role=CompanyUserMembership.ROLE_TECHNICIAN,
+        )
+        self.tech_profile = TechnicianProfile.objects.create(
+            user=self.tech_user,
+            workspace=self.workspace,
+            unique_id='TWS001',
+        )
+        self.task = Task.objects.create(
+            workspace=self.workspace,
+            title='Realtime Diagnostic Task',
+            description='Test websocket syncing and live chat',
+            priority='urgent',
+            assigned_to=self.tech_profile,
+            created_by=self.staff_user,
+        )
+        self.mobile_token = issue_mobile_jwt(self.tech_user)
+
+    def test_task_chat_consumer_staff_broadcast(self):
+        from .consumers import task_room_group_name
+
+        async def exercise():
+            application = URLRouter(websocket_urlpatterns)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/tasks/{self.task.id}/',
+            )
+            communicator.scope['user'] = self.staff_user
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            channel_layer = get_channel_layer()
+            await channel_layer.group_send(
+                task_room_group_name(self.workspace.id, self.task.id),
+                {
+                    'type': 'task_message_event',
+                    'task_id': self.task.id,
+                    'id': 101,
+                    'message_id': 101,
+                    'sender': 'task_ws_staff',
+                    'body': 'Real-time test message for technician',
+                    'sent_at': '2026-09-16 18:00',
+                    'attachments': [],
+                },
+            )
+
+            event = await asyncio.wait_for(communicator.receive_json_from(), timeout=2)
+            self.assertEqual(event.get('type'), 'task_message_event')
+            self.assertEqual(event.get('body'), 'Real-time test message for technician')
+            self.assertEqual(event.get('sender'), 'task_ws_staff')
+
+            await channel_layer.group_send(
+                task_room_group_name(self.workspace.id, self.task.id),
+                {
+                    'type': 'task_status_event',
+                    'task_id': self.task.id,
+                    'old_status': 'open',
+                    'new_status': 'in_progress',
+                    'status_display': 'In Progress',
+                    'updated_by': 'task_ws_staff',
+                    'completed_at': '',
+                },
+            )
+            status_event = await asyncio.wait_for(communicator.receive_json_from(), timeout=2)
+            self.assertEqual(status_event.get('type'), 'task_status_event')
+            self.assertEqual(status_event.get('new_status'), 'in_progress')
+
+            await communicator.disconnect()
+
+        asyncio.run(exercise())
+
+    def test_task_chat_consumer_mobile_jwt_connection(self):
+        async def exercise():
+            application = URLRouter(websocket_urlpatterns)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/tasks/{self.task.id}/?token={self.mobile_token}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.disconnect()
+
+        asyncio.run(exercise())
+
+    def test_tech_task_dashboard_consumer_feed(self):
+        from .consumers import tech_tasks_group_name
+
+        async def exercise():
+            application = URLRouter(websocket_urlpatterns)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/tech_tasks/?token={self.mobile_token}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            channel_layer = get_channel_layer()
+            await channel_layer.group_send(
+                tech_tasks_group_name(self.workspace.id, self.tech_profile.id),
+                {
+                    'type': 'task_feed_event',
+                    'action': 'task_created',
+                    'task_id': self.task.id,
+                    'task_title': self.task.title,
+                    'priority': self.task.priority,
+                    'status': self.task.status,
+                    'assigned_to': self.tech_user.username,
+                },
+            )
+            feed_event = await asyncio.wait_for(communicator.receive_json_from(), timeout=2)
+            self.assertEqual(feed_event.get('type'), 'task_feed_event')
+            self.assertEqual(feed_event.get('action'), 'task_created')
+            self.assertEqual(feed_event.get('task_id'), self.task.id)
+
+            await communicator.disconnect()
+
+        asyncio.run(exercise())
+
+    def test_broadcast_task_helpers(self):
+        from .views.helpers import (
+            broadcast_task_message,
+            broadcast_task_status,
+            broadcast_task_created,
+            broadcast_task_deleted,
+        )
+
+        msg = TaskMessage.objects.create(
+            task=self.task,
+            sender=self.staff_user,
+            body='Sync broadcast helper test message',
+        )
+        broadcast_task_message(self.task, msg)
+        broadcast_task_status(self.task, 'open', 'in_progress', self.staff_user)
+        broadcast_task_created(self.task)
+        broadcast_task_deleted(self.workspace.id, self.task.id, self.task.title)

@@ -1,8 +1,24 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _build_checklist_schema_for_job,
+    _parse_autoprint_flag,
+    _staff_access_required,
+)
 
 
 def job_creation_success(request, job_code):
     job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    if request.user.is_authenticated:
+        denied = _staff_access_required(request, "staff_dashboard")
+        if denied:
+            return denied
+        if not user_has_workspace_access(request.user, job_ticket.workspace):
+            return redirect('unauthorized')
+    elif not verify_receipt_access_token(
+        job_ticket,
+        (request.GET.get('token') or '').strip(),
+    ):
+        return HttpResponseForbidden("Invalid or expired job ticket link.")
     context = {
         'job_ticket': job_ticket
     }
@@ -44,6 +60,8 @@ def client_login(request):
                 customer_phone__in=phone_lookup_variants(customer_phone),
             )
             cache.delete(cache_key)  # Clear attempts on success
+            request.session['customer_job_code'] = job_ticket.job_code
+            request.session.set_expiry(60 * 60)
             return redirect('client_status', job_code=job_code)
         except JobTicket.DoesNotExist:
             cache.set(cache_key, attempts + 1, 1800)  # 30 minutes
@@ -55,9 +73,23 @@ def client_login(request):
 
 def client_status(request, job_code):
     job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    access_token = (request.GET.get('token') or '').strip()
+    session_job_code = request.session.get('customer_job_code')
+    if not (
+        session_job_code == job_ticket.job_code
+        or verify_receipt_access_token(job_ticket, access_token)
+    ):
+        return redirect('client_login')
     job_tickets = [job_ticket]
     calculate_job_totals(job_tickets)
     checklist_schema, checklist_title, checklist_notes = _build_checklist_schema_for_job(job_ticket)
+    if checklist_notes and ("optional" in checklist_notes.lower() or "technician" in checklist_notes.lower()):
+        checklist_notes = "Quality assurance inspection verified by our service team."
+    
+    grand_total = max(Decimal('0.00'), (job_ticket.total or Decimal('0.00')) - (job_ticket.discount_amount or Decimal('0.00')))
+    amount_paid = job_ticket.amount_paid or Decimal('0.00')
+    balance_due = max(Decimal('0.00'), grand_total - amount_paid)
+    company = CompanyProfile.get_profile(workspace=job_ticket.workspace)
     
     bill_available = job_ticket.status in ['Ready for Pickup', 'Closed']
     can_give_feedback = job_ticket.status == 'Closed' and not job_ticket.feedback_rating
@@ -94,7 +126,10 @@ def client_status(request, job_code):
         'service_logs': job_ticket.service_logs.all(),
         'total_parts_cost': job_ticket.part_total,
         'total_service_charges': job_ticket.service_total,
-        'grand_total': job_ticket.total - job_ticket.discount_amount,
+        'grand_total': grand_total,
+        'amount_paid': amount_paid,
+        'balance_due': balance_due,
+        'company': company,
         'bill_available': bill_available,
         'can_give_feedback': can_give_feedback,
         'feedback_form': feedback_form,
@@ -115,6 +150,13 @@ def client_phone_lookup(request):
 
 def client_bill_view(request, job_code):
     job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    access_token = (request.GET.get('token') or '').strip()
+    session_job_code = request.session.get('customer_job_code')
+    if not (
+        session_job_code == job_ticket.job_code
+        or verify_receipt_access_token(job_ticket, access_token)
+    ):
+        return redirect('client_login')
     
     # Only allow bill access if job is ready for pickup or closed
     if job_ticket.status not in ['Ready for Pickup', 'Closed']:
@@ -196,9 +238,10 @@ def job_creation_receipt_print_view(request, job_code):
     job_ticket = get_object_or_404(JobTicket, job_code=job_code)
 
     if job_ticket.customer_group_id:
-        grouped_jobs = list(
-            JobTicket.objects.filter(customer_group_id=job_ticket.customer_group_id).order_by('created_at')
-        )
+        grouped_jobs = list(JobTicket.objects.filter(
+            workspace_id=job_ticket.workspace_id,
+            customer_group_id=job_ticket.customer_group_id,
+        ).order_by('created_at'))
     else:
         grouped_jobs = [job_ticket]
 
@@ -223,9 +266,10 @@ def job_creation_receipt_public_view(request, job_code):
         return HttpResponseForbidden("Invalid or expired receipt link.")
 
     if job_ticket.customer_group_id:
-        grouped_jobs = list(
-            JobTicket.objects.filter(customer_group_id=job_ticket.customer_group_id).order_by('created_at')
-        )
+        grouped_jobs = list(JobTicket.objects.filter(
+            workspace_id=job_ticket.workspace_id,
+            customer_group_id=job_ticket.customer_group_id,
+        ).order_by('created_at'))
     else:
         grouped_jobs = [job_ticket]
 
@@ -315,7 +359,10 @@ def job_creation_receipt_pdf_public_view(request, job_code):
 
     if job_ticket.customer_group_id:
         grouped_jobs = list(
-            JobTicket.objects.filter(customer_group_id=job_ticket.customer_group_id).order_by('created_at')
+            JobTicket.objects.filter(
+                workspace_id=job_ticket.workspace_id,
+                customer_group_id=job_ticket.customer_group_id,
+            ).order_by('created_at')
         )
     else:
         grouped_jobs = [job_ticket]
@@ -332,7 +379,10 @@ def job_creation_receipt_pdf_public_view(request, job_code):
 def qr_access(request, job_code):
     """Direct access to job status via QR code without login"""
     job_ticket = get_object_or_404(JobTicket, job_code=job_code)
-    return redirect('client_status', job_code=job_code)
+    token = (request.GET.get('token') or '').strip()
+    if not verify_receipt_access_token(job_ticket, token):
+        return HttpResponseForbidden("Invalid or expired QR link.")
+    return redirect(f"{reverse('client_status', args=[job_code])}?token={token}")
 
 def custom_404(request, exception):
     """Custom 404 error page"""

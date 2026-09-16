@@ -21,6 +21,7 @@ pymysql.install_as_MySQLdb()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+RUNNING_TESTS = 'test' in sys.argv
 
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),
@@ -51,13 +52,20 @@ SECRET_KEY = env(
 DEBUG = env('DJANGO_DEBUG')
 
 ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS')
+if 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('testserver')
 CSRF_TRUSTED_ORIGINS = env.list('DJANGO_CSRF_TRUSTED_ORIGINS', default=[])
-SECURE_SSL_REDIRECT = env.bool('DJANGO_SECURE_SSL_REDIRECT', default=False)
-PUBLIC_BASE_URL = env('PUBLIC_BASE_URL', default='')
+SECURE_SSL_REDIRECT = (
+    False
+    if RUNNING_TESTS
+    else env.bool('DJANGO_SECURE_SSL_REDIRECT', default=False)
+)
+PUBLIC_BASE_URL = '' if RUNNING_TESTS else env('PUBLIC_BASE_URL', default='')
 WEB_RELEASE_VERSION = env('WEB_RELEASE_VERSION', default='dev')
 WEB_RELEASE_POLL_INTERVAL_SECONDS = env.int('WEB_RELEASE_POLL_INTERVAL_SECONDS', default=300)
 WHATSAPP_BRIDGE_AUTO_START = env.bool('WHATSAPP_BRIDGE_AUTO_START', default=True)
 REDIS_URL = env('REDIS_URL', default='redis://127.0.0.1:6379/0')
+CACHE_URL = env('CACHE_URL', default='')
 
 
 # Application definition
@@ -106,17 +114,27 @@ LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 
-# Cache for rate limiting
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6379/1'),
-        'TIMEOUT': 300,
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
+# Cache for rate limiting. Redis is opt-in so local deployments remain usable
+# when the optional Redis service is not running.
+if CACHE_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': CACHE_URL,
+            'TIMEOUT': 300,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'botgi-rate-limit-cache',
+            'TIMEOUT': 300,
+        }
+    }
 
 ROOT_URLCONF = 'botgi_crm.urls'
 
@@ -182,7 +200,7 @@ if database_url:
             'CONN_MAX_AGE': 600,
             'OPTIONS': {
                 'connect_timeout': 10,
-                'options': '-c default_transaction_isolation=read\ committed -c statement_timeout=30000',
+                'options': '-c default_transaction_isolation=read\\ committed -c statement_timeout=30000',
             },
         },
     }
@@ -238,7 +256,6 @@ STATICFILES_DIRS = [
 ]
 
 # WhiteNoise configuration for static files
-RUNNING_TESTS = 'test' in sys.argv
 STATICFILES_STORAGE = env(
     'DJANGO_STATICFILES_STORAGE',
     default=(

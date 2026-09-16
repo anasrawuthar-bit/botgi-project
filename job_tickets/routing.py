@@ -13,4 +13,13 @@ websocket_urlpatterns = [
 
     # 3. General updates for Technician Dashboard
     re_path(r'ws/technician_updates/$', consumers.TechnicianDashboardConsumer.as_asgi()),
+
+    # 4. Live Task Chat Room & Status
+    re_path(r'ws/tasks/(?P<task_id>\d+)/$', consumers.TaskChatConsumer.as_asgi()),
+
+    # 5. Live Task Feed for Staff Dashboard
+    re_path(r'ws/staff_tasks/$', consumers.StaffTaskDashboardConsumer.as_asgi()),
+
+    # 6. Live Task Feed for Technician Dashboard
+    re_path(r'ws/tech_tasks/$', consumers.TechnicianTaskDashboardConsumer.as_asgi()),
 ]

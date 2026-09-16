@@ -1,4 +1,19 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _build_checklist_schema_for_job,
+    _extract_checklist_answers_from_post,
+    _format_checklist_required_error,
+    _generate_inventory_bill_number,
+    _generate_inventory_entry_number,
+    _get_job_checklist_answers,
+    _get_or_create_inventory_customer_party_for_job,
+    _merge_checklist_answers,
+    _money_or_zero,
+    _net_amount_after_discount,
+    _normalize_checkbox_answer,
+    _normalize_checklist_answer,
+    _staff_access_required,
+)
 from ..whatsapp_service import queue_job_whatsapp_message, send_job_whatsapp_notification
 
 
@@ -430,6 +445,26 @@ def staff_dashboard(request):
                 messages.error(request, f"Device #{error['device_index'] + 1}: {error['message']}")
             return redirect('staff_dashboard')
 
+        for device_index, photo_files in enumerate(device_photo_payloads):
+            for photo_file in photo_files:
+                if not photo_file:
+                    continue
+                _, upload_error = validate_job_photo_upload(photo_file)
+                if upload_error:
+                    validation_errors.append({
+                        'device_index': device_index,
+                        'field': 'device_photos',
+                        'message': upload_error,
+                    })
+
+        if validation_errors:
+            if is_ajax_request:
+                return JsonResponse({'success': False, 'errors': validation_errors}, status=400)
+            request.session['show_create_job_modal'] = True
+            for error in validation_errors:
+                messages.error(request, f"Device #{error['device_index'] + 1}: {error['message']}")
+            return redirect('staff_dashboard')
+
         if not device_submissions:
             error_message = "Please add at least one device to create a job ticket."
             if is_ajax_request:
@@ -463,10 +498,7 @@ def staff_dashboard(request):
                 if photo_files:
                     for photo_file in photo_files:
                         if photo_file:
-                            content_type = (getattr(photo_file, 'content_type', '') or '').strip()
-                            if not content_type:
-                                guessed_type, _ = mimetypes.guess_type(getattr(photo_file, 'name', ''))
-                                content_type = guessed_type or 'application/octet-stream'
+                            content_type, _ = validate_job_photo_upload(photo_file)
 
                             JobTicketPhoto.objects.create(
                                 job_ticket=new_job,
@@ -545,24 +577,25 @@ def staff_dashboard(request):
             job_code = assign_form.cleaned_data['job_code']
             technician = assign_form.cleaned_data['technician']
             job_to_assign = get_object_or_404(JobTicket, job_code=job_code)
-        
-            old_status = job_to_assign.get_status_display()
-            job_to_assign.assigned_to = technician
-            job_to_assign.status = 'Under Inspection'
-            # mark as new assignment so the technician sees a notification/badge
-            job_to_assign.is_new_assignment = True
-            job_to_assign.save(update_fields=['assigned_to', 'status', 'updated_at', 'is_new_assignment'])
 
-            details = f"Assigned to technician '{technician.user.username}' and status changed from '{old_status}' to 'Under Inspection'."
-            JobTicketLog.objects.create(job_ticket=job_to_assign, user=request.user, action='ASSIGNED', details=details)
-            
+            with transaction.atomic():
+                old_status = job_to_assign.get_status_display()
+                job_to_assign.assigned_to = technician
+                job_to_assign.status = 'Under Inspection'
+                job_to_assign.is_new_assignment = True
+                job_to_assign.save(update_fields=['assigned_to', 'status', 'updated_at', 'is_new_assignment'])
+
+                details = f"Assigned to technician '{technician.user.username}' and status changed from '{old_status}' to 'Under Inspection'."
+                JobTicketLog.objects.create(job_ticket=job_to_assign, user=request.user, action='ASSIGNED', details=details)
+
             # Send WebSocket update for real-time job assignment notification
             send_job_update_message(job_to_assign.job_code, job_to_assign.status)
-            
+
             messages.success(request, f"Job {job_to_assign.job_code} assigned to {technician.user.username}.")
             return redirect('staff_dashboard')
     else:
         assign_form = AssignJobForm(workspace=getattr(request, 'current_workspace', None))
+
     
     # START: NEW VENDOR ASSIGNMENT LOGIC (Logic retained)
     if request.method == 'POST' and 'assign_vendor_form_submit' in request.POST:
@@ -670,19 +703,6 @@ def staff_dashboard(request):
 
     sent_to_vendor = SpecializedService.objects.filter(status='Sent to Vendor').select_related('job_ticket', 'vendor')
 
-    # assignment lists for staff to review (Logic retained)
-    pending_assignments = Assignment.objects.filter(
-        status='pending'
-    ).select_related('job', 'technician__user').order_by('-created_at')
-
-    rejected_assignments = Assignment.objects.filter(
-        status='rejected'
-    ).select_related('job', 'technician__user').order_by('-responded_at')
-
-    accepted_assignments = Assignment.objects.filter(
-        status='accepted'
-    ).select_related('job', 'technician__user').order_by('-responded_at')
-
     reminder_alerts = list(
         JobReminder.objects.filter(status=JobReminder.STATUS_PENDING)
         .select_related('job_ticket', 'created_by')
@@ -710,9 +730,6 @@ def staff_dashboard(request):
         'query': query,
         'search_results': search_results,
         'search_count': len(search_results) if query else 0,
-        'pending_assignments': pending_assignments,
-        'rejected_assignments': rejected_assignments,
-        'accepted_assignments': accepted_assignments,
         'awaiting_assignment_jobs': awaiting_assignment,
         'sent_to_vendor_jobs': sent_to_vendor,
         'pending_count': len(pending_jobs),
@@ -1212,6 +1229,7 @@ def job_billing_staff(request, job_code):
         'technician_id': technician_id,
         'product_sale_log_ids': product_sale_log_ids,
         'products_for_sale': Product.objects.all().order_by('name'),
+        'payment_methods': InventoryCreditPayment.METHOD_CHOICES,
     }
     return render(request, 'job_tickets/job_billing_staff.html', context)
 
@@ -1244,6 +1262,41 @@ def close_job(request, job_code):
         messages.error(request, 'Use the close confirmation window to close a job.')
         return redirect('job_billing_staff', job_code=job.job_code)
 
+    calculate_job_totals([job])
+    grand_total = max(Decimal('0.00'), (job.total or Decimal('0.00')) - (job.discount_amount or Decimal('0.00')))
+
+    payment_status = (request.POST.get('payment_status') or 'paid').strip().lower()
+    if payment_status not in {'paid', 'part_paid', 'unpaid'}:
+        payment_status = 'paid'
+
+    payment_method = (request.POST.get('payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
+    valid_methods = {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}
+    if payment_method not in valid_methods:
+        payment_method = InventoryCreditPayment.METHOD_CASH
+
+    payment_reference = (request.POST.get('payment_reference') or '').strip()
+
+    if payment_status == 'paid':
+        amount_paid = grand_total
+        payment_date = timezone.now()
+    elif payment_status == 'part_paid':
+        try:
+            amount_paid = Decimal((request.POST.get('amount_paid') or '0').strip()).quantize(Decimal('0.01'))
+        except (InvalidOperation, ValueError, TypeError):
+            messages.error(request, 'Invalid partial payment amount entered.')
+            return redirect('job_billing_staff', job_code=job.job_code)
+        if amount_paid <= Decimal('0.00'):
+            messages.error(request, 'Partial payment amount must be greater than zero.')
+            return redirect('job_billing_staff', job_code=job.job_code)
+        if amount_paid >= grand_total:
+            amount_paid = grand_total
+            payment_status = 'paid'
+        payment_date = timezone.now()
+    else:  # unpaid (credit)
+        amount_paid = Decimal('0.00')
+        payment_method = ''
+        payment_date = None
+
     old_status = job.get_status_display()
     job.status = 'Closed'
     job.closed_at = timezone.now()
@@ -1252,20 +1305,82 @@ def close_job(request, job_code):
     job.feedback_followup_status = (
         JobTicket.FEEDBACK_RECEIVED if job.feedback_rating else JobTicket.FEEDBACK_PENDING
     )
+    job.payment_status = payment_status
+    job.payment_method = payment_method or None
+    job.amount_paid = amount_paid
+    job.payment_reference = payment_reference
+    job.payment_date = payment_date
     job.save(update_fields=[
         'status',
         'closed_at',
         'feedback_due_at',
         'feedback_followup_enabled',
         'feedback_followup_status',
+        'payment_status',
+        'payment_method',
+        'amount_paid',
+        'payment_reference',
+        'payment_date',
         'updated_at',
     ])
 
-    details = f"Status changed from '{old_status}' to 'Closed'."
+    # Record inventory credit/payment ledger if applicable
+    party = _get_or_create_inventory_customer_party_for_job(job)
+    bill = InventoryBill.objects.filter(entry_type='sale', job_ticket=job).first()
+    if not bill and (grand_total > Decimal('0.00') or amount_paid > Decimal('0.00')):
+        bill = InventoryBill.objects.create(
+            workspace=job.workspace,
+            bill_number=_generate_inventory_bill_number('sale', timezone.localdate(), job.workspace),
+            entry_type='sale',
+            entry_date=timezone.localdate(),
+            invoice_number=job.vyapar_invoice_number or '',
+            job_ticket=job,
+            party=party,
+            notes=f"Repair Job {job.job_code} settlement",
+            created_by=request.user,
+        )
+        InventoryEntry.objects.create(
+            workspace=job.workspace,
+            bill=bill,
+            party=party,
+            entry_type='sale',
+            entry_date=timezone.localdate(),
+            quantity=1,
+            unit_price=grand_total,
+            total_amount=grand_total,
+            notes=f"Repair Service Charges - Job {job.job_code}",
+            job_ticket=job,
+            created_by=request.user,
+        )
+
+    if bill and amount_paid > Decimal('0.00'):
+        balance_after = max(Decimal('0.00'), grand_total - amount_paid)
+        InventoryCreditPayment.objects.create(
+            workspace=job.workspace,
+            party=party,
+            bill=bill,
+            direction=InventoryCreditPayment.DIRECTION_RECEIVABLE,
+            payment_date=timezone.localdate(),
+            payment_method=payment_method or InventoryCreditPayment.METHOD_CASH,
+            amount=amount_paid,
+            balance_before=grand_total,
+            balance_after=balance_after,
+            reference_no=payment_reference,
+            notes=f"Settlement for Job {job.job_code} ({payment_status})",
+            created_by=request.user,
+        )
+
+    method_display = dict(InventoryCreditPayment.METHOD_CHOICES).get(payment_method, payment_method) or 'N/A'
+    balance_due = max(Decimal('0.00'), grand_total - amount_paid)
+    details = (
+        f"Status changed from '{old_status}' to 'Closed'. "
+        f"Payment: {payment_status.replace('_', ' ').title()} "
+        f"(Paid: Rs {amount_paid}, Balance Due: Rs {balance_due} via {method_display})."
+    )
     JobTicketLog.objects.create(job_ticket=job, user=request.user, action='CLOSED', details=details)
 
     send_job_update_message(job.job_code, job.status)
-    
+    messages.success(request, f"Job {job.job_code} closed successfully. Payment recorded: {payment_status.replace('_', ' ').title()}.")
     return _safe_next_redirect(request)
 
 
@@ -1408,6 +1523,13 @@ def staff_job_detail(request, job_code):
         return denied
 
     job = get_object_or_404(JobTicket.objects.prefetch_related('photos'), job_code=job_code)
+    if not user_has_workspace_access(request.user, job.workspace):
+        return redirect('unauthorized')
+    session = getattr(request, 'session', None)
+    if session is not None:
+        session['vendor_details_unlocked'] = (
+            session.get('vendor_details_unlocked_job_code') == job.job_code
+        )
     checklist_schema, checklist_title, checklist_notes = _build_checklist_schema_for_job(job)
 
     if request.method == 'POST':
@@ -1655,6 +1777,13 @@ def staff_job_detail(request, job_code):
     
     subtotal = job.total
     grand_total = subtotal - job.discount_amount
+    amount_paid = job.amount_paid or Decimal('0.00')
+    balance_due = max(Decimal('0.00'), grand_total - amount_paid)
+    job_payments = (
+        InventoryCreditPayment.objects.filter(bill__job_ticket=job)
+        .select_related('created_by')
+        .order_by('-payment_date', '-id')
+    )
     
     # Generate QR code URL
     qr_url = request.build_absolute_uri(f'/qr/{job.job_code}/')
@@ -1668,6 +1797,10 @@ def staff_job_detail(request, job_code):
         'subtotal': subtotal,
         'discount_amount': job.discount_amount,
         'grand_total': grand_total,
+        'amount_paid': amount_paid,
+        'balance_due': balance_due,
+        'job_payments': job_payments,
+        'payment_methods': InventoryCreditPayment.METHOD_CHOICES,
         'specialized_service': specialized_service,
         'related_jobs': related_jobs,
         'technician_list': technician_list,
@@ -1677,11 +1810,151 @@ def staff_job_detail(request, job_code):
         'checklist_title': checklist_title,
         'checklist_notes': checklist_notes,
         'staff_status_choices': JobTicket.STATUS_CHOICES,
+        'today': timezone.localdate().isoformat(),
         'job_reminders': job_reminders,
         'active_reminder': active_reminder,
         'reminder_schedule': reminder_schedule,
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
+
+
+@login_required
+@require_POST
+def staff_job_collect_payment(request, job_code):
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    job = get_object_or_404(JobTicket, job_code=job_code)
+    if not user_has_workspace_access(request.user, job.workspace):
+        return redirect('unauthorized')
+
+    calculate_job_totals([job])
+    grand_total = max(Decimal('0.00'), (job.total or Decimal('0.00')) - (job.discount_amount or Decimal('0.00')))
+    current_paid = job.amount_paid or Decimal('0.00')
+    balance_due = max(Decimal('0.00'), grand_total - current_paid)
+
+    if balance_due <= Decimal('0.00'):
+        messages.info(request, f"Job {job.job_code} is already fully settled.")
+        return redirect('staff_job_detail', job_code=job_code)
+
+    amount_raw = (request.POST.get('amount') or '').strip()
+    try:
+        amount = Decimal(amount_raw).quantize(Decimal('0.01'))
+    except (InvalidOperation, ValueError, TypeError):
+        messages.error(request, "Please enter a valid payment amount.")
+        return redirect('staff_job_detail', job_code=job_code)
+
+    if amount <= Decimal('0.00'):
+        messages.error(request, "Payment amount must be greater than zero.")
+        return redirect('staff_job_detail', job_code=job_code)
+
+    if amount > balance_due:
+        messages.error(request, f"Payment amount (Rs.{amount}) cannot exceed current balance due of Rs.{balance_due}.")
+        return redirect('staff_job_detail', job_code=job_code)
+
+    method_key = (request.POST.get('payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
+    custom_method = (request.POST.get('custom_payment_method') or '').strip()
+    if method_key in {'custom', 'other'} and custom_method:
+        payment_method_display = custom_method
+        inv_method = InventoryCreditPayment.METHOD_CASH
+    else:
+        valid_methods = {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}
+        inv_method = method_key if method_key in valid_methods else InventoryCreditPayment.METHOD_CASH
+        payment_method_display = dict(InventoryCreditPayment.METHOD_CHOICES).get(inv_method, inv_method)
+
+    payment_reference = (request.POST.get('payment_reference') or '').strip()
+    notes = (request.POST.get('notes') or '').strip()
+
+    # Dynamic Custom Payment Fields
+    custom_field_names = request.POST.getlist('custom_field_name[]')
+    custom_field_values = request.POST.getlist('custom_field_value[]')
+    custom_pairs = []
+    for name, val in zip(custom_field_names, custom_field_values):
+        k = (name or '').strip()
+        v = (val or '').strip()
+        if k and v:
+            custom_pairs.append(f"{k}: {v}")
+
+    custom_fields_str = f" [{', '.join(custom_pairs)}]" if custom_pairs else ""
+
+    payment_date_raw = (request.POST.get('payment_date') or '').strip()
+    if payment_date_raw:
+        try:
+            payment_date = datetime.strptime(payment_date_raw, '%Y-%m-%d').date()
+        except ValueError:
+            payment_date = timezone.localdate()
+    else:
+        payment_date = timezone.localdate()
+
+    with transaction.atomic():
+        new_paid = (current_paid + amount).quantize(Decimal('0.01'))
+        new_balance = max(Decimal('0.00'), grand_total - new_paid)
+        job.amount_paid = new_paid
+        job.payment_status = 'paid' if new_balance <= Decimal('0.00') else 'part_paid'
+        job.payment_method = payment_method_display
+        if payment_reference:
+            job.payment_reference = payment_reference
+        job.payment_date = timezone.now()
+        job.save(update_fields=['amount_paid', 'payment_status', 'payment_method', 'payment_reference', 'payment_date', 'updated_at'])
+
+        # Sync with Inventory Party & Bill
+        party = _get_or_create_inventory_customer_party_for_job(job)
+        bill = InventoryBill.objects.filter(entry_type='sale', job_ticket=job).first()
+        if not bill:
+            bill = InventoryBill.objects.create(
+                workspace=job.workspace,
+                bill_number=_generate_inventory_bill_number('sale', payment_date, job.workspace),
+                entry_type='sale',
+                entry_date=payment_date,
+                invoice_number=job.vyapar_invoice_number or '',
+                job_ticket=job,
+                party=party,
+                notes=f"Repair Job {job.job_code} settlement",
+                created_by=request.user,
+            )
+        if not bill.entries.exists():
+            InventoryEntry.objects.create(
+                workspace=job.workspace,
+                bill=bill,
+                party=party,
+                entry_type='sale',
+                entry_date=payment_date,
+                quantity=1,
+                unit_price=grand_total,
+                total_amount=grand_total,
+                notes=f"Repair Service Charges - Job {job.job_code}",
+                job_ticket=job,
+                created_by=request.user,
+            )
+
+        pay_note = f"Collected for Job {job.job_code} via {payment_method_display}.{custom_fields_str} {notes}".strip()
+        InventoryCreditPayment.objects.create(
+            workspace=job.workspace,
+            party=party,
+            bill=bill,
+            direction=InventoryCreditPayment.DIRECTION_RECEIVABLE,
+            payment_date=payment_date,
+            payment_method=inv_method,
+            amount=amount,
+            balance_before=balance_due,
+            balance_after=new_balance,
+            reference_no=payment_reference,
+            notes=pay_note,
+            created_by=request.user,
+        )
+
+        log_details = f"Collected installment payment of Rs.{amount} via {payment_method_display}."
+        if payment_reference:
+            log_details += f" Ref: {payment_reference}."
+        if custom_pairs:
+            log_details += f" Custom Fields: {', '.join(custom_pairs)}."
+        log_details += f" Remaining Balance: Rs.{new_balance} ({job.get_payment_status_display()})."
+        JobTicketLog.objects.create(job_ticket=job, user=request.user, action='PAYMENT', details=log_details)
+
+    send_job_update_message(job.job_code, job.status)
+    messages.success(request, f"Payment of Rs.{amount} collected successfully via {payment_method_display}. Remaining balance: Rs.{new_balance}.")
+    return redirect('staff_job_detail', job_code=job_code)
 
 @login_required
 @require_POST
@@ -1691,6 +1964,8 @@ def staff_delete_job_photo(request, job_code, photo_id):
         return denied
 
     job = get_object_or_404(JobTicket, job_code=job_code)
+    if not user_has_workspace_access(request.user, job.workspace):
+        return redirect('unauthorized')
     photo = get_object_or_404(JobTicketPhoto, id=photo_id, job_ticket=job)
 
     try:
@@ -1710,6 +1985,8 @@ def staff_job_photo_file(request, job_code, photo_id):
         return denied
 
     job = get_object_or_404(JobTicket, job_code=job_code)
+    if not user_has_workspace_access(request.user, job.workspace):
+        return redirect('unauthorized')
     photo = get_object_or_404(JobTicketPhoto, id=photo_id, job_ticket=job)
 
     if photo.image_data:
@@ -1718,7 +1995,14 @@ def staff_job_photo_file(request, job_code, photo_id):
         return response
 
     if photo.image:
-        return redirect(photo.image.url)
+        with photo.image.open('rb') as image_file:
+            image_bytes = image_file.read()
+        response = HttpResponse(
+            image_bytes,
+            content_type=photo.image_content_type or mimetypes.guess_type(photo.image.name)[0] or 'application/octet-stream',
+        )
+        response['Content-Disposition'] = f'inline; filename="{photo.image_name or f"{job.job_code}-photo-{photo.id}.jpg"}"'
+        return response
 
     return HttpResponse(status=404)
 
@@ -1731,17 +2015,20 @@ def unlock_vendor_details(request, job_code):
     
     password = request.POST.get('vendor_password', '').strip()
     
-    # Check against user's own password or default
+    # Check against the authenticated user's password.
     from django.contrib.auth import authenticate
     user_auth = authenticate(username=request.user.username, password=password)
     
-    if user_auth is not None or password.lower() == 'vendor123':
+    if user_auth is not None:
+        job = get_object_or_404(JobTicket, job_code=job_code)
+        if not user_has_workspace_access(request.user, job.workspace):
+            return JsonResponse({'ok': False, 'error': 'Unauthorized'}, status=403)
+        request.session['vendor_details_unlocked_job_code'] = job_code
         request.session['vendor_details_unlocked'] = True
         request.session.modified = True
         request.session.set_expiry(3600)
-        
+
         # Get specialized service data for AJAX response
-        job = get_object_or_404(JobTicket, job_code=job_code)
         specialized_service = SpecializedService.objects.filter(job_ticket=job).first()
         
         if request.headers.get('x-requested-with') == 'XMLHttpRequest':
@@ -1775,6 +2062,7 @@ def lock_vendor_details(request, job_code):
     if not request.user.is_staff or not user_has_staff_access(request.user, "staff_dashboard"):
         return JsonResponse({'ok': False, 'error': 'Unauthorized'}, status=403)
     
+    request.session.pop('vendor_details_unlocked_job_code', None)
     request.session['vendor_details_unlocked'] = False
     request.session.modified = True  # Ensure session is saved
     
@@ -1912,37 +2200,35 @@ def job_reassign_staff(request, job_code):
     job = get_object_or_404(JobTicket, job_code=job_code)
     
     form = ReassignTechnicianForm(request.POST, workspace=getattr(request, 'current_workspace', None) or job.workspace)
-    # Note: We must validate the job_code field that is passed implicitly here, but trust the primary key validation
-    
+
     if form.is_valid():
         new_technician = form.cleaned_data['new_technician']
-        
+
         # Get old values for logging
         old_technician_name = job.assigned_to.user.username if job.assigned_to else "Unassigned"
         new_technician_name = new_technician.user.username if new_technician else "Unassigned"
-        
+
         # Prevent assigning to the same person
-        if job.assigned_to == new_technician:
+        if job.assigned_to == new_technician and new_technician is not None:
             messages.warning(request, f"Job {job_code} is already assigned to {old_technician_name}.")
             return redirect('staff_job_detail', job_code=job_code)
-            
-        # Update the job and mark as new assignment for the technician
-        job.assigned_to = new_technician
-        job.is_new_assignment = True
-        job.save(update_fields=['assigned_to', 'is_new_assignment', 'updated_at'])
-        
-        # Log the action
-        details = f"Reassigned from '{old_technician_name}' to '{new_technician_name}' by staff."
-        JobTicketLog.objects.create(job_ticket=job, user=request.user, action='ASSIGNED', details=details)
-        
-        # Send WebSocket update (job assignment change may affect status display)
-        send_job_update_message(job.job_code, job.status)
-        
+
+        with transaction.atomic():
+            job.assigned_to = new_technician
+            job.is_new_assignment = True if new_technician else False
+            job.save(update_fields=['assigned_to', 'is_new_assignment', 'updated_at'])
+
+            details = f"Reassigned from '{old_technician_name}' to '{new_technician_name}' by staff."
+            JobTicketLog.objects.create(job_ticket=job, user=request.user, action='ASSIGNED', details=details)
+
+            send_job_update_message(job.job_code, job.status)
+
         messages.success(request, f"Job {job_code} successfully reassigned to {new_technician_name}.")
         return redirect('staff_job_detail', job_code=job_code)
-    
+
     messages.error(request, "Invalid reassignment attempt.")
     return redirect('staff_job_detail', job_code=job_code)
+
 
 @login_required
 def staff_job_archive_view(request):
@@ -2118,3 +2404,276 @@ def staff_job_filtered_archive_view(request, status_code):
         'closed_returned_count': closed_returned_count,
     }
     return render(request, 'job_tickets/closed_job_archive.html', context)
+
+
+# ---------------------------------------------------------------------------
+# Standalone Task Management Views (Staff)
+# ---------------------------------------------------------------------------
+
+@login_required
+def task_dashboard(request):
+    """Priority-ordered dashboard of standalone tasks with search and filtering."""
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    qs = Task.objects.all()
+    if workspace:
+        qs = qs.filter(workspace=workspace)
+
+    # Search query
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        qs = qs.filter(
+            Q(title__icontains=q) |
+            Q(description__icontains=q) |
+            Q(assigned_to__user__username__icontains=q) |
+            Q(job_reference__job_code__icontains=q)
+        )
+
+    # Priority filter
+    priority = (request.GET.get('priority') or '').strip().lower()
+    if priority in dict(Task.PRIORITY_CHOICES):
+        qs = qs.filter(priority=priority)
+
+    # Status filter
+    status = (request.GET.get('status') or '').strip().lower()
+    if status in dict(Task.STATUS_CHOICES):
+        qs = qs.filter(status=status)
+    elif status == 'all':
+        pass
+    else:
+        status = 'active'
+        qs = qs.filter(status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS])
+
+    # Technician filter
+    tech_id = request.GET.get('tech')
+    if tech_id:
+        qs = qs.filter(assigned_to_id=tech_id)
+
+    tasks = list(qs.select_related('assigned_to__user', 'created_by', 'job_reference').prefetch_related('attachments', 'messages'))
+
+    # Metrics on total tasks
+    base_qs = Task.objects.all()
+    if workspace:
+        base_qs = base_qs.filter(workspace=workspace)
+    urgent_count = base_qs.filter(priority=Task.PRIORITY_URGENT, status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]).count()
+    open_count = base_qs.filter(status=Task.STATUS_OPEN).count()
+    in_progress_count = base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
+    done_count = base_qs.filter(status=Task.STATUS_DONE).count()
+
+    create_form = TaskCreateForm(workspace=workspace)
+    technicians = get_assignable_technician_queryset(workspace)
+
+    context = {
+        'tasks': tasks,
+        'urgent_count': urgent_count,
+        'open_count': open_count,
+        'in_progress_count': in_progress_count,
+        'done_count': done_count,
+        'status_filter': status,
+        'priority_filter': priority,
+        'tech_filter': tech_id,
+        'search_query': q,
+        'create_form': create_form,
+        'technicians': technicians,
+    }
+    return render(request, 'job_tickets/task_dashboard.html', context)
+
+
+@login_required
+@require_POST
+def task_create(request):
+    """Create a new standalone task."""
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    form = TaskCreateForm(request.POST, workspace=workspace)
+    if form.is_valid():
+        task = Task.objects.create(
+            workspace=workspace,
+            title=form.cleaned_data['title'],
+            description=form.cleaned_data.get('description') or '',
+            priority=form.cleaned_data['priority'],
+            due_date=form.cleaned_data.get('due_date'),
+            assigned_to=form.cleaned_data.get('assigned_to'),
+            job_reference=form.cleaned_data.get('job_reference'),
+            created_by=request.user,
+        )
+        files = request.FILES.getlist('attachments')
+        for f in files:
+            TaskAttachment.objects.create(
+                task=task,
+                file=f,
+                file_name=f.name,
+                file_size=f.size,
+                uploaded_by=request.user,
+            )
+        initial_message = (request.POST.get('initial_message') or '').strip()
+        if initial_message:
+            init_msg = TaskMessage.objects.create(
+                task=task,
+                sender=request.user,
+                body=initial_message,
+            )
+            broadcast_task_message(task, init_msg)
+        broadcast_task_created(task)
+        messages.success(request, f"Task '{task.title}' created successfully.")
+        return redirect('task_detail', task_id=task.id)
+
+    for field, errs in form.errors.items():
+        messages.error(request, f"{field}: {', '.join(errs)}")
+    return redirect('task_dashboard')
+
+
+@login_required
+def task_detail(request, task_id):
+    """View task detail with message thread, attachments, and status controls."""
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    qs = Task.objects.select_related('assigned_to__user', 'created_by', 'job_reference', 'workspace')
+    if workspace:
+        qs = qs.filter(workspace=workspace)
+    task = get_object_or_404(qs, id=task_id)
+
+    attachments = task.attachments.all()
+    messages_list = task.messages.select_related('sender').all()
+    message_form = TaskMessageForm()
+    technicians = get_assignable_technician_queryset(workspace)
+
+    context = {
+        'task': task,
+        'attachments': attachments,
+        'messages_list': messages_list,
+        'message_form': message_form,
+        'technicians': technicians,
+    }
+    return render(request, 'job_tickets/task_detail.html', context)
+
+
+@login_required
+@require_POST
+def task_message_send(request, task_id):
+    """Send a message and optional attachments on a task thread."""
+    workspace = getattr(request, 'current_workspace', None)
+    qs = Task.objects.all()
+    if workspace:
+        qs = qs.filter(workspace=workspace)
+    task = get_object_or_404(qs, id=task_id)
+
+    is_tech = hasattr(request.user, 'technician_profile') and task.assigned_to == request.user.technician_profile
+    if not request.user.is_staff and not is_tech:
+        return HttpResponseForbidden("Access denied.")
+
+    form = TaskMessageForm(request.POST)
+    if form.is_valid():
+        msg = TaskMessage.objects.create(
+            task=task,
+            sender=request.user,
+            body=form.cleaned_data['body'],
+        )
+        files = request.FILES.getlist('attachments')
+        for f in files:
+            TaskAttachment.objects.create(
+                task=task,
+                file=f,
+                file_name=f.name,
+                file_size=f.size,
+                uploaded_by=request.user,
+            )
+        broadcast_task_message(task, msg)
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({
+                'ok': True,
+                'id': msg.id,
+                'sender': msg.sender.username,
+                'body': msg.body,
+                'sent_at': timezone.localtime(msg.sent_at).strftime('%d %b %Y, %H:%M'),
+            })
+
+    if is_tech and not request.user.is_staff:
+        return redirect('technician_task_detail', task_id=task.id)
+    return redirect('task_detail', task_id=task.id)
+
+
+@login_required
+@require_POST
+def task_update_status(request, task_id):
+    """Update task status, priority, or assignee."""
+    workspace = getattr(request, 'current_workspace', None)
+    qs = Task.objects.all()
+    if workspace:
+        qs = qs.filter(workspace=workspace)
+    task = get_object_or_404(qs, id=task_id)
+
+    is_tech = hasattr(request.user, 'technician_profile') and task.assigned_to == request.user.technician_profile
+    if not request.user.is_staff and not is_tech:
+        return HttpResponseForbidden("Access denied.")
+
+    old_status = task.status
+    new_status = (request.POST.get('status') or '').strip().lower()
+    if new_status in dict(Task.STATUS_CHOICES):
+        if new_status == Task.STATUS_IN_PROGRESS:
+            task.mark_in_progress()
+        elif new_status == Task.STATUS_DONE:
+            task.mark_done()
+        elif new_status == Task.STATUS_CANCELLED:
+            task.mark_cancelled()
+        elif new_status == Task.STATUS_OPEN:
+            task.status = Task.STATUS_OPEN
+            task.completed_at = None
+            task.save(update_fields=['status', 'completed_at', 'updated_at'])
+        if new_status != old_status:
+            broadcast_task_status(task, old_status, new_status, request.user)
+        messages.success(request, f"Task status updated to {task.get_status_display()}.")
+
+    if request.user.is_staff:
+        if 'priority' in request.POST and request.POST['priority'] in dict(Task.PRIORITY_CHOICES):
+            task.priority = request.POST['priority']
+            task.save(update_fields=['priority', 'updated_at'])
+            broadcast_task_status(task, task.status, task.status, request.user)
+        if 'assigned_to' in request.POST:
+            tech_id = request.POST.get('assigned_to')
+            task.assigned_to_id = tech_id if tech_id else None
+            task.save(update_fields=['assigned_to', 'updated_at'])
+            broadcast_task_status(task, task.status, task.status, request.user)
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({
+            'ok': True,
+            'status': task.status,
+            'status_display': task.get_status_display(),
+            'priority': task.priority,
+            'priority_display': task.get_priority_display(),
+        })
+
+    if is_tech and not request.user.is_staff:
+        return redirect('technician_task_detail', task_id=task.id)
+    return redirect('task_detail', task_id=task.id)
+
+
+@login_required
+@require_POST
+def task_delete(request, task_id):
+    """Delete a task (staff only)."""
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    qs = Task.objects.all()
+    if workspace:
+        qs = qs.filter(workspace=workspace)
+    task = get_object_or_404(qs, id=task_id)
+    workspace_id = task.workspace_id
+    title = task.title
+    task.delete()
+    broadcast_task_deleted(workspace_id, task_id, title)
+    messages.success(request, f"Task '{title}' deleted.")
+    return redirect('task_dashboard')

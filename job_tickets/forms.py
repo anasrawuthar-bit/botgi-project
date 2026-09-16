@@ -13,6 +13,10 @@ from .models import (
     JobTicket,
     Product,
     ServiceLog,
+    Assignment,
+    Task,
+    TaskAttachment,
+    TaskMessage,
     TechnicianProfile,
     Vendor,
     WhatsAppIntegrationSettings,
@@ -163,7 +167,7 @@ class ReassignTechnicianForm(forms.Form):
     new_technician = forms.ModelChoiceField(
         queryset=TechnicianProfile.objects.none(),
         label="Select New Technician",
-        empty_label="--- Unassign Job ---", # Allows staff to unassign if needed
+        empty_label="--- Unassign Job ---",
         required=False
     )
 
@@ -171,6 +175,65 @@ class ReassignTechnicianForm(forms.Form):
         workspace = kwargs.pop('workspace', None)
         super().__init__(*args, **kwargs)
         self.fields['new_technician'].queryset = get_assignable_technician_queryset(workspace)
+
+
+class TaskCreateForm(forms.Form):
+    title = forms.CharField(
+        max_length=200,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Task title...'}),
+        label='Title',
+    )
+    description = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Describe the task...'}),
+        label='Description',
+    )
+    priority = forms.ChoiceField(
+        choices=Task.PRIORITY_CHOICES,
+        initial=Task.PRIORITY_MEDIUM,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Priority',
+    )
+    due_date = forms.DateTimeField(
+        required=False,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'],
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
+        label='Due Date',
+    )
+    assigned_to = forms.ModelChoiceField(
+        queryset=TechnicianProfile.objects.none(),
+        required=False,
+        empty_label='--- Unassigned ---',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Assign To',
+    )
+    job_reference = forms.ModelChoiceField(
+        queryset=JobTicket.objects.none(),
+        required=False,
+        empty_label='--- No linked job ---',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Linked Job (optional)',
+    )
+
+    def __init__(self, *args, **kwargs):
+        workspace = kwargs.pop('workspace', None)
+        super().__init__(*args, **kwargs)
+        self.fields['assigned_to'].queryset = get_assignable_technician_queryset(workspace)
+        qs = JobTicket.objects.order_by('-created_at')
+        if workspace:
+            qs = qs.filter(workspace=workspace)
+        self.fields['job_reference'].queryset = qs.only('id', 'job_code', 'status')[:500]
+
+
+class TaskMessageForm(forms.Form):
+    body = forms.CharField(
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'placeholder': 'Type a message...',
+        }),
+        label='Message',
+    )
 
 class VendorForm(forms.ModelForm):
     class Meta:

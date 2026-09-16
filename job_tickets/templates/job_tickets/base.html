@@ -111,6 +111,12 @@
                     </a>
                 </li>
                 <li>
+                    <a class="sidebar-link {% if 'task' in request.resolver_match.url_name %}active{% endif %}"
+                        href="{% url 'task_dashboard' %}" title="Tasks">
+                        <i class="fa-solid fa-list-check"></i><span class="sidebar-link-label">Tasks</span>
+                    </a>
+                </li>
+                <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'client_dashboard' %}active{% endif %}"
                         href="{% url 'client_dashboard' %}" title="Clients">
                         <i class="fa-solid fa-address-book"></i><span class="sidebar-link-label">Clients</span>
@@ -179,6 +185,12 @@
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'technician_dashboard' %}active{% endif %}"
                         href="{% url 'technician_dashboard' %}" title="Dashboard">
                         <i class="fa-solid fa-screwdriver-wrench"></i><span class="sidebar-link-label">Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if 'task' in request.resolver_match.url_name %}active{% endif %}"
+                        href="{% url 'technician_task_dashboard' %}" title="Tasks">
+                        <i class="fa-solid fa-list-check"></i><span class="sidebar-link-label">Tasks</span>
                     </a>
                 </li>
                 {% endif %}

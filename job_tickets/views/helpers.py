@@ -20,12 +20,17 @@ from ..models import (
     Assignment,
     Client,
     CompanyProfile,
+    CompanyUserMembership,
     DailyJobCodeSequence,
     DeviceChecklistTemplate,
     InventoryBill,
+    InventoryBillLog,
     InventoryCreditPayment,
     InventoryEntry,
     InventoryParty,
+    InventoryNumberSequence,
+    InventoryVendorCredit,
+    InventoryVendorCreditApplication,
     JobFieldPreset,
     JobReminder,
     JobTicket,
@@ -36,13 +41,16 @@ from ..models import (
     ProductSale,
     ServiceLog,
     SpecializedService,
+    Task,
+    TaskAttachment,
+    TaskMessage,
     TechnicianProfile,
     UserSessionActivity,
     Vendor,
     VendorPayment,
     WhatsAppIntegrationSettings,
 )
-from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset
+from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, TaskCreateForm, TaskMessageForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset
 from ..gst_utils import effective_tax_rate
 from ..phone_utils import normalize_indian_phone, phone_lookup_variants
 from ..whatsapp_service import verify_receipt_access_token
@@ -81,6 +89,7 @@ MOBILE_JWT_EXP_SECONDS = 60 * 60 * 24 * 7  # 7 days
 MOBILE_JWT_ALGORITHM = 'HS256'
 CHECKLIST_FIELD_TYPES = {'text', 'textarea', 'number', 'select', 'checkbox'}
 MONEY_OUTPUT_FIELD = DecimalField(max_digits=12, decimal_places=2)
+MAX_JOB_PHOTO_BYTES = 10 * 1024 * 1024
 
 
 def scope_to_workspace(queryset, workspace_or_request, field='workspace'):
@@ -88,6 +97,46 @@ def scope_to_workspace(queryset, workspace_or_request, field='workspace'):
     if workspace:
         return queryset.filter(**{field: workspace})
     return queryset
+
+
+def user_has_workspace_access(user, workspace):
+    if not workspace or getattr(user, 'is_superuser', False):
+        return True
+    return CompanyUserMembership.objects.filter(
+        user=user,
+        workspace=workspace,
+        is_active=True,
+    ).exists()
+
+
+def validate_job_photo_upload(uploaded_file):
+    if getattr(uploaded_file, 'size', 0) > MAX_JOB_PHOTO_BYTES:
+        return '', 'Each photo must be 10 MB or smaller.'
+
+    content_type = (getattr(uploaded_file, 'content_type', '') or '').strip().lower()
+    if not content_type:
+        guessed_type, _ = mimetypes.guess_type(getattr(uploaded_file, 'name', ''))
+        content_type = (guessed_type or '').lower()
+
+    signatures = {
+        'image/jpeg': (b'\xff\xd8\xff',),
+        'image/png': (b'\x89PNG\r\n\x1a\n',),
+        'image/gif': (b'GIF87a', b'GIF89a'),
+        'image/webp': (b'RIFF',),
+    }
+    if content_type not in signatures:
+        return '', 'Only JPEG, PNG, GIF, and WebP photos are allowed.'
+
+    current_position = uploaded_file.tell()
+    header = uploaded_file.read(12)
+    uploaded_file.seek(current_position)
+    if not any(header.startswith(signature) for signature in signatures[content_type]):
+        return '', 'The uploaded photo content does not match its file type.'
+
+    if content_type == 'image/webp' and header[8:12] != b'WEBP':
+        return '', 'The uploaded photo content does not match its file type.'
+
+    return content_type, ''
 
 
 def vendor_net_cost_expression(prefix=''):
@@ -477,11 +526,27 @@ def authenticate_mobile_request(request):
     return user, None
 
 def get_mobile_job_permissions(user, job):
-    is_assigned_tech = (
-        hasattr(user, 'technician_profile') and
-        job.assigned_to_id == user.technician_profile.id
+    workspace_id = getattr(job, 'workspace_id', None)
+    membership_is_active = (
+        not workspace_id
+        or CompanyUserMembership.objects.filter(
+            user=user,
+            workspace_id=workspace_id,
+            is_active=True,
+        ).exists()
     )
-    staff_can_access = bool(user.is_staff and user_has_staff_access(user, "staff_dashboard"))
+    technician_profile = getattr(user, 'technician_profile', None)
+    is_assigned_tech = (
+        technician_profile is not None
+        and job.assigned_to_id == technician_profile.id
+        and (not workspace_id or technician_profile.workspace_id == workspace_id)
+        and membership_is_active
+    )
+    staff_can_access = bool(
+        user.is_staff
+        and user_has_staff_access(user, "staff_dashboard")
+        and membership_is_active
+    )
     can_access = staff_can_access or is_assigned_tech
     return {
         'is_staff': bool(staff_can_access),
@@ -797,7 +862,15 @@ def get_returned_to_closed_jobs(job_queryset=None):
 def _money_text(amount):
     return format((_money_or_zero(amount)).quantize(Decimal('0.01')), 'f')
 
-def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, end_date_str, preset='', show_jobs=''):
+def get_monthly_summary_context(
+    start_of_period,
+    end_of_period,
+    start_date_str,
+    end_date_str,
+    preset='',
+    show_jobs='',
+    workspace=None,
+):
     """Build unified financial summary context for HTML/CSV/PDF outputs."""
     valid_show_jobs = {'created', 'finished', 'current_in_closed', 'previous_in', 'pending_completed', 'returned', 'vendor'}
     if show_jobs not in valid_show_jobs:
@@ -807,13 +880,14 @@ def get_monthly_summary_context(start_of_period, end_of_period, start_date_str, 
         Q(closed_at__gte=start_of_period, closed_at__lt=end_of_period)
         | Q(closed_at__isnull=True, updated_at__gte=start_of_period, updated_at__lt=end_of_period)
     )
-    monthly_closed_jobs = JobTicket.objects.filter(closed_jobs_filter)
+    scoped_jobs = scope_to_workspace(JobTicket.objects, workspace)
+    monthly_closed_jobs = scoped_jobs.filter(closed_jobs_filter)
     current_month_in_closed_jobs = monthly_closed_jobs.filter(created_at__gte=start_of_period, created_at__lt=end_of_period)
     previous_month_in_closed_jobs = monthly_closed_jobs.filter(created_at__lt=start_of_period)
-    pending_completed_jobs = JobTicket.objects.filter(status__in=['Completed', 'Ready for Pickup'])
+    pending_completed_jobs = scoped_jobs.filter(status__in=['Completed', 'Ready for Pickup'])
     ready_for_pickup_jobs = pending_completed_jobs.filter(status='Ready for Pickup')
 
-    jobs_created = JobTicket.objects.filter(created_at__gte=start_of_period, created_at__lt=end_of_period)
+    jobs_created = scoped_jobs.filter(created_at__gte=start_of_period, created_at__lt=end_of_period)
     jobs_returned = get_returned_to_closed_jobs(monthly_closed_jobs)
     vendor_jobs = list(monthly_closed_jobs.filter(specialized_service__isnull=False))
 
@@ -1148,23 +1222,31 @@ def _inventory_sales_invoice_prefix():
     prefix = re.sub(r'[^A-Za-z0-9]+', '', raw_prefix).upper() or 'INV'
     return prefix[:20]
 
-def _build_dated_inventory_invoice_number(entry_type, entry_date, prefix, exclude_bill_id=None):
+def _build_dated_inventory_invoice_number(
+    entry_type,
+    entry_date,
+    prefix,
+    exclude_bill_id=None,
+    workspace=None,
+    reserve=True,
+):
     date_part = entry_date.strftime('%Y%m%d')
+    if reserve:
+        sequence_key = _inventory_sequence_key('invoice', entry_type, entry_date, workspace)
+        sequence = _next_inventory_sequence(sequence_key)
+        invoice_number = f'{prefix}-{date_part}-{sequence:03d}'
+        while InventoryBill.objects.filter(
+            entry_type=entry_type,
+            invoice_number=invoice_number,
+        ).exclude(pk=exclude_bill_id).exists():
+            sequence = _next_inventory_sequence(sequence_key)
+            invoice_number = f'{prefix}-{date_part}-{sequence:03d}'
+        return invoice_number
+
     scope_qs = InventoryBill.objects.filter(entry_type=entry_type, entry_date=entry_date)
     if exclude_bill_id:
         scope_qs = scope_qs.exclude(pk=exclude_bill_id)
-    sequence = scope_qs.count() + 1
-    invoice_number = f'{prefix}-{date_part}-{sequence:03d}'
-    duplicate_qs = InventoryBill.objects.filter(entry_type=entry_type, invoice_number=invoice_number)
-    if exclude_bill_id:
-        duplicate_qs = duplicate_qs.exclude(pk=exclude_bill_id)
-    while duplicate_qs.exists():
-        sequence += 1
-        invoice_number = f'{prefix}-{date_part}-{sequence:03d}'
-        duplicate_qs = InventoryBill.objects.filter(entry_type=entry_type, invoice_number=invoice_number)
-        if exclude_bill_id:
-            duplicate_qs = duplicate_qs.exclude(pk=exclude_bill_id)
-    return invoice_number
+    return f'{prefix}-{date_part}-{scope_qs.count() + 1:03d}'
 
 def get_next_job_code():
     """
@@ -1256,27 +1338,202 @@ def send_job_update_message(job_code, new_status):
     try:
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
-        from ..consumers import STAFF_GROUP, TECH_GROUP
+        from ..consumers import staff_group_name, tech_group_name, job_group_name
         
         channel_layer = get_channel_layer()
         if channel_layer:
+            job = JobTicket.objects.only('workspace_id').get(job_code=job_code)
             message = {
                 'type': 'job_status_update',
                 'job_code': job_code,
                 'status': new_status,
             }
-            # Send to both staff and technician groups
-            async_to_sync(channel_layer.group_send)(STAFF_GROUP, message)
-            async_to_sync(channel_layer.group_send)(TECH_GROUP, message)
+            workspace_id = job.workspace_id
+            async_to_sync(channel_layer.group_send)(staff_group_name(workspace_id), message)
+            async_to_sync(channel_layer.group_send)(tech_group_name(workspace_id), message)
             
-            # Also send to job-specific group
-            job_group = f'job_{job_code}'
-            async_to_sync(channel_layer.group_send)(job_group, message)
+            async_to_sync(channel_layer.group_send)(job_group_name(workspace_id, job_code), message)
     except Exception as e:
         # Silently fail if channels is not configured
         print(f"WebSocket update failed: {e}")
 
-def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=None):
+
+def broadcast_task_message(task, msg):
+    """Broadcast a new task message to the task room and relevant dashboard feeds."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from ..consumers import task_room_group_name, staff_tasks_group_name, tech_tasks_group_name
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+
+        workspace_id = task.workspace_id
+        attachments = []
+        if hasattr(task, 'attachments'):
+            for att in task.attachments.all().order_by('-uploaded_at')[:5]:
+                attachments.append({
+                    'id': att.id,
+                    'name': att.file_name or (att.file.name.split('/')[-1] if att.file else 'file'),
+                    'url': att.file.url if att.file else '',
+                    'size': att.file_size or 0,
+                })
+
+        payload = {
+            'type': 'task_message_event',
+            'task_id': task.id,
+            'id': msg.id,
+            'message_id': msg.id,
+            'sender': msg.sender.username if msg.sender else 'System',
+            'sender_id': msg.sender_id,
+            'body': msg.body,
+            'sent_at': timezone.localtime(msg.sent_at).strftime('%Y-%m-%d %H:%M'),
+            'attachments': attachments,
+        }
+
+        async_to_sync(channel_layer.group_send)(
+            task_room_group_name(workspace_id, task.id),
+            payload,
+        )
+
+        feed_notice = {
+            'type': 'task_feed_event',
+            'action': 'new_message',
+            'task_id': task.id,
+            'task_title': task.title,
+            'sender': msg.sender.username if msg.sender else 'System',
+            'preview': msg.body[:80],
+        }
+        async_to_sync(channel_layer.group_send)(
+            staff_tasks_group_name(workspace_id),
+            feed_notice,
+        )
+        if task.assigned_to_id:
+            async_to_sync(channel_layer.group_send)(
+                tech_tasks_group_name(workspace_id, task.assigned_to_id),
+                feed_notice,
+            )
+    except Exception as e:
+        print(f"broadcast_task_message failed: {e}")
+
+
+def broadcast_task_status(task, old_status, new_status, user=None):
+    """Broadcast a task status change to the task room and dashboard feeds."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from ..consumers import task_room_group_name, staff_tasks_group_name, tech_tasks_group_name
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+
+        workspace_id = task.workspace_id
+        payload = {
+            'type': 'task_status_event',
+            'task_id': task.id,
+            'old_status': old_status,
+            'new_status': new_status,
+            'status_display': task.get_status_display(),
+            'updated_by': user.username if user else 'System',
+            'completed_at': timezone.localtime(task.completed_at).strftime('%Y-%m-%d %H:%M') if task.completed_at else '',
+        }
+
+        async_to_sync(channel_layer.group_send)(
+            task_room_group_name(workspace_id, task.id),
+            payload,
+        )
+
+        feed_payload = {
+            'type': 'task_feed_event',
+            'action': 'status_change',
+            'task_id': task.id,
+            'task_title': task.title,
+            'priority': task.priority,
+            'old_status': old_status,
+            'new_status': new_status,
+            'status_display': task.get_status_display(),
+            'assigned_to_id': task.assigned_to_id,
+        }
+        async_to_sync(channel_layer.group_send)(
+            staff_tasks_group_name(workspace_id),
+            feed_payload,
+        )
+        if task.assigned_to_id:
+            async_to_sync(channel_layer.group_send)(
+                tech_tasks_group_name(workspace_id, task.assigned_to_id),
+                feed_payload,
+            )
+    except Exception as e:
+        print(f"broadcast_task_status failed: {e}")
+
+
+def broadcast_task_created(task):
+    """Broadcast newly created task to staff dashboard and assigned technician feed."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from ..consumers import staff_tasks_group_name, tech_tasks_group_name
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+
+        workspace_id = task.workspace_id
+        feed_payload = {
+            'type': 'task_feed_event',
+            'action': 'task_created',
+            'task_id': task.id,
+            'title': task.title,
+            'description': task.description[:120] if task.description else '',
+            'priority': task.priority,
+            'priority_display': task.get_priority_display(),
+            'status': task.status,
+            'status_display': task.get_status_display(),
+            'due_date': timezone.localtime(task.due_date).strftime('%d %b, %H:%M') if task.due_date else '',
+            'assigned_to_id': task.assigned_to_id,
+            'assigned_to_name': task.assigned_to.user.username if task.assigned_to and getattr(task.assigned_to, 'user', None) else '',
+            'created_at': timezone.localtime(task.created_at).strftime('%d %b, %H:%M'),
+        }
+
+        async_to_sync(channel_layer.group_send)(
+            staff_tasks_group_name(workspace_id),
+            feed_payload,
+        )
+        if task.assigned_to_id:
+            async_to_sync(channel_layer.group_send)(
+                tech_tasks_group_name(workspace_id, task.assigned_to_id),
+                feed_payload,
+            )
+    except Exception as e:
+        print(f"broadcast_task_created failed: {e}")
+
+
+def broadcast_task_deleted(workspace_id, task_id, title):
+    """Broadcast task deletion notice to staff dashboard feed."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from ..consumers import staff_tasks_group_name
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+
+        async_to_sync(channel_layer.group_send)(
+            staff_tasks_group_name(workspace_id),
+            {
+                'type': 'task_feed_event',
+                'action': 'task_deleted',
+                'task_id': task_id,
+                'title': title,
+            },
+        )
+    except Exception as e:
+        print(f"broadcast_task_deleted failed: {e}")
+
+def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=None, workspace=None):
     """Get jobs that should be reported in the given period using vendor concept.
 
     Vendor jobs: included when returned_date falls in period.
@@ -1296,7 +1553,8 @@ def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=Non
         base_filter = Q(status=status_filter)
 
     # Regular jobs: updated_at in period, no vendor service or vendor not yet sent
-    regular_jobs = JobTicket.objects.filter(
+    scoped_jobs = scope_to_workspace(JobTicket.objects, workspace)
+    regular_jobs = scoped_jobs.filter(
         base_filter,
         updated_at__gte=start_of_period,
         updated_at__lt=end_of_period,
@@ -1306,14 +1564,14 @@ def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=Non
     )
 
     # Vendor jobs: returned_date in period
-    vendor_jobs = JobTicket.objects.filter(
+    vendor_jobs = scoped_jobs.filter(
         base_filter,
         specialized_service__returned_date__gte=start_of_period,
         specialized_service__returned_date__lt=end_of_period,
     )
 
     combined_ids = set(regular_jobs.values_list('id', flat=True)) | set(vendor_jobs.values_list('id', flat=True))
-    return list(JobTicket.objects.filter(id__in=combined_ids).select_related('specialized_service'))
+    return list(scoped_jobs.filter(id__in=combined_ids).select_related('specialized_service'))
 
 def calculate_job_totals(jobs, exclude_vendor_charges=False):
     """Calculates part_total, service_total, and total for a list of JobTicket objects."""
@@ -1341,12 +1599,14 @@ def calculate_job_totals(jobs, exclude_vendor_charges=False):
             job.part_total = sum(safe_decimal(log.part_cost) for log in job_logs)
             job.service_total = sum(safe_decimal(log.service_charge) for log in job_logs)
             job.total = job.part_total + job.service_total
+            job.grand_total = max(Decimal('0.00'), job.total - (job.discount_amount or Decimal('0.00')))
 
         except Exception:
             # Fallback to zero for any calculation error
             job.part_total = Decimal('0')
             job.service_total = Decimal('0')
             job.total = Decimal('0')
+            job.grand_total = Decimal('0')
 
 # --- CHANNELS HELPER FUNCTION (Removed - Django Channels no longer used) ---
 # def send_job_update_message(job_code, new_status_display):
@@ -1670,7 +1930,25 @@ INVENTORY_ENTRY_CONFIG = {
 }
 
 
-def _generate_inventory_entry_number(entry_type, entry_date):
+def _next_inventory_sequence(sequence_key):
+    with transaction.atomic():
+        sequence, _created = InventoryNumberSequence.objects.get_or_create(
+            sequence_key=sequence_key,
+            defaults={'last_counter': 0},
+        )
+        sequence = InventoryNumberSequence.objects.select_for_update().get(pk=sequence.pk)
+        sequence.last_counter += 1
+        sequence.save(update_fields=['last_counter', 'updated_at'])
+        return sequence.last_counter
+
+
+def _inventory_sequence_key(kind, entry_type, entry_date, workspace=None):
+    # Bill, entry, and generated invoice fields are globally unique in the
+    # existing schema, so their counters must also be global.
+    return f'{kind}:{entry_type}:{entry_date.isoformat()}'
+
+
+def _generate_inventory_entry_number(entry_type, entry_date, workspace=None):
     prefix_map = {
         'purchase': 'PUR',
         'purchase_return': 'PRN',
@@ -1679,14 +1957,15 @@ def _generate_inventory_entry_number(entry_type, entry_date):
     }
     prefix = prefix_map.get(entry_type, 'INV')
     date_part = entry_date.strftime('%Y%m%d')
-    sequence = InventoryEntry.objects.filter(entry_type=entry_type, entry_date=entry_date).count() + 1
+    sequence_key = _inventory_sequence_key('entry', entry_type, entry_date, workspace)
+    sequence = _next_inventory_sequence(sequence_key)
     entry_number = f'{prefix}-{date_part}-{sequence:03d}'
     while InventoryEntry.objects.filter(entry_number=entry_number).exists():
-        sequence += 1
+        sequence = _next_inventory_sequence(sequence_key)
         entry_number = f'{prefix}-{date_part}-{sequence:03d}'
     return entry_number
 
-def _generate_inventory_bill_number(entry_type, entry_date):
+def _generate_inventory_bill_number(entry_type, entry_date, workspace=None):
     prefix_map = {
         'purchase': 'PB',
         'purchase_return': 'PRB',
@@ -1695,19 +1974,21 @@ def _generate_inventory_bill_number(entry_type, entry_date):
     }
     prefix = prefix_map.get(entry_type, 'IB')
     date_part = entry_date.strftime('%Y%m%d')
-    sequence = InventoryBill.objects.filter(entry_type=entry_type, entry_date=entry_date).count() + 1
+    sequence_key = _inventory_sequence_key('bill', entry_type, entry_date, workspace)
+    sequence = _next_inventory_sequence(sequence_key)
     bill_number = f'{prefix}-{date_part}-{sequence:03d}'
     while InventoryBill.objects.filter(bill_number=bill_number).exists():
-        sequence += 1
+        sequence = _next_inventory_sequence(sequence_key)
         bill_number = f'{prefix}-{date_part}-{sequence:03d}'
     return bill_number
 
-def _generate_inventory_invoice_number(entry_type, entry_date):
+def _generate_inventory_invoice_number(entry_type, entry_date, workspace=None):
     if entry_type == 'sale':
         return _build_dated_inventory_invoice_number(
             entry_type='sale',
             entry_date=entry_date,
             prefix=_inventory_sales_invoice_prefix(),
+            workspace=workspace,
         )
     
     prefix_map = {
@@ -1717,10 +1998,14 @@ def _generate_inventory_invoice_number(entry_type, entry_date):
     }
     prefix = prefix_map.get(entry_type, 'IB')
     date_part = entry_date.strftime('%Y%m%d')
-    sequence = InventoryBill.objects.filter(entry_type=entry_type, entry_date=entry_date).count() + 1
+    sequence_key = _inventory_sequence_key('invoice', entry_type, entry_date, workspace)
+    sequence = _next_inventory_sequence(sequence_key)
     invoice_number = f'{prefix}-{date_part}-{sequence:04d}'
-    while InventoryBill.objects.filter(entry_type=entry_type, invoice_number=invoice_number).exists():
-        sequence += 1
+    while InventoryBill.objects.filter(
+        entry_type=entry_type,
+        invoice_number=invoice_number,
+    ).exists():
+        sequence = _next_inventory_sequence(sequence_key)
         invoice_number = f'{prefix}-{date_part}-{sequence:04d}'
     return invoice_number
 
@@ -1729,6 +2014,7 @@ def _peek_sales_invoice_number():
         entry_type='sale',
         entry_date=timezone.localdate(),
         prefix=_inventory_sales_invoice_prefix(),
+        reserve=False,
     )
 
 def _parse_inventory_decimal(raw_value, label, default='0.00'):
@@ -1984,6 +2270,12 @@ def _process_inventory_grouped_bill_edit(request, *, entry_type):
     if not grouped_entry:
         raise ValueError('Selected bill was not found.')
 
+    if InventoryCreditPayment.objects.filter(bill_id=int(bill_id_raw)).exists():
+        raise ValueError(
+            'Paid or partially paid bills cannot be edited. '
+            'Record a reversal and replacement instead.'
+        )
+
     _require_inventory_edit_password(request)
 
     invoice_date = None
@@ -2100,7 +2392,9 @@ def _get_or_create_inventory_customer_party_for_job(job):
     party = None
     if customer_phone:
         party = party_qs.filter(phone=customer_phone).first()
-    if not party and customer_name:
+    # A phone mismatch is evidence that this is a different accounting
+    # party; only use the name fallback when no phone was supplied.
+    if not party and not customer_phone and customer_name:
         party = party_qs.filter(name__iexact=customer_name).first()
 
     if party:
@@ -2129,16 +2423,49 @@ def _get_or_create_inventory_customer_party_for_job(job):
         is_active=True,
     )
 
+
+def _check_duplicate_bill_submission(entry_type, invoice_number, party_id, workspace):
+    """
+    Guard against duplicate bill creation for non-sale entry types where
+    invoice_number is supplied by the user.
+
+    For sale bills: invoice_number is auto-generated, so this guard does not apply
+    (the invoice_number uniqueness constraint handles that path).
+
+    For purchase/purchase_return/sale_return: the combination of
+    (entry_type, invoice_number, party) within a workspace must be unique.
+
+    Returns the existing InventoryBill if a duplicate is detected, else None.
+    """
+    if entry_type == 'sale':
+        return None  # Auto-numbered; handled elsewhere.
+    if not invoice_number or not party_id:
+        return None
+    normalized = (invoice_number or '').strip()
+    if not normalized:
+        return None
+
+    existing = scope_to_workspace(
+        InventoryBill.objects.filter(
+            entry_type=entry_type,
+            invoice_number=normalized,
+            party_id=party_id,
+        ),
+        workspace,
+    ).first()
+    return existing
+
+
 def _build_inventory_initial_payment(request, entry_type, entry_date):
     if entry_type not in {'purchase', 'sale'}:
         return None
 
     default_status = 'paid' if entry_type == 'sale' else 'unpaid'
     payment_status = (request.POST.get('bill_payment_status') or default_status).strip().lower()
-    if payment_status not in {'paid', 'unpaid'}:
-        raise ValueError('Select whether this bill is paid or unpaid.')
-    if payment_status != 'paid':
-        return {'status': payment_status}
+    if payment_status not in {'paid', 'unpaid', 'part_paid'}:
+        raise ValueError('Select whether this bill is paid, partially paid, or unpaid.')
+    if payment_status == 'unpaid':
+        return {'status': 'unpaid'}
 
     payment_method = (request.POST.get('bill_payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
     if payment_method not in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
@@ -2152,12 +2479,24 @@ def _build_inventory_initial_payment(request, entry_type, entry_date):
         except ValueError:
             raise ValueError('Payment date is invalid.')
 
+    amount_paid = None
+    if payment_status == 'part_paid':
+        amount_paid_raw = (request.POST.get('bill_amount_paid') or '').strip()
+        try:
+            amount_paid = Decimal(amount_paid_raw)
+            if amount_paid <= Decimal('0.00'):
+                raise ValueError('Partial payment amount must be greater than zero.')
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError('Enter a valid partial payment amount.')
+
     return {
         'status': payment_status,
         'payment_method': payment_method,
         'payment_date': payment_date,
+        'amount_paid': amount_paid,
         'reference_no': (request.POST.get('bill_payment_reference') or '').strip(),
     }
+
 
 
 def _record_inventory_entries(
@@ -2184,7 +2523,11 @@ def _record_inventory_entries(
     )
 
     with transaction.atomic():
-        shared_invoice = normalized_invoice or _generate_inventory_invoice_number(entry_type, entry_date)
+        shared_invoice = normalized_invoice or _generate_inventory_invoice_number(
+            entry_type,
+            entry_date,
+            workspace,
+        )
         normalized_invoice_date = invoice_date if entry_type == 'purchase' else None
         shared_notes = next(((line.get('notes') or '').strip() for line in line_items if (line.get('notes') or '').strip()), '')
 
@@ -2221,9 +2564,22 @@ def _record_inventory_entries(
             if update_fields:
                 bill.save(update_fields=update_fields + ['updated_at'])
         else:
+            if entry_type != 'sale' and shared_invoice and party:
+                InventoryParty.objects.select_for_update().filter(pk=party.pk).first()
+                duplicate_bill = _check_duplicate_bill_submission(
+                    entry_type=entry_type,
+                    invoice_number=shared_invoice,
+                    party_id=party.pk,
+                    workspace=workspace,
+                )
+                if duplicate_bill:
+                    raise ValueError(
+                        f"Duplicate bill detected: Reference '{shared_invoice}' already exists for this party (Bill {duplicate_bill.bill_number})."
+                    )
+
             bill = InventoryBill.objects.create(
                 workspace=workspace,
-                bill_number=_generate_inventory_bill_number(entry_type, entry_date),
+                bill_number=_generate_inventory_bill_number(entry_type, entry_date, workspace),
                 entry_type=entry_type,
                 entry_date=entry_date,
                 invoice_number=shared_invoice,
@@ -2258,7 +2614,7 @@ def _record_inventory_entries(
             entry = InventoryEntry.objects.create(
                 workspace=workspace,
                 bill=bill,
-                entry_number=_generate_inventory_entry_number(entry_type, entry_date),
+                entry_number=_generate_inventory_entry_number(entry_type, entry_date, workspace),
                 entry_type=entry_type,
                 entry_date=entry_date,
                 invoice_number=shared_invoice,
@@ -2295,11 +2651,28 @@ def _record_inventory_entries(
                 product.stock_quantity = stock_after
                 product.save(update_fields=['stock_quantity'])
 
-        if initial_payment and initial_payment.get('status') == 'paid' and created_entries:
+        if initial_payment and initial_payment.get('status') in {'paid', 'part_paid'} and created_entries:
             direction = _inventory_credit_direction_for_entry_type(entry_type)
             bill_total = sum((entry.total_amount or Decimal('0.00') for entry in created_entries), Decimal('0.00'))
             if direction and bill_total > Decimal('0.00'):
                 bill_total = bill_total.quantize(Decimal('0.01'))
+                if initial_payment['status'] == 'paid':
+                    pay_amount = bill_total
+                    bal_after = Decimal('0.00')
+                    pay_notes = 'Initial paid bill settlement'
+                else:
+                    pay_amount = (initial_payment.get('amount_paid') or Decimal('0.00')).quantize(Decimal('0.01'))
+                    if pay_amount >= bill_total:
+                        pay_amount = bill_total
+                        bal_after = Decimal('0.00')
+                        initial_payment['status'] = 'paid'
+                        pay_notes = 'Initial paid bill settlement'
+                    elif pay_amount <= Decimal('0.00'):
+                        raise ValueError('Partial payment amount must be greater than zero.')
+                    else:
+                        bal_after = (bill_total - pay_amount).quantize(Decimal('0.01'))
+                        pay_notes = 'Initial partial payment settlement'
+
                 InventoryCreditPayment.objects.create(
                     workspace=workspace,
                     party=party,
@@ -2307,11 +2680,11 @@ def _record_inventory_entries(
                     direction=direction,
                     payment_date=initial_payment['payment_date'],
                     payment_method=initial_payment['payment_method'],
-                    amount=bill_total,
+                    amount=pay_amount,
                     balance_before=bill_total,
-                    balance_after=Decimal('0.00'),
+                    balance_after=bal_after,
                     reference_no=initial_payment.get('reference_no', ''),
-                    notes='Initial paid bill settlement',
+                    notes=pay_notes,
                     created_by=request.user if request.user.is_authenticated else None,
                 )
 
@@ -2457,6 +2830,647 @@ INVENTORY_CREDIT_ENTRY_DIRECTIONS = {
 
 def _inventory_credit_direction_for_entry_type(entry_type):
     return INVENTORY_CREDIT_ENTRY_DIRECTIONS.get(entry_type)
+
+
+# ---------------------------------------------------------------------------
+# Accounting service helpers (Phases 2–9)
+# ---------------------------------------------------------------------------
+
+def _inventory_bill_total(bill):
+    """Return the sum of all InventoryEntry.total_amount for the given bill."""
+    return (
+        InventoryEntry.objects
+        .filter(bill=bill)
+        .aggregate(total=Coalesce(Sum('total_amount', output_field=DecimalField()), Decimal('0.00')))
+    )['total'] or Decimal('0.00')
+
+
+def _inventory_bill_paid_total(bill):
+    """Return the sum of all InventoryCreditPayment.amount for the given bill."""
+    direction = _inventory_credit_direction_for_entry_type(bill.entry_type)
+    if not direction:
+        return Decimal('0.00')
+    return (
+        InventoryCreditPayment.objects
+        .filter(bill=bill, direction=direction)
+        .aggregate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))
+    )['total'] or Decimal('0.00')
+
+
+def _inventory_bill_vendor_credit_applied_total(bill):
+    """Return the total vendor-credit amount already applied to reduce this bill's payable."""
+    return (
+        InventoryVendorCreditApplication.objects
+        .filter(target_bill=bill)
+        .aggregate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))
+    )['total'] or Decimal('0.00')
+
+
+def _inventory_bill_effective_balance(bill):
+    """
+    Effective balance due on a purchase bill, accounting for both cash payments
+    and vendor credit applications.
+    """
+    total = _inventory_bill_total(bill)
+    paid = _inventory_bill_paid_total(bill)
+    credit_applied = _inventory_bill_vendor_credit_applied_total(bill)
+    balance = total - paid - credit_applied
+    return max(balance, Decimal('0.00'))
+
+
+def _write_bill_log(bill, action, user=None, details='', related_bill=None):
+    """
+    Append one row to InventoryBillLog.  Never raises — audit failures must not
+    abort the business transaction that called this.
+    """
+    try:
+        InventoryBillLog.objects.create(
+            workspace=bill.workspace,
+            bill=bill,
+            action=action,
+            user=user,
+            details=details,
+            related_bill=related_bill,
+        )
+    except Exception:
+        pass  # Audit failure is non-fatal; the business transaction continues.
+
+
+# ---------------------------------------------------------------------------
+# Phase 2–4: Paid-Bill Reversal / Stock Reversal
+# ---------------------------------------------------------------------------
+
+_REVERSAL_ENTRY_TYPE = {
+    'purchase': 'purchase_return',
+    'purchase_return': 'purchase',
+    'sale': 'sale_return',
+    'sale_return': 'sale',
+}
+
+
+def _reverse_inventory_bill(bill_id, user, reversal_note, workspace=None):
+    """
+    Atomically reverse an InventoryBill.
+
+    Algorithm:
+      1. Lock bill and all its InventoryEntry rows.
+      2. Reject if already reversed.
+      3. Reject if any credit payment exists and bill is a sale/purchase with
+         a partial or full payment — caller must handle payment reconciliation
+         before reversal (Phase 3).  For unpaid bills the reversal proceeds.
+      4. Determine reversal entry_type (purchase → purchase_return, etc.).
+      5. Create a new InventoryBill header (the reversal bill).
+      6. For each original line: create a mirror InventoryEntry on the reversal
+         bill that restores stock (opposite stock_effect).
+      7. Mark original bill is_reversed=True, link reversal_of on new bill.
+      8. Write audit logs on both bills.
+      9. Return the reversal bill.
+
+    Raises ValueError with a user-visible message on any business-rule violation.
+    """
+    with transaction.atomic():
+        original = (
+            scope_to_workspace(
+                InventoryBill.objects.select_for_update(of=('self',)).filter(pk=bill_id),
+                workspace,
+            )
+            .select_related('party', 'workspace', 'created_by')
+            .first()
+        )
+        if not original:
+            raise ValueError('Bill not found.')
+        if original.is_reversed:
+            raise ValueError(
+                f"Bill {original.bill_number} has already been reversed and cannot be reversed again."
+            )
+        if original.reversal_of_id:
+            raise ValueError(
+                f"Bill {original.bill_number} is itself a reversal bill and cannot be reversed."
+            )
+
+        # Phase 3: determine payment state
+        bill_total = _inventory_bill_total(original)
+        paid_total = _inventory_bill_paid_total(original)
+        balance = (bill_total - paid_total).quantize(Decimal('0.01'))
+
+        # Determine effective payment status
+        if bill_total > Decimal('0.00') and paid_total > Decimal('0.00'):
+            if balance <= Decimal('0.00'):
+                payment_state = 'fully_paid'
+            else:
+                payment_state = 'partially_paid'
+        else:
+            payment_state = 'unpaid'
+
+        reversal_type = _REVERSAL_ENTRY_TYPE.get(original.entry_type)
+        if not reversal_type:
+            raise ValueError(f"Bills of type '{original.entry_type}' cannot be reversed.")
+
+        original_entries = list(
+            InventoryEntry.objects.select_for_update()
+            .filter(bill=original)
+            .select_related('product')
+            .order_by('id')
+        )
+        if not original_entries:
+            raise ValueError(f"Bill {original.bill_number} has no line items and cannot be reversed.")
+
+        # Lock all products before modifying stock
+        product_ids = {e.product_id for e in original_entries}
+        locked_products = {
+            p.id: p
+            for p in Product.objects.select_for_update().filter(pk__in=product_ids)
+        }
+
+        # Validate stock before committing any changes
+        for entry in original_entries:
+            product = locked_products.get(entry.product_id)
+            if not product:
+                raise ValueError(f"Product for entry {entry.entry_number} was not found.")
+            # The reversal entry has the *opposite* stock effect:
+            # original sale (removes stock) → reversal adds stock back → always safe
+            # original purchase (adds stock) → reversal removes stock → may underflow
+            reversal_effect = -entry.stock_effect  # opposite sign
+            future_stock = product.stock_quantity + reversal_effect
+            if future_stock < 0:
+                raise ValueError(
+                    f"Cannot reverse bill {original.bill_number}: reversing "
+                    f"'{product.name}' would reduce stock below zero "
+                    f"(current: {product.stock_quantity}, reversal effect: {reversal_effect})."
+                )
+
+        today = timezone.localdate()
+        reversal_bill = InventoryBill.objects.create(
+            workspace=original.workspace,
+            bill_number=_generate_inventory_bill_number(reversal_type, today, original.workspace),
+            entry_type=reversal_type,
+            entry_date=today,
+            invoice_number=f"REV-{original.invoice_number or original.bill_number}",
+            invoice_date=None,
+            job_ticket=original.job_ticket,
+            party=original.party,
+            notes=reversal_note or f"Reversal of {original.bill_number}",
+            created_by=user,
+            reversal_of=original,
+        )
+
+        reversal_entries = []
+        for entry in original_entries:
+            product = locked_products[entry.product_id]
+            rev_stock_before = product.stock_quantity
+            # Reversal of a purchase (stock +N) → purchase_return (stock -N)
+            # Reversal of a sale (stock -N)     → sale_return     (stock +N)
+            rev_stock_delta = -entry.stock_effect  # opposite of original
+            rev_stock_after = rev_stock_before + rev_stock_delta
+            product.stock_quantity = rev_stock_after
+            product.save(update_fields=['stock_quantity'])
+
+            rev_entry = InventoryEntry.objects.create(
+                workspace=original.workspace,
+                bill=reversal_bill,
+                entry_number=_generate_inventory_entry_number(reversal_type, today, original.workspace),
+                entry_type=reversal_type,
+                entry_date=today,
+                invoice_number=reversal_bill.invoice_number,
+                job_ticket=original.job_ticket,
+                party=original.party,
+                product=product,
+                quantity=entry.quantity,
+                unit_price=entry.unit_price,
+                discount_amount=entry.discount_amount,
+                gst_rate=entry.gst_rate,
+                taxable_amount=entry.taxable_amount,
+                gst_amount=entry.gst_amount,
+                total_amount=entry.total_amount,
+                stock_before=rev_stock_before,
+                stock_after=rev_stock_after,
+                notes=f"Reversal of {entry.entry_number}",
+                created_by=user,
+            )
+            reversal_entries.append(rev_entry)
+
+        # Phase 3: credit settlement on original bill
+        # For fully_paid or partially_paid bills we create an offsetting credit
+        # payment on the reversal bill so the accounting clears.
+        if payment_state in {'fully_paid', 'partially_paid'} and paid_total > Decimal('0.00'):
+            # The reversal bill needs the same direction as the original to absorb
+            # the settlement semantics.
+            reversal_direction = _inventory_credit_direction_for_entry_type(original.entry_type)
+            if reversal_direction:
+                reversal_total = sum(
+                    (e.total_amount or Decimal('0.00') for e in reversal_entries), Decimal('0.00')
+                ).quantize(Decimal('0.01'))
+                # Apply as much as was paid on the original against the reversal,
+                # capped at reversal total.
+                settlement_amount = min(paid_total, reversal_total).quantize(Decimal('0.01'))
+                if settlement_amount > Decimal('0.00'):
+                    InventoryCreditPayment.objects.create(
+                        workspace=original.workspace,
+                        party=original.party,
+                        bill=reversal_bill,
+                        direction=reversal_direction,
+                        payment_date=today,
+                        payment_method=InventoryCreditPayment.METHOD_CASH,
+                        amount=settlement_amount,
+                        balance_before=reversal_total,
+                        balance_after=(reversal_total - settlement_amount).quantize(Decimal('0.01')),
+                        reference_no='',
+                        notes=(
+                            f"Auto-settlement from reversal of {original.bill_number}. "
+                            f"Original payment state: {payment_state}. "
+                            f"Remaining balance (if any) requires manual refund or credit."
+                        ),
+                        created_by=user,
+                    )
+
+        # Mark original as reversed — irreversible
+        original.is_reversed = True
+        original.reversal_note = reversal_note or ''
+        original.reversed_at = timezone.now()
+        original.reversed_by = user
+        original.save(update_fields=['is_reversed', 'reversal_note', 'reversed_at', 'reversed_by', 'updated_at'])
+
+        # Audit logs
+        _write_bill_log(
+            original,
+            InventoryBillLog.ACTION_BILL_REVERSED,
+            user=user,
+            details=(
+                f"Reversed by {user.get_full_name() or user.username} — "
+                f"reversal bill: {reversal_bill.bill_number}. "
+                f"Payment state at reversal: {payment_state}. "
+                f"Note: {reversal_note or '(none)'}"
+            ),
+            related_bill=reversal_bill,
+        )
+        _write_bill_log(
+            reversal_bill,
+            InventoryBillLog.ACTION_REVERSAL_CREATED,
+            user=user,
+            details=f"Reversal of {original.bill_number}. {len(reversal_entries)} line(s) mirrored.",
+            related_bill=original,
+        )
+
+    return reversal_bill, payment_state
+
+
+# ---------------------------------------------------------------------------
+# Phase 5–6: Purchase Return → Vendor Credit Linkage
+# ---------------------------------------------------------------------------
+
+def _link_return_to_source_bill(return_bill_id, source_bill_id, user, workspace=None):
+    """
+    Link a purchase_return (or sale_return) bill to its originating bill and,
+    for purchase returns, create/update the InventoryVendorCredit record.
+
+    Rules:
+    - return_bill must be entry_type='purchase_return' or 'sale_return'.
+    - source_bill must be the matching opposite type.
+    - return_bill must not already be linked.
+    - Both bills must be in the same workspace.
+    - A vendor credit is created only for purchase_return bills.
+    - The credit amount equals the return bill total.
+
+    Raises ValueError on any violation.
+    Returns (return_bill, vendor_credit_or_None).
+    """
+    _RETURN_SOURCE_MAP = {
+        'purchase_return': 'purchase',
+        'sale_return': 'sale',
+    }
+    with transaction.atomic():
+        return_bill = (
+            scope_to_workspace(
+                InventoryBill.objects.select_for_update(of=('self',)).filter(pk=return_bill_id),
+                workspace,
+            )
+            .select_related('party', 'workspace')
+            .first()
+        )
+        if not return_bill:
+            raise ValueError('Return bill not found.')
+        expected_source_type = _RETURN_SOURCE_MAP.get(return_bill.entry_type)
+        if not expected_source_type:
+            raise ValueError(
+                f"Bill {return_bill.bill_number} is of type '{return_bill.entry_type}' "
+                "and cannot be linked as a return."
+            )
+        if return_bill.source_bill_id:
+            raise ValueError(
+                f"Bill {return_bill.bill_number} is already linked to "
+                f"source bill {return_bill.source_bill.bill_number}."
+            )
+
+        source_bill = (
+            scope_to_workspace(
+                InventoryBill.objects.select_for_update(of=('self',)).filter(
+                    pk=source_bill_id,
+                    entry_type=expected_source_type,
+                ),
+                workspace,
+            )
+            .select_related('party')
+            .first()
+        )
+        if not source_bill:
+            raise ValueError(
+                f"Source bill not found or is not a {expected_source_type} bill."
+            )
+        if source_bill.party_id != return_bill.party_id:
+            raise ValueError(
+                "Return bill and source bill must belong to the same party."
+            )
+
+        return_bill.source_bill = source_bill
+        return_bill.save(update_fields=['source_bill', 'updated_at'])
+
+        vendor_credit = None
+        if return_bill.entry_type == 'purchase_return':
+            return_total = _inventory_bill_total(return_bill).quantize(Decimal('0.01'))
+            if return_total > Decimal('0.00'):
+                vendor_credit = InventoryVendorCredit.objects.create(
+                    workspace=return_bill.workspace,
+                    party=return_bill.party,
+                    return_bill=return_bill,
+                    source_bill=source_bill,
+                    credit_amount=return_total,
+                    applied_amount=Decimal('0.00'),
+                    status=InventoryVendorCredit.STATUS_OPEN,
+                    notes=f"Auto-created from return bill {return_bill.bill_number}.",
+                    created_by=user,
+                )
+                _write_bill_log(
+                    return_bill,
+                    InventoryBillLog.ACTION_VENDOR_CREDIT_CREATED,
+                    user=user,
+                    details=(
+                        f"Vendor credit Rs.{return_total} created for party {return_bill.party.name}. "
+                        f"Source bill: {source_bill.bill_number}."
+                    ),
+                    related_bill=source_bill,
+                )
+
+        _write_bill_log(
+            return_bill,
+            InventoryBillLog.ACTION_RETURN_LINKED,
+            user=user,
+            details=f"Return bill linked to source bill {source_bill.bill_number}.",
+            related_bill=source_bill,
+        )
+
+    return return_bill, vendor_credit
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: Vendor Credit Application
+# ---------------------------------------------------------------------------
+
+def _apply_vendor_credit_to_bill(vendor_credit_id, target_bill_id, amount, user, workspace=None):
+    """
+    Apply a portion of a vendor credit against an outstanding purchase bill.
+
+    Rules:
+    - vendor_credit must be OPEN or PARTIALLY_APPLIED.
+    - target_bill must be entry_type='purchase', not reversed, same party.
+    - amount must be > 0, ≤ credit balance, ≤ bill effective balance.
+    - Atomic: updates applied_amount and credit status in one transaction.
+
+    Raises ValueError on any violation.
+    Returns the InventoryVendorCreditApplication created.
+    """
+    amount = _money_or_zero(amount).quantize(Decimal('0.01'))
+    if amount <= Decimal('0.00'):
+        raise ValueError("Application amount must be greater than zero.")
+
+    with transaction.atomic():
+        vc = (
+            scope_to_workspace(
+                InventoryVendorCredit.objects.select_for_update(of=('self',)).filter(pk=vendor_credit_id),
+                workspace,
+            )
+            .select_related('party', 'return_bill')
+            .first()
+        )
+        if not vc:
+            raise ValueError("Vendor credit not found.")
+        if vc.status in {InventoryVendorCredit.STATUS_FULLY_APPLIED, InventoryVendorCredit.STATUS_VOIDED}:
+            raise ValueError(
+                f"Vendor credit {vc.return_bill.bill_number} is {vc.status} and cannot be applied."
+            )
+        credit_balance = vc.balance_amount.quantize(Decimal('0.01'))
+        if amount > credit_balance:
+            raise ValueError(
+                f"Application amount Rs.{amount} exceeds available credit balance Rs.{credit_balance}."
+            )
+
+        target_bill = (
+            scope_to_workspace(
+                InventoryBill.objects.select_for_update(of=('self',)).filter(
+                    pk=target_bill_id,
+                    entry_type='purchase',
+                ),
+                workspace,
+            )
+            .select_related('party')
+            .first()
+        )
+        if not target_bill:
+            raise ValueError("Target purchase bill not found.")
+        if target_bill.is_reversed:
+            raise ValueError(
+                f"Bill {target_bill.bill_number} has been reversed and cannot receive a credit application."
+            )
+        if target_bill.party_id != vc.party_id:
+            raise ValueError(
+                "Vendor credit and target bill must belong to the same party."
+            )
+
+        effective_balance = _inventory_bill_effective_balance(target_bill).quantize(Decimal('0.01'))
+        if amount > effective_balance:
+            raise ValueError(
+                f"Application amount Rs.{amount} exceeds bill outstanding balance Rs.{effective_balance}."
+            )
+
+        application = InventoryVendorCreditApplication.objects.create(
+            workspace=vc.workspace or (target_bill.workspace),
+            vendor_credit=vc,
+            target_bill=target_bill,
+            amount=amount,
+            applied_date=timezone.localdate(),
+            notes=f"Credit from return {vc.return_bill.bill_number} applied to {target_bill.bill_number}.",
+            created_by=user,
+        )
+
+        vc.applied_amount = (vc.applied_amount or Decimal('0.00')) + amount
+        vc.save(update_fields=['applied_amount', 'updated_at'])
+        vc._recompute_status()
+
+        _write_bill_log(
+            target_bill,
+            InventoryBillLog.ACTION_VENDOR_CREDIT_APPLIED,
+            user=user,
+            details=(
+                f"Vendor credit Rs.{amount} from {vc.return_bill.bill_number} "
+                f"applied to {target_bill.bill_number}. "
+                f"Credit remaining: Rs.{vc.balance_amount}."
+            ),
+            related_bill=vc.return_bill,
+        )
+        _write_bill_log(
+            vc.return_bill,
+            InventoryBillLog.ACTION_VENDOR_CREDIT_APPLIED,
+            user=user,
+            details=(
+                f"Rs.{amount} applied to bill {target_bill.bill_number}. "
+                f"Credit remaining: Rs.{vc.balance_amount}."
+            ),
+            related_bill=target_bill,
+        )
+
+    return application
+
+
+def _require_inventory_reversal_password(request):
+    """Verify user password before allowing a reversal action."""
+    password = (request.POST.get('reversal_password') or '').strip()
+    if not password:
+        raise ValueError('Enter your password to confirm the reversal.')
+    if not request.user.check_password(password):
+        raise ValueError('Incorrect password.')
+
+
+def _process_bill_reversal(request, entry_type):
+    """
+    Handle a POST request to reverse an InventoryBill.
+
+    Expected POST fields:
+      bill_id          — ID of bill to reverse
+      reversal_note    — reason for reversal (required)
+      reversal_password — user's current password (required)
+
+    Returns a dict: {'message': str, 'reversal_bill': InventoryBill, 'payment_state': str}
+    Raises ValueError with user-visible message on any error.
+    """
+    denied = _staff_access_required(request, "inventory")
+    if denied:
+        raise ValueError("Access denied.")
+
+    bill_id_raw = (request.POST.get('bill_id') or '').strip()
+    reversal_note = (request.POST.get('reversal_note') or '').strip()
+    if not bill_id_raw.isdigit():
+        raise ValueError('Select a valid bill to reverse.')
+    if not reversal_note:
+        raise ValueError('A reversal reason is required.')
+
+    _require_inventory_reversal_password(request)
+
+    workspace = getattr(request, 'current_workspace', None)
+    reversal_bill, payment_state = _reverse_inventory_bill(
+        bill_id=int(bill_id_raw),
+        user=request.user,
+        reversal_note=reversal_note,
+        workspace=workspace,
+    )
+    config = INVENTORY_ENTRY_CONFIG[entry_type]
+    msg = (
+        f"{config['success_label']} bill reversed. "
+        f"Reversal bill: {reversal_bill.bill_number}. "
+        f"Payment state was: {payment_state.replace('_', ' ')}."
+    )
+    if payment_state == 'partially_paid':
+        msg += " Partial payment was auto-settled on the reversal bill. Manual refund of excess may be required."
+    elif payment_state == 'fully_paid':
+        msg += " Full payment was auto-settled on the reversal bill."
+    return {'message': msg, 'reversal_bill': reversal_bill, 'payment_state': payment_state}
+
+
+def _process_link_return_to_source(request):
+    """
+    Handle POST request to link a return bill to its source bill and
+    (for purchase returns) create the vendor credit.
+
+    Expected POST fields:
+      return_bill_id   — ID of the purchase_return or sale_return bill
+      source_bill_id   — ID of the original purchase or sale bill
+
+    Returns dict: {'message': str, 'vendor_credit': InventoryVendorCredit|None}
+    Raises ValueError on errors.
+    """
+    return_bill_id_raw = (request.POST.get('return_bill_id') or '').strip()
+    source_bill_id_raw = (request.POST.get('source_bill_id') or '').strip()
+    if not return_bill_id_raw.isdigit() or not source_bill_id_raw.isdigit():
+        raise ValueError('Select valid return and source bills.')
+
+    workspace = getattr(request, 'current_workspace', None)
+    return_bill, vendor_credit = _link_return_to_source_bill(
+        return_bill_id=int(return_bill_id_raw),
+        source_bill_id=int(source_bill_id_raw),
+        user=request.user,
+        workspace=workspace,
+    )
+    msg = f"Return bill {return_bill.bill_number} linked to source bill {return_bill.source_bill.bill_number}."
+    if vendor_credit:
+        msg += f" Vendor credit Rs.{vendor_credit.credit_amount} created."
+    return {'message': msg, 'vendor_credit': vendor_credit}
+
+
+def _process_apply_vendor_credit(request):
+    """
+    Handle POST request to apply a vendor credit to a purchase bill.
+
+    Expected POST fields:
+      vendor_credit_id  — ID of the InventoryVendorCredit
+      target_bill_id    — ID of the purchase InventoryBill
+      amount            — Decimal amount to apply
+
+    Returns dict: {'message': str, 'application': InventoryVendorCreditApplication}
+    Raises ValueError on errors.
+    """
+    vc_id_raw = (request.POST.get('vendor_credit_id') or '').strip()
+    bill_id_raw = (request.POST.get('target_bill_id') or '').strip()
+    amount_raw = (request.POST.get('amount') or '').strip()
+
+    if not vc_id_raw.isdigit() or not bill_id_raw.isdigit():
+        raise ValueError('Select valid vendor credit and bill.')
+    amount = _parse_inventory_decimal(amount_raw, 'Enter a valid application amount.')
+    if amount <= Decimal('0.00'):
+        raise ValueError('Application amount must be greater than zero.')
+
+    workspace = getattr(request, 'current_workspace', None)
+    application = _apply_vendor_credit_to_bill(
+        vendor_credit_id=int(vc_id_raw),
+        target_bill_id=int(bill_id_raw),
+        amount=amount,
+        user=request.user,
+        workspace=workspace,
+    )
+    return {
+        'message': (
+            f"Vendor credit Rs.{application.amount} applied to "
+            f"bill {application.target_bill.bill_number}."
+        ),
+        'application': application,
+    }
+
+
+def _build_vendor_credit_rows(workspace=None):
+    """
+    Return open/partially-applied vendor credits with their balance amounts.
+    Used to populate the vendor credit dashboard widget.
+    """
+    credits = list(
+        scope_to_workspace(
+            InventoryVendorCredit.objects.exclude(
+                status__in=[InventoryVendorCredit.STATUS_FULLY_APPLIED, InventoryVendorCredit.STATUS_VOIDED]
+            ),
+            workspace,
+        )
+        .select_related('party', 'return_bill', 'source_bill')
+        .order_by('created_at')
+    )
+    for vc in credits:
+        vc.computed_balance = vc.balance_amount
+    return credits
 
 
 def _inventory_credit_action_label(direction):

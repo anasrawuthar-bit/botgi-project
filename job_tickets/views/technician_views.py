@@ -1,4 +1,14 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _build_checklist_schema_for_job,
+    _checklist_requires_completion,
+    _extract_checklist_answers_from_post,
+    _format_checklist_required_error,
+    _get_job_checklist_answers,
+    _merge_checklist_answers,
+    _missing_required_checklist_labels,
+    _normalize_checklist_answer,
+)
 
 
 @login_required
@@ -280,6 +290,32 @@ def job_detail_technician(request, job_code):
             job.technician_checklist = merged_answers
             job.save()
 
+            if new_status == 'Completed':
+                labor_charge_raw = (request.POST.get('labor_charge') or '').strip()
+                if labor_charge_raw:
+                    try:
+                        labor_charge = Decimal(labor_charge_raw)
+                        if labor_charge > Decimal('0.00'):
+                            labor_log = job.service_logs.filter(description="Technician Labor Charges").first()
+                            if labor_log:
+                                labor_log.service_charge = labor_charge
+                                labor_log.save(update_fields=['service_charge'])
+                            else:
+                                ServiceLog.objects.create(
+                                    job_ticket=job,
+                                    description="Technician Labor Charges",
+                                    service_charge=labor_charge,
+                                    part_cost=Decimal('0.00'),
+                                )
+                            JobTicketLog.objects.create(
+                                job_ticket=job,
+                                user=request.user,
+                                action='SERVICE',
+                                details=f"Labor charge of Rs {labor_charge} recorded.",
+                            )
+                    except (InvalidOperation, ValueError, TypeError):
+                        pass
+
             if old_status != new_status:
                 details = f"Status changed from '{old_status}' to '{job.get_status_display()}'."
                 JobTicketLog.objects.create(job_ticket=job, user=request.user, action='STATUS', details=details)
@@ -461,7 +497,6 @@ def job_detail_technician(request, job_code):
         'subtotal': subtotal,
         'discount': discount,
         'grand_total': grand_total,
-        # Pass the filtered choices to the template
         'status_choices': technician_status_choices,
         'can_change_status': can_change_status,
         'checklist_schema': checklist_schema,
@@ -567,8 +602,44 @@ def job_mark_completed(request, job_code):
 
     old_status = job.get_status_display()
     job.status = "Completed"
-    job.save(update_fields=["status", "updated_at"])
-    
+
+    completion_note = (request.POST.get('completion_note') or '').strip()
+    if completion_note:
+        ts = timezone.localtime().strftime('%d-%b-%Y %I:%M %p')
+        note_entry = f"[{ts}] Completion Note: {completion_note}"
+        if job.technician_notes:
+            job.technician_notes = f"{job.technician_notes}\n{note_entry}"
+        else:
+            job.technician_notes = note_entry
+        JobTicketLog.objects.create(job_ticket=job, user=request.user, action='NOTE', details=f"Completion note: {completion_note}")
+
+    job.save(update_fields=["status", "technician_notes", "updated_at"])
+
+    labor_charge_raw = (request.POST.get('labor_charge') or '').strip()
+    if labor_charge_raw:
+        try:
+            labor_charge = Decimal(labor_charge_raw)
+            if labor_charge > Decimal('0.00'):
+                labor_log = job.service_logs.filter(description="Technician Labor Charges").first()
+                if labor_log:
+                    labor_log.service_charge = labor_charge
+                    labor_log.save(update_fields=['service_charge'])
+                else:
+                    ServiceLog.objects.create(
+                        job_ticket=job,
+                        description="Technician Labor Charges",
+                        service_charge=labor_charge,
+                        part_cost=Decimal('0.00'),
+                    )
+                JobTicketLog.objects.create(
+                    job_ticket=job,
+                    user=request.user,
+                    action='SERVICE',
+                    details=f"Labor charge of Rs {labor_charge} recorded upon completion.",
+                )
+        except (InvalidOperation, ValueError, TypeError):
+            pass
+
     # Send WebSocket update
     if old_status != job.get_status_display():
         send_job_update_message(job.job_code, job.status)
@@ -690,3 +761,95 @@ def technician_return_to_staff(request, job_code):
 
     # For GET requests, or if not POST, redirect to dashboard
     return redirect('technician_dashboard')
+
+
+# ---------------------------------------------------------------------------
+# Standalone Task Management Views (Technician)
+# ---------------------------------------------------------------------------
+
+@login_required
+def technician_task_dashboard(request):
+    """Technician's view of their assigned standalone tasks, ordered by priority."""
+    if not request.user.groups.filter(name='Technicians').exists():
+        return redirect('unauthorized')
+
+    technician = TechnicianProfile.objects.filter(user=request.user).first()
+    if not technician:
+        return render(request, 'job_tickets/technician_task_dashboard.html', {
+            'tasks': [], 'warning': 'No technician profile found. Contact admin.'
+        })
+
+    qs = Task.objects.filter(assigned_to=technician)
+
+    # Search
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        qs = qs.filter(
+            Q(title__icontains=q) |
+            Q(description__icontains=q) |
+            Q(job_reference__job_code__icontains=q)
+        )
+
+    # Status filter
+    status = (request.GET.get('status') or '').strip().lower()
+    if status in dict(Task.STATUS_CHOICES):
+        qs = qs.filter(status=status)
+    elif status == 'all':
+        pass
+    else:
+        status = 'active'
+        qs = qs.filter(status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS])
+
+    # Priority filter
+    priority = (request.GET.get('priority') or '').strip().lower()
+    if priority in dict(Task.PRIORITY_CHOICES):
+        qs = qs.filter(priority=priority)
+
+    tasks = list(qs.select_related('created_by', 'job_reference').prefetch_related('attachments', 'messages'))
+
+    base_qs = Task.objects.filter(assigned_to=technician)
+    urgent_count = base_qs.filter(priority=Task.PRIORITY_URGENT, status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]).count()
+    open_count = base_qs.filter(status=Task.STATUS_OPEN).count()
+    in_progress_count = base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
+    done_count = base_qs.filter(status=Task.STATUS_DONE).count()
+
+    context = {
+        'tasks': tasks,
+        'urgent_count': urgent_count,
+        'open_count': open_count,
+        'in_progress_count': in_progress_count,
+        'done_count': done_count,
+        'status_filter': status,
+        'priority_filter': priority,
+        'search_query': q,
+    }
+    return render(request, 'job_tickets/technician_task_dashboard.html', context)
+
+
+@login_required
+def technician_task_detail(request, task_id):
+    """Technician view for a single assigned task with message thread and status updates."""
+    if not request.user.groups.filter(name='Technicians').exists():
+        return redirect('unauthorized')
+
+    technician = TechnicianProfile.objects.filter(user=request.user).first()
+    if not technician:
+        return redirect('technician_task_dashboard')
+
+    task = get_object_or_404(
+        Task.objects.select_related('created_by', 'job_reference'),
+        id=task_id,
+        assigned_to=technician,
+    )
+
+    attachments = task.attachments.all()
+    messages_list = task.messages.select_related('sender').all()
+    message_form = TaskMessageForm()
+
+    context = {
+        'task': task,
+        'attachments': attachments,
+        'messages_list': messages_list,
+        'message_form': message_form,
+    }
+    return render(request, 'job_tickets/technician_task_detail.html', context)

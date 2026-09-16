@@ -1,9 +1,9 @@
 {% for job in active_jobs %}
     <tr id="job-row-{{ job.job_code }}" class="job-summary-row" data-job-id="{{ job.id }}" style="cursor:pointer;">
     <td>
-      {{ job.job_code }}
+      <span class="fw-bold">{{ job.job_code }}</span>
       {% if job.is_new_assignment %}
-        <span class="badge bg-danger ms-2">NEW</span>
+        <span class="badge bg-danger ms-1">NEW</span>
       {% endif %}
     </td>
     <td>{{ job.customer_name }}</td>

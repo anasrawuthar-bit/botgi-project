@@ -141,6 +141,12 @@
                             </select>
                         </div>
 
+                        <div class="mb-3 d-none" id="labor-charge-group">
+                            <label for="labor_charge" class="form-label fw-bold">Labor / Service Charge (&#8377;)</label>
+                            <input type="number" step="0.01" min="0" name="labor_charge" id="labor_charge" class="form-control" placeholder="Optional labor charge to bill">
+                            <div class="form-text">If entered, this will be recorded as Technician Labor Charges.</div>
+                        </div>
+
                         <div class="mb-3">
                             <label for="technician_notes" class="form-label">Technician Notes</label>
                             <textarea name="technician_notes" id="technician_notes" class="form-control" rows="4">{{ job.technician_notes }}</textarea>
@@ -374,11 +380,27 @@
 
     // Handle Update Status & Notes form
     const updateStatusForm = document.getElementById('update-status-form');
+    const statusSelect = document.getElementById('id_status');
+    const laborGroup = document.getElementById('labor-charge-group');
+
+    function checkLaborVisibility() {
+        if (statusSelect && laborGroup) {
+            if (statusSelect.value === 'Completed') {
+                laborGroup.classList.remove('d-none');
+            } else {
+                laborGroup.classList.add('d-none');
+            }
+        }
+    }
+    if (statusSelect) {
+        statusSelect.addEventListener('change', checkLaborVisibility);
+        checkLaborVisibility();
+    }
+
     if (updateStatusForm) {
         updateStatusForm.addEventListener('submit', function(e) {
             e.preventDefault();
 
-            const statusSelect = document.getElementById('id_status');
             const selectedStatus = statusSelect ? (statusSelect.value || '').trim() : '';
             if (selectedStatus === 'Completed') {
                 const missingChecklist = [];

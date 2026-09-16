@@ -1,0 +1,451 @@
+{% extends 'job_tickets/base.html' %}
+{% load static %}
+
+{% block title %}Task: {{ task.title }} - Technician{% endblock %}
+
+{% block extra_css %}
+<style>
+.priority-badge-urgent { background-color: #dc3545; color: #fff; }
+.priority-badge-high { background-color: #fd7e14; color: #fff; }
+.priority-badge-medium { background-color: #0d6efd; color: #fff; }
+.priority-badge-low { background-color: #6c757d; color: #fff; }
+
+.task-chat-box {
+    max-height: 480px;
+    overflow-y: auto;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+}
+.chat-msg {
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+.chat-msg.self {
+    align-items: flex-end;
+}
+.chat-msg.other {
+    align-items: flex-start;
+}
+.chat-bubble {
+    max-width: 75%;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    font-size: 0.925rem;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.chat-msg.self .chat-bubble {
+    background-color: #0d6efd;
+    color: #fff;
+    border-bottom-right-radius: 2px;
+}
+.chat-msg.other .chat-bubble {
+    background-color: #fff;
+    color: #212529;
+    border: 1px solid #dee2e6;
+    border-bottom-left-radius: 2px;
+}
+.chat-meta {
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+    color: #6c757d;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 px-4">
+    <!-- Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <a href="{% url 'technician_task_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-2">
+                <i class="fas fa-arrow-left me-1"></i> Back to My Tasks
+            </a>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <h2 class="h3 fw-bold mb-0">{{ task.title }}</h2>
+                {% if task.priority == 'urgent' %}
+                    <span class="badge priority-badge-urgent px-2 py-1"><i class="fas fa-bolt me-1"></i>URGENT</span>
+                {% elif task.priority == 'high' %}
+                    <span class="badge priority-badge-high px-2 py-1"><i class="fas fa-arrow-up me-1"></i>HIGH</span>
+                {% elif task.priority == 'medium' %}
+                    <span class="badge priority-badge-medium px-2 py-1">MEDIUM</span>
+                {% else %}
+                    <span class="badge priority-badge-low px-2 py-1">LOW</span>
+                {% endif %}
+
+                <span id="taskStatusBadge" class="badge {% if task.status == 'open' %}bg-info text-dark{% elif task.status == 'in_progress' %}bg-warning text-dark{% elif task.status == 'done' %}bg-success{% elif task.status == 'cancelled' %}bg-secondary{% endif %}">
+                    {% if task.status == 'open' %}Pending Start{% elif task.status == 'in_progress' %}In Progress{% elif task.status == 'done' %}Completed{% else %}Cancelled{% endif %}
+                </span>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2" id="taskStatusActions">
+            {% if task.status == 'open' %}
+                <form method="post" action="{% url 'task_update_status' task.id %}" class="d-inline status-action-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="status" value="in_progress">
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-play me-1"></i> Start Working on Task
+                    </button>
+                </form>
+            {% elif task.status == 'in_progress' %}
+                <form method="post" action="{% url 'task_update_status' task.id %}" class="d-inline status-action-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="status" value="done">
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check-circle me-1"></i> Mark as Completed
+                    </button>
+                </form>
+            {% elif task.status == 'done' %}
+                <span class="badge bg-success py-2 px-3 fs-6">
+                    <i class="fas fa-check me-1"></i> Completed on {{ task.completed_at|date:"d M Y, H:i" }}
+                </span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Left Column: Details & Attachments -->
+        <div class="col-lg-7">
+            <!-- Directives Card -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white py-3">
+                    <h5 class="card-title mb-0 fw-bold"><i class="fas fa-clipboard-check text-primary me-2"></i>Task Directives</h5>
+                </div>
+                <div class="card-body">
+                    {% if task.description %}
+                        <div class="p-3 bg-light rounded mb-3 border">
+                            <div class="fw-semibold text-muted small mb-1">INSTRUCTIONS &amp; DIRECTIVES</div>
+                            <div style="white-space: pre-wrap;">{{ task.description }}</div>
+                        </div>
+                    {% else %}
+                        <p class="text-muted italic mb-3">No description provided for this task.</p>
+                    {% endif %}
+
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <span class="text-muted small fw-semibold d-block">DUE DATE</span>
+                            {% if task.due_date %}
+                                <span class="fw-bold {% if task.due_date < now and task.status != 'done' %}text-danger{% else %}text-dark{% endif %}">
+                                    <i class="fas fa-clock me-1 text-muted"></i>{{ task.due_date|date:"d M Y, h:i A" }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">Not specified</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-sm-6">
+                            <span class="text-muted small fw-semibold d-block">ASSIGNED BY</span>
+                            <span class="text-dark">{{ task.created_by.username|default:"Staff" }} ({{ task.created_at|date:"d M Y" }})</span>
+                        </div>
+                        <div class="col-12">
+                            <span class="text-muted small fw-semibold d-block">LINKED JOB TICKET</span>
+                            {% if task.job_reference %}
+                                <a href="{% url 'job_detail_technician' task.job_reference.job_code %}" class="btn btn-outline-primary btn-sm mt-1">
+                                    <i class="fas fa-ticket-alt me-1"></i>Open Job {{ task.job_reference.job_code }} ({{ task.job_reference.device_type }})
+                                </a>
+                            {% else %}
+                                <span class="text-muted">None (Standalone Task)</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attachments Card -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0 fw-bold">
+                        <i class="fas fa-paperclip text-muted me-2"></i>Reference Files &amp; Attachments ({{ attachments.count }})
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if attachments %}
+                        <div class="list-group mb-3">
+                            {% for att in attachments %}
+                                <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                    <div class="text-truncate me-2">
+                                        <i class="fas fa-file-alt text-primary me-2"></i>
+                                        <a href="{{ att.file.url }}" target="_blank" class="fw-semibold text-dark text-decoration-none">
+                                            {{ att.file_name|default:att.file.name }}
+                                        </a>
+                                        <div class="small text-muted">
+                                            Uploaded by {{ att.uploaded_by.username|default:"Staff" }} &bull; {{ att.uploaded_at|date:"d M, H:i" }}
+                                            {% if att.file_size %} &bull; {{ att.file_size|filesizeformat }}{% endif %}
+                                        </div>
+                                    </div>
+                                    <a href="{{ att.file.url }}" download class="btn btn-outline-secondary btn-sm" title="Download">
+                                        <i class="fas fa-download"></i>
+                                    </a>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted small mb-3">No reference files uploaded for this task.</p>
+                    {% endif %}
+
+                    <!-- Upload attachment from technician -->
+                    <form method="post" action="{% url 'task_message_send' task.id %}" enctype="multipart/form-data" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="body" value="Uploaded attachment(s) from technician.">
+                        <input type="file" name="attachments" class="form-control form-control-sm" multiple required>
+                        <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap">
+                            <i class="fas fa-upload me-1"></i> Upload File
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Discussion / Messaging Thread -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100 d-flex flex-column">
+                <div class="card-header bg-white py-3">
+                    <h5 class="card-title mb-0 fw-bold">
+                        <i class="fas fa-comments text-primary me-2"></i>Staff Discussion Thread
+                    </h5>
+                    <small class="text-muted">Direct messaging with management regarding this task.</small>
+                </div>
+                <div class="card-body p-3 d-flex flex-column flex-grow-1">
+                    <div class="task-chat-box flex-grow-1 mb-3" id="taskChatBox">
+                        {% for msg in messages_list %}
+                            <div class="chat-msg {% if msg.sender == user %}self{% else %}other{% endif %}">
+                                <div class="chat-bubble">
+                                    {{ msg.body|linebreaksbr }}
+                                </div>
+                                <div class="chat-meta">
+                                    <strong>{{ msg.sender.username }}</strong> &bull; {{ msg.sent_at|date:"d M, H:i" }}
+                                </div>
+                            </div>
+                        {% empty %}
+                            <div class="text-center py-5 text-muted">
+                                <i class="fas fa-comment-dots fa-2x mb-2 text-secondary opacity-50"></i>
+                                <p class="mb-0 small">No messages yet. Send a status update or question below.</p>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Message Form -->
+                    <form method="post" action="{% url 'task_message_send' task.id %}" enctype="multipart/form-data" id="taskMessageForm">
+                        {% csrf_token %}
+                        <div class="mb-2">
+                            {{ message_form.body }}
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <label class="btn btn-outline-secondary btn-sm mb-0" title="Attach file">
+                                    <i class="fas fa-paperclip"></i>
+                                    <input type="file" name="attachments" multiple style="display: none;" onchange="this.parentElement.classList.add('btn-primary'); this.parentElement.classList.remove('btn-outline-secondary');">
+                                </label>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm px-3">
+                                <i class="fas fa-paper-plane me-1"></i> Send Reply
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const taskId = {{ task.id }};
+    const currentUsername = "{{ user.username|escapejs }}";
+    const chatBox = document.getElementById('taskChatBox');
+    const msgForm = document.getElementById('taskMessageForm');
+    const bodyInput = msgForm ? msgForm.querySelector('textarea[name="body"]') : null;
+    const actionsContainer = document.getElementById('taskStatusActions');
+    const statusUpdateUrl = "{% url 'task_update_status' task.id %}";
+
+    function scrollToBottom() {
+        if (chatBox) {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }
+    scrollToBottom();
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/tasks/${taskId}/`;
+    let socket = null;
+    let reconnectTimeout = null;
+
+    function connectSocket() {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function() {
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        };
+
+        socket.onmessage = function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.type === 'task_message_event') {
+                    handleIncomingMessage(data);
+                } else if (data.type === 'task_status_event') {
+                    handleStatusUpdate(data);
+                }
+            } catch (err) {
+                console.error('Error parsing WebSocket message', err);
+            }
+        };
+
+        socket.onclose = function() {
+            reconnectTimeout = setTimeout(connectSocket, 3000);
+        };
+
+        socket.onerror = function() {
+            if (socket) socket.close();
+        };
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+
+    function handleIncomingMessage(data) {
+        const placeholder = chatBox.querySelector('.text-center.py-5');
+        if (placeholder) placeholder.remove();
+
+        if (data.message_id && document.getElementById(`msg-${data.message_id}`)) {
+            return;
+        }
+
+        const isSelf = data.sender === currentUsername;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-msg ${isSelf ? 'self' : 'other'}`;
+        if (data.message_id) msgDiv.id = `msg-${data.message_id}`;
+
+        let attachmentsHtml = '';
+        if (data.attachments && data.attachments.length > 0) {
+            attachmentsHtml = '<div class="mt-2 pt-2 border-top border-white-50 small">';
+            data.attachments.forEach(att => {
+                attachmentsHtml += `<div><i class="fas fa-paperclip me-1"></i><a href="${att.url}" target="_blank" class="${isSelf ? 'text-white' : 'text-primary'} text-decoration-none fw-semibold">${escapeHtml(att.name)}</a></div>`;
+            });
+            attachmentsHtml += '</div>';
+        }
+
+        msgDiv.innerHTML = `
+            <div class="chat-bubble">
+                ${escapeHtml(data.body).replace(/\n/g, '<br>')}
+                ${attachmentsHtml}
+            </div>
+            <div class="chat-meta">
+                <strong>${escapeHtml(data.sender)}</strong> &bull; ${data.sent_at}
+            </div>
+        `;
+        chatBox.appendChild(msgDiv);
+        scrollToBottom();
+    }
+
+    function handleStatusUpdate(data) {
+        const badge = document.getElementById('taskStatusBadge');
+        if (badge && data.new_status) {
+            let label = data.status_display;
+            if (data.new_status === 'open') label = 'Pending Start';
+            else if (data.new_status === 'in_progress') label = 'In Progress';
+            else if (data.new_status === 'done') label = 'Completed';
+            badge.textContent = label;
+            badge.className = 'badge px-2 py-1';
+            if (data.new_status === 'open') badge.classList.add('bg-info', 'text-dark');
+            else if (data.new_status === 'in_progress') badge.classList.add('bg-warning', 'text-dark');
+            else if (data.new_status === 'done') badge.classList.add('bg-success');
+            else if (data.new_status === 'cancelled') badge.classList.add('bg-secondary');
+        }
+
+        if (actionsContainer && data.new_status) {
+            const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
+            if (data.new_status === 'open') {
+                actionsContainer.innerHTML = `
+                    <form method="post" action="${statusUpdateUrl}" class="d-inline status-action-form">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+                        <input type="hidden" name="status" value="in_progress">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-play me-1"></i> Start Working on Task
+                        </button>
+                    </form>
+                `;
+            } else if (data.new_status === 'in_progress') {
+                actionsContainer.innerHTML = `
+                    <form method="post" action="${statusUpdateUrl}" class="d-inline status-action-form">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+                        <input type="hidden" name="status" value="done">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-check-circle me-1"></i> Mark as Completed
+                        </button>
+                    </form>
+                `;
+            } else if (data.new_status === 'done') {
+                actionsContainer.innerHTML = `
+                    <span class="badge bg-success py-2 px-3 fs-6">
+                        <i class="fas fa-check me-1"></i> Completed ${data.completed_at ? 'on ' + data.completed_at : ''}
+                    </span>
+                `;
+            }
+        }
+    }
+
+    if (msgForm) {
+        msgForm.addEventListener('submit', function(e) {
+            const fileInput = msgForm.querySelector('input[type="file"]');
+            const hasFiles = fileInput && fileInput.files && fileInput.files.length > 0;
+            if (hasFiles) return;
+
+            e.preventDefault();
+            const text = bodyInput ? bodyInput.value.trim() : '';
+            if (!text) return;
+
+            const tempId = 'temp-' + Date.now();
+            const tempDiv = document.createElement('div');
+            tempDiv.className = 'chat-msg self';
+            tempDiv.id = tempId;
+            tempDiv.style.opacity = '0.7';
+            tempDiv.innerHTML = `
+                <div class="chat-bubble">
+                    ${escapeHtml(text).replace(/\n/g, '<br>')}
+                </div>
+                <div class="chat-meta">
+                    <strong>${escapeHtml(currentUsername)}</strong> &bull; Sending...
+                </div>
+            `;
+            const placeholder = chatBox.querySelector('.text-center.py-5');
+            if (placeholder) placeholder.remove();
+            chatBox.appendChild(tempDiv);
+            scrollToBottom();
+            if (bodyInput) bodyInput.value = '';
+
+            const formData = new FormData(msgForm);
+            formData.set('body', text);
+
+            fetch(msgForm.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    tempDiv.id = `msg-${data.id}`;
+                    tempDiv.style.opacity = '1';
+                    tempDiv.querySelector('.chat-meta').innerHTML = `<strong>${escapeHtml(data.sender)}</strong> &bull; ${data.sent_at}`;
+                } else {
+                    tempDiv.remove();
+                }
+            })
+            .catch(err => {
+                tempDiv.remove();
+                console.error(err);
+            });
+        });
+    }
+
+    connectSocket();
+})();
+</script>
+{% endblock %}

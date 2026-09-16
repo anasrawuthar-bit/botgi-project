@@ -127,6 +127,7 @@ urlpatterns = [
 
     # gemini
     path('staff/job/<str:job_code>/', views.staff_job_detail, name='staff_job_detail'),
+    path('staff/job/<str:job_code>/collect-payment/', views.staff_job_collect_payment, name='staff_job_collect_payment'),
     path('staff/job/<str:job_code>/photos/<int:photo_id>/file/', views.staff_job_photo_file, name='staff_job_photo_file'),
     path('staff/job/<str:job_code>/photos/<int:photo_id>/delete/', views.staff_delete_job_photo, name='staff_delete_job_photo'),
     path('staff/job/<str:job_code>/unlock-vendor-details/', views.unlock_vendor_details, name='unlock_vendor_details'),
@@ -143,4 +144,22 @@ urlpatterns = [
     path('staff/technicians/<int:user_id>/change-password/', views.change_user_password, name='change_user_password'),
     path('staff/technicians/<int:user_id>/delete/', views.delete_user, name='delete_user'),
 
+    # Standalone Task Management (Staff)
+    path('staff/tasks/', views.task_dashboard, name='task_dashboard'),
+    path('staff/tasks/create/', views.task_create, name='task_create'),
+    path('staff/tasks/<int:task_id>/', views.task_detail, name='task_detail'),
+    path('staff/tasks/<int:task_id>/message/', views.task_message_send, name='task_message_send'),
+    path('staff/tasks/<int:task_id>/status/', views.task_update_status, name='task_update_status'),
+    path('staff/tasks/<int:task_id>/delete/', views.task_delete, name='task_delete'),
+
+    # Standalone Task Management (Technician)
+    path('technician/tasks/', views.technician_task_dashboard, name='technician_task_dashboard'),
+    path('technician/tasks/<int:task_id>/', views.technician_task_detail, name='technician_task_detail'),
+
+    # Standalone Task Management (Mobile API)
+    path('api/mobile/tasks/', views.mobile_api_tasks, name='mobile_api_tasks'),
+    path('api/mobile/tasks/<int:task_id>/', views.mobile_api_task_detail, name='mobile_api_task_detail'),
+    path('api/mobile/tasks/<int:task_id>/status/', views.mobile_api_task_update_status, name='mobile_api_task_update_status'),
+    path('api/mobile/tasks/<int:task_id>/message/', views.mobile_api_task_message_send, name='mobile_api_task_message_send'),
+    path('api/mobile/tasks/<int:task_id>/messages/', views.mobile_api_task_messages, name='mobile_api_task_messages'),
 ]

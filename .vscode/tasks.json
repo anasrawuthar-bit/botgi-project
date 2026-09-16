@@ -1,0 +1,599 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "probe-task",
+			"type": "shell",
+			"command": "python -c \"print('hello')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "django-check",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"check"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "jobtickets-tests",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets",
+				"--verbosity",
+				"1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "jobtickets-tests-keepdb",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "locate-integrity-code",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"from pathlib import Path\nfor p in [Path('job_tickets/models.py'),Path('job_tickets/views/helpers.py'),Path('job_tickets/views/inventory_views.py'),Path('job_tickets/views/vendor_views.py'),Path('job_tickets/views/staff_views.py'),Path('job_tickets/views/report_views.py')]:\n print('\\n###',p)\n for i,line in enumerate(p.read_text().splitlines(),1):\n  if any(x in line for x in ['class Inventory','class ProductSale','class VendorPayment','class InventoryCreditPayment','def _process_inventory','def _record_inventory','def create_bill','def sale','def return','def payment','transaction.atomic','def export_']): print(i,line[:180])"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-integrity-code-ps",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"$files=@('job_tickets/models.py','job_tickets/views/helpers.py','job_tickets/views/inventory_views.py','job_tickets/views/vendor_views.py','job_tickets/views/staff_views.py','job_tickets/views/report_views.py'); foreach($f in $files){ Write-Output \"### $f\"; Select-String -Path $f -Pattern 'class Inventory|class ProductSale|class VendorPayment|class InventoryCreditPayment|def _process_inventory|def _record_inventory|transaction.atomic|def export_' | ForEach-Object { \"$($_.LineNumber):$($_.Line.Trim())\" } }"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-integrity-code-ps2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"$files=@(\"job_tickets/models.py\",\"job_tickets/views/helpers.py\",\"job_tickets/views/inventory_views.py\",\"job_tickets/views/vendor_views.py\",\"job_tickets/views/staff_views.py\",\"job_tickets/views/report_views.py\"); foreach($f in $files){ Write-Output \"### $f\"; Select-String -Path $f -Pattern \"class Inventory|class ProductSale|class VendorPayment|class InventoryCreditPayment|def _process_inventory|def _record_inventory|transaction.atomic|def export_\" | ForEach-Object { Write-Output (\"{0}:{1}\" -f $_.LineNumber,$_.Line.Trim()) } }"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-models",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/models.py",
+				"-Pattern",
+				"class",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-processing-functions",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/views/helpers.py",
+				"job_tickets/views/inventory_views.py",
+				"job_tickets/views/vendor_views.py",
+				"job_tickets/views/staff_views.py",
+				"job_tickets/views/report_views.py",
+				"-Pattern",
+				"_process_inventory_grouped_bill_edit|_record_inventory_credit_payment|_create_inventory|_record_vendor_payment_for_service|_record_vendor_bulk_payment|inventory_entry_edit|payment_submit|create_inventory",
+				"|",
+				"Select-Object",
+				"Path,LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-process-one",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/views/helpers.py",
+				"job_tickets/views/inventory_views.py",
+				"job_tickets/views/vendor_views.py",
+				"-Pattern",
+				"_process_inventory",
+				"|",
+				"Select-Object",
+				"Path,LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-helper-process",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/views/helpers.py",
+				"-Pattern",
+				"_process_inventory",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-vendor-calls",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/views/vendor_views.py",
+				"-Pattern",
+				"_record_vendor_payment_for_service",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-integrity-tests",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/tests.py",
+				"-Pattern",
+				"Inventory|Vendor|credit|payment|return|discount|sale",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-scope-helper",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/views/helpers.py",
+				"-Pattern",
+				"def scope_to_workspace",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-record-calls",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets",
+				"-Pattern",
+				"_record_inventory_entries",
+				"|",
+				"Select-Object",
+				"Path,LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "locate-record-calls2",
+			"type": "shell",
+			"command": "Get-ChildItem",
+			"args": [
+				"job_tickets",
+				"-Recurse",
+				"-Filter",
+				"*.py",
+				"|",
+				"Select-String",
+				"-Pattern",
+				"_record_inventory_entries",
+				"|",
+				"Select-Object",
+				"Path,LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "diff-check",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--check"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "integrity-tests2",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets.tests.BusinessIntegrityRegressionTests",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "django-check-final",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"check"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "full-jobtickets-final2",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "inspect-final-diff",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--stat",
+				";",
+				"git",
+				"diff",
+				"--",
+				"job_tickets/views/helpers.py",
+				"job_tickets/views/vendor_views.py",
+				"job_tickets/tests.py"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "migration-status",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"job_tickets/migrations"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "find-numbering-and-balances",
+			"type": "shell",
+			"command": "Get-ChildItem job_tickets -Recurse -Filter *.py | Select-String -Pattern \"_build_dated_inventory_invoice_number|vendor_balance|payable_rows|credit_balance|purchase_return|_record_inventory_entries|_replace_inventory_bill_entries\" | Select-Object Path,LineNumber,Line",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "find-numbering",
+			"type": "shell",
+			"command": "Get-ChildItem",
+			"args": [
+				"job_tickets",
+				"-Recurse",
+				"-Filter",
+				"*.py",
+				"|",
+				"Select-String",
+				"-Pattern",
+				"_build_dated_inventory_invoice_number",
+				"|",
+				"Select-Object",
+				"Path,LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "make-sequence-migration",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"makemigrations",
+				"job_tickets",
+				"--noinput"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "find-inventory-tests",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/tests.py",
+				"-Pattern",
+				"inventory_entry_edit_submit|bill_id|_record_inventory_entries|purchase_return|InventoryBill",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "find-inventory-tests2",
+			"type": "shell",
+			"command": "Select-String",
+			"args": [
+				"-Path",
+				"job_tickets/tests.py",
+				"-Pattern",
+				"inventory_entry_edit_submit",
+				"|",
+				"Select-Object",
+				"LineNumber,Line"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "diff-check-p2",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--check"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "migration-check",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"makemigrations",
+				"job_tickets",
+				"--check",
+				"--dry-run",
+				"--noinput"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "p2-tests",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets.tests.BusinessIntegrityRegressionTests",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "p2-tests-rerun",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets.tests.BusinessIntegrityRegressionTests",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "p2-tests-final",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets.tests.BusinessIntegrityRegressionTests",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "full-suite-p2",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "django-check-p2",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"check"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "diff-check-p2-final2",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--check"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "diff-final-p2",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--check"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "p2-focused-final2",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets.tests.BusinessIntegrityRegressionTests",
+				"job_tickets.tests.PostgreSQLInventoryNumberingTests",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "p2-focused-final3",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets.tests.BusinessIntegrityRegressionTests",
+				"job_tickets.tests.PostgreSQLInventoryNumberingTests",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "full-p2-final3",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"test",
+				"job_tickets",
+				"--verbosity",
+				"1",
+				"--keepdb"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "check-p2-final3",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"manage.py",
+				"check"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "status-p2-final",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

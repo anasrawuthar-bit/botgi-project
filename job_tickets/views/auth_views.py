@@ -1,4 +1,9 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _get_permitted_next_url,
+    _get_post_login_redirect,
+    _get_safe_next_url,
+)
 
 
 def home(request):
@@ -8,6 +13,7 @@ def home(request):
         'total_products': Product.objects.count(),
     }
     return render(request, 'job_tickets/home.html', context)
+
 
 def unauthorized(request):
     return render(request, 'job_tickets/unauthorized.html')
@@ -35,12 +41,11 @@ def login_view(request):
     if request.method == 'POST':
         username = request.POST.get('username', '').strip()
         password = request.POST.get('password', '')
-        
-        # Rate limiting check
+
         client_ip = request.META.get('REMOTE_ADDR')
         cache_key = f'login_attempts_{client_ip}'
         attempts = cache.get(cache_key, 0)
-        
+
         if attempts >= 5:
             return render(request, 'job_tickets/login.html', {
                 'error': 'Too many failed attempts. Please try again in 15 minutes.',
@@ -48,10 +53,9 @@ def login_view(request):
                 'logout_notice': logout_notice,
                 'logout_notice_level': logout_notice_level,
             })
-        
+
         user = authenticate(request, username=username, password=password)
         if user is not None:
-            # Clear failed attempts on successful login
             cache.delete(cache_key)
             login(request, user)
             request.session.set_expiry(settings.SESSION_IDLE_TIMEOUT_SECONDS)
@@ -59,17 +63,17 @@ def login_view(request):
             if permitted_next_url:
                 return redirect(permitted_next_url)
             return _get_post_login_redirect(user)
-        else:
-            # Increment failed attempts
-            cache.set(cache_key, attempts + 1, 900)  # 15 minutes
-            return render(request, 'job_tickets/login.html', {
-                'error': 'Invalid username or password',
-                'username': username,
-                'next': next_url,
-                'attempts_left': 4 - attempts,
-                'logout_notice': logout_notice,
-                'logout_notice_level': logout_notice_level,
-            })
+
+        cache.set(cache_key, attempts + 1, 900)
+        return render(request, 'job_tickets/login.html', {
+            'error': 'Invalid username or password',
+            'username': username,
+            'next': next_url,
+            'attempts_left': 4 - attempts,
+            'logout_notice': logout_notice,
+            'logout_notice_level': logout_notice_level,
+        })
+
     return render(
         request,
         'job_tickets/login.html',
@@ -80,6 +84,7 @@ def login_view(request):
             'logout_reason': logout_reason,
         },
     )
+
 
 @never_cache
 def logout_view(request):

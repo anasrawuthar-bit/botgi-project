@@ -52,7 +52,8 @@ def _build_status_link(settings_obj: WhatsAppIntegrationSettings, job: JobTicket
     base_url = _public_base_url(settings_obj)
     if not base_url:
         return ''
-    return f"{base_url}{reverse('client_status', args=[job.job_code])}"
+    token = create_receipt_access_token(job)
+    return f"{base_url}{reverse('client_status', args=[job.job_code])}?token={token}"
 
 
 def _build_receipt_link(settings_obj: WhatsAppIntegrationSettings, job: JobTicket) -> str:
@@ -124,7 +125,7 @@ def verify_receipt_access_token(
 
     if max_age_seconds is not None and max_age_seconds > 0:
         now_ts = int(timezone.now().timestamp())
-        if now_ts - issued_ts > max_age_seconds:
+        if issued_ts > now_ts + 60 or now_ts - issued_ts > max_age_seconds:
             return False
 
     return True

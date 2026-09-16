@@ -1,4 +1,9 @@
 from .helpers import *  # noqa: F401,F403
+from .helpers import (
+    _money_or_zero,
+    _net_amount_after_discount,
+    _staff_access_required,
+)
 
 
 def _parse_vendor_money(raw_value, label):
@@ -45,6 +50,16 @@ def _record_vendor_payment_for_locked_service(service, amount, payment_method, p
     if amount > balance_before:
         raise ValueError("Payment amount cannot be greater than vendor balance.")
 
+    normalized_reference = (reference_no or '').strip()
+    if normalized_reference and VendorPayment.objects.filter(
+        vendor_id=service.vendor_id,
+        specialized_service_id=service.id,
+        payment_date=payment_date,
+        reference_no=normalized_reference,
+        amount=amount,
+    ).exists():
+        raise ValueError("A payment with this reference has already been recorded.")
+
     balance_after = (balance_before - amount).quantize(Decimal('0.01'))
     payment = VendorPayment.objects.create(
         vendor=service.vendor,
@@ -54,7 +69,7 @@ def _record_vendor_payment_for_locked_service(service, amount, payment_method, p
         amount=amount,
         balance_before=balance_before,
         balance_after=balance_after,
-        reference_no=(reference_no or '').strip(),
+        reference_no=normalized_reference,
         notes=(notes or '').strip(),
         created_by=user if getattr(user, 'is_authenticated', False) else None,
     )
@@ -68,7 +83,6 @@ def _record_vendor_payment_for_service(service_id, amount, payment_method, payme
     service = (
         SpecializedService.objects
         .select_for_update()
-        .select_related('vendor', 'job_ticket')
         .get(id=service_id)
     )
     return _record_vendor_payment_for_locked_service(
@@ -89,7 +103,6 @@ def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, re
     services_qs = (
         SpecializedService.objects
         .select_for_update()
-        .select_related('vendor', 'job_ticket')
         .filter(
             vendor=vendor,
             status='Returned from Vendor',
@@ -599,7 +612,12 @@ def delete_vendor(request, vendor_id):
     return redirect('vendor_dashboard')
 
 def _build_vendor_report_context(request, vendor_id):
-    vendor = get_object_or_404(Vendor, id=vendor_id)
+    vendor = get_object_or_404(
+        scope_to_workspace(
+            Vendor.objects.filter(id=vendor_id),
+            getattr(request, 'current_workspace', None),
+        )
+    )
 
     # Get date filters from URL parameters
     start_date_str = request.GET.get('start_date')

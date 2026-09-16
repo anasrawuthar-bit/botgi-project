@@ -94,6 +94,35 @@
         padding: 0.25rem 0;
     }
 
+    .staff-checklist-readonly {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        background: #f8fafc;
+        font-weight: 500;
+        color: #1e293b;
+    }
+
+    .custom-field-row {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 0.5rem;
+        margin-bottom: 0.5rem;
+        transition: all 0.2s ease;
+    }
+
+    .custom-field-row:hover {
+        border-color: #cbd5e1;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .btn-quick-amount {
+        font-size: 0.78rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+    }
+
     @media (max-width: 575.98px) {
         .job-bill-header,
         .job-bill-row {
@@ -114,9 +143,41 @@
 
 {% block content %}
 <div class="section-container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="section-title mb-0">Job Detail: {{ job.job_code }}</h1>
-        <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-3 border-bottom">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary btn-sm" title="Back to Dashboard">
+                <i class="fas fa-arrow-left"></i> Dashboard
+            </a>
+            <h1 class="section-title mb-0 fs-3">Job #{{ job.job_code }}</h1>
+            <span class="badge badge-status badge-info">{{ job.get_status_display }}</span>
+            {% if balance_due <= 0 and grand_total > 0 %}
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fas fa-check-circle me-1"></i>Paid</span>
+            {% elif amount_paid > 0 %}
+            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1"><i class="fas fa-clock me-1"></i>Part Paid (₹{{ balance_due|floatformat:2 }} due)</span>
+            {% elif grand_total > 0 %}
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i class="fas fa-exclamation-circle me-1"></i>Unpaid (₹{{ balance_due|floatformat:2 }})</span>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'job_creation_receipt_print' job.job_code %}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-id-card me-1"></i> Print Job Card
+            </a>
+            <a href="{% url 'job_billing_print_view' job.job_code %}" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm">
+                <i class="fas fa-file-invoice me-1"></i> Print Tax Invoice
+            </a>
+            <a href="{% url 'job_billing_staff' job.job_code %}" class="btn btn-primary btn-sm">
+                <i class="fas fa-calculator me-1"></i> Manage Bill
+            </a>
+            {% if balance_due > 0 %}
+            <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#collectPaymentModal">
+                <i class="fas fa-hand-holding-dollar me-1"></i> Collect Payment
+            </button>
+            {% else %}
+            <button type="button" class="btn btn-outline-success btn-sm" disabled>
+                <i class="fas fa-check-double me-1"></i> Fully Settled
+            </button>
+            {% endif %}
+        </div>
     </div>
 
     <div class="row g-4">
@@ -282,48 +343,66 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if field.type == 'textarea' %}
-                                            <textarea
-                                                class="form-control staff-checklist-input"
-                                                rows="2"
-                                                name="checklist_{{ field.key }}"
-                                                placeholder="{{ field.placeholder }}"
-                                                disabled
-                                            >{{ field.value }}</textarea>
-                                        {% elif field.type == 'select' %}
-                                            <select class="form-select staff-checklist-input" name="checklist_{{ field.key }}" disabled>
-                                                <option value="">-- Select --</option>
-                                                {% for option in field.options %}
-                                                    <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
-                                                {% endfor %}
-                                            </select>
-                                        {% elif field.type == 'checkbox' %}
-                                            <input type="hidden" name="checklist_{{ field.key }}" value="0" class="staff-checklist-input">
-                                            <div class="form-check mt-1">
-                                                <input
-                                                    class="form-check-input staff-checklist-input"
-                                                    type="checkbox"
+                                        <!-- Read-Only Presentation -->
+                                        <div class="staff-checklist-view-item">
+                                            {% if field.type == 'checkbox' %}
+                                                {% if field.value == '1' %}
+                                                    <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check me-1"></i>Verified</span>
+                                                {% else %}
+                                                    <span class="badge bg-light text-muted border">Not Verified</span>
+                                                {% endif %}
+                                            {% elif field.value %}
+                                                <span class="fw-semibold text-dark">{{ field.value }}</span>
+                                            {% else %}
+                                                <span class="text-muted fst-italic">Pending inspection</span>
+                                            {% endif %}
+                                        </div>
+
+                                        <!-- Interactive Form Controls (Hidden until Edit is clicked) -->
+                                        <div class="staff-checklist-edit-item d-none">
+                                            {% if field.type == 'textarea' %}
+                                                <textarea
+                                                    class="form-control staff-checklist-input"
+                                                    rows="2"
                                                     name="checklist_{{ field.key }}"
-                                                    id="staff_check_{{ field.key }}"
-                                                    value="1"
-                                                    {% if field.value == '1' %}checked{% endif %}
+                                                    placeholder="{{ field.placeholder }}"
+                                                    disabled
+                                                >{{ field.value }}</textarea>
+                                            {% elif field.type == 'select' %}
+                                                <select class="form-select staff-checklist-input" name="checklist_{{ field.key }}" disabled>
+                                                    <option value="">-- Select --</option>
+                                                    {% for option in field.options %}
+                                                        <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            {% elif field.type == 'checkbox' %}
+                                                <input type="hidden" name="checklist_{{ field.key }}" value="0" class="staff-checklist-input">
+                                                <div class="form-check mt-1">
+                                                    <input
+                                                        class="form-check-input staff-checklist-input"
+                                                        type="checkbox"
+                                                        name="checklist_{{ field.key }}"
+                                                        id="staff_check_{{ field.key }}"
+                                                        value="1"
+                                                        {% if field.value == '1' %}checked{% endif %}
+                                                        disabled
+                                                    >
+                                                    <label class="form-check-label" for="staff_check_{{ field.key }}">
+                                                        Verified
+                                                    </label>
+                                                </div>
+                                            {% else %}
+                                                <input
+                                                    type="{% if field.type == 'number' %}number{% else %}text{% endif %}"
+                                                    class="form-control staff-checklist-input"
+                                                    name="checklist_{{ field.key }}"
+                                                    value="{{ field.value }}"
+                                                    placeholder="{{ field.placeholder }}"
+                                                    {% if field.type == 'number' %}step="0.01"{% endif %}
                                                     disabled
                                                 >
-                                                <label class="form-check-label" for="staff_check_{{ field.key }}">
-                                                    Verified
-                                                </label>
-                                            </div>
-                                        {% else %}
-                                            <input
-                                                type="{% if field.type == 'number' %}number{% else %}text{% endif %}"
-                                                class="form-control staff-checklist-input"
-                                                name="checklist_{{ field.key }}"
-                                                value="{{ field.value }}"
-                                                placeholder="{{ field.placeholder }}"
-                                                {% if field.type == 'number' %}step="0.01"{% endif %}
-                                                disabled
-                                            >
-                                        {% endif %}
+                                            {% endif %}
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -607,11 +686,73 @@
                         <span>Discount</span>
                         <strong>- &#8377;{{ discount_amount|floatformat:2 }}</strong>
                     </div>
-                    <div class="job-bill-row fs-5 text-primary">
+                    <div class="job-bill-row fs-5 text-primary border-top pt-2">
                         <span class="fw-bold">Grand Total</span>
                         <strong>&#8377;{{ grand_total|floatformat:2 }}</strong>
                     </div>
+
+                    <!-- Payment Overview Breakdown -->
+                    <div class="job-bill-row text-success pt-2">
+                        <span>Amount Paid</span>
+                        <strong>&#8377;{{ amount_paid|floatformat:2 }}</strong>
+                    </div>
+                    <div class="job-bill-row fs-6 pt-1 {% if balance_due > 0 %}text-danger fw-bold{% else %}text-muted{% endif %}">
+                        <span>Balance Due</span>
+                        <strong>&#8377;{{ balance_due|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                        <div>
+                            <span class="text-muted small d-block">Payment Status</span>
+                            {% if job.payment_status == 'paid' %}
+                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Paid in Full</span>
+                            {% elif job.payment_status == 'part_paid' %}
+                            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Partially Paid</span>
+                            {% else %}
+                            <span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i>Unpaid</span>
+                            {% endif %}
+                        </div>
+                        {% if balance_due > 0 %}
+                        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#collectPaymentModal">
+                            <i class="fas fa-hand-holding-dollar me-1"></i> Collect Payment
+                        </button>
+                        {% endif %}
+                    </div>
                 </div>
+
+                <!-- Payment Installments & Customer Ledger History -->
+                {% if job_payments %}
+                <div class="mt-3 pt-3 border-top">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0 text-dark fw-bold"><i class="fas fa-receipt text-secondary me-1"></i>Payment Installments History</h6>
+                        <span class="badge bg-light text-dark border">{{ job_payments|length }} payment{{ job_payments|length|pluralize }}</span>
+                    </div>
+                    <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
+                        <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Method</th>
+                                    <th>Ref / Notes</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in job_payments %}
+                                <tr>
+                                    <td>{{ payment.payment_date|date:"d M Y" }}</td>
+                                    <td><span class="badge bg-secondary-subtle text-dark">{{ payment.get_payment_method_display }}</span></td>
+                                    <td>
+                                        {% if payment.reference_no %}<span class="fw-semibold">{{ payment.reference_no }}</span><br>{% endif %}
+                                        <small class="text-muted">{{ payment.notes|default:"-" }}</small>
+                                    </td>
+                                    <td class="text-end fw-bold text-success">&#8377;{{ payment.amount|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
             </div>
 
             {% if job.status == 'Closed' and job.feedback_followup_enabled and job.feedback_due_at and not job.feedback_rating and job.feedback_followup_status != 'received' and job.feedback_followup_status != 'called_happy' %}
@@ -740,13 +881,13 @@
       <form method="post" action="{% url 'job_reassign_staff' job.job_code %}">
           {% csrf_token %}
           <div class="modal-header">
-            <h5 class="modal-title" id="reassignModalLabel">Reassign Job {{ job.job_code }}</h5>
+            <h5 class="modal-title" id="reassignModalLabel"><i class="fas fa-user-edit text-warning me-2"></i>Reassign Job {{ job.job_code }}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <p>Current Technician: <strong>{{ job.assigned_to.user.username|default:"Unassigned" }}</strong></p>
             <div class="mb-3">
-                <label for="id_new_technician" class="form-label">Select New Technician:</label>
+                <label for="id_new_technician" class="form-label fw-semibold">Select New Technician: <span class="text-danger">*</span></label>
                 {% with reassign_form=ReassignTechnicianForm %}
                     <select name="new_technician" id="id_new_technician" class="form-select" required>
                         {% for tech in technician_list %}
@@ -764,6 +905,122 @@
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="submit" class="btn btn-warning">Confirm Reassignment</button>
           </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Collect Balance Payment Modal -->
+<div class="modal fade" id="collectPaymentModal" tabindex="-1" aria-labelledby="collectPaymentModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{% url 'staff_job_collect_payment' job.job_code %}">
+        {% csrf_token %}
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title" id="collectPaymentModalLabel">
+            <i class="fas fa-hand-holding-dollar me-2"></i>Collect Payment — Job {{ job.job_code }}
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- Summary Banner -->
+          <div class="row g-3 mb-4">
+            <div class="col-4 text-center p-2 bg-light rounded border">
+              <div class="small text-muted">Grand Total</div>
+              <div class="fw-bold fs-5">&#8377;{{ grand_total|floatformat:2 }}</div>
+            </div>
+            <div class="col-4 text-center p-2 bg-light rounded border">
+              <div class="small text-muted">Amount Paid</div>
+              <div class="fw-bold fs-5 text-success">&#8377;{{ amount_paid|floatformat:2 }}</div>
+            </div>
+            <div class="col-4 text-center p-2 bg-danger bg-opacity-10 rounded border border-danger-subtle">
+              <div class="small text-muted">Balance Due</div>
+              <div class="fw-bold fs-5 text-danger">&#8377;{{ balance_due|floatformat:2 }}</div>
+            </div>
+          </div>
+
+          <!-- Payment Amount -->
+          <div class="mb-3">
+            <label for="cp_amount" class="form-label fw-semibold">Payment Amount <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <span class="input-group-text">&#8377;</span>
+              <input type="number" step="0.01" min="0.01" max="{{ balance_due }}"
+                     class="form-control form-control-lg" id="cp_amount" name="amount"
+                     placeholder="0.00" required>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm btn-quick-amount" data-amount="{{ balance_due|floatformat:2 }}">
+                Full Balance &#8377;{{ balance_due|floatformat:2 }}
+              </button>
+              {% if balance_due > 100 %}
+              <button type="button" class="btn btn-outline-secondary btn-sm btn-quick-amount" data-amount="100">&#8377;100</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm btn-quick-amount" data-amount="500">&#8377;500</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm btn-quick-amount" data-amount="1000">&#8377;1000</button>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Payment Method -->
+          <div class="mb-3">
+            <label for="cp_method" class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
+            <select class="form-select" id="cp_method" name="payment_method">
+              {% for key, label in payment_methods %}
+              <option value="{{ key }}">{{ label }}</option>
+              {% endfor %}
+              <option value="custom">Other / Custom Method</option>
+            </select>
+          </div>
+
+          <!-- Custom Method Name (shown when "Other / Custom" is selected) -->
+          <div class="mb-3 d-none" id="cp_custom_method_wrap">
+            <label for="cp_custom_method" class="form-label fw-semibold">Custom Method Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="cp_custom_method" name="custom_payment_method"
+                   placeholder="e.g. Cheque, Store Credit, Barter">
+          </div>
+
+          <!-- Payment Reference -->
+          <div class="mb-3">
+            <label for="cp_ref" class="form-label fw-semibold">Reference / Transaction ID</label>
+            <input type="text" class="form-control" id="cp_ref" name="payment_reference"
+                   placeholder="UPI Ref, Cheque No., Card Txn ID">
+          </div>
+
+          <!-- Payment Date -->
+          <div class="mb-3">
+            <label for="cp_date" class="form-label fw-semibold">Payment Date</label>
+            <input type="date" class="form-control" id="cp_date" name="payment_date"
+                   value="{{ today|default:'' }}">
+          </div>
+
+          <!-- Internal Notes -->
+          <div class="mb-3">
+            <label for="cp_notes" class="form-label fw-semibold">Internal Notes</label>
+            <textarea class="form-control" id="cp_notes" name="notes" rows="2"
+                      placeholder="Optional note for this payment installment"></textarea>
+          </div>
+
+          <!-- Dynamic Custom Fields -->
+          <div class="mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <label class="form-label fw-semibold mb-0">Custom Fields</label>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="add-custom-field-btn">
+                <i class="fas fa-plus me-1"></i>Add Custom Field
+              </button>
+            </div>
+            <div id="custom-fields-container">
+              <!-- Dynamic rows inserted here by JS -->
+            </div>
+            <small class="text-muted">Use custom fields for additional tracking info (e.g., "Insurance Claim No", "Advance Token").</small>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success px-4">
+            <i class="fas fa-check-circle me-1"></i>Confirm & Record Payment
+          </button>
+        </div>
       </form>
     </div>
   </div>
@@ -830,9 +1087,18 @@ function initStaffChecklistEditor() {
     const noteEl = document.getElementById('staff-checklist-note');
     const inputs = form.querySelectorAll('.staff-checklist-input');
 
+    const viewItems = form.querySelectorAll('.staff-checklist-view-item');
+    const editItems = form.querySelectorAll('.staff-checklist-edit-item');
+
     function setEditMode(enabled) {
         inputs.forEach((el) => {
             el.disabled = !enabled;
+        });
+        viewItems.forEach((el) => {
+            el.classList.toggle('d-none', enabled);
+        });
+        editItems.forEach((el) => {
+            el.classList.toggle('d-none', !enabled);
         });
 
         if (enabled) {
@@ -1057,5 +1323,64 @@ document.addEventListener('visibilitychange', function() {
         lockVendorDetails();
     }
 });
+
+// ─── Collect Payment Modal ─────────────────────────────────────────────────
+(function() {
+    // Quick-amount buttons
+    document.querySelectorAll('.btn-quick-amount').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const amountInput = document.getElementById('cp_amount');
+            if (amountInput) amountInput.value = btn.dataset.amount;
+        });
+    });
+
+    // Custom method toggle
+    const methodSelect = document.getElementById('cp_method');
+    const customMethodWrap = document.getElementById('cp_custom_method_wrap');
+    const customMethodInput = document.getElementById('cp_custom_method');
+    if (methodSelect && customMethodWrap) {
+        methodSelect.addEventListener('change', () => {
+            const isCustom = methodSelect.value === 'custom';
+            customMethodWrap.classList.toggle('d-none', !isCustom);
+            if (customMethodInput) customMethodInput.required = isCustom;
+        });
+    }
+
+    // Dynamic custom fields
+    let customFieldCount = 0;
+    const addBtn = document.getElementById('add-custom-field-btn');
+    const container = document.getElementById('custom-fields-container');
+
+    if (addBtn && container) {
+        addBtn.addEventListener('click', () => {
+            customFieldCount++;
+            const row = document.createElement('div');
+            row.className = 'custom-field-row d-flex gap-2 align-items-center';
+            row.innerHTML = `
+                <input type="text" name="custom_field_name[]" class="form-control" 
+                       placeholder="Field Name (e.g. Claim No)" style="flex: 2;">
+                <input type="text" name="custom_field_value[]" class="form-control" 
+                       placeholder="Value" style="flex: 3;">
+                <button type="button" class="btn btn-outline-danger btn-sm px-2 remove-custom-field" title="Remove">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            row.querySelector('.remove-custom-field').addEventListener('click', () => row.remove());
+            container.appendChild(row);
+        });
+    }
+
+    // Reset modal on close
+    const collectModal = document.getElementById('collectPaymentModal');
+    if (collectModal) {
+        collectModal.addEventListener('hidden.bs.modal', () => {
+            const form = collectModal.querySelector('form');
+            if (form) form.reset();
+            if (container) container.innerHTML = '';
+            if (customMethodWrap) customMethodWrap.classList.add('d-none');
+            if (customMethodInput) customMethodInput.required = false;
+        });
+    }
+})();
 </script>
 {% endblock %}  
