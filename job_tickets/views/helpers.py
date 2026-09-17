@@ -1289,7 +1289,7 @@ def get_next_job_code():
     cache.set(cache_key_max, next_counter, 600)
     return job_code
 
-def get_phone_service_snapshot(phone):
+def get_phone_service_snapshot(phone, workspace=None):
     normalized_phone, _ = normalize_indian_phone(phone, required=False)
     if not normalized_phone:
         return {
@@ -1300,25 +1300,56 @@ def get_phone_service_snapshot(phone):
             'total_jobs': 0,
             'open_jobs': 0,
             'recent_jobs': [],
+            'outstanding_balance': '0.00',
+            'latest_device': None,
         }
 
     phone_variants = phone_lookup_variants(normalized_phone)
-    jobs_qs = JobTicket.objects.filter(customer_phone__in=phone_variants).order_by('-created_at')
+    jobs_scope = JobTicket.objects.filter(customer_phone__in=phone_variants)
+    if workspace:
+        jobs_scope = jobs_scope.filter(workspace=workspace)
+    jobs_qs = jobs_scope.order_by('-created_at')
     total_jobs = jobs_qs.count()
-    open_jobs = jobs_qs.exclude(status='Closed').count()
+    open_jobs = jobs_qs.exclude(status__in=['Closed', 'Cancelled', 'Delivered']).count()
     latest_job = jobs_qs.first()
 
     recent_jobs = []
-    for job in jobs_qs[:3]:
+    job_rows_for_balance = list(jobs_qs[:15].prefetch_related('service_logs'))
+    calculate_job_totals(job_rows_for_balance)
+    total_billed = Decimal('0.00')
+    total_paid = Decimal('0.00')
+    for job in job_rows_for_balance:
+        d_total = _money_or_zero(job.discount_amount)
+        n_total = _net_amount_after_discount(job.total, d_total)
+        p_total = job.amount_paid or Decimal('0.00')
+        total_billed += n_total
+        total_paid += p_total
+
+    for job in job_rows_for_balance[:3]:
         recent_jobs.append({
             'job_code': job.job_code,
             'device_type': job.device_type,
+            'device_brand': job.device_brand,
+            'device_model': job.device_model,
             'status': job.status,
             'created_at': job.created_at.strftime('%Y-%m-%d'),
         })
 
-    client = Client.objects.filter(phone__in=phone_variants).order_by('id').first()
+    outstanding_balance = max(Decimal('0.00'), total_billed - total_paid)
+
+    client_scope = Client.objects.filter(phone__in=phone_variants)
+    if workspace:
+        client_scope = client_scope.filter(workspace=workspace)
+    client = client_scope.order_by('id').first()
     fallback_name = latest_job.customer_name if (latest_job and not client) else ''
+
+    latest_device = None
+    if latest_job:
+        latest_device = {
+            'device_type': latest_job.device_type or '',
+            'device_brand': latest_job.device_brand or '',
+            'device_model': latest_job.device_model or '',
+        }
 
     return {
         'phone': normalized_phone,
@@ -1328,6 +1359,8 @@ def get_phone_service_snapshot(phone):
         'total_jobs': total_jobs,
         'open_jobs': open_jobs,
         'recent_jobs': recent_jobs,
+        'outstanding_balance': f"{outstanding_balance:.2f}",
+        'latest_device': latest_device,
     }
 
 

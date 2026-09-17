@@ -145,7 +145,8 @@ def client_phone_lookup(request):
         return JsonResponse({'ok': False, 'message': 'Unauthorized'}, status=403)
 
     phone = request.GET.get('phone')
-    snapshot = get_phone_service_snapshot(phone)
+    workspace = getattr(request, 'current_workspace', None)
+    snapshot = get_phone_service_snapshot(phone, workspace=workspace)
     return JsonResponse({'ok': True, **snapshot})
 
 def client_bill_view(request, job_code):
