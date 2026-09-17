@@ -1778,11 +1778,13 @@ class CompanyProfile(models.Model):
         if workspace:
             profile = cls.objects.filter(workspace=workspace).first()
             if not profile:
-                profile = cls.objects.create(workspace=workspace, company_name=workspace.name)
+                max_id = cls.objects.aggregate(m=models.Max('id'))['m'] or 0
+                profile = cls.objects.create(id=max_id + 1, workspace=workspace, company_name=workspace.name)
             return profile
         profile = cls.objects.filter(workspace__isnull=True).first() or cls.objects.first()
         if not profile:
-            profile = cls.objects.create(id=1)
+            max_id = cls.objects.aggregate(m=models.Max('id'))['m'] or 0
+            profile = cls.objects.create(id=max_id + 1)
         return profile
 
 

@@ -20,6 +20,8 @@ urlpatterns = [
     # Staff-facing views
     path('staff-dashboard/', views.staff_dashboard, name='staff_dashboard'),
     path('staff/clients/', views.client_dashboard, name='client_dashboard'),
+    path('staff/clients/<int:client_id>/', views.client_detail, name='client_detail'),
+    path('staff/clients/<int:client_id>/edit/', views.edit_client, name='edit_client'),
     path('staff/products/', views.product_dashboard, name='product_dashboard'),
     path('staff/inventory/products/', views.product_dashboard, name='inventory_product_dashboard'),
     path('staff/inventory/products/<int:product_id>/ledger/', views.inventory_product_ledger, name='inventory_product_ledger'),

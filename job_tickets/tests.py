@@ -5577,3 +5577,104 @@ class TaskRealtimeWebSocketTests(TransactionTestCase):
         broadcast_task_status(self.task, 'open', 'in_progress', self.staff_user)
         broadcast_task_created(self.task)
         broadcast_task_deleted(self.workspace.id, self.task.id, self.task.title)
+
+
+class ClientManagementLifecycleTests(TestCase):
+    """Test client dashboard, edit client, and 360 profile views."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='client-mgmt-staff',
+            password='StrongPass123!',
+            is_staff=True,
+        )
+        apply_staff_access(self.user, {'staff_dashboard', 'inventory'})
+        self.workspace = CompanyWorkspace.objects.create(name='Client WS', owner=self.user)
+        CompanyUserMembership.objects.create(
+            workspace=self.workspace,
+            user=self.user,
+            role=CompanyUserMembership.ROLE_ADMIN,
+        )
+        self.client.force_login(self.user)
+        self.client_obj = Client.objects.create(
+            workspace=self.workspace,
+            name='Ramesh Kumar',
+            phone='9876543210',
+            email='ramesh@example.com',
+            company_name='Ramesh Enterprises',
+            address='123 Main St, Mumbai',
+        )
+        self.job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='JOB-CLI-001',
+            customer_name='Ramesh Kumar',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            reported_issue='Overheating',
+            status='Ready for Pickup',
+            amount_paid=Decimal('200.00'),
+            payment_status='part_paid',
+        )
+        ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Thermal paste replacement',
+            part_cost=Decimal('100.00'),
+            service_charge=Decimal('400.00'),
+        )
+        # Total = 500, Paid = 200, Balance = 300
+
+    def test_client_dashboard_renders_financial_stats_and_tabs(self):
+        url = reverse('client_dashboard')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Ramesh Kumar')
+        self.assertContains(response, 'Due:')
+        self.assertContains(response, '300.00')
+
+        # Filter by credit_due tab
+        resp_credit = self.client.get(f"{url}?tab=credit_due")
+        self.assertEqual(resp_credit.status_code, 200)
+        self.assertContains(resp_credit, 'Ramesh Kumar')
+
+    def test_edit_client_updates_details(self):
+        url = reverse('edit_client', args=[self.client_obj.id])
+        response = self.client.post(url, {
+            'name': 'Ramesh K. Updated',
+            'phone': '+91 98765 43210',
+            'email': 'updated@example.com',
+            'company_name': 'Ramesh Tech Solutions',
+            'address': '456 Second St, Mumbai',
+            'notes': 'VIP Customer',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.client_obj.refresh_from_db()
+        self.assertEqual(self.client_obj.name, 'Ramesh K. Updated')
+        self.assertEqual(self.client_obj.phone, '9876543210')
+        self.assertEqual(self.client_obj.company_name, 'Ramesh Tech Solutions')
+        self.assertEqual(self.client_obj.notes, 'VIP Customer')
+
+    def test_edit_client_rejects_duplicate_phone(self):
+        Client.objects.create(
+            workspace=self.workspace,
+            name='Other Person',
+            phone='9123456789',
+        )
+        url = reverse('edit_client', args=[self.client_obj.id])
+        response = self.client.post(url, {
+            'name': 'Ramesh Kumar',
+            'phone': '9123456789',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.client_obj.refresh_from_db()
+        self.assertEqual(self.client_obj.phone, '9876543210')
+
+    def test_client_detail_renders_360_profile_and_ledger(self):
+        url = reverse('client_detail', args=[self.client_obj.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Ramesh Kumar')
+        self.assertContains(response, 'JOB-CLI-001')
+        self.assertContains(response, 'Lifetime Billed')
+        self.assertContains(response, 'Outstanding Credit')
+        self.assertContains(response, '300.00')
+

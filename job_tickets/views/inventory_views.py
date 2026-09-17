@@ -637,6 +637,10 @@ def client_dashboard(request):
         return denied
 
     query = (request.GET.get('q') or '').strip()
+    active_tab = (request.GET.get('tab') or 'all').strip().lower()
+    if active_tab not in {'all', 'credit_due', 'repeat'}:
+        active_tab = 'all'
+
     current_workspace = getattr(request, 'current_workspace', None)
     clients = scope_to_workspace(Client.objects.all(), current_workspace)
     jobs_scope = scope_to_workspace(JobTicket.objects.all(), current_workspace)
@@ -644,7 +648,8 @@ def client_dashboard(request):
     if query:
         clients = clients.filter(
             Q(name__icontains=query) |
-            Q(phone__icontains=query)
+            Q(phone__icontains=query) |
+            Q(company_name__icontains=query)
         )
 
     if request.method == 'POST' and 'add_client_submit' in request.POST:
@@ -674,7 +679,7 @@ def client_dashboard(request):
             'count': row['total_jobs'],
         })
 
-    client_rows = list(clients.order_by('-created_at')[:200])
+    client_rows = list(clients.order_by('-created_at')[:250])
     client_phones = [client.phone for client in client_rows if client.phone]
     jobs_by_phone = {phone: [] for phone in client_phones}
     if client_phones:
@@ -689,22 +694,194 @@ def client_dashboard(request):
         for job in job_rows:
             job.discount_total = _money_or_zero(job.discount_amount)
             job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+            job.current_paid = job.amount_paid or Decimal('0.00')
         for row in job_rows:
             phone_key = row.customer_phone
             if phone_key in jobs_by_phone:
                 jobs_by_phone[phone_key].append(row)
+
+    total_receivable_amount = Decimal('0.00')
+    credit_due_clients_count = 0
+    repeat_clients_count = 0
+
     for client in client_rows:
         client.total_jobs = phone_job_counts.get(client.phone, 0)
         client.device_breakdown = device_map.get(client.phone, [])
         client.jobs = jobs_by_phone.get(client.phone, [])
 
+        # Financial summaries per client
+        c_billed = sum(getattr(j, 'net_total', Decimal('0.00')) for j in client.jobs)
+        c_paid = sum(getattr(j, 'current_paid', Decimal('0.00')) for j in client.jobs)
+        c_balance = max(Decimal('0.00'), c_billed - c_paid)
+        client.total_billed = c_billed
+        client.amount_paid = c_paid
+        client.balance_due = c_balance
+
+        clean_digits = ''.join(ch for ch in client.phone if ch.isdigit())
+        clean_10 = clean_digits[-10:] if len(clean_digits) >= 10 else clean_digits
+        client.clean_10_digit = clean_10
+        client.whatsapp_url = f"https://wa.me/91{clean_10}" if len(clean_10) == 10 else None
+
+        total_receivable_amount += c_balance
+        if c_balance > Decimal('0.00'):
+            credit_due_clients_count += 1
+        if client.total_jobs >= 2:
+            repeat_clients_count += 1
+
+    # Filter according to active tab
+    if active_tab == 'credit_due':
+        displayed_clients = [c for c in client_rows if c.balance_due > Decimal('0.00')]
+    elif active_tab == 'repeat':
+        displayed_clients = [c for c in client_rows if c.total_jobs >= 2]
+    else:
+        displayed_clients = client_rows
+
+    active_jobs_count = jobs_scope.exclude(status__in=['Closed', 'Delivered', 'Cancelled']).count()
+
     context = {
-        'clients': client_rows,
+        'clients': displayed_clients,
         'client_form': client_form,
         'query': query,
+        'active_tab': active_tab,
         'total_clients': clients.count(),
+        'total_receivable_amount': total_receivable_amount,
+        'credit_due_clients_count': credit_due_clients_count,
+        'repeat_clients_count': repeat_clients_count,
+        'active_jobs_count': active_jobs_count,
     }
     return render(request, 'job_tickets/client_dashboard.html', context)
+
+
+@login_required
+@require_POST
+def edit_client(request, client_id):
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    client = get_object_or_404(scope_to_workspace(Client.objects.filter(id=client_id), current_workspace))
+
+    name = (request.POST.get('name') or '').strip()
+    phone_raw = (request.POST.get('phone') or '').strip()
+    email = (request.POST.get('email') or '').strip()
+    company_name = (request.POST.get('company_name') or '').strip()
+    address = (request.POST.get('address') or '').strip()
+    notes = (request.POST.get('notes') or '').strip()
+
+    if not name:
+        messages.error(request, "Client name is required.")
+        return redirect(request.POST.get('next') or reverse('client_dashboard'))
+
+    normalized_phone, phone_error = normalize_indian_phone(phone_raw, required=True, field_label="Phone number")
+    if phone_error:
+        messages.error(request, phone_error)
+        return redirect(request.POST.get('next') or reverse('client_dashboard'))
+
+    duplicate_qs = Client.objects.filter(phone=normalized_phone).exclude(id=client.id)
+    if client.workspace:
+        duplicate_qs = duplicate_qs.filter(workspace=client.workspace)
+    if duplicate_qs.exists():
+        messages.error(request, f"Another client already exists with phone {normalized_phone}.")
+        return redirect(request.POST.get('next') or reverse('client_dashboard'))
+
+    old_phone = client.phone
+    client.name = name
+    client.phone = normalized_phone
+    client.email = email
+    client.company_name = company_name
+    client.address = address
+    client.notes = notes
+    client.save()
+
+    # Synchronize linked customer party if exists
+    InventoryParty.objects.filter(
+        workspace=client.workspace,
+        party_type='customer',
+        phone=old_phone,
+    ).update(
+        name=name,
+        phone=normalized_phone,
+        legal_name=company_name,
+        address=address,
+    )
+
+    messages.success(request, f"Client '{client.name}' updated successfully.")
+    next_url = request.POST.get('next')
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+    return redirect('client_dashboard')
+
+
+@login_required
+def client_detail(request, client_id):
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    client = get_object_or_404(scope_to_workspace(Client.objects.filter(id=client_id), current_workspace))
+
+    variants = phone_lookup_variants(client.phone)
+    if client.phone not in variants:
+        variants.append(client.phone)
+
+    jobs_scope = scope_to_workspace(JobTicket.objects.all(), current_workspace)
+    job_rows = list(
+        jobs_scope
+        .filter(customer_phone__in=variants)
+        .prefetch_related('service_logs')
+        .defer('technician_notes', 'technician_checklist', 'feedback_followup_note')
+        .order_by('-created_at')
+    )
+    calculate_job_totals(job_rows)
+    for job in job_rows:
+        job.discount_total = _money_or_zero(job.discount_amount)
+        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+        job.current_paid = job.amount_paid or Decimal('0.00')
+
+    total_billed = sum(getattr(j, 'net_total', Decimal('0.00')) for j in job_rows)
+    total_paid = sum(getattr(j, 'current_paid', Decimal('0.00')) for j in job_rows)
+    total_balance_due = max(Decimal('0.00'), total_billed - total_paid)
+    active_jobs = [j for j in job_rows if j.status not in {'Closed', 'Delivered', 'Cancelled'}]
+
+    party = InventoryParty.objects.filter(
+        workspace=client.workspace,
+        party_type='customer',
+        phone__in=variants,
+    ).first()
+
+    credit_payments = list(
+        InventoryCreditPayment.objects.filter(
+            Q(party=party) if party else Q(bill__job_ticket__in=job_rows)
+        ).select_related('bill').order_by('-payment_date', '-created_at')
+    ) if (party or job_rows) else []
+
+    inventory_bills = list(
+        InventoryBill.objects.filter(
+            Q(party=party) if party else Q(job_ticket__in=job_rows)
+        ).order_by('-entry_date', '-id')
+    ) if (party or job_rows) else []
+
+    clean_digits = ''.join(ch for ch in client.phone if ch.isdigit())
+    clean_10 = clean_digits[-10:] if len(clean_digits) >= 10 else clean_digits
+    whatsapp_url = f"https://wa.me/91{clean_10}" if len(clean_10) == 10 else None
+
+    context = {
+        'client': client,
+        'jobs': job_rows,
+        'active_jobs': active_jobs,
+        'total_jobs_count': len(job_rows),
+        'total_billed': total_billed,
+        'total_paid': total_paid,
+        'total_balance_due': total_balance_due,
+        'party': party,
+        'credit_payments': credit_payments,
+        'inventory_bills': inventory_bills,
+        'whatsapp_url': whatsapp_url,
+        'clean_10_digit': clean_10,
+    }
+    return render(request, 'job_tickets/client_detail.html', context)
 
 @login_required
 def product_dashboard(request):
