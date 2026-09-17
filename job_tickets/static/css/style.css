@@ -894,7 +894,7 @@ h6,
     position: fixed;
     top: 1rem;
     left: calc(var(--sidebar-expanded-width) - 19px);
-    z-index: 1051;
+    z-index: 1042;
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
     transition: left 0.34s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -902,6 +902,12 @@ h6,
 .sidebar-desktop-toggle-floating:hover,
 .sidebar-desktop-toggle-floating:focus {
     transform: translateY(-1px);
+}
+
+body.modal-open .sidebar-desktop-toggle-floating,
+body.modal-open #sidebarDesktopToggleBtn,
+body.modal-open .sidebar-toggle-btn {
+    display: none !important;
 }
 
 .sidebar-brand-logo {

@@ -1771,6 +1771,22 @@ class CompanyProfile(models.Model):
     @property
     def bill_print_margin_css(self):
         return self._print_margin_css(self.bill_print_paper_size, '12mm')
+
+    @property
+    def display_logo_url(self):
+        """Return the workspace logo, or fall back to the root company profile logo."""
+        if self.logo:
+            return self.logo.url
+        if self.logo_url:
+            return self.logo_url
+        if self.workspace:
+            root_profile = CompanyProfile.objects.filter(workspace__isnull=True).first()
+            if root_profile:
+                if root_profile.logo:
+                    return root_profile.logo.url
+                if root_profile.logo_url:
+                    return root_profile.logo_url
+        return ""
     
     @classmethod
     def get_profile(cls, workspace=None):

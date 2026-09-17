@@ -6,23 +6,10 @@
 
 {% block extra_css %}
 <style>
-    .quick-chip-btn, .quick-accessory-btn, .device-cat-btn, .quick-date-btn {
-        font-size: 0.8rem;
-        font-weight: 500;
-        border-radius: 6px;
-        transition: all 0.15s ease-in-out;
-    }
-    .quick-chip-btn:hover, .quick-accessory-btn:hover, .quick-date-btn:hover {
-        background-color: #e0e7ff !important;
-        border-color: #6366f1 !important;
-        color: #4338ca !important;
-        transform: translateY(-1px);
-    }
-    .device-cat-btn.active {
-        background-color: #2563eb !important;
-        border-color: #1d4ed8 !important;
-        color: #ffffff !important;
-        box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+    body.modal-open .sidebar-desktop-toggle-floating,
+    body.modal-open #sidebarDesktopToggleBtn,
+    body.modal-open .sidebar-toggle-btn {
+        display: none !important;
     }
     .client-intel-card {
         animation: fadeInDown 0.2s ease-out;
@@ -311,20 +298,24 @@
     <div class="modal fade quick-pop-modal" id="createJobTicketModal" tabindex="-1"
         aria-labelledby="createJobTicketModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow-lg" style="border-radius: 18px; overflow: hidden;">
-                <div class="modal-header py-3 px-4 text-white" style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-light border-bottom py-3 px-4">
                     <div class="d-flex align-items-center gap-3">
-                        <div class="rounded-3 bg-white bg-opacity-20 d-flex align-items-center justify-content-center text-white shadow-sm" style="width: 42px; height: 42px;">
-                            <i class="fas fa-file-invoice fs-5"></i>
-                        </div>
+                        {% if company.display_logo_url %}
+                            <img src="{{ company.display_logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="sidebar-brand-logo" onerror="this.onerror=null; this.src='/static/img/logo.png';">
+                        {% else %}
+                            <img src="/static/img/logo.png" alt="Software Logo" class="sidebar-brand-logo">
+                        {% endif %}
                         <div>
-                            <h5 class="modal-title fw-bold mb-0 text-white" id="createJobTicketModalLabel">Create New Job Ticket</h5>
-                            <small class="text-white text-opacity-75">Customer intake & device repair booking</small>
+                            <h5 class="modal-title fw-bold mb-0" id="createJobTicketModalLabel" style="color: var(--primary-dark, #14213d); font-family: 'Space Grotesk', sans-serif;">
+                                Create New Job Ticket
+                            </h5>
+                            <small class="text-muted">{{ company.company_name|default:"GI Hostings" }}{% if company.tagline %} &bull; {{ company.tagline }}{% endif %}</small>
                         </div>
                     </div>
-                    <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body p-3 p-md-4" style="background-color: #f8fafc;">
+                <div class="modal-body p-3 p-md-4" style="background-color: var(--light-gray, #f8f9fb);">
                     <form method="post" novalidate id="job-creation-form" 
                         data-phone-lookup-url="{% url 'client_phone_lookup' %}" enctype="multipart/form-data"
                         data-no-loader="true">
@@ -334,11 +325,11 @@
                         <div id="job-form-messages" class="mb-3"></div>
 
                         <!-- 1. Customer Information Card -->
-                        <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e2e8f0 !important;">
+                        <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
                             <div class="card-body p-3 p-md-4">
                                 <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                    <h6 class="fw-bold text-primary mb-0 d-flex align-items-center gap-2">
-                                        <i class="fas fa-user-circle fs-5"></i> 1. Customer Information
+                                    <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
+                                        <i class="fas fa-user-circle text-primary fs-5"></i> 1. Customer Information
                                     </h6>
                                     <span class="badge bg-primary-subtle text-primary fw-medium px-2 py-1">Required</span>
                                 </div>
@@ -374,8 +365,8 @@
                         <!-- 2. Device Details Section -->
                         <div class="mb-3">
                             <div class="d-flex align-items-center justify-content-between mb-2">
-                                <h6 class="fw-bold text-primary mb-0 d-flex align-items-center gap-2">
-                                    <i class="fas fa-laptop-medical fs-5"></i> 2. Device & Problem Details
+                                <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
+                                    <i class="fas fa-laptop-medical text-primary fs-5"></i> 2. Device & Problem Details
                                 </h6>
                                 <small class="text-muted">You can add multiple devices for this customer intake</small>
                             </div>
@@ -390,11 +381,11 @@
                         </div>
 
                         <!-- 3. Estimation & Schedule Card -->
-                        <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e2e8f0 !important;">
+                        <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
                             <div class="card-body p-3 p-md-4">
                                 <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                    <h6 class="fw-bold text-primary mb-0 d-flex align-items-center gap-2">
-                                        <i class="fas fa-calendar-check fs-5"></i> 3. Turnaround & Estimation
+                                    <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
+                                        <i class="fas fa-calendar-check text-primary fs-5"></i> 3. Turnaround & Estimation
                                     </h6>
                                     <span class="badge bg-secondary-subtle text-secondary fw-medium px-2 py-1">Optional</span>
                                 </div>
@@ -414,12 +405,6 @@
                                             Estimated Ready Date
                                         </label>
                                         <input type="date" name="estimated_delivery" id="id_estimated_delivery" class="form-control">
-                                        <div class="d-flex gap-1 mt-1 flex-wrap">
-                                            <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-date-btn" data-days="0">Today</button>
-                                            <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-date-btn" data-days="1">Tomorrow</button>
-                                            <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-date-btn" data-days="3">+3 Days</button>
-                                            <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-date-btn" data-days="7">+1 Wk</button>
-                                        </div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
@@ -439,7 +424,7 @@
                         </div>
 
                         <!-- Modal Action Footer -->
-                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 border-top">
+                        <div class="modal-footer bg-light border-top px-0 pb-0 pt-3 d-flex flex-wrap justify-content-between align-items-center">
                             <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">
                                 Cancel
                             </button>
@@ -454,7 +439,7 @@
     </div>
 
     <template id="device-form-template">
-        <div class="device-form-block card border shadow-sm p-3 p-md-4 mb-3 rounded-3" style="border-color: #cbd5e1 !important; background: #ffffff;">
+        <div class="device-form-block card border shadow-sm p-3 p-md-4 mb-3 rounded-3" style="border-color: #e8ecf3 !important; background: #ffffff;">
             <div class="d-flex justify-content-between align-items-center pb-2 mb-3 border-bottom">
                 <div class="d-flex align-items-center gap-2">
                     <span class="badge bg-primary text-white rounded-pill px-3 py-1 fw-semibold">
@@ -465,31 +450,6 @@
                 <button type="button" class="btn btn-sm btn-outline-danger remove-device-btn d-none px-2 py-1">
                     <i class="fas fa-trash-alt me-1"></i> Remove Device
                 </button>
-            </div>
-
-            <!-- Quick Category Selectors -->
-            <div class="mb-3">
-                <label class="form-label fw-semibold text-secondary small text-uppercase mb-1 d-block">Quick Select Category</label>
-                <div class="d-flex gap-1 flex-wrap device-category-chips">
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 device-cat-btn" data-category="Laptop">
-                        💻 Laptop
-                    </button>
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 device-cat-btn" data-category="Desktop">
-                        🖥️ Desktop
-                    </button>
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 device-cat-btn" data-category="Mobile">
-                        📱 Mobile
-                    </button>
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 device-cat-btn" data-category="Printer">
-                        🖨️ Printer
-                    </button>
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 device-cat-btn" data-category="Tablet">
-                        📟 Tablet
-                    </button>
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 device-cat-btn" data-category="Other">
-                        ⚙️ Other
-                    </button>
-                </div>
             </div>
 
             <div class="row g-3">
@@ -522,43 +482,33 @@
                         placeholder="Serial or IMEI (optional)">
                 </div>
 
-                <!-- Reported Issue with Quick Chips -->
+                <!-- Reported Issue -->
                 <div class="col-md-12 mt-3">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
                             Reported Issue / Fault Description <span class="text-danger">*</span>
                         </label>
-                        <span class="text-muted small">Tap chips to add</span>
+                        <span class="text-muted small">Required</span>
                     </div>
                     <textarea name="device_forms[INDEX].reported_issue" class="form-control"
-                        placeholder="Describe problem observed or reported by customer..." rows="2"
+                        placeholder="Describe problem observed or reported by customer..." rows="3"
                         data-device-field="reported_issue" required style="font-size: 0.95rem;"></textarea>
 
-                    <div class="d-flex flex-wrap gap-1 mt-2 align-items-center">
-                        <span class="text-muted small me-1"><i class="fas fa-bolt text-warning"></i> Quick:</span>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-chip-btn" data-target="reported_issue" data-val="No Power">⚡ No Power</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-chip-btn" data-target="reported_issue" data-val="Display / Screen Broken">🖥️ Broken Screen</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-chip-btn" data-target="reported_issue" data-val="Battery Not Charging">🔋 Battery Issue</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-chip-btn" data-target="reported_issue" data-val="Overheating / Fan Noise">🔥 Overheating</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-chip-btn" data-target="reported_issue" data-val="Water / Liquid Damage">💧 Liquid Spill</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-chip-btn" data-target="reported_issue" data-val="OS Corrupt / Slow">🐌 Slow / OS Boot</button>
-                        
-                        {% if job_field_presets.reported_issue %}
-                        <div class="dropdown d-inline-block ms-auto">
-                            <button class="btn btn-sm btn-outline-secondary py-0 px-2 dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                Presets
-                            </button>
-                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                {% for value in job_field_presets.reported_issue %}
-                                <li><a class="dropdown-item small quick-chip-dropdown-item" href="javascript:void(0)" data-target="reported_issue" data-val="{{ value }}">{{ value }}</a></li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        {% endif %}
+                    {% if job_field_presets.reported_issue %}
+                    <div class="input-group input-group-sm mt-2 preset-picker" data-target-field="reported_issue" data-mode="append_unique">
+                        <span class="input-group-text bg-light text-muted small"><i class="fas fa-list-check me-1"></i> Presets</span>
+                        <select class="form-select preset-select">
+                            <option value="">Add saved issue...</option>
+                            {% for value in job_field_presets.reported_issue %}
+                            <option value="{{ value }}">{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
                     </div>
+                    {% endif %}
                 </div>
 
-                <!-- Additional Items / Accessories with Quick Chips -->
+                <!-- Additional Items / Accessories -->
                 <div class="col-md-12 mt-3">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
@@ -569,15 +519,18 @@
                     <input type="text" name="device_forms[INDEX].additional_items" class="form-control"
                         placeholder="e.g. Charger, Bag, Mouse" data-device-field="additional_items">
 
-                    <div class="d-flex flex-wrap gap-1 mt-2 align-items-center">
-                        <span class="text-muted small me-1"><i class="fas fa-toolbox text-secondary"></i> Quick:</span>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-accessory-btn" data-val="Charger / Adapter">🔌 Charger</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-accessory-btn" data-val="Laptop Bag">💼 Bag</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-accessory-btn" data-val="Power Cable">🔌 Power Cord</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-accessory-btn" data-val="Mouse">🖱️ Mouse</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-accessory-btn" data-val="SIM Tray / Card">📱 SIM Card</button>
-                        <button type="button" class="btn btn-sm btn-light border py-0 px-2 quick-accessory-btn" data-val="Original Box">📦 Box</button>
+                    {% if job_field_presets.additional_items %}
+                    <div class="input-group input-group-sm mt-2 preset-picker" data-target-field="additional_items" data-mode="append_unique">
+                        <span class="input-group-text bg-light text-muted small"><i class="fas fa-toolbox me-1"></i> Presets</span>
+                        <select class="form-select preset-select">
+                            <option value="">Add saved item...</option>
+                            {% for value in job_field_presets.additional_items %}
+                            <option value="{{ value }}">{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
                     </div>
+                    {% endif %}
                 </div>
 
                 <!-- Device Photos & Camera Section -->
@@ -1980,104 +1933,6 @@
                 applyPresetValue(applyButton);
                 return;
             }
-
-            // Quick Category Selectors
-            const catBtn = event.target.closest('.device-cat-btn');
-            if (catBtn) {
-                const formBlock = catBtn.closest('.device-form-block');
-                if (!formBlock) return;
-                const category = catBtn.dataset.category;
-                const typeInput = formBlock.querySelector('[data-device-field="device_type"]');
-                if (typeInput) {
-                    typeInput.value = category;
-                    typeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-
-                formBlock.querySelectorAll('.device-cat-btn').forEach(b => {
-                    b.classList.remove('active', 'btn-primary', 'text-white');
-                    b.classList.add('btn-light');
-                });
-                catBtn.classList.add('active', 'btn-primary', 'text-white');
-                catBtn.classList.remove('btn-light');
-
-                // If Laptop, auto-toggle inspection checklist switch
-                const laptopSwitch = formBlock.querySelector('[name*="requires_laptop_inspection_checklist"]');
-                if (laptopSwitch && category.toLowerCase() === 'laptop') {
-                    laptopSwitch.checked = true;
-                }
-                return;
-            }
-
-            // Quick Issue chips
-            const quickChipBtn = event.target.closest('.quick-chip-btn');
-            if (quickChipBtn) {
-                const formBlock = quickChipBtn.closest('.device-form-block');
-                if (!formBlock) return;
-                const targetField = quickChipBtn.dataset.target;
-                const val = quickChipBtn.dataset.val;
-                const targetInput = formBlock.querySelector(`[data-device-field="${targetField}"]`);
-                if (targetInput && val) {
-                    const current = (targetInput.value || '').trim();
-                    if (!current) {
-                        targetInput.value = val;
-                    } else if (!current.toLowerCase().includes(val.toLowerCase())) {
-                        targetInput.value = current + '\n' + val;
-                    }
-                    targetInput.focus();
-                    quickChipBtn.classList.add('btn-warning', 'text-dark');
-                    quickChipBtn.classList.remove('btn-light');
-                    setTimeout(() => {
-                        quickChipBtn.classList.remove('btn-warning', 'text-dark');
-                        quickChipBtn.classList.add('btn-light');
-                    }, 400);
-                }
-                return;
-            }
-
-            // Quick Accessory chips
-            const accessoryBtn = event.target.closest('.quick-accessory-btn');
-            if (accessoryBtn) {
-                const formBlock = accessoryBtn.closest('.device-form-block');
-                if (!formBlock) return;
-                const val = accessoryBtn.dataset.val;
-                const targetInput = formBlock.querySelector('[data-device-field="additional_items"]');
-                if (targetInput && val) {
-                    const current = (targetInput.value || '').trim();
-                    if (!current) {
-                        targetInput.value = val;
-                    } else if (!current.toLowerCase().includes(val.toLowerCase())) {
-                        targetInput.value = current + ', ' + val;
-                    }
-                    targetInput.focus();
-                    accessoryBtn.classList.add('btn-primary', 'text-white');
-                    accessoryBtn.classList.remove('btn-light');
-                    setTimeout(() => {
-                        accessoryBtn.classList.remove('btn-primary', 'text-white');
-                        accessoryBtn.classList.add('btn-light');
-                    }, 400);
-                }
-                return;
-            }
-
-            // Quick Dropdown item presets
-            const dropdownItem = event.target.closest('.quick-chip-dropdown-item');
-            if (dropdownItem) {
-                const formBlock = dropdownItem.closest('.device-form-block');
-                if (!formBlock) return;
-                const targetField = dropdownItem.dataset.target;
-                const val = dropdownItem.dataset.val;
-                const targetInput = formBlock.querySelector(`[data-device-field="${targetField}"]`);
-                if (targetInput && val) {
-                    const current = (targetInput.value || '').trim();
-                    if (!current) {
-                        targetInput.value = val;
-                    } else if (!current.toLowerCase().includes(val.toLowerCase())) {
-                        targetInput.value = current + '\n' + val;
-                    }
-                    targetInput.focus();
-                }
-                return;
-            }
         });
 
         container.addEventListener('change', function (event) {
@@ -2088,30 +1943,8 @@
         });
     }
 
-    // Global document handler for Quick Delivery Date chips and Pre-fill Last Device
+    // Global document handler for Pre-fill Last Device
     document.addEventListener('click', function (e) {
-        const quickDateBtn = e.target.closest('.quick-date-btn');
-        if (quickDateBtn) {
-            const days = parseInt(quickDateBtn.dataset.days || '0', 10);
-            const d = new Date();
-            d.setDate(d.getDate() + days);
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            const dateStr = `${yyyy}-${mm}-${dd}`;
-            const deliveryInput = document.getElementById('id_estimated_delivery');
-            if (deliveryInput) {
-                deliveryInput.value = dateStr;
-                document.querySelectorAll('.quick-date-btn').forEach(b => {
-                    b.classList.remove('btn-primary', 'text-white');
-                    b.classList.add('btn-light');
-                });
-                quickDateBtn.classList.add('btn-primary', 'text-white');
-                quickDateBtn.classList.remove('btn-light');
-            }
-            return;
-        }
-
         const copyLastBtn = e.target.closest('.copy-last-device-btn');
         if (copyLastBtn) {
             const type = copyLastBtn.dataset.type || '';
@@ -2125,16 +1958,6 @@
                 if (typeInput) typeInput.value = type;
                 if (brandInput) brandInput.value = brand;
                 if (modelInput) modelInput.value = model;
-
-                firstBlock.querySelectorAll('.device-cat-btn').forEach(b => {
-                    if (b.dataset.category.toLowerCase() === type.toLowerCase()) {
-                        b.classList.add('active', 'btn-primary', 'text-white');
-                        b.classList.remove('btn-light');
-                    } else {
-                        b.classList.remove('active', 'btn-primary', 'text-white');
-                        b.classList.add('btn-light');
-                    }
-                });
 
                 firstBlock.style.transition = 'background-color 0.3s';
                 firstBlock.style.backgroundColor = '#f0fdf4';
