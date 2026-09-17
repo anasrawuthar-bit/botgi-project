@@ -705,14 +705,23 @@ def staff_dashboard(request):
 
     reminder_alerts = list(
         JobReminder.objects.filter(status=JobReminder.STATUS_PENDING)
+        .exclude(job_ticket__status='Closed')
         .select_related('job_ticket', 'created_by')
         .order_by('due_at', 'id')[:75]
     )
-    reminder_alert_count = JobReminder.objects.filter(status=JobReminder.STATUS_PENDING).count()
-    due_reminder_count = JobReminder.objects.filter(
-        status=JobReminder.STATUS_PENDING,
-        due_at__lte=timezone.now(),
-    ).count()
+    reminder_alert_count = (
+        JobReminder.objects.filter(status=JobReminder.STATUS_PENDING)
+        .exclude(job_ticket__status='Closed')
+        .count()
+    )
+    due_reminder_count = (
+        JobReminder.objects.filter(
+            status=JobReminder.STATUS_PENDING,
+            due_at__lte=timezone.now(),
+        )
+        .exclude(job_ticket__status='Closed')
+        .count()
+    )
 
     # FINAL CONTEXT
     context = {
@@ -1365,6 +1374,12 @@ def close_job(request, job_code):
         f"(Paid: Rs {amount_paid}, Balance Due: Rs {balance_due} via {method_display})."
     )
     JobTicketLog.objects.create(job_ticket=job, user=request.user, action='CLOSED', details=details)
+
+    # Auto-mark any pending reminders as done when a job is closed
+    JobReminder.objects.filter(
+        job_ticket=job,
+        status=JobReminder.STATUS_PENDING,
+    ).update(status=JobReminder.STATUS_DONE, completed_at=timezone.now())
 
     send_job_update_message(job.job_code, job.status)
     messages.success(request, f"Job {job.job_code} closed successfully. Payment recorded: {payment_status.replace('_', ' ').title()}.")
@@ -2059,6 +2074,7 @@ def due_job_reminders_api(request):
             status=JobReminder.STATUS_PENDING,
             due_at__lte=now,
         )
+        .exclude(job_ticket__status='Closed')
         .filter(Q(last_prompted_at__isnull=True) | Q(last_prompted_at__lte=prompt_cutoff))
         .select_related('job_ticket')
         .order_by('due_at', 'id')[:5]
