@@ -665,27 +665,25 @@ def client_dashboard(request):
     else:
         client_form = ClientForm()
 
-    phone_job_counts = {
-        row['customer_phone']: row['total_jobs']
-        for row in jobs_scope.values('customer_phone').annotate(total_jobs=Count('id'))
-    }
-    phone_device_rows = jobs_scope.values('customer_phone', 'device_type').annotate(total_jobs=Count('id')).order_by('customer_phone', '-total_jobs')
-    device_map = {}
-    for row in phone_device_rows:
-        phone_key = row['customer_phone']
-        device_label = (row['device_type'] or '').strip() or 'Unknown Device'
-        device_map.setdefault(phone_key, []).append({
-            'device_type': device_label,
-            'count': row['total_jobs'],
-        })
+    from collections import Counter
 
     client_rows = list(clients.order_by('-created_at')[:250])
-    client_phones = [client.phone for client in client_rows if client.phone]
-    jobs_by_phone = {phone: [] for phone in client_phones}
-    if client_phones:
+    phone_to_client_id = {}
+    all_lookup_phones = set()
+    for c in client_rows:
+        if c.phone:
+            variants = phone_lookup_variants(c.phone)
+            if c.phone not in variants:
+                variants.append(c.phone)
+            for v in variants:
+                phone_to_client_id[v] = c.id
+                all_lookup_phones.add(v)
+
+    jobs_by_client_id = {c.id: [] for c in client_rows}
+    if all_lookup_phones:
         job_rows = list(
             jobs_scope
-            .filter(customer_phone__in=client_phones)
+            .filter(customer_phone__in=all_lookup_phones)
             .prefetch_related('service_logs')
             .defer('technician_notes', 'technician_checklist', 'feedback_followup_note')
             .order_by('-created_at')
@@ -695,19 +693,20 @@ def client_dashboard(request):
             job.discount_total = _money_or_zero(job.discount_amount)
             job.net_total = _net_amount_after_discount(job.total, job.discount_total)
             job.current_paid = job.amount_paid or Decimal('0.00')
-        for row in job_rows:
-            phone_key = row.customer_phone
-            if phone_key in jobs_by_phone:
-                jobs_by_phone[phone_key].append(row)
+            cid = phone_to_client_id.get(job.customer_phone)
+            if cid and cid in jobs_by_client_id:
+                jobs_by_client_id[cid].append(job)
 
     total_receivable_amount = Decimal('0.00')
     credit_due_clients_count = 0
     repeat_clients_count = 0
 
     for client in client_rows:
-        client.total_jobs = phone_job_counts.get(client.phone, 0)
-        client.device_breakdown = device_map.get(client.phone, [])
-        client.jobs = jobs_by_phone.get(client.phone, [])
+        client.jobs = jobs_by_client_id.get(client.id, [])
+        client.total_jobs = len(client.jobs)
+
+        dev_counts = Counter((j.device_type or '').strip() or 'Unknown Device' for j in client.jobs)
+        client.device_breakdown = [{'device_type': dt, 'count': cnt} for dt, cnt in dev_counts.most_common()]
 
         # Financial summaries per client
         c_billed = sum(getattr(j, 'net_total', Decimal('0.00')) for j in client.jobs)
@@ -786,6 +785,9 @@ def edit_client(request, client_id):
         return redirect(request.POST.get('next') or reverse('client_dashboard'))
 
     old_phone = client.phone
+    old_name = client.name
+    client._previous_phone = old_phone
+    client._previous_name = old_name
     client.name = name
     client.phone = normalized_phone
     client.email = email
@@ -793,18 +795,6 @@ def edit_client(request, client_id):
     client.address = address
     client.notes = notes
     client.save()
-
-    # Synchronize linked customer party if exists
-    InventoryParty.objects.filter(
-        workspace=client.workspace,
-        party_type='customer',
-        phone=old_phone,
-    ).update(
-        name=name,
-        phone=normalized_phone,
-        legal_name=company_name,
-        address=address,
-    )
 
     messages.success(request, f"Client '{client.name}' updated successfully.")
     next_url = request.POST.get('next')
@@ -845,11 +835,15 @@ def client_detail(request, client_id):
     total_balance_due = max(Decimal('0.00'), total_billed - total_paid)
     active_jobs = [j for j in job_rows if j.status not in {'Closed', 'Delivered', 'Cancelled'}]
 
-    party = InventoryParty.objects.filter(
-        workspace=client.workspace,
-        party_type='customer',
+    party_qs = InventoryParty.objects.filter(
+        party_type__in=['customer', 'both'],
         phone__in=variants,
-    ).first()
+    )
+    if client.workspace:
+        party_qs = party_qs.filter(workspace=client.workspace)
+    else:
+        party_qs = party_qs.filter(workspace__isnull=True)
+    party = party_qs.first()
 
     credit_payments = list(
         InventoryCreditPayment.objects.filter(

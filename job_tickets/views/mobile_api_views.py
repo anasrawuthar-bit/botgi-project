@@ -1693,6 +1693,8 @@ def mobile_api_client_update(request, client_id):
         clients_scope,
         pk=client_id,
     )
+    client._previous_phone = client.phone
+    client._previous_name = client.name
     update_fields = []
 
     if 'name' in payload:

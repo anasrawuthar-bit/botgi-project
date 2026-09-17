@@ -8,7 +8,8 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from .admin_roles import sync_admin_roles
-from .models import JobTicket, UserSessionActivity
+from .models import JobTicket, UserSessionActivity, Client, InventoryParty
+from .phone_utils import phone_lookup_variants
 from .whatsapp_service import send_job_whatsapp_notification
 
 
@@ -158,3 +159,84 @@ def capture_user_logout(sender, request, user, **kwargs):
         logout_at=now,
         expires_at=now,
     )
+
+
+@receiver(pre_save, sender=Client)
+def capture_previous_client_state(sender, instance, **kwargs):
+    """Capture old phone and name before updating client."""
+    if not instance.pk:
+        instance._previous_phone = None
+        instance._previous_name = None
+        return
+    if getattr(instance, '_previous_phone', None) is not None:
+        return
+    prev = sender.objects.filter(pk=instance.pk).values('phone', 'name').first()
+    if prev:
+        instance._previous_phone = prev.get('phone')
+        instance._previous_name = prev.get('name')
+    else:
+        instance._previous_phone = None
+        instance._previous_name = None
+
+
+@receiver(post_save, sender=Client)
+def cascade_client_updates_to_jobs_and_parties(sender, instance, created, **kwargs):
+    """Cascade client phone or name updates to JobTicket and InventoryParty."""
+    if created:
+        return
+
+    old_phone = getattr(instance, '_previous_phone', None)
+    old_name = getattr(instance, '_previous_name', None)
+    new_phone = (instance.phone or '').strip()
+    new_name = (instance.name or '').strip()
+
+    if not old_phone:
+        return
+
+    phone_changed = bool(new_phone and old_phone != new_phone)
+    name_changed = bool(new_name and old_name != new_name)
+
+    if not phone_changed and not name_changed:
+        return
+
+    old_variants = phone_lookup_variants(old_phone)
+    if old_phone not in old_variants:
+        old_variants.append(old_phone)
+
+    # 1. Synchronize JobTicket customer_phone and customer_name
+    job_updates = {}
+    if phone_changed:
+        job_updates['customer_phone'] = new_phone
+    if name_changed:
+        job_updates['customer_name'] = new_name
+
+    if job_updates:
+        jobs_qs = JobTicket.objects.filter(customer_phone__in=old_variants)
+        if instance.workspace_id:
+            jobs_qs = jobs_qs.filter(workspace_id=instance.workspace_id)
+        else:
+            jobs_qs = jobs_qs.filter(workspace__isnull=True)
+        jobs_qs.update(**job_updates)
+
+    # 2. Synchronize linked InventoryParty (customer or both)
+    party_updates = {}
+    if phone_changed:
+        party_updates['phone'] = new_phone
+    if name_changed:
+        party_updates['name'] = new_name
+    if instance.company_name:
+        party_updates['legal_name'] = instance.company_name
+    if instance.address:
+        party_updates['address'] = instance.address
+
+    if party_updates:
+        party_qs = InventoryParty.objects.filter(
+            party_type__in=['customer', 'both'],
+            phone__in=old_variants,
+        )
+        if instance.workspace_id:
+            party_qs = party_qs.filter(workspace_id=instance.workspace_id)
+        else:
+            party_qs = party_qs.filter(workspace__isnull=True)
+        party_qs.update(**party_updates)
+

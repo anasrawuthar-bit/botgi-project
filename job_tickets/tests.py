@@ -5637,10 +5637,16 @@ class ClientManagementLifecycleTests(TestCase):
         self.assertContains(resp_credit, 'Ramesh Kumar')
 
     def test_edit_client_updates_details(self):
+        party = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Ramesh Kumar',
+            phone='9876543210',
+            party_type='customer',
+        )
         url = reverse('edit_client', args=[self.client_obj.id])
         response = self.client.post(url, {
             'name': 'Ramesh K. Updated',
-            'phone': '+91 98765 43210',
+            'phone': '9899988888',
             'email': 'updated@example.com',
             'company_name': 'Ramesh Tech Solutions',
             'address': '456 Second St, Mumbai',
@@ -5649,9 +5655,32 @@ class ClientManagementLifecycleTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.client_obj.refresh_from_db()
         self.assertEqual(self.client_obj.name, 'Ramesh K. Updated')
-        self.assertEqual(self.client_obj.phone, '9876543210')
+        self.assertEqual(self.client_obj.phone, '9899988888')
         self.assertEqual(self.client_obj.company_name, 'Ramesh Tech Solutions')
         self.assertEqual(self.client_obj.notes, 'VIP Customer')
+
+        # Verify historical JobTickets cascaded to the new phone and name
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.customer_phone, '9899988888')
+        self.assertEqual(self.job.customer_name, 'Ramesh K. Updated')
+
+        # Verify linked InventoryParty cascaded to the new phone and name
+        party.refresh_from_db()
+        self.assertEqual(party.phone, '9899988888')
+        self.assertEqual(party.name, 'Ramesh K. Updated')
+        self.assertEqual(party.legal_name, 'Ramesh Tech Solutions')
+
+        # Verify client detail still renders all previous jobs after phone change
+        detail_url = reverse('client_detail', args=[self.client_obj.id])
+        detail_resp = self.client.get(detail_url)
+        self.assertEqual(detail_resp.status_code, 200)
+        self.assertContains(detail_resp, 'JOB-CLI-001')
+
+        # Verify client dashboard still displays the client's jobs
+        dash_url = reverse('client_dashboard')
+        dash_resp = self.client.get(dash_url)
+        self.assertEqual(dash_resp.status_code, 200)
+        self.assertContains(dash_resp, 'JOB-CLI-001')
 
     def test_edit_client_rejects_duplicate_phone(self):
         Client.objects.create(
