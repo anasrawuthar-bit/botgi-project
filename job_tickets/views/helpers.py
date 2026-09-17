@@ -2837,12 +2837,16 @@ def _inventory_credit_direction_for_entry_type(entry_type):
 # ---------------------------------------------------------------------------
 
 def _inventory_bill_total(bill):
-    """Return the sum of all InventoryEntry.total_amount for the given bill."""
-    return (
+    """Return the sum of all InventoryEntry.total_amount for the given bill, or job ticket total if job-linked."""
+    total = (
         InventoryEntry.objects
         .filter(bill=bill)
         .aggregate(total=Coalesce(Sum('total_amount', output_field=DecimalField()), Decimal('0.00')))
     )['total'] or Decimal('0.00')
+    if total <= Decimal('0.00') and getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
+        calculate_job_totals([bill.job_ticket])
+        return max(Decimal('0.00'), (bill.job_ticket.total or Decimal('0.00')) - (bill.job_ticket.discount_amount or Decimal('0.00')))
+    return total
 
 
 def _inventory_bill_paid_total(bill):
@@ -3545,6 +3549,8 @@ def _build_inventory_credit_rows(entry_type, limit=None, workspace=None):
     rows = []
     for bill in bills:
         total_amount = _money_or_zero(getattr(bill, 'bill_total', Decimal('0.00')))
+        if total_amount <= Decimal('0.00') and getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
+            total_amount = _inventory_bill_total(bill)
         paid_amount = payment_totals.get((bill.id, direction), Decimal('0.00'))
         balance_amount = total_amount - paid_amount
         if balance_amount <= Decimal('0.00'):

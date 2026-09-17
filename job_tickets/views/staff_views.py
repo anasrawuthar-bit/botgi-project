@@ -1339,19 +1339,6 @@ def close_job(request, job_code):
             notes=f"Repair Job {job.job_code} settlement",
             created_by=request.user,
         )
-        InventoryEntry.objects.create(
-            workspace=job.workspace,
-            bill=bill,
-            party=party,
-            entry_type='sale',
-            entry_date=timezone.localdate(),
-            quantity=1,
-            unit_price=grand_total,
-            total_amount=grand_total,
-            notes=f"Repair Service Charges - Job {job.job_code}",
-            job_ticket=job,
-            created_by=request.user,
-        )
 
     if bill and amount_paid > Decimal('0.00'):
         balance_after = max(Decimal('0.00'), grand_total - amount_paid)
@@ -1911,20 +1898,6 @@ def staff_job_collect_payment(request, job_code):
                 job_ticket=job,
                 party=party,
                 notes=f"Repair Job {job.job_code} settlement",
-                created_by=request.user,
-            )
-        if not bill.entries.exists():
-            InventoryEntry.objects.create(
-                workspace=job.workspace,
-                bill=bill,
-                party=party,
-                entry_type='sale',
-                entry_date=payment_date,
-                quantity=1,
-                unit_price=grand_total,
-                total_amount=grand_total,
-                notes=f"Repair Service Charges - Job {job.job_code}",
-                job_ticket=job,
                 created_by=request.user,
             )
 
