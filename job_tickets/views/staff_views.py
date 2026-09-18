@@ -14,7 +14,13 @@ from .helpers import (
     _normalize_checklist_answer,
     _staff_access_required,
 )
-from ..whatsapp_service import queue_job_whatsapp_message, send_job_whatsapp_notification
+from ..whatsapp_service import (
+    _phone_to_international,
+    create_message_queue,
+    dispatch_message_queue_task,
+    queue_job_whatsapp_message,
+    send_job_whatsapp_notification,
+)
 
 
 REMINDER_PROMPT_COOLDOWN_MINUTES = 10
@@ -1760,6 +1766,42 @@ def staff_job_detail(request, job_code):
                 messages.info(request, 'Reminder is already done.')
             return redirect('staff_job_detail', job_code=job_code)
 
+        if action == 'retry_whatsapp_message':
+            queue_id = (request.POST.get('queue_id') or '').strip()
+            queue_obj = MessageQueue.objects.filter(pk=queue_id, job_ticket=job).first()
+            if queue_obj:
+                queue_obj.status = MessageQueue.STATUS_PENDING
+                queue_obj.error_message = ''
+                queue_obj.save(update_fields=['status', 'error_message', 'updated_at'])
+                dispatch_message_queue_task(queue_obj.id)
+                messages.success(request, f"WhatsApp message ({queue_obj.get_event_type_display()}) re-queued.")
+            else:
+                messages.error(request, 'WhatsApp queue item not found.')
+            return redirect('staff_job_detail', job_code=job_code)
+
+        if action == 'send_custom_whatsapp':
+            custom_msg = (request.POST.get('custom_message') or '').strip()
+            if not custom_msg:
+                messages.error(request, 'Please enter a message to send.')
+                return redirect('staff_job_detail', job_code=job_code)
+            result = create_message_queue(
+                job.customer_phone,
+                job=job,
+                event_type=MessageQueue.EVENT_MANUAL,
+                message=custom_msg,
+            )
+            if result.get('ok'):
+                JobTicketLog.objects.create(
+                    job_ticket=job,
+                    user=request.user,
+                    action='NOTE',
+                    details=f"[WhatsApp Outbound Message]: {custom_msg[:500]}",
+                )
+                messages.success(request, 'WhatsApp message queued for delivery.')
+            else:
+                messages.error(request, result.get('error') or 'Failed to queue WhatsApp message.')
+            return redirect('staff_job_detail', job_code=job_code)
+
     job_tickets = [job]
     calculate_job_totals(job_tickets)
     
@@ -1790,6 +1832,15 @@ def staff_job_detail(request, job_code):
     # Generate QR code URL
     qr_url = request.build_absolute_uri(f'/qr/{job.job_code}/')
 
+    whatsapp_settings = WhatsAppIntegrationSettings.get_settings(job.workspace)
+    clean_target = _phone_to_international(job.customer_phone, whatsapp_settings.default_country_code)
+    import urllib.parse
+    wa_default_msg = urllib.parse.quote(
+        f"Hello {job.customer_name}, regarding your service ticket {job.job_code} ({job.device_brand} {job.device_model}): "
+    )
+    whatsapp_direct_url = f"https://wa.me/{clean_target}?text={wa_default_msg}" if clean_target else ''
+    whatsapp_queue_history = job.message_queues.all().order_by('-created_at')[:10]
+
     context = {
         'job': job,
         'service_logs': job.service_logs.all(),
@@ -1816,6 +1867,10 @@ def staff_job_detail(request, job_code):
         'job_reminders': job_reminders,
         'active_reminder': active_reminder,
         'reminder_schedule': reminder_schedule,
+        'whatsapp_direct_url': whatsapp_direct_url,
+        'whatsapp_clean_phone': clean_target,
+        'whatsapp_queue_history': whatsapp_queue_history,
+        'whatsapp_settings': whatsapp_settings,
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
 
@@ -2230,7 +2285,9 @@ def staff_job_archive_view(request):
     end_date_str = request.GET.get('end_date')
     
     # Start with a queryset of ALL jobs, ordered by latest first
-    jobs_queryset = JobTicket.objects.all().order_by('-created_at')
+    jobs_queryset = scope_to_workspace(
+        JobTicket.objects, getattr(request, 'current_workspace', None),
+    ).order_by('-created_at')
 
     # --- Date Filtering Logic ---
     start_date = None
@@ -2290,7 +2347,9 @@ def staff_job_filtered_archive_view(request, status_code):
     status_filter = request.GET.get('status_filter')  # New: sub-status filter for returned jobs
     
     # Start with a queryset of ALL jobs, ordered by latest first
-    jobs_queryset = JobTicket.objects.all().order_by('-created_at')
+    jobs_queryset = scope_to_workspace(
+        JobTicket.objects, getattr(request, 'current_workspace', None),
+    ).order_by('-created_at')
     
     # --- Status Filtering Logic ---
     report_title = "Filtered Job Archive"

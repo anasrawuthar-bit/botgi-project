@@ -2115,6 +2115,205 @@ class WhatsAppCloudWebhookTests(TestCase):
         self.assertEqual(self.queue.transport, 'whatsapp-cloud-api-webhook')
 
 
+class WhatsAppEnhancementsTests(TestCase):
+    def setUp(self):
+        from django.core.management import call_command
+        self.call_command = call_command
+        self.settings_obj = WhatsAppIntegrationSettings.get_settings()
+        self.settings_obj.default_country_code = '91'
+        self.settings_obj.save()
+
+        self.staff_user = User.objects.create_user(
+            username='wa-admin',
+            password='StrongPass123!',
+            is_staff=True,
+        )
+        apply_staff_access(self.staff_user, {'staff_dashboard', 'job_tickets'})
+        self.client.force_login(self.staff_user)
+
+        self.job = JobTicket.objects.create(
+            job_code='GI-WA-001',
+            customer_name='Ramesh Kumar',
+            customer_phone='9876543210',
+            device_type='Mobile',
+            device_brand='Samsung',
+            device_model='Galaxy S21',
+            reported_issue='Screen flickering',
+        )
+
+    def test_phone_number_sanitization(self):
+        from .whatsapp_service import _phone_to_international
+
+        # Leading zero stripping (e.g. Indian trunk prefix 09876543210 -> 919876543210)
+        self.assertEqual(_phone_to_international('09876543210', '91'), '919876543210')
+        # Leading double zero (e.g. 00919876543210 -> 919876543210)
+        self.assertEqual(_phone_to_international('00919876543210', '91'), '919876543210')
+        # Formatted string with spaces, parentheses, hyphens and +
+        self.assertEqual(_phone_to_international('+91 (987) 654-3210', '91'), '919876543210')
+        # 10-digit number with default country code
+        self.assertEqual(_phone_to_international('9876543210', '91'), '919876543210')
+        # Already fully formatted international
+        self.assertEqual(_phone_to_international('919876543210', '91'), '919876543210')
+        # Empty or invalid
+        self.assertEqual(_phone_to_international('', '91'), '')
+        self.assertEqual(_phone_to_international('123', '91'), '')
+
+    def test_delivery_state_computed_property(self):
+        # Pending
+        q_pending = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_PENDING,
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+        self.assertEqual(q_pending.delivery_state, 'pending')
+
+        # Sent
+        q_sent = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_SENT,
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+        self.assertEqual(q_sent.delivery_state, 'sent')
+
+        # Delivered via webhook
+        q_delivered = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_SENT,
+            response_payload={'status': 'delivered'},
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+        self.assertEqual(q_delivered.delivery_state, 'delivered')
+
+        # Read via webhook
+        q_read = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_SENT,
+            response_payload={'status': 'read'},
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+        self.assertEqual(q_read.delivery_state, 'read')
+
+        # Failed
+        q_failed = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_FAILED,
+            error_message='Connection refused',
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+        self.assertEqual(q_failed.delivery_state, 'failed')
+
+    def test_inbound_webhook_reply_creates_job_log(self):
+        from .whatsapp_service import process_whatsapp_webhook_payload
+
+        inbound_payload = {
+            'entry': [
+                {
+                    'changes': [
+                        {
+                            'value': {
+                                'messages': [
+                                    {
+                                        'from': '919876543210',
+                                        'id': 'wamid.inbound.test.1',
+                                        'timestamp': '1700000000',
+                                        'type': 'text',
+                                        'text': {
+                                            'body': 'Yes please proceed with repair estimate.'
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        result = process_whatsapp_webhook_payload(inbound_payload)
+        self.assertTrue(result.get('ok'))
+        self.assertEqual(result.get('inbound_captured'), 1)
+
+        # Confirm JobTicketLog was created
+        log_entry = JobTicketLog.objects.filter(job_ticket=self.job, action='NOTE').first()
+        self.assertIsNotNone(log_entry)
+        self.assertIn('[WhatsApp Customer Reply]', log_entry.details)
+        self.assertIn('Yes please proceed with repair estimate.', log_entry.details)
+
+    def test_process_whatsapp_queue_management_command(self):
+        q_failed = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_FAILED,
+            retry_count=0,
+            max_retries=3,
+            message='Test retry message',
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+        q_exhausted = MessageQueue.objects.create(
+            target_phone='919876543210',
+            status=MessageQueue.STATUS_FAILED,
+            retry_count=3,
+            max_retries=3,
+            message='Exhausted message',
+            channel=MessageQueue.CHANNEL_WHATSAPP,
+        )
+
+        # Dry run should not mutate retry_count
+        self.call_command('process_whatsapp_queue', dry_run=True)
+        q_failed.refresh_from_db()
+        self.assertEqual(q_failed.retry_count, 0)
+
+        # Real execution with mocked sender
+        with patch(
+            'job_tickets.management.commands.process_whatsapp_queue._deliver_message_queue',
+            return_value=({'ok': True, 'message_id': 'test-1'}, 'whatsapp-cloud-api'),
+        ) as mock_send:
+            self.call_command('process_whatsapp_queue')
+            self.assertEqual(mock_send.call_count, 1)
+
+        q_failed.refresh_from_db()
+        self.assertEqual(q_failed.retry_count, 1)
+
+        # Exhausted item should still have retry_count == 3
+        q_exhausted.refresh_from_db()
+        self.assertEqual(q_exhausted.retry_count, 3)
+
+    def test_staff_actions_retry_and_custom_message(self):
+        # 1. Custom message
+        url = reverse('staff_job_detail', kwargs={'job_code': self.job.job_code})
+        with patch('job_tickets.views.staff_views.dispatch_message_queue_task'):
+            res = self.client.post(url, {
+                'action': 'send_custom_whatsapp',
+                'custom_message': 'Please approve the quotation of ₹1,500.',
+            })
+            self.assertEqual(res.status_code, 302)
+
+        new_queue = MessageQueue.objects.filter(job_ticket=self.job, event_type=MessageQueue.EVENT_MANUAL).first()
+        self.assertIsNotNone(new_queue)
+        self.assertEqual(new_queue.message, 'Please approve the quotation of ₹1,500.')
+
+        # Verify JobTicketLog logged staff custom message
+        outbound_log = JobTicketLog.objects.filter(job_ticket=self.job, action='NOTE').first()
+        self.assertIsNotNone(outbound_log)
+        self.assertIn('[WhatsApp Outbound Message]', outbound_log.details)
+
+        # 2. Retry message
+        new_queue.status = MessageQueue.STATUS_FAILED
+        new_queue.error_message = 'Network timeout'
+        new_queue.save()
+
+        with patch('job_tickets.views.staff_views.dispatch_message_queue_task') as mock_dispatch:
+            res_retry = self.client.post(url, {
+                'action': 'retry_whatsapp_message',
+                'queue_id': new_queue.id,
+            })
+            self.assertEqual(res_retry.status_code, 302)
+            mock_dispatch.assert_called_once_with(new_queue.id)
+
+        new_queue.refresh_from_db()
+        self.assertEqual(new_queue.status, MessageQueue.STATUS_PENDING)
+        self.assertEqual(new_queue.error_message, '')
+
+
 class DiscountAwareReportsTests(TestCase):
     def setUp(self):
         self.staff_user = User.objects.create_user(

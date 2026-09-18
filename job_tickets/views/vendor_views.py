@@ -624,7 +624,10 @@ def _build_vendor_report_context(request, vendor_id):
     end_date_str = request.GET.get('end_date')
 
     # Start with all services for this vendor
-    services = SpecializedService.objects.filter(vendor=vendor).select_related('job_ticket')
+    services = scope_to_workspace(
+        SpecializedService.objects.filter(vendor=vendor),
+        getattr(request, 'current_workspace', None), field='job_ticket__workspace',
+    ).select_related('job_ticket')
     payments = VendorPayment.objects.filter(vendor=vendor).select_related('specialized_service__job_ticket', 'created_by')
     period_query = ''
 
@@ -638,13 +641,12 @@ def _build_vendor_report_context(request, vendor_id):
                 start_date_str = start_date.isoformat()
                 end_date_str = end_date.isoformat()
 
-            start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day))
-            end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
+            start_of_period, end_of_period = report_date_bounds(start_date, end_date)
 
             # Filter using vendor concept: only jobs returned in the period
             services = services.filter(
                 returned_date__gte=start_of_period,
-                returned_date__lte=end_of_period
+                returned_date__lt=end_of_period
             )
             payments = payments.filter(
                 payment_date__gte=start_date,

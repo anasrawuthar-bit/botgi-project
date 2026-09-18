@@ -15,7 +15,7 @@ from ..access_control import (
     user_has_staff_access,
 )
 from datetime import datetime, timedelta, date
-from django.db.models import Max, Q, Sum, Count, F, DecimalField, Value, OuterRef, Subquery, IntegerField, ExpressionWrapper
+from django.db.models import Max, Q, Sum, Count, F, DecimalField, Value, OuterRef, Subquery, IntegerField, ExpressionWrapper, Case, When, DateTimeField
 from ..models import (
     Assignment,
     Client,
@@ -876,11 +876,8 @@ def get_monthly_summary_context(
     if show_jobs not in valid_show_jobs:
         show_jobs = ''
 
-    closed_jobs_filter = Q(status='Closed') & (
-        Q(closed_at__gte=start_of_period, closed_at__lt=end_of_period)
-        | Q(closed_at__isnull=True, updated_at__gte=start_of_period, updated_at__lt=end_of_period)
-    )
-    scoped_jobs = scope_to_workspace(JobTicket.objects, workspace)
+    closed_jobs_filter = Q(status='Closed', report_closed_at__gte=start_of_period, report_closed_at__lt=end_of_period)
+    scoped_jobs = with_report_dates(scope_to_workspace(JobTicket.objects, workspace))
     monthly_closed_jobs = scoped_jobs.filter(closed_jobs_filter)
     current_month_in_closed_jobs = monthly_closed_jobs.filter(created_at__gte=start_of_period, created_at__lt=end_of_period)
     previous_month_in_closed_jobs = monthly_closed_jobs.filter(created_at__lt=start_of_period)
@@ -1002,7 +999,7 @@ def get_monthly_summary_context(
 
     for job in job_list:
         if show_jobs in {'finished', 'current_in_closed', 'previous_in', 'vendor'}:
-            job.summary_report_date = job.closed_at or job.updated_at
+            job.summary_report_date = job.report_closed_at
         else:
             job.summary_report_date = job.created_at if show_jobs == 'created' else job.updated_at
     if job_list:
@@ -1566,11 +1563,61 @@ def broadcast_task_deleted(workspace_id, task_id, title):
     except Exception as e:
         print(f"broadcast_task_deleted failed: {e}")
 
+def report_date_bounds(start_date, end_date):
+    """Inclusive calendar dates represented by an exclusive next-midnight boundary."""
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
+    return (
+        timezone.make_aware(datetime.combine(start_date, datetime.min.time())),
+        timezone.make_aware(datetime.combine(end_date + timedelta(days=1), datetime.min.time())),
+    )
+
+
+def get_daily_report_jobs(report_date, filter_type, workspace=None):
+    jobs = scope_to_workspace(JobTicket.objects, workspace)
+    start, end = report_date_bounds(report_date, report_date)
+    if filter_type == 'in':
+        return jobs.filter(created_at__gte=start, created_at__lt=end)
+    target_status = {'out': 'Closed', 'completed': 'Completed'}[filter_type]
+    transitions = JobTicketLog.objects.filter(
+        action__in=['STATUS', 'CLOSED'],
+        details__icontains=f"to '{target_status}'",
+        timestamp__gte=start,
+        timestamp__lt=end,
+    ).values('job_ticket_id')
+    # This is an event count: moving on to pickup/closure must not erase completion.
+    return jobs.filter(pk__in=transitions)
+
+
+def with_report_dates(jobs):
+    """Prefer audited events; retain the last-edit fallback for legacy unaudited jobs."""
+    transitions = JobTicketLog.objects.filter(
+        job_ticket_id=OuterRef('pk'), action__in=['STATUS', 'CLOSED'],
+    ).order_by('-timestamp', '-pk')
+    return jobs.annotate(
+        report_closed_at=Coalesce(
+            Subquery(transitions.filter(details__icontains="to 'Closed'").values('timestamp')[:1]),
+            F('closed_at'), F('updated_at'), output_field=DateTimeField(),
+        ),
+        report_completed_at=Coalesce(
+            Subquery(transitions.filter(details__icontains="to 'Completed'").values('timestamp')[:1]),
+            F('updated_at'), output_field=DateTimeField(),
+        ),
+    ).annotate(
+        report_date=Case(
+            When(specialized_service__returned_date__isnull=False, then=F('specialized_service__returned_date')),
+            When(status='Closed', then=F('report_closed_at')),
+            When(status__in=['Completed', 'Ready for Pickup'], then=F('report_completed_at')),
+            default=F('updated_at'), output_field=DateTimeField(),
+        ),
+    )
+
+
 def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=None, workspace=None):
     """Get jobs that should be reported in the given period using vendor concept.
 
     Vendor jobs: included when returned_date falls in period.
-    Regular jobs: included when updated_at (completion/closure) falls in period.
+    Regular jobs: included using audited completion/closure dates where available.
     Uses DB-level filtering to avoid loading all jobs into Python.
     """
     from django.db.models import Q
@@ -1585,12 +1632,12 @@ def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=Non
     elif status_filter and status_filter != 'ALL':
         base_filter = Q(status=status_filter)
 
-    # Regular jobs: updated_at in period, no vendor service or vendor not yet sent
-    scoped_jobs = scope_to_workspace(JobTicket.objects, workspace)
+    # Regular jobs: audited report date, no vendor service or vendor not yet sent.
+    scoped_jobs = with_report_dates(scope_to_workspace(JobTicket.objects, workspace))
     regular_jobs = scoped_jobs.filter(
         base_filter,
-        updated_at__gte=start_of_period,
-        updated_at__lt=end_of_period,
+        report_date__gte=start_of_period,
+        report_date__lt=end_of_period,
     ).filter(
         Q(specialized_service__isnull=True) |
         Q(specialized_service__status='Awaiting Assignment')
@@ -1769,8 +1816,9 @@ def get_report_period(request):
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
             
-            start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day))
-            end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
+            start_of_period, end_of_period = report_date_bounds(start_date, end_date)
+            start_date_str = timezone.localdate(start_of_period).isoformat()
+            end_date_str = (timezone.localdate(end_of_period) - timedelta(days=1)).isoformat()
             
             period_name = f"Custom: {start_date_str} to {end_date_str}"
             
@@ -1814,8 +1862,7 @@ def get_report_period(request):
         start_date = today - timedelta(days=6)
         end_date = today # Today is the end
         
-        start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day))
-        end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
+        start_of_period, end_of_period = report_date_bounds(start_date, end_date)
         period_name = "Last 7 Days (Weekly)"
 
         return {

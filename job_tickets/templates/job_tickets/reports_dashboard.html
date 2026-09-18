@@ -1,461 +1,226 @@
 {% extends "job_tickets/base.html" %}
-{% load static job_tickets_extras %}
-
-{% block title %}Reports Dashboard{% endblock %}
-
+{% block title %}Company Reports{% endblock %}
 {% block content %}
 <div class="section-container" id="reports-dashboard-page">
-    <h1 class="mb-2">Company Reports & Statistics</h1>
-    <p class="lead">A comprehensive overview of all operations.</p>
-    <hr class="my-4">
-
-    {% if not staff_access.reports_overview and not staff_access.reports_technician and not staff_access.reports_vendor and not staff_access.reports_financial %}
-        <div class="alert alert-warning">
-            No report sections are enabled for your account. Please contact an admin.
+    <style>
+        #reports-dashboard-page {
+            --bs-link-color: var(--accent-navy);
+            --bs-link-hover-color: var(--primary-dark);
+        }
+        #reports-dashboard-page .reports-heading-icon {
+            color: var(--accent-orange);
+        }
+        #reports-dashboard-page .reports-period {
+            background: var(--light-gray);
+            border: 1px solid #e8ecf3;
+            border-radius: 14px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        #reports-dashboard-page .form-label {
+            color: var(--accent-navy);
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        #reports-dashboard-page .nav-pills {
+            --bs-nav-link-color: var(--accent-navy);
+            --bs-nav-link-hover-color: var(--accent-navy);
+            --bs-nav-pills-link-active-bg: var(--accent-orange);
+            --bs-nav-pills-link-active-color: var(--accent-navy);
+            --bs-nav-pills-border-radius: 10px;
+        }
+        #reports-dashboard-page .nav-link {
+            font-weight: 600;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        #reports-dashboard-page .nav-link:not(.active):hover {
+            background: rgba(252, 163, 17, 0.12);
+        }
+        #reports-dashboard-page a:focus-visible,
+        #reports-dashboard-page button:focus-visible {
+            outline: 3px solid var(--accent-orange);
+            outline-offset: 3px;
+            box-shadow: none;
+        }
+        #reports-dashboard-page .btn-outline-secondary {
+            --bs-btn-color: var(--accent-navy);
+            --bs-btn-border-color: #cfd6e5;
+            --bs-btn-hover-color: var(--accent-navy);
+            --bs-btn-hover-bg: var(--light-gray);
+            --bs-btn-hover-border-color: var(--accent-navy);
+            --bs-btn-active-color: var(--white);
+            --bs-btn-active-bg: var(--accent-navy);
+            --bs-btn-active-border-color: var(--accent-navy);
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        #reports-dashboard-page .btn-primary {
+            --bs-btn-hover-color: var(--accent-navy);
+            --bs-btn-hover-bg: #e89408;
+            --bs-btn-hover-border-color: #e89408;
+            --bs-btn-active-color: var(--accent-navy);
+            --bs-btn-active-bg: #e89408;
+            --bs-btn-active-border-color: #e89408;
+        }
+        #reports-dashboard-page .btn-outline-primary {
+            --bs-btn-hover-color: var(--white);
+            --bs-btn-hover-bg: var(--accent-navy);
+            --bs-btn-hover-border-color: var(--accent-navy);
+            --bs-btn-active-color: var(--white);
+            --bs-btn-active-bg: var(--accent-navy);
+            --bs-btn-active-border-color: var(--accent-navy);
+        }
+        #reports-dashboard-page .card-box .display-6 {
+            color: var(--accent-navy);
+        }
+        #reports-dashboard-page .card-box .display-6:hover {
+            text-decoration: underline !important;
+            text-decoration-color: var(--accent-orange) !important;
+            text-underline-offset: 0.2em;
+        }
+        #reports-dashboard-page .list-group-item-action {
+            color: var(--accent-navy);
+            border-color: #e8ecf3;
+        }
+        #reports-dashboard-page .list-group-item-action:hover {
+            background: rgba(252, 163, 17, 0.09);
+        }
+    </style>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h1 class="section-title mb-2"><i class="fas fa-chart-line reports-heading-icon me-2" aria-hidden="true"></i>Company Reports</h1>
+            <p class="text-muted mb-0">Track daily activity, review financials, and compare team performance.</p>
         </div>
+        {% if staff_access.staff_dashboard %}<a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary">Back to Dashboard</a>{% endif %}
+    </div>
+
+    <div class="reports-period">
+    <form method="get" class="row g-3 align-items-end mb-3" data-async-form data-async-target="#reports-dashboard-page">
+        <input type="hidden" name="tab" value="{{ active_tab }}">
+        <div class="col-sm-5 col-lg-4">
+            <label for="report-start" class="form-label">Period start</label>
+            <input id="report-start" type="date" name="start_date" value="{{ current_report_start }}" class="form-control" required>
+        </div>
+        <div class="col-sm-5 col-lg-4">
+            <label for="report-end" class="form-label">Period end</label>
+            <input id="report-end" type="date" name="end_date" value="{{ current_report_end }}" class="form-control" required>
+        </div>
+        <div class="col-sm-2 col-lg-4"><button class="btn btn-primary" type="submit">Apply period</button></div>
+    </form>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <a class="btn btn-sm btn-outline-secondary" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
+        <a class="btn btn-sm btn-outline-secondary" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
+        <span class="small text-muted">Financial and performance reports: {{ current_report_start }} &ndash; {{ current_report_end }}</span>
+    </div>
+    </div>
+
+    <nav class="nav nav-pills flex-wrap gap-2 border-bottom pb-3 mb-4" aria-label="Report sections">
+        {% if staff_access.reports_overview %}<a class="nav-link {% if active_tab == 'overview' %}active{% endif %}" {% if active_tab == 'overview' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=overview">Overview</a>{% endif %}
+        {% if staff_access.reports_financial %}<a class="nav-link {% if active_tab == 'financial' %}active{% endif %}" {% if active_tab == 'financial' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=financial">Financial</a>{% endif %}
+        {% if staff_access.reports_technician %}<a class="nav-link {% if active_tab == 'technician' %}active{% endif %}" {% if active_tab == 'technician' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=technician">Technicians</a>{% endif %}
+        {% if staff_access.reports_vendor %}<a class="nav-link {% if active_tab == 'vendor' %}active{% endif %}" {% if active_tab == 'vendor' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=vendor">Vendors</a>{% endif %}
+    </nav>
+
+    {% if active_tab == 'overview' and staff_access.reports_overview %}
+    <section aria-labelledby="daily-heading">
+        <h2 id="daily-heading" class="h4">Today's activity <span class="text-muted small">{{ today_date_str }}</span></h2>
+        <p class="small text-muted">Always shows today, independent of the reporting period. A job completed and closed today appears in both activity counts.</p>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card-box h-100">
+                <h3 class="h6 text-muted">Jobs received</h3>
+                <a class="display-6 fw-semibold text-decoration-none" href="{% url 'daily_jobs_report' today_date_str 'in' %}">{{ todays_jobs_in }}</a>
+                <p class="small text-muted mt-2 mb-0">New jobs created today</p>
+            </div></div>
+            <div class="col-md-4"><div class="card-box h-100">
+                <h3 class="h6 text-muted">Jobs completed</h3>
+                <a class="display-6 fw-semibold text-decoration-none" href="{% url 'daily_jobs_report' today_date_str 'completed' %}">{{ todays_jobs_completed }}</a>
+                <p class="small text-muted mt-2 mb-0">Job value after discounts: <strong>&#8377;{{ todays_completed_total|floatformat:2 }}</strong></p>
+            </div></div>
+            <div class="col-md-4"><div class="card-box h-100">
+                <h3 class="h6 text-muted">Jobs closed</h3>
+                <a class="display-6 fw-semibold text-decoration-none" href="{% url 'daily_jobs_report' today_date_str 'out' %}">{{ todays_jobs_out }}</a>
+                <p class="small text-muted mt-2 mb-0">Job value after discounts: <strong>&#8377;{{ todays_closed_total|floatformat:2 }}</strong></p>
+            </div></div>
+        </div>
+        <p class="small text-muted">Job values show service and parts charges after discounts, not cash collected.</p>
+    </section>
+    <section aria-labelledby="workload-heading" class="mt-4">
+        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-3">
+            <div><h2 id="workload-heading" class="h4 mb-1">Current workload</h2><p class="small text-muted mb-0">Current status across all dates</p></div>
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'print_active_workload_report' %}">Print active workload</a>
+        </div>
+        <div class="list-group">
+            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_archive_view' %}">All jobs <strong>{{ all_jobs_count }}</strong></a>
+            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Pending' %}">Pending <strong>{{ pending_count }}</strong></a>
+            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Active' %}">Inspection, repairing &amp; specialized service <strong>{{ in_progress_count }}</strong></a>
+            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'CompletedReady' %}">Completed / ready for pickup <strong>{{ completed_awaiting_billing_count }}</strong></a>
+            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Returned' %}">Returned, including subsequently closed <strong>{{ returned_count }}</strong></a>
+            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Closed' %}">Closed <strong>{{ closed_count }}</strong></a>
+        </div>
+        <p class="small text-muted mt-2">Returned jobs that were subsequently closed also appear in the closed count.</p>
+    </section>
     {% endif %}
 
-    <!-- Today's Stats -->
-    {% if staff_access.reports_overview %}
-    <h2 class="mb-3"><i class="fas fa-calendar-day me-2"></i> Today's Statistics</h2>
-    <div class="row g-4 mb-5">
-        <div class="col-lg-4">
-            <div class="card-box text-center h-100">
-                <h5 class="card-title">Jobs In</h5>
-                <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='in' %}" class="text-decoration-none text-dark">
-                    <h2 class="mt-2 mb-0">{{ todays_jobs_in }}</h2>
-                </a>
-                <p class="text-muted small mb-0 mt-2">New jobs created today</p>
+    {% if active_tab == 'financial' and staff_access.reports_financial %}
+    <section aria-labelledby="financial-heading">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+            <div><h2 class="h4 mb-1" id="financial-heading">Financial summary</h2><p class="small text-muted mb-0">{{ current_report_start }} &ndash; {{ current_report_end }} &middot; {{ financial_summary.jobs_closed_count }} closed jobs</p></div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-outline-primary" href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">View / print summary</a>
+                <a class="btn btn-outline-secondary" href="{% url 'export_monthly_summary_csv' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">Export CSV</a>
             </div>
         </div>
-        <div class="col-lg-4">
-            <div class="card-box h-100">
-                <div class="text-center">
-                    <h5 class="card-title">Completed Today</h5>
-                    <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='completed' %}" class="text-decoration-none text-dark">
-                        <h2 class="mt-2 mb-0">{{ todays_jobs_completed }}</h2>
-                    </a>
-                </div>
-                <div class="border-top mt-3 pt-3 small">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Spare Parts</span>
-                        <strong>&#8377;{{ todays_completed_spare|floatformat:2 }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Service</span>
-                        <strong>&#8377;{{ todays_completed_service|floatformat:2 }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                        <span class="fw-semibold">Total</span>
-                        <strong>&#8377;{{ todays_completed_total|floatformat:2 }}</strong>
-                    </div>
-                </div>
-            </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card-box h-100"><h3 class="h6 text-muted">Revenue after discounts</h3><p class="h3 mb-0">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</p></div></div>
+            <div class="col-md-4"><div class="card-box h-100"><h3 class="h6 text-muted">Recorded costs</h3><p class="h3 mb-0">&#8377;{{ financial_summary.overall_expense|floatformat:2 }}</p></div></div>
+            <div class="col-md-4"><div class="card-box h-100"><h3 class="h6 text-muted">Margin after recorded costs</h3><p class="h3 mb-0">&#8377;{{ financial_summary.overall_profit|floatformat:2 }}</p></div></div>
         </div>
-        <div class="col-lg-4">
-            <div class="card-box h-100">
-                <div class="text-center">
-                    <h5 class="card-title">Closed Today</h5>
-                    <a href="{% url 'daily_jobs_report' date_str=today_date_str filter_type='out' %}" class="text-decoration-none text-dark">
-                        <h2 class="mt-2 mb-0">{{ todays_jobs_out }}</h2>
-                    </a>
-                </div>
-                <div class="border-top mt-3 pt-3 small">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Spare Parts</span>
-                        <strong>&#8377;{{ todays_closed_spare|floatformat:2 }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Service</span>
-                        <strong>&#8377;{{ todays_closed_service|floatformat:2 }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                        <span class="fw-semibold">Total</span>
-                        <strong>&#8377;{{ todays_closed_total|floatformat:2 }}</strong>
-                    </div>
-                </div>
+        <p class="small text-muted">Costs include recorded stock costs and vendor charges. Revenue is not a cash-collection total; operating overheads are not deducted.</p>
+        <div class="table-responsive mb-4"><table class="table align-middle">
+            <caption>Revenue and recorded costs for the selected period</caption>
+            <thead><tr><th scope="col">Category</th><th scope="col" class="text-end">Revenue</th><th scope="col" class="text-end">Cost</th><th scope="col" class="text-end">Margin</th></tr></thead>
+            <tbody>{% for block in financial_summary.closed_financial_blocks %}<tr><th scope="row">{{ block.label }}</th><td class="text-end">&#8377;{{ block.revenue|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.profit|floatformat:2 }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+        <div class="border rounded p-3">
+            <h3 class="h6">Linked credit bills for jobs closed in this period</h3>
+            <div class="row g-3">
+                <div class="col-md-4">Bill value <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_bill_total|floatformat:2 }}</strong></div>
+                <div class="col-md-4">Paid to date <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_paid|floatformat:2 }}</strong></div>
+                <div class="col-md-4">Outstanding balance <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_balance|floatformat:2 }}</strong></div>
             </div>
+            <p class="small text-muted mt-3 mb-0">Current balances for linked credit bills; payments may have been received outside the selected period.</p>
         </div>
-    </div>
+    </section>
     {% endif %}
 
-    <!-- Report Filters removed -->
-    {% if staff_access.reports_overview or staff_access.reports_financial %}
-    <div class="d-flex justify-content-end gap-3 mb-4">
-        {% if staff_access.reports_overview %}
-        <a class="btn btn-warning text-dark"
-           href="{% url 'print_active_workload_report' %}">
-            <i class="fas fa-print"></i> Print Active Workload
-        </a>
-        {% endif %}
-        {% if staff_access.reports_financial %}
-        <a class="btn btn-dark"
-           href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&end_date={{ current_report_end }}">
-            <i class="fas fa-print"></i> Financial Summary
-        </a>
-        {% endif %}
-    </div>
+    {% if active_tab == 'technician' and staff_access.reports_technician %}
+    <section aria-labelledby="technician-heading">
+        <h2 class="h4" id="technician-heading">Technician performance</h2>
+        <p class="text-muted small">{{ tech_start_date }} &ndash; {{ tech_end_date }} &middot; Completed and closed jobs. Parts and service sales exclude vendor service lines and are before job discounts.</p>
+        <div class="table-responsive"><table class="table table-hover align-middle">
+            <thead><tr><th scope="col">Technician</th><th scope="col" class="text-end">Jobs</th><th scope="col" class="text-end">Parts sales</th><th scope="col" class="text-end">Service sales</th><th scope="col">Report</th></tr></thead>
+            <tbody>{% for tech in monthly_tech_performance %}<tr>
+                <th scope="row">{{ tech.user.get_full_name|default:tech.user.username }}<span class="d-block small text-muted fw-normal">{{ tech.unique_id }}</span></th>
+                <td class="text-end">{{ tech.jobs_done }}</td><td class="text-end">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td><td class="text-end">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
+                <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'technician_report_print' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">View / print</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'technician_report_export_csv' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">CSV</a></div></td>
+            </tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">No technicians available in this workspace.</td></tr>{% endfor %}</tbody>
+        </table></div>
+    </section>
     {% endif %}
-    
-    {% if staff_access.reports_overview %}
-    <div class="row g-4 mb-5">
-        <div class="col-md-12">
-            <div class="card-box h-100">
-                <h2><i class="fas fa-list-ul"></i> All-Time Service Report</h2>
-                <hr>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item p-0">
-                        <a href="{% url 'staff_job_archive_view' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">Total Jobs Ever Created</span>
-                            <span class="badge bg-dark rounded-pill">{{ all_jobs_count }}</span>
-                        </a>
-                    </li>
-                    <li class="list-group-item p-0">
-                        <a href="{% url 'staff_job_filtered_archive_view' status_code='Pending' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">Not Assigned (Pending)</span>
-                            <span class="badge bg-warning text-dark rounded-pill">{{ pending_count }}</span>
-                        </a>
-                    </li>
-                    <li class="list-group-item p-0">
-                        <a href="{% url 'staff_job_filtered_archive_view' status_code='Active' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">In Progress / Repairing (Active Workload)</span>
-                            <span class="badge bg-info rounded-pill">{{ in_progress_count }}</span>
-                        </a>
-                    </li>
-                    <li class="list-group-item p-0">
-                        <a href="{% url 'staff_job_filtered_archive_view' status_code='CompletedReady' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">Completed / Ready for Pickup</span>
-                            <span class="badge bg-success rounded-pill">{{ completed_awaiting_billing_count }}</span>
-                        </a>
-                    </li>
-                    <li class="list-group-item p-0">
-                        <a href="{% url 'staff_job_filtered_archive_view' status_code='Returned' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">Returned -> Closed Jobs</span>
-                            <span class="badge bg-danger rounded-pill">{{ returned_count }}</span>
-                        </a>
-                    </li>
-                    <li class="list-group-item p-0">
-                        <a href="{% url 'staff_job_filtered_archive_view' status_code='Closed' %}" class="d-flex justify-content-between align-items-center text-decoration-none p-3 hover-shadow-sm">
-                            <span class="fw-bold text-dark">Archived (Closed)</span>
-                            <span class="badge bg-secondary rounded-pill">{{ closed_count }}</span>
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </div>
+
+    {% if active_tab == 'vendor' and staff_access.reports_vendor %}
+    <section aria-labelledby="vendor-heading">
+        <h2 class="h4" id="vendor-heading">Vendor performance</h2>
+        <p class="text-muted small">{{ vendor_start_date }} &ndash; {{ vendor_end_date }} &middot; Services returned by vendors during this period, including jobs awaiting customer pickup.</p>
+        <div class="table-responsive"><table class="table table-hover align-middle">
+            <thead><tr><th scope="col">Vendor</th><th scope="col" class="text-end">Jobs returned</th><th scope="col" class="text-end">Vendor cost</th><th scope="col" class="text-end">Client charges</th><th scope="col" class="text-end">Margin before job discounts</th><th scope="col">Report</th></tr></thead>
+            <tbody>{% for vendor in vendor_performance %}<tr>
+                <th scope="row">{{ vendor.company_name }}</th><td class="text-end">{{ vendor.total_jobs_given }}</td><td class="text-end">&#8377;{{ vendor.total_vendor_cost|floatformat:2 }}</td><td class="text-end">&#8377;{{ vendor.total_client_charge|floatformat:2 }}</td><td class="text-end fw-semibold">&#8377;{{ vendor.profit|floatformat:2 }}</td>
+                <td><a class="btn btn-sm btn-outline-primary" href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date }}&amp;end_date={{ vendor_end_date }}">View report</a></td>
+            </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No vendors available in this workspace.</td></tr>{% endfor %}</tbody>
+        </table></div>
+    </section>
     {% endif %}
-    
-    <!-- Visual graphs for Monthly Jobs Finished, Monthly Income vs Vendor Expense, and Yearly Net Profit removed -->
-
-            {% if staff_access.reports_technician %}
-            <div class="section-container mt-4">
-                <h2><i class="fas fa-users-cog"></i> Technicians Performance</h2>
-                <form id="techDateFilterForm" method="get" action="" class="row g-3 align-items-end mb-3" data-async-form data-async-target="#reports-dashboard-page">
-                    <!-- Preserve other filter parameters -->
-                    {% if request.GET.start_date %}<input type="hidden" name="start_date" value="{{ request.GET.start_date }}">{% endif %}
-                    {% if request.GET.end_date %}<input type="hidden" name="end_date" value="{{ request.GET.end_date }}">{% endif %}
-                    {% if request.GET.status_filter %}<input type="hidden" name="status_filter" value="{{ request.GET.status_filter }}">{% endif %}
-                    {% if request.GET.preset %}<input type="hidden" name="preset" value="{{ request.GET.preset }}">{% endif %}
-                    {% if request.GET.vendor_start_date %}<input type="hidden" name="vendor_start_date" value="{{ request.GET.vendor_start_date }}">{% endif %}
-                    {% if request.GET.vendor_end_date %}<input type="hidden" name="vendor_end_date" value="{{ request.GET.vendor_end_date }}">{% endif %}
-                    <div class="col-md-3">
-                        <label for="tech_date_preset" class="form-label fw-bold">Quick Select:</label>
-                        <select id="tech_date_preset" class="form-select">
-                            <option value="custom">Custom Range</option>
-                            <option value="this_month">This Month</option>
-                            <option value="last_month">Last Month</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="tech_start_date" class="form-label fw-bold">Start Date:</label>
-                        <input type="date" id="tech_start_date" name="tech_start_date" class="form-control" value="{{ tech_start_date|default:today_date_str }}" max="{{ today_date_str }}" required>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="tech_end_date" class="form-label fw-bold">End Date:</label>
-                        <input type="date" id="tech_end_date" name="tech_end_date" class="form-control" value="{{ tech_end_date|default:today_date_str }}" max="{{ today_date_str }}" required>
-                    </div>
-                    <div class="col-md-3 d-flex flex-column justify-content-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-filter me-1"></i> Apply Filter
-                        </button>
-                    </div>
-                </form>
-                <hr>
-                <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    const preset = document.getElementById('tech_date_preset');
-                    const startDate = document.getElementById('tech_start_date');
-                    const endDate = document.getElementById('tech_end_date');
-                    const today = new Date();
-                    const pad = n => n < 10 ? '0'+n : n;
-                    preset.addEventListener('change', function() {
-                        let s = '', e = '';
-                        if (this.value === 'this_month') {
-                            s = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-01';
-                            e = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
-                        } else if (this.value === 'last_month') {
-                            let year = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-                            let month = today.getMonth() === 0 ? 12 : today.getMonth();
-                            let firstDay = year + '-' + pad(month) + '-01';
-                            let lastDayDate = new Date(year, month, 0);
-                            let lastDay = lastDayDate.getFullYear() + '-' + pad(lastDayDate.getMonth()+1) + '-' + pad(lastDayDate.getDate());
-                            s = firstDay;
-                            e = lastDay;
-                        }
-                        if (s && e) {
-                            startDate.value = s;
-                            endDate.value = e;
-                        }
-                    });
-                });
-                </script>
-                <div class="table-responsive">
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>Technician ID</th>
-                        <th>Name</th>
-                        <th>Jobs Completed/Closed (Filtered Period)</th>
-                        <th>Total Parts Sales</th>
-                        <th>Total Service Sales</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for tech in monthly_tech_performance %}
-                    <tr>
-                        <td>{{ tech.unique_id }}</td>
-                        <td>{{ tech.user.username }}</td>
-                        <td><span class="badge bg-success">{{ tech.jobs_done }}</span></td>
-                        <td>₹{{ tech.monthly_parts_sales|floatformat:2|default:"0.00" }}</td>
-                        <td>₹{{ tech.monthly_service_sales|floatformat:2|default:"0.00" }}</td>
-                        <td>
-                            <a href="{% url 'technician_report_print' tech.id %}?start_date={{ tech_start_date|default:current_report_start }}&end_date={{ tech_end_date|default:current_report_end }}" 
-                               class="btn btn-sm btn-primary">
-                                Print
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center">No jobs completed by technicians in this period.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-            {% endif %}
-    
-            {% if staff_access.reports_vendor %}
-            <div class="section-container mt-4">
-                <h2><i class="fas fa-industry"></i> Vendor Performance Report ({{ current_report_date|date:"F Y" }})</h2>
-                <form id="vendorDateFilterForm" method="get" action="" class="row g-3 align-items-end mb-3" data-async-form data-async-target="#reports-dashboard-page">
-                    <!-- Preserve other filter parameters -->
-                    {% if request.GET.start_date %}<input type="hidden" name="start_date" value="{{ request.GET.start_date }}">{% endif %}
-                    {% if request.GET.end_date %}<input type="hidden" name="end_date" value="{{ request.GET.end_date }}">{% endif %}
-                    {% if request.GET.status_filter %}<input type="hidden" name="status_filter" value="{{ request.GET.status_filter }}">{% endif %}
-                    {% if request.GET.preset %}<input type="hidden" name="preset" value="{{ request.GET.preset }}">{% endif %}
-                    {% if request.GET.tech_start_date %}<input type="hidden" name="tech_start_date" value="{{ request.GET.tech_start_date }}">{% endif %}
-                    {% if request.GET.tech_end_date %}<input type="hidden" name="tech_end_date" value="{{ request.GET.tech_end_date }}">{% endif %}
-                    <div class="col-md-3">
-                        <label for="vendor_date_preset" class="form-label fw-bold">Quick Select:</label>
-                        <select id="vendor_date_preset" class="form-select">
-                            <option value="custom">Custom Range</option>
-                            <option value="this_month">This Month</option>
-                            <option value="last_month">Last Month</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="vendor_start_date" class="form-label fw-bold">Start Date:</label>
-                        <input type="date" id="vendor_start_date" name="vendor_start_date" class="form-control" value="{{ vendor_start_date|default:current_report_start }}" max="{{ today_date_str }}" required>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="vendor_end_date" class="form-label fw-bold">End Date:</label>
-                        <input type="date" id="vendor_end_date" name="vendor_end_date" class="form-control" value="{{ vendor_end_date|default:current_report_end }}" max="{{ today_date_str }}" required>
-                    </div>
-                    <div class="col-md-3 d-flex flex-column justify-content-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-filter me-1"></i> Apply Filter
-                        </button>
-                    </div>
-                </form>
-                <hr>
-                <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    const preset = document.getElementById('vendor_date_preset');
-                    const startDate = document.getElementById('vendor_start_date');
-                    const endDate = document.getElementById('vendor_end_date');
-                    const today = new Date();
-                    const pad = n => n < 10 ? '0'+n : n;
-                    preset.addEventListener('change', function() {
-                        let s = '', e = '';
-                        if (this.value === 'this_month') {
-                            s = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-01';
-                            e = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
-                        } else if (this.value === 'last_month') {
-                            let year = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-                            let month = today.getMonth() === 0 ? 12 : today.getMonth();
-                            let firstDay = year + '-' + pad(month) + '-01';
-                            let lastDayDate = new Date(year, month, 0);
-                            let lastDay = lastDayDate.getFullYear() + '-' + pad(lastDayDate.getMonth()+1) + '-' + pad(lastDayDate.getDate());
-                            s = firstDay;
-                            e = lastDay;
-                        }
-                        if (s && e) {
-                            startDate.value = s;
-                            endDate.value = e;
-                        }
-                    });
-                });
-                </script>
-                <div class="table-responsive">
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>Vendor Name</th>
-                        <th>Total Jobs Given</th>
-                        <th>Total Vendor Cost (Our Cost)</th>
-                        <th>Total Client Charges</th>
-                        <th>Total Profit</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for vendor in vendor_performance %}
-                    <tr>
-                        <td>{{ vendor.company_name }}</td>
-                        <td>{{ vendor.total_jobs_given }}</td>
-                        <td>₹{{ vendor.total_vendor_cost|floatformat:2 }}</td>
-                        <td>₹{{ vendor.total_client_charge|floatformat:2 }}</td>
-                        <td><strong>₹{{ vendor.profit|floatformat:2 }}</strong></td>
-                        <td>
-                        <a href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date|default:current_report_start }}&end_date={{ vendor_end_date|default:current_report_end }}" 
-                        class="btn btn-sm btn-outline-primary">
-                            <i class="fas fa-list-alt"></i> View Report
-                        </a>
-                    </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center">No service data for vendors found in this period.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-            {% endif %}
-    <hr class="my-5">
-
-    <!-- <h2 class="mb-3"><i class="fas fa-archive"></i> Closed Jobs Archive</h2>
-    <div class="accordion-item">
-        <h2 class="accordion-header" id="headingClosed">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseClosed" aria-expanded="false" aria-controls="collapseClosed">
-                View All Closed Jobs
-            </button>
-        </h2>
-        <div id="collapseClosed" class="accordion-collapse collapse" aria-labelledby="headingClosed" data-bs-parent="#jobStatusAccordion">
-            <div class="accordion-body">
-                <div class="table-responsive">
-                    <table class="table table-striped table-hover">
-                        <thead>
-                            <tr>
-                                <th>Job Code</th>
-                                <th>Customer Name</th>
-                                <th>Device</th>
-                                <th>technician name</th>
-                                <th>Status</th>
-                                <th>Closed Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for job in closed_jobs %}
-                            <tr>
-                                <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
-                                <td>{{ job.customer_name }}</td>
-                                <td>{{ job.device_type }}</td>
-                                <td>{{ job.assigned_to.user.username|default:"N/A" }}</td>
-                                <td><span class="badge badge-status bg-secondary">{{ job.status }}</span></td>
-                                <td>{{ job.updated_at|date:"Y-m-d" }}</td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="6">No jobs in the archive.</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div> -->
-
-    <div class="text-center mt-4">
-        {% if staff_access.staff_dashboard %}
-        <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary me-3"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
-        {% else %}
-        <a href="{% url 'home' %}" class="btn btn-secondary me-3"><i class="fas fa-arrow-left"></i> Back to Home</a>
-        {% endif %}
-    </div>
-
-    {% if staff_access.reports_overview %}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="{% static 'job_tickets/js/financial-charts.js' %}"></script>
-    {% endif %}
+    {% if not staff_access.reports_overview and not staff_access.reports_technician and not staff_access.reports_vendor and not staff_access.reports_financial %}<p class="alert alert-warning">No report sections are enabled for your account. Please contact an admin.</p>{% endif %}
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('change', function (event) {
-    const target = event.target;
-    if (!(target instanceof HTMLSelectElement)) {
-        return;
-    }
-
-    function pad(number) {
-        return number < 10 ? '0' + number : String(number);
-    }
-
-    function applyPreset(selectId, startId, endId) {
-        if (target.id !== selectId) {
-            return false;
-        }
-
-        const startDateInput = document.getElementById(startId);
-        const endDateInput = document.getElementById(endId);
-        if (!startDateInput || !endDateInput) {
-            return true;
-        }
-
-        const today = new Date();
-        let startValue = '';
-        let endValue = '';
-
-        if (target.value === 'this_month') {
-            startValue = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-01';
-            endValue = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
-        } else if (target.value === 'last_month') {
-            const year = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-            const month = today.getMonth() === 0 ? 12 : today.getMonth();
-            const lastDayDate = new Date(year, month, 0);
-            startValue = year + '-' + pad(month) + '-01';
-            endValue = lastDayDate.getFullYear() + '-' + pad(lastDayDate.getMonth() + 1) + '-' + pad(lastDayDate.getDate());
-        }
-
-        if (startValue && endValue) {
-            startDateInput.value = startValue;
-            endDateInput.value = endValue;
-        }
-        return true;
-    }
-
-    if (applyPreset('tech_date_preset', 'tech_start_date', 'tech_end_date')) {
-        return;
-    }
-    applyPreset('vendor_date_preset', 'vendor_start_date', 'vendor_end_date');
-});
-</script>
 {% endblock %}

@@ -151,30 +151,22 @@ async function updateConnectedState() {
 }
 
 async function createClient(generation) {
-  const sessionDir = localAuthDir();
-  fs.mkdirSync(sessionDir, { recursive: true });
-
-  const browser = await puppeteer.launch({
-    headless: HEADLESS,
-    userDataDir: sessionDir,
-    defaultViewport: null,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--no-first-run',
-      '--no-default-browser-check',
-    ],
-  });
-  waBrowser = browser;
-
   const client = new Client({
     authStrategy: new LocalAuth({
       clientId: CLIENT_ID,
       dataPath: AUTH_ROOT,
     }),
     puppeteer: {
-      browserWSEndpoint: browser.wsEndpoint(),
+      headless: HEADLESS,
+      protocolTimeout: 120000,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+      ],
     },
   });
 
@@ -260,47 +252,54 @@ async function createClient(generation) {
 }
 
 async function renderPdfFromUrl(url) {
-  let browser = null;
-  if (waBrowser && HEADLESS && waBrowser.isConnected && waBrowser.isConnected()) {
-    browser = waBrowser;
-  }
-  let shouldClose = false;
-
-  if (!browser) {
-    browser = await puppeteer.launch({
-      headless: true,
-      defaultViewport: null,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--no-first-run',
-        '--no-default-browser-check',
-      ],
-    });
-    shouldClose = true;
-  }
-
-  const page = await browser.newPage();
+  // 1. Check if the URL serves an existing direct PDF
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await page.emulateMediaType('print');
-    const pdfData = await page.pdf({ format: 'A4', printBackground: true });
-    const pdfBuffer = Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData);
-    return pdfBuffer;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const arrayBuf = await res.arrayBuffer();
+      const buf = Buffer.from(arrayBuf);
+      if (buf.slice(0, 5).toString('ascii') === '%PDF-') {
+        return buf;
+      }
+    }
+  } catch (_e) {
+    // fallback to puppeteer print below
+  }
+
+  // 2. Render HTML webpage to PDF via dedicated headless browser
+  const browser = await puppeteer.launch({
+    headless: true,
+    defaultViewport: null,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-default-browser-check',
+    ],
+  });
+
+  try {
+    const page = await browser.newPage();
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await page.emulateMediaType('print');
+      const pdfData = await page.pdf({ format: 'A4', printBackground: true });
+      return Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData);
+    } finally {
+      try {
+        await page.close();
+      } catch (_error) {
+        // ignore page close failure
+      }
+    }
   } finally {
     try {
-      await page.close();
+      await browser.close();
     } catch (_error) {
-      // ignore page close failures
-    }
-    if (shouldClose) {
-      try {
-        await browser.close();
-      } catch (_error) {
-        // ignore browser close failures
-      }
+      // ignore browser close failure
     }
   }
 }

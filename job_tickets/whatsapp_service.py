@@ -4,18 +4,21 @@ import hmac
 import json
 import logging
 import re
-import time
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import requests
 from django.conf import settings as django_settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.urls import reverse
 from django.utils import timezone
 
 from .models import JobTicket, MessageQueue, WhatsAppIntegrationSettings, WhatsAppNotificationLog
 
 logger = logging.getLogger(__name__)
+
+_dispatch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='wa_dispatcher')
 
 RECEIPT_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24
 GRAPH_API_BASE_URL = 'https://graph.facebook.com'
@@ -133,12 +136,21 @@ def verify_receipt_access_token(
 
 def _phone_to_international(raw_phone: str, default_country_code: str) -> str:
     digits = ''.join(ch for ch in (raw_phone or '') if ch.isdigit())
-    if not digits:
+    if not digits or len(digits) < 7:
         return ''
+    if digits.startswith('00'):
+        digits = digits[2:]
+
+    country_code = ''.join(ch for ch in (default_country_code or '') if ch.isdigit())
+    # Handle domestic trunk zero (e.g. 09876543210 -> 9876543210 in India / 10-digit systems)
+    if digits.startswith('0') and len(digits) == 11 and (not country_code or country_code == '91'):
+        digits = digits[1:]
+    elif digits.startswith('0') and len(digits) > 10:
+        digits = digits.lstrip('0')
+
     if len(digits) >= 11:
         return digits
 
-    country_code = ''.join(ch for ch in (default_country_code or '') if ch.isdigit())
     if country_code:
         return f"{country_code}{digits}"
     return digits
@@ -704,7 +716,7 @@ def create_message_queue(
         status=MessageQueue.STATUS_PENDING,
     )
 
-    transaction.on_commit(lambda queue_id=queue.id: _dispatch_message_queue_after_commit(queue_id))
+    transaction.on_commit(lambda queue_id=queue.id: dispatch_message_queue_task(queue_id))
 
     return {
         'ok': True,
@@ -732,11 +744,14 @@ def update_message_queue_status(
 ) -> MessageQueue:
     queue = MessageQueue.objects.select_related('job_ticket').get(pk=queue_id)
     normalized_status = (status or '').strip().lower()
-    if normalized_status not in {
+    valid_statuses = {
         MessageQueue.STATUS_PENDING,
         MessageQueue.STATUS_SENT,
+        MessageQueue.STATUS_DELIVERED,
+        MessageQueue.STATUS_READ,
         MessageQueue.STATUS_FAILED,
-    }:
+    }
+    if normalized_status not in valid_statuses:
         raise ValueError('Invalid queue status.')
 
     now = timezone.now()
@@ -757,15 +772,28 @@ def update_message_queue_status(
         'updated_at',
     ]
 
-    if normalized_status == MessageQueue.STATUS_SENT:
-        queue.sent_at = now
+    is_success = normalized_status in {
+        MessageQueue.STATUS_SENT,
+        MessageQueue.STATUS_DELIVERED,
+        MessageQueue.STATUS_READ,
+    }
+
+    if is_success:
+        if not queue.sent_at:
+            queue.sent_at = now
+            update_fields.append('sent_at')
         queue.failed_at = None
+        queue.next_retry_at = None
+        update_fields.extend(['failed_at', 'next_retry_at'])
         if not queue.error_message:
             queue.error_message = ''
-        update_fields.extend(['sent_at', 'failed_at'])
     elif normalized_status == MessageQueue.STATUS_FAILED:
         queue.failed_at = now
         update_fields.append('failed_at')
+        if queue.retry_count < queue.max_retries:
+            backoff_secs = (2 ** queue.retry_count) * 60
+            queue.next_retry_at = now + timezone.timedelta(seconds=backoff_secs)
+            update_fields.append('next_retry_at')
 
     queue.save(update_fields=update_fields)
 
@@ -786,7 +814,7 @@ def update_message_queue_status(
                 'event_type': _queue_log_event_type(queue.event_type),
                 'target_phone': queue.target_phone,
                 'message': log_message,
-                'was_successful': normalized_status == MessageQueue.STATUS_SENT,
+                'was_successful': is_success,
                 'response_text': json.dumps(log_payload, default=str)[:4000],
             },
         )
@@ -957,10 +985,20 @@ def _deliver_message_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
     if settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE:
         return _deliver_bridge_queue(queue)
     if queue.pdf_url:
-        return (
-            send_cloud_document_message(queue.target_phone, queue.pdf_url, queue.caption, queue.filename),
-            'whatsapp-cloud-api-document',
-        )
+        doc_result = send_cloud_document_message(queue.target_phone, queue.pdf_url, queue.caption, queue.filename)
+        if doc_result.get('ok'):
+            return (doc_result, 'whatsapp-cloud-api-document')
+        err_msg = str(doc_result.get('error') or '').lower()
+        # If Meta blocks document outside 24h window and template is configured, fall back to template
+        if (
+            ('24 hours' in err_msg or '131047' in err_msg or 'outside' in err_msg)
+            and queue.event_type == MessageQueue.EVENT_CREATED
+            and settings_obj.created_template_name
+        ):
+            template_result, transport = _deliver_template_queue(queue)
+            if template_result.get('ok'):
+                return (template_result, transport)
+        return (doc_result, 'whatsapp-cloud-api-document')
     if queue.event_type in {
         MessageQueue.EVENT_CREATED,
         MessageQueue.EVENT_COMPLETED,
@@ -977,7 +1015,7 @@ def _deliver_message_queue(queue: MessageQueue) -> tuple[dict[str, Any], str]:
 
 def _dispatch_message_queue_after_commit(queue_id: int) -> None:
     queue = (
-        MessageQueue.objects.filter(pk=queue_id, status=MessageQueue.STATUS_PENDING)
+        MessageQueue.objects.filter(pk=queue_id)
         .select_related('job_ticket')
         .first()
     )
@@ -1018,6 +1056,21 @@ def _dispatch_message_queue_after_commit(queue_id: int) -> None:
             error_message='Unexpected error while sending WhatsApp message.',
             transport=transport,
         )
+
+
+def _safe_dispatch_worker(queue_id: int) -> None:
+    try:
+        _dispatch_message_queue_after_commit(queue_id)
+    finally:
+        connection.close()
+
+
+def dispatch_message_queue_task(queue_id: int) -> None:
+    is_sync = getattr(django_settings, 'TESTING', False) or 'test' in sys.argv or getattr(django_settings, 'WHATSAPP_DISPATCH_SYNC', False)
+    if is_sync:
+        _dispatch_message_queue_after_commit(queue_id)
+    else:
+        _dispatch_executor.submit(_safe_dispatch_worker, queue_id)
 
 
 def _should_send(settings_obj: WhatsAppIntegrationSettings, event_type: str) -> bool:
@@ -1067,12 +1120,54 @@ def _map_webhook_status(status_value: str) -> str | None:
 def process_whatsapp_webhook_payload(payload: dict[str, Any]) -> dict[str, Any]:
     updated_queue_ids: list[int] = []
     incoming_messages = 0
+    inbound_captured = 0
     ignored_status_updates = 0
 
     for entry in payload.get('entry', []) or []:
         for change in entry.get('changes', []) or []:
             value = change.get('value') or {}
-            incoming_messages += len(value.get('messages') or [])
+            raw_messages = value.get('messages') or []
+            incoming_messages += len(raw_messages)
+
+            for incoming in raw_messages:
+                from_phone = (incoming.get('from') or '').strip()
+                msg_type = incoming.get('type')
+                text_body = ''
+                if msg_type == 'text':
+                    text_body = ((incoming.get('text') or {}).get('body') or '').strip()
+                elif msg_type == 'button':
+                    text_body = ((incoming.get('button') or {}).get('text') or '').strip()
+                elif msg_type == 'interactive':
+                    interactive = incoming.get('interactive') or {}
+                    btn = interactive.get('button_reply') or {}
+                    lst = interactive.get('list_reply') or {}
+                    text_body = (btn.get('title') or lst.get('title') or '').strip()
+
+                if from_phone and text_body:
+                    clean_phone = ''.join(ch for ch in from_phone if ch.isdigit())
+                    if len(clean_phone) >= 10:
+                        last_10 = clean_phone[-10:]
+                        matched_job = (
+                            JobTicket.objects.filter(customer_phone__endswith=last_10)
+                            .exclude(status='Closed')
+                            .order_by('-updated_at')
+                            .first()
+                        )
+                        if not matched_job:
+                            matched_job = (
+                                JobTicket.objects.filter(customer_phone__endswith=last_10)
+                                .order_by('-created_at')
+                                .first()
+                            )
+                        if matched_job:
+                            from .models import JobTicketLog
+                            JobTicketLog.objects.create(
+                                job_ticket=matched_job,
+                                user=None,
+                                action='NOTE',
+                                details=f"[WhatsApp Customer Reply]: {text_body[:500]}",
+                            )
+                            inbound_captured += 1
 
             for status_payload in value.get('statuses', []) or []:
                 mapped_status = _map_webhook_status(status_payload.get('status'))
@@ -1104,6 +1199,8 @@ def process_whatsapp_webhook_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     ignored_status_updates += 1
 
     return {
+        'ok': True,
+        'inbound_captured': inbound_captured,
         'status_updates': len(updated_queue_ids),
         'updated_queue_ids': updated_queue_ids,
         'incoming_messages': incoming_messages,

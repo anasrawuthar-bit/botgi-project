@@ -2057,10 +2057,14 @@ class WhatsAppNotificationLog(models.Model):
 class MessageQueue(models.Model):
     STATUS_PENDING = 'pending'
     STATUS_SENT = 'sent'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_READ = 'read'
     STATUS_FAILED = 'failed'
     STATUS_CHOICES = [
         (STATUS_PENDING, 'Pending'),
         (STATUS_SENT, 'Sent'),
+        (STATUS_DELIVERED, 'Delivered'),
+        (STATUS_READ, 'Read'),
         (STATUS_FAILED, 'Failed'),
     ]
 
@@ -2104,6 +2108,9 @@ class MessageQueue(models.Model):
     bridge_status_code = models.PositiveIntegerField(null=True, blank=True)
     response_payload = models.JSONField(default=dict, blank=True)
     error_message = models.TextField(blank=True)
+    retry_count = models.PositiveIntegerField(default=0)
+    max_retries = models.PositiveIntegerField(default=3)
+    next_retry_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     failed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2119,6 +2126,19 @@ class MessageQueue(models.Model):
     @property
     def is_document(self):
         return bool((self.pdf_url or '').strip())
+
+    @property
+    def delivery_state(self):
+        if self.status == self.STATUS_FAILED:
+            return 'failed'
+        if self.status == self.STATUS_PENDING:
+            return 'pending'
+        payload_status = ''
+        if isinstance(self.response_payload, dict):
+            payload_status = str(self.response_payload.get('status') or '').strip().lower()
+        if payload_status in ('read', 'delivered'):
+            return payload_status
+        return self.status
 
 
 class UserSessionActivity(models.Model):
