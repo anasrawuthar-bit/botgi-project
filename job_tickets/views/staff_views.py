@@ -1439,8 +1439,8 @@ def update_feedback_followup(request, job_code):
         job.feedback_followup_note = _append_feedback_note(job.feedback_followup_note, note)
 
     if action == 'mark_received':
-        if not rating_raw or not note:
-            messages.error(request, 'Rating and feedback note are required to mark feedback as received.')
+        if not rating_raw:
+            messages.error(request, 'Rating (1 to 10) is required to record customer feedback.')
             return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
 
         try:
@@ -1452,16 +1452,29 @@ def update_feedback_followup(request, job_code):
             messages.error(request, 'Feedback rating must be between 1 and 10.')
             return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
 
+        if not note:
+            note = f"Customer rated {rating}/10"
+
         job.feedback_followup_status = JobTicket.FEEDBACK_RECEIVED
         job.feedback_rating = rating
         job.feedback_comment = note
         job.feedback_date = timezone.now()
         update_fields.extend(['feedback_rating', 'feedback_comment', 'feedback_date'])
-        success_message = 'Feedback marked as received.'
+        success_message = 'Feedback marked as received successfully.'
     elif action in status_map:
         job.feedback_followup_status = status_map[action]
         job.feedback_followup_called_at = timezone.now()
         update_fields.append('feedback_followup_called_at')
+        if rating_raw:
+            try:
+                rating = int(rating_raw)
+                if 1 <= rating <= 10:
+                    job.feedback_rating = rating
+                    job.feedback_comment = note or job.feedback_comment
+                    job.feedback_date = timezone.now()
+                    update_fields.extend(['feedback_rating', 'feedback_comment', 'feedback_date'])
+            except (TypeError, ValueError):
+                pass
         success_message = f'Feedback follow-up marked as {dict(JobTicket.FEEDBACK_FOLLOWUP_CHOICES)[job.feedback_followup_status]}.'
     else:
         messages.error(request, 'Invalid feedback follow-up action.')

@@ -23,12 +23,15 @@ def feedback_analytics(request):
         _prepare_feedback_followups()
         cache.set(cache_key, 1, 300)  # 5 minutes
 
+    workspace = getattr(request, 'current_workspace', None)
     start_date = (request.GET.get('start_date') or '').strip()
     end_date = (request.GET.get('end_date') or '').strip()
     selected_rating_raw = (request.GET.get('rating') or '').strip()
     selected_technician_raw = (request.GET.get('technician') or '').strip()
+    queue_status = (request.GET.get('queue_status') or 'all').strip().lower()
+    active_tab = (request.GET.get('tab') or 'queue').strip().lower()
 
-    jobs_with_feedback = JobTicket.objects.filter(
+    jobs_with_feedback = scope_to_workspace(JobTicket.objects, workspace).filter(
         feedback_rating__isnull=False
     ).select_related('assigned_to__user').order_by('-feedback_date')
 
@@ -181,7 +184,7 @@ def feedback_analytics(request):
     ]
 
     # Base queryset for followup stats — reused to avoid repeating filters
-    followup_base = JobTicket.objects.filter(
+    followup_base = scope_to_workspace(JobTicket.objects, workspace).filter(
         status='Closed',
         feedback_followup_enabled=True,
         feedback_due_at__lte=timezone.now(),
@@ -191,34 +194,59 @@ def feedback_analytics(request):
     # Single aggregated query for all followup counts instead of 6 separate queries
     followup_counts = followup_base.aggregate(
         total=Count('id'),
+        need_call=Count('id', filter=Q(feedback_followup_status=JobTicket.FEEDBACK_PENDING, feedback_message_sent_at__isnull=True)),
         message_sent=Count('id', filter=Q(feedback_message_sent_at__isnull=False)),
         call_later=Count('id', filter=Q(feedback_followup_status=JobTicket.FEEDBACK_CALL_LATER)),
         no_answer=Count('id', filter=Q(feedback_followup_status=JobTicket.FEEDBACK_NO_ANSWER)),
     )
     feedback_followup_count = followup_counts['total'] or 0
+    feedback_need_call_count = followup_counts['need_call'] or 0
     feedback_message_sent_count = followup_counts['message_sent'] or 0
     feedback_call_later_count = followup_counts['call_later'] or 0
     feedback_no_answer_count = followup_counts['no_answer'] or 0
 
     # These two don't share the same base filter — keep separate but they're simple counts
-    feedback_issue_count = JobTicket.objects.filter(
+    feedback_issue_count = scope_to_workspace(JobTicket.objects, workspace).filter(
         status='Closed',
         feedback_followup_status=JobTicket.FEEDBACK_CALLED_ISSUE,
     ).count()
-    feedback_received_count = JobTicket.objects.filter(
+    feedback_received_count = scope_to_workspace(JobTicket.objects, workspace).filter(
         status='Closed',
         feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
     ).count()
 
+    filtered_followup_qs = followup_base
+    if queue_status == 'need_call':
+        filtered_followup_qs = followup_base.filter(
+            feedback_followup_status=JobTicket.FEEDBACK_PENDING,
+            feedback_message_sent_at__isnull=True,
+        )
+    elif queue_status == 'message_sent':
+        filtered_followup_qs = followup_base.filter(feedback_message_sent_at__isnull=False)
+    elif queue_status == 'call_later':
+        filtered_followup_qs = followup_base.filter(feedback_followup_status=JobTicket.FEEDBACK_CALL_LATER)
+    elif queue_status == 'no_answer':
+        filtered_followup_qs = followup_base.filter(feedback_followup_status=JobTicket.FEEDBACK_NO_ANSWER)
+    elif queue_status == 'issue':
+        filtered_followup_qs = scope_to_workspace(JobTicket.objects, workspace).filter(
+            status='Closed',
+            feedback_followup_status=JobTicket.FEEDBACK_CALLED_ISSUE,
+        )
+    elif queue_status == 'received':
+        filtered_followup_qs = scope_to_workspace(JobTicket.objects, workspace).filter(
+            status='Closed',
+            feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
+        )
+
     feedback_followup_jobs = list(
-        followup_base
+        filtered_followup_qs
         .select_related('assigned_to__user', 'feedback_followup_marked_by')
         .prefetch_related('service_logs')
         .order_by('feedback_due_at', 'id')[:100]
     )
 
     feedback_followup_history = list(
-        JobTicket.objects.filter(status='Closed')
+        scope_to_workspace(JobTicket.objects, workspace).filter(status='Closed')
         .filter(Q(feedback_followup_enabled=True) | Q(feedback_rating__isnull=False))
         .exclude(feedback_followup_status=JobTicket.FEEDBACK_PENDING)
         .select_related('feedback_followup_marked_by')
@@ -247,8 +275,11 @@ def feedback_analytics(request):
         'end_date': end_date,
         'clear_rating_url': clear_rating_url,
         'clear_technician_url': clear_technician_url,
+        'queue_status': queue_status,
+        'active_tab': active_tab,
         'feedback_followup_jobs': feedback_followup_jobs,
         'feedback_followup_count': feedback_followup_count,
+        'feedback_need_call_count': feedback_need_call_count,
         'feedback_message_sent_count': feedback_message_sent_count,
         'feedback_call_later_count': feedback_call_later_count,
         'feedback_no_answer_count': feedback_no_answer_count,

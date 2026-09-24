@@ -241,3 +241,82 @@ class ExpenseSystemTests(TestCase):
         # Revenue: 2000 (500 parts + 1500 labor), overall expense: 0, overall profit: 2000
         # True net profit after shop overhead (600) = 2000 - 600 = 1400
         self.assertEqual(ctx.get('period_net_profit'), Decimal('1400.00'))
+
+
+class FeedbackCenterTests(TestCase):
+    def setUp(self):
+        self.workspace, self.user = _make_workspace_and_user(
+            'feedback_staff',
+            {'staff_dashboard', 'feedback_analytics'}
+        )
+        self.tech_user = User.objects.create_user('fb_tech', password='Password123!')
+        tech_group, _ = Group.objects.get_or_create(name='Technicians')
+        self.tech_user.groups.add(tech_group)
+        CompanyUserMembership.objects.create(
+            user=self.tech_user,
+            workspace=self.workspace,
+            role=CompanyUserMembership.ROLE_TECHNICIAN,
+        )
+        self.tech = TechnicianProfile.objects.create(
+            user=self.tech_user,
+            workspace=self.workspace,
+            unique_id='FBT-01',
+        )
+        self.closed_job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='JOB-FB-001',
+            customer_name='Sarah Connor',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            reported_issue='Keyboard fix',
+            status='Closed',
+            closed_at=timezone.now(),
+            feedback_followup_enabled=True,
+            feedback_due_at=timezone.now() - timezone.timedelta(hours=1),
+            assigned_to=self.tech,
+        )
+
+    def test_feedback_analytics_dashboard_renders(self):
+        self.client.force_login(self.user)
+        res = self.client.get(reverse('feedback_analytics'))
+        self.assertEqual(res.status_code, 200)
+        # Verify 0 rating does not show Critical
+        self.assertContains(res, "No Ratings Yet")
+        self.assertNotContains(res, "Critical Attention")
+
+    def test_feedback_queue_status_filtering(self):
+        self.client.force_login(self.user)
+        # Filter: need_call
+        res = self.client.get(reverse('feedback_analytics') + '?queue_status=need_call')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, self.closed_job.job_code)
+
+        # Filter: no_answer (job is not in no_answer yet, so should be empty)
+        res_na = self.client.get(reverse('feedback_analytics') + '?queue_status=no_answer')
+        self.assertEqual(res_na.status_code, 200)
+        self.assertNotContains(res_na, self.closed_job.job_code)
+
+    def test_update_feedback_followup_no_answer(self):
+        self.client.force_login(self.user)
+        res = self.client.post(reverse('update_feedback_followup', args=[self.closed_job.job_code]), {
+            'feedback_action': 'no_answer',
+            'feedback_note': 'Customer phone was unreachable',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.closed_job.refresh_from_db()
+        self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_NO_ANSWER)
+        self.assertIn('Customer phone was unreachable', self.closed_job.feedback_followup_note)
+
+    def test_update_feedback_followup_mark_received(self):
+        self.client.force_login(self.user)
+        res = self.client.post(reverse('update_feedback_followup', args=[self.closed_job.job_code]), {
+            'feedback_action': 'mark_received',
+            'feedback_rating': '9',
+            'feedback_note': 'Very happy with fast keyboard replacement',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.closed_job.refresh_from_db()
+        self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_RECEIVED)
+        self.assertEqual(self.closed_job.feedback_rating, 9)
+        self.assertIn('Very happy', self.closed_job.feedback_comment)
+

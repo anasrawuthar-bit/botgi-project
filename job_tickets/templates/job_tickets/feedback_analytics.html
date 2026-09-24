@@ -1,11 +1,13 @@
 {% extends "job_tickets/base.html" %}
-{% block title %}Feedback Analytics{% endblock %}
+{% block title %}Feedback Center & Quality Analytics{% endblock %}
 
 {% block content %}
 <style>
 .feedback-hero {
-    background: linear-gradient(130deg, #edf5ff, #fff6e9);
+    background: linear-gradient(130deg, #edf5ff, #f8faff);
     border: 1px solid #dfe9f6;
+    border-radius: var(--radius-lg, 12px);
+    padding: 1.5rem;
 }
 .feedback-kicker {
     display: inline-block;
@@ -16,21 +18,21 @@
     color: #0a4f9e;
     background: #e2efff;
     border-radius: 999px;
-    padding: 0.32rem 0.65rem;
+    padding: 0.3rem 0.65rem;
 }
 .feedback-metric {
     background: #fff;
-    border: 1px solid var(--border-color);
-    border-left: 4px solid var(--primary);
-    border-radius: var(--radius-md);
-    padding: 1rem 1.25rem;
-    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-left: 4px solid var(--primary, #0a4f9e);
+    border-radius: var(--radius-md, 10px);
+    padding: 1.1rem 1.25rem;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
     height: 100%;
 }
 .feedback-metric p {
     margin: 0;
-    color: var(--muted-text);
-    font-size: 0.8125rem;
+    color: #64748b;
+    font-size: 0.78rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -39,7 +41,7 @@
     margin: 0.35rem 0 0;
     font-weight: 700;
     font-family: 'Plus Jakarta Sans', sans-serif;
-    color: var(--text-primary);
+    color: #1e293b;
 }
 .rating-badge {
     display: inline-flex;
@@ -47,505 +49,634 @@
     border-radius: 9999px;
     padding: 0.25rem 0.65rem;
     font-weight: 600;
+    font-size: 0.78rem;
+}
+.rating-badge.good { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+.rating-badge.mid { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+.rating-badge.low { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.rating-badge.neutral { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+
+.feedback-nav-tabs {
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 1.5rem;
+}
+.feedback-nav-tabs .nav-link {
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.75rem 1.25rem;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    border-radius: 0;
+    background: transparent;
+}
+.feedback-nav-tabs .nav-link:hover {
+    color: #0a4f9e;
+    border-color: #cbd5e1;
+}
+.feedback-nav-tabs .nav-link.active {
+    color: #0a4f9e;
+    border-bottom-color: #0a4f9e;
+    background: transparent;
+}
+
+.queue-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+.queue-pill-btn {
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    background: #fff;
+    transition: all 0.15s ease-in-out;
+}
+.queue-pill-btn:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #1e293b;
+}
+.queue-pill-btn.active {
+    background: #0a4f9e;
+    border-color: #0a4f9e;
+    color: #fff;
+}
+.queue-pill-btn.active .badge {
+    background: rgba(255, 255, 255, 0.25) !important;
+    color: #fff !important;
+}
+
+.followup-status {
+    border-radius: 999px;
+    display: inline-block;
     font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
 }
-.rating-badge.good {
-    background: #ecfdf5;
-    color: #065f46;
-}
-.rating-badge.mid {
-    background: #fffbeb;
-    color: #92400e;
-}
-.rating-badge.low {
-    background: #fef2f2;
-    color: #991b1b;
-}
+.followup-status.pending { background: #e0f2fe; color: #0369a1; }
+.followup-status.message_sent { background: #e0e7ff; color: #4338ca; }
+.followup-status.call_later { background: #fef3c7; color: #b45309; }
+.followup-status.no_answer { background: #f1f5f9; color: #475569; }
+.followup-status.called_issue { background: #fee2e2; color: #b91c1c; }
+.followup-status.received, .followup-status.called_happy { background: #dcfce7; color: #15803d; }
+
 .dist-row {
     display: grid;
-    grid-template-columns: 70px 1fr 56px;
-    gap: 10px;
+    grid-template-columns: 60px 1fr 45px;
+    gap: 12px;
     align-items: center;
-    margin-bottom: 9px;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.15s;
 }
-.dist-row-link {
-    text-decoration: none;
-    color: inherit;
-    display: block;
-}
-.dist-row-link:hover .dist-track {
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.18);
-}
-.dist-row.active {
-    background: var(--primary-light);
-    border-radius: 8px;
-    padding: 0.35rem 0.45rem;
-}
+.dist-row:hover { background: #f1f5f9; }
 .dist-track {
     background: #e2e8f0;
     border-radius: 9999px;
-    height: 10px;
+    height: 8px;
     overflow: hidden;
 }
 .dist-fill {
     height: 100%;
-    background: linear-gradient(90deg, #4f46e5, #818cf8);
+    background: linear-gradient(90deg, #4f46e5, #0ea5e9);
     border-radius: 9999px;
 }
-.tech-table th {
-    background: #f8fafc;
-    color: #475569;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
-    border-bottom: 1px solid var(--border-color);
-}
 .perf-track {
-    background: #e7edf6;
+    background: #e2e8f0;
     border-radius: 999px;
     height: 8px;
     overflow: hidden;
 }
-.perf-fill {
-    height: 100%;
-}
+.perf-fill { height: 100%; }
 .perf-fill.high { background: #16a34a; }
 .perf-fill.mid { background: #f59e0b; }
 .perf-fill.low { background: #dc2626; }
-.feedback-note {
-    background: #f8fbff;
-    border: 1px dashed #ccd9eb;
-    border-radius: 10px;
-    padding: 0.65rem 0.8rem;
-}
-.feedback-scroll {
-    max-height: 420px;
-    overflow-y: auto;
-}
-.feedback-scroll thead th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-.feedback-filter-box {
-    background: #fff;
-    border: 1px solid #e5ebf4;
-    border-radius: 14px;
-    padding: 1rem;
-    box-shadow: 0 8px 24px rgba(14, 20, 34, 0.05);
-}
-.filter-summary {
-    background: #f8fbff;
-    border: 1px dashed #ccd9eb;
-    border-radius: 10px;
-    padding: 0.7rem 0.9rem;
-}
-.tech-filter-link {
-    color: inherit;
-    text-decoration: none;
-    font-weight: 600;
-    display: block;
-    width: 100%;
-    height: 100%;
-    padding: 0.75rem 0.5rem;
-}
-.tech-filter-link:hover {
-    color: #0a4f9e;
-    background: rgba(10, 79, 158, 0.06);
-}
-.tech-filter-link.active {
-    color: #0a4f9e;
-    text-decoration: underline;
-    background: rgba(10, 79, 158, 0.08);
-}
-.followup-table {
-    min-width: 980px;
-}
-.followup-status {
-    border-radius: 999px;
-    display: inline-block;
-    font-size: 0.78rem;
-    font-weight: 700;
-    padding: 0.26rem 0.62rem;
-}
-.followup-status.pending,
-.followup-status.message_sent {
-    background: #e2efff;
-    color: #0a4f9e;
-}
-.followup-status.call_later,
-.followup-status.no_answer {
-    background: #fff0cc;
-    color: #996300;
-}
-.followup-status.called_issue {
-    background: #ffe1e1;
-    color: #a21c1c;
-}
-.followup-status.received,
-.followup-status.called_happy {
-    background: #d9f7e8;
-    color: #117a43;
-}
-.followup-action-grid {
+
+.rating-picker-grid {
     display: grid;
-    gap: 0.45rem;
-    grid-template-columns: 76px minmax(150px, 1fr);
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
 }
-.followup-button-row {
+.rating-picker-btn {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 4px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.9rem;
+    transition: all 0.15s ease-in-out;
+    background: #fff;
+    color: #334155;
+}
+.rating-picker-btn:hover {
+    border-color: #0a4f9e;
+    background: #f0f7ff;
+}
+.rating-picker-btn.selected {
+    border-color: #0a4f9e;
+    background: #0a4f9e;
+    color: #fff;
 }
 </style>
 
 <div id="feedback-analytics-page">
-<div class="section-container feedback-hero mb-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div>
-            <span class="feedback-kicker">Service Quality</span>
-            <h1 class="mt-2 mb-1">Feedback Center</h1>
-            <p class="mb-0 text-muted">Track feedback, follow up pending clients, and review service quality.</p>
+    <!-- Top Header -->
+    <div class="feedback-hero mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <span class="feedback-kicker"><i class="fas fa-headset me-1"></i>Service Quality</span>
+                <h1 class="h3 mt-2 mb-1 fw-bold text-dark">Feedback & Quality Center</h1>
+                <p class="mb-0 text-muted">Follow up with recently served clients, record satisfaction feedback, and monitor technician quality.</p>
+            </div>
+            <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary" data-no-loader="true">
+                <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+            </a>
         </div>
-        <a href="{% url 'staff_dashboard' %}" class="btn btn-secondary" data-no-loader="true">
-            <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
-        </a>
     </div>
-</div>
 
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="feedback-metric">
-            <p>Total Feedback Entries</p>
-            <h2>{{ total_feedback }}</h2>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="feedback-metric">
-            <p>Average Rating</p>
-            <h2>{{ avg_rating }} / 10</h2>
-            <small class="text-muted">
-                {% if avg_rating > 0 %}
-                    Based on average rating out of 10.
-                {% else %}
-                    No ratings yet
-                {% endif %}
-            </small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="feedback-metric">
-            <p>Overall Sentiment</p>
-            <h2>
-                {% if avg_rating >= 8 %}
-                    <span class="rating-badge good">Excellent</span>
-                {% elif avg_rating >= 6 %}
-                    <span class="rating-badge mid">Needs Improvement</span>
-                {% else %}
-                    <span class="rating-badge low">Critical</span>
-                {% endif %}
-            </h2>
-            <small class="text-muted">Based on average rating (out of 10).</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="feedback-metric">
-            <p>Need Staff Call</p>
-            <h2>{{ feedback_followup_count }}</h2>
-            <small class="text-muted">{{ feedback_message_sent_count }} message sent, {{ feedback_no_answer_count }} no answer</small>
-        </div>
-    </div>
-</div>
-
-<div class="feedback-filter-box mb-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div>
-            <h4 class="mb-1"><i class="fas fa-headset me-2"></i>Feedback Follow-up Queue</h4>
-            <div class="d-flex flex-wrap gap-2">
-                <span class="badge text-bg-danger">{{ feedback_followup_count }} Need Call</span>
-                <span class="badge text-bg-primary">{{ feedback_message_sent_count }} Message Sent</span>
-                <span class="badge text-bg-warning">{{ feedback_call_later_count }} Call Later</span>
-                <span class="badge text-bg-secondary">{{ feedback_no_answer_count }} No Answer</span>
-                <span class="badge text-bg-success">{{ feedback_received_count }} Received</span>
-                {% if feedback_issue_count %}
-                <span class="badge text-bg-danger">{{ feedback_issue_count }} Issue</span>
-                {% endif %}
+    <!-- KPI Summary Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="feedback-metric">
+                <p>Total Reviews</p>
+                <h2>{{ total_feedback }}</h2>
+                <small class="text-muted">Recorded customer ratings</small>
             </div>
         </div>
-    </div>
-    <div class="table-responsive feedback-scroll">
-        <table class="table table-striped align-middle followup-table">
-            <thead>
-                <tr>
-                    <th>Due</th>
-                    <th>Job</th>
-                    <th>Customer</th>
-                    <th>Device</th>
-                    <th>Status</th>
-                    <th class="text-end">Amount</th>
-                    <th>Staff Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for job in feedback_followup_jobs %}
-                <tr>
-                    <td>
-                        {{ job.feedback_due_at|date:"d M Y" }}<br>
-                        <span class="text-muted small">Closed {{ job.closed_at|date:"d M Y" }}</span>
-                    </td>
-                    <td><a href="{% url 'staff_job_detail' job.job_code %}" class="fw-semibold">{{ job.job_code }}</a></td>
-                    <td>
-                        {{ job.customer_name }}<br>
-                        <a href="tel:+91{{ job.customer_phone }}" class="small">{{ job.customer_phone }}</a>
-                    </td>
-                    <td>{{ job.device_brand }} {{ job.device_model }}<br><span class="text-muted small">{{ job.device_type }}</span></td>
-                    <td>
-                        <span class="followup-status {{ job.feedback_followup_status }}">{{ job.get_feedback_followup_status_display }}</span>
-                        {% if job.feedback_message_sent_at %}
-                        <div class="small text-muted mt-1">Msg {{ job.feedback_message_sent_at|date:"d M, h:i A" }}</div>
-                        {% endif %}
-                        {% if job.feedback_followup_called_at %}
-                        <div class="small text-muted">Called {{ job.feedback_followup_called_at|date:"d M, h:i A" }}</div>
-                        {% endif %}
-                    </td>
-                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                    <td>
-                        <form method="post" action="{% url 'update_feedback_followup' job.job_code %}">
-                            {% csrf_token %}
-                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                            <div class="followup-action-grid mb-2">
-                                <select name="feedback_rating" class="form-select form-select-sm">
-                                    <option value="">Rate</option>
-                                    {% for rating in "123456789" %}
-                                    <option value="{{ rating }}">{{ rating }}</option>
-                                    {% endfor %}
-                                    <option value="10">10</option>
-                                </select>
-                                <input type="text" name="feedback_note" class="form-control form-control-sm" placeholder="Call note">
-                            </div>
-                            <div class="followup-button-row">
-                                <button type="submit" name="feedback_action" value="send_now" class="btn btn-sm btn-outline-success">
-                                    <i class="fab fa-whatsapp"></i> Send
-                                </button>
-                                <button type="submit" name="feedback_action" value="mark_received" class="btn btn-sm btn-primary" data-requires-feedback="true">
-                                    Received
-                                </button>
-                                <button type="submit" name="feedback_action" value="called_issue" class="btn btn-sm btn-outline-warning">
-                                    Issue
-                                </button>
-                                <button type="submit" name="feedback_action" value="no_answer" class="btn btn-sm btn-outline-secondary">
-                                    No Answer
-                                </button>
-                                <button type="submit" name="feedback_action" value="call_later" class="btn btn-sm btn-outline-dark">
-                                    Later
-                                </button>
-                            </div>
-                        </form>
-                        {% if job.feedback_followup_note %}
-                        <div class="small text-muted mt-2" style="white-space: pre-wrap;">{{ job.feedback_followup_note|truncatechars:160 }}</div>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="7" class="text-center text-muted">No feedback calls pending.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    {% if feedback_followup_history %}
-    <div class="mt-3">
-        <h6 class="fw-semibold mb-2">Follow-up History</h6>
-        <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Job</th>
-                        <th>Customer</th>
-                        <th>Status</th>
-                        <th>Rating</th>
-                        <th class="text-end">Amount</th>
-                        <th>Note</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for job in feedback_followup_history %}
-                    <tr>
-                        <td><a href="{% url 'staff_job_detail' job.job_code %}">{{ job.job_code }}</a></td>
-                        <td>{{ job.customer_name }}</td>
-                        <td><span class="followup-status {{ job.feedback_followup_status }}">{{ job.get_feedback_followup_status_display }}</span></td>
-                        <td>{% if job.feedback_rating %}{{ job.feedback_rating }}/10{% else %}-{% endif %}</td>
-                        <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                        <td class="text-muted small">{{ job.feedback_comment|default:job.feedback_followup_note|truncatechars:100 }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-</div>
-
-<div class="feedback-filter-box mb-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-        <div>
-            <h4 class="mb-1"><i class="fas fa-filter me-2"></i>Filter Received Feedback</h4>
-        </div>
-        <a
-            href="{% url 'feedback_analytics' %}"
-            class="btn btn-outline-secondary"
-            data-no-loader="true"
-            hx-get="{% url 'feedback_analytics' %}"
-            hx-target="#feedback-analytics-page"
-            hx-select="#feedback-analytics-page"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-        >
-            <i class="fas fa-rotate-left me-1"></i>Clear All
-        </a>
-    </div>
-
-    <form method="get" class="row g-3 align-items-end" data-async-form data-async-target="#feedback-analytics-page">
-        <div class="col-md-4">
-            <label class="form-label fw-semibold">Start Date</label>
-            <input type="date" name="start_date" value="{{ start_date }}" class="form-control">
-        </div>
-        <div class="col-md-4">
-            <label class="form-label fw-semibold">End Date</label>
-            <input type="date" name="end_date" value="{{ end_date }}" class="form-control">
-        </div>
-        <div class="col-md-4">
-            {% if selected_rating %}
-            <input type="hidden" name="rating" value="{{ selected_rating }}">
-            {% endif %}
-            {% if selected_technician %}
-            <input type="hidden" name="technician" value="{{ selected_technician.pk }}">
-            {% endif %}
-            <button type="submit" class="btn btn-primary w-100">
-                <i class="fas fa-magnifying-glass me-1"></i>Apply Date Filter
-            </button>
-        </div>
-    </form>
-
-    {% if start_date or end_date or selected_rating or selected_technician %}
-    <div class="filter-summary mt-3">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-            <span class="fw-semibold">Active Filters:</span>
-            {% if start_date %}<span class="badge text-bg-light border">From: {{ start_date }}</span>{% endif %}
-            {% if end_date %}<span class="badge text-bg-light border">To: {{ end_date }}</span>{% endif %}
-            {% if selected_rating %}<span class="badge text-bg-warning">Rating: {{ selected_rating }}/10</span>{% endif %}
-            {% if selected_technician %}<span class="badge text-bg-info">Technician: {{ selected_technician.user.username }}</span>{% endif %}
-            {% if selected_rating %}
-            <a
-                href="{{ clear_rating_url }}"
-                class="btn btn-sm btn-outline-secondary ms-auto"
-                data-no-loader="true"
-                hx-get="{{ clear_rating_url }}"
-                hx-target="#feedback-analytics-page"
-                hx-select="#feedback-analytics-page"
-                hx-swap="outerHTML"
-                hx-push-url="true"
-            >
-                <i class="fas fa-xmark me-1"></i>Clear Rating
-            </a>
-            {% endif %}
-            {% if selected_technician %}
-            <a
-                href="{{ clear_technician_url }}"
-                class="btn btn-sm btn-outline-secondary"
-                data-no-loader="true"
-                hx-get="{{ clear_technician_url }}"
-                hx-target="#feedback-analytics-page"
-                hx-select="#feedback-analytics-page"
-                hx-swap="outerHTML"
-                hx-push-url="true"
-            >
-                <i class="fas fa-user-xmark me-1"></i>Clear Technician
-            </a>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-</div>
-
-<div class="row g-4 mb-4">
-    <div class="col-lg-5">
-        <div class="section-container h-100">
-            <h4 class="mb-3"><i class="fas fa-chart-bar me-2"></i>Rating Distribution</h4>
-            {% for item in rating_distribution %}
-                <a
-                    href="{{ item.filter_url }}"
-                    class="dist-row-link"
-                    data-no-loader="true"
-                    hx-get="{{ item.filter_url }}"
-                    hx-target="#feedback-analytics-page"
-                    hx-select="#feedback-analytics-page"
-                    hx-swap="outerHTML"
-                    hx-push-url="true"
-                >
-                    <div class="dist-row{% if item.is_active %} active{% endif %}">
-                        <div class="fw-semibold">{{ item.rating }}/10</div>
-                        <div class="dist-track">
-                            <div class="dist-fill" style="width: {{ item.percentage }}%"></div>
-                        </div>
-                        <div class="text-end small fw-semibold">{{ item.count }}</div>
-                    </div>
-                </a>
-            {% endfor %}
-            <div class="feedback-note mt-3">
+        <div class="col-md-3">
+            <div class="feedback-metric">
+                <p>Average Rating</p>
+                <h2>{{ avg_rating }} <span class="fs-6 text-muted fw-normal">/ 10</span></h2>
                 <small class="text-muted">
-                    Oru rating-il click cheythal aa rating kodutha customer list thazhe kanikkum.
+                    {% if total_feedback > 0 %}
+                        Across {{ total_feedback }} rating{{ total_feedback|pluralize }}
+                    {% else %}
+                        No ratings recorded yet
+                    {% endif %}
                 </small>
             </div>
         </div>
+        <div class="col-md-3">
+            <div class="feedback-metric">
+                <p>Overall Sentiment</p>
+                <h2 class="mt-2">
+                    {% if total_feedback == 0 %}
+                        <span class="rating-badge neutral"><i class="fas fa-minus-circle me-1"></i>No Ratings Yet</span>
+                    {% elif avg_rating >= 8 %}
+                        <span class="rating-badge good"><i class="fas fa-smile me-1"></i>Excellent</span>
+                    {% elif avg_rating >= 6 %}
+                        <span class="rating-badge mid"><i class="fas fa-meh me-1"></i>Needs Improvement</span>
+                    {% else %}
+                        <span class="rating-badge low"><i class="fas fa-frown me-1"></i>Critical Attention</span>
+                    {% endif %}
+                </h2>
+                <small class="text-muted">
+                    {% if total_feedback == 0 %}
+                        Awaiting customer review data
+                    {% else %}
+                        Based on rating average
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="feedback-metric">
+                <p>Pending Follow-ups</p>
+                <h2>{{ feedback_followup_count }}</h2>
+                <small class="text-muted">{{ feedback_message_sent_count }} msg sent &middot; {{ feedback_no_answer_count }} no answer</small>
+            </div>
+        </div>
     </div>
 
-    <div class="col-lg-7">
-        <div class="section-container h-100">
-            <h4 class="mb-3"><i class="fas fa-users-cog me-2"></i>Technician Leaderboard</h4>
-            <div class="table-responsive feedback-scroll">
-                <table class="table table-hover align-middle tech-table">
-                    <thead>
+    <!-- Navigation Tabs -->
+    <ul class="nav feedback-nav-tabs" id="feedbackTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {% if active_tab != 'analytics' %}active{% endif %}" id="queue-tab" href="{% url 'feedback_analytics' %}?tab=queue" role="tab">
+                <i class="fas fa-headset me-2"></i>Follow-up Calling Queue
+                <span class="badge rounded-pill {% if active_tab != 'analytics' %}bg-primary{% else %}bg-secondary{% endif %} ms-1">{{ feedback_followup_count }}</span>
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {% if active_tab == 'analytics' %}active{% endif %}" id="analytics-tab" href="{% url 'feedback_analytics' %}?tab=analytics" role="tab">
+                <i class="fas fa-chart-line me-2"></i>Reviews &amp; Quality Analytics
+                <span class="badge rounded-pill {% if active_tab == 'analytics' %}bg-primary{% else %}bg-secondary{% endif %} ms-1">{{ total_feedback }}</span>
+            </a>
+        </li>
+    </ul>
+
+    {% if active_tab != 'analytics' %}
+    <!-- TAB 1: FOLLOW-UP QUEUE -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1"><i class="fas fa-phone-volume text-primary me-2"></i>Pending Client Calls</h5>
+                    <p class="text-muted small mb-0">Follow up with customers after their job was closed to confirm device health and satisfaction.</p>
+                </div>
+                <!-- Interactive Filter Pills -->
+                <div class="queue-pills">
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=all" class="queue-pill-btn {% if queue_status == 'all' or not queue_status %}active{% endif %}">
+                        All <span class="badge rounded-pill text-bg-light">{{ feedback_followup_count }}</span>
+                    </a>
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=need_call" class="queue-pill-btn {% if queue_status == 'need_call' %}active{% endif %}">
+                        <i class="fas fa-phone text-danger"></i> Need Call <span class="badge rounded-pill text-bg-light">{{ feedback_need_call_count }}</span>
+                    </a>
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=message_sent" class="queue-pill-btn {% if queue_status == 'message_sent' %}active{% endif %}">
+                        <i class="fab fa-whatsapp text-success"></i> Msg Sent <span class="badge rounded-pill text-bg-light">{{ feedback_message_sent_count }}</span>
+                    </a>
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=call_later" class="queue-pill-btn {% if queue_status == 'call_later' %}active{% endif %}">
+                        <i class="fas fa-clock text-warning"></i> Call Later <span class="badge rounded-pill text-bg-light">{{ feedback_call_later_count }}</span>
+                    </a>
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=no_answer" class="queue-pill-btn {% if queue_status == 'no_answer' %}active{% endif %}">
+                        <i class="fas fa-phone-slash text-secondary"></i> No Answer <span class="badge rounded-pill text-bg-light">{{ feedback_no_answer_count }}</span>
+                    </a>
+                    {% if feedback_issue_count %}
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=issue" class="queue-pill-btn {% if queue_status == 'issue' %}active{% endif %}">
+                        <i class="fas fa-triangle-exclamation text-danger"></i> Issues <span class="badge rounded-pill text-bg-danger">{{ feedback_issue_count }}</span>
+                    </a>
+                    {% endif %}
+                    {% if feedback_received_count %}
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=received" class="queue-pill-btn {% if queue_status == 'received' %}active{% endif %}">
+                        <i class="fas fa-check-circle text-success"></i> Received <span class="badge rounded-pill text-bg-success">{{ feedback_received_count }}</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Queue Data Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
                         <tr>
-                            <th style="width: 70px;">Rank</th>
-                            <th>Technician</th>
-                            <th style="width: 130px;">Feedback</th>
-                            <th style="width: 120px;">Avg Rating</th>
-                            <th style="min-width: 180px;">Performance</th>
+                            <th style="min-width: 110px;">Due / Closed</th>
+                            <th>Job Ticket</th>
+                            <th style="min-width: 170px;">Customer</th>
+                            <th>Device</th>
+                            <th>Status</th>
+                            <th class="text-end">Bill Amount</th>
+                            <th style="min-width: 250px;" class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for tech, data in tech_feedback.items %}
+                        {% for job in feedback_followup_jobs %}
                         <tr>
-                            <td>#{{ forloop.counter }}</td>
-                            <td class="p-0">
-                                <a
-                                    href="{{ data.filter_url }}"
-                                    class="tech-filter-link{% if data.is_active %} active{% endif %}"
-                                    data-no-loader="true"
-                                    hx-get="{{ data.filter_url }}"
-                                    hx-target="#feedback-analytics-page"
-                                    hx-select="#feedback-analytics-page"
-                                    hx-swap="outerHTML"
-                                    hx-push-url="true"
-                                >
-                                    {{ tech.user.username }}
+                            <td>
+                                <div class="fw-semibold text-dark">{{ job.feedback_due_at|date:"d M Y" }}</div>
+                                <div class="text-muted small">Closed {{ job.closed_at|date:"d M Y" }}</div>
+                            </td>
+                            <td>
+                                <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-decoration-none">
+                                    {{ job.job_code }}
+                                </a>
+                                {% if job.assigned_to %}
+                                <div class="text-muted small"><i class="fas fa-user-gear me-1"></i>{{ job.assigned_to.user.username }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="fw-semibold text-dark">{{ job.customer_name }}</div>
+                                <a href="tel:+91{{ job.customer_phone }}" class="text-primary small text-decoration-none fw-semibold">
+                                    <i class="fas fa-phone-alt me-1"></i>{{ job.customer_phone }}
                                 </a>
                             </td>
-                            <td>{{ data.count }}</td>
-                            <td>{{ data.avg_rating|floatformat:2 }} / 10</td>
                             <td>
-                                <div class="perf-track">
-                                    <div class="perf-fill {% if data.avg_rating >= 8 %}high{% elif data.avg_rating >= 6 %}mid{% else %}low{% endif %}" style="width: {{ data.percentage }}%"></div>
+                                <div class="text-dark">{{ job.device_brand }} {{ job.device_model }}</div>
+                                <span class="badge bg-light text-muted border">{{ job.device_type }}</span>
+                            </td>
+                            <td>
+                                <span class="followup-status {{ job.feedback_followup_status }}">
+                                    {{ job.get_feedback_followup_status_display }}
+                                </span>
+                                {% if job.feedback_message_sent_at %}
+                                <div class="small text-muted mt-1"><i class="fab fa-whatsapp text-success me-1"></i>Sent {{ job.feedback_message_sent_at|date:"d M, h:i A" }}</div>
+                                {% endif %}
+                                {% if job.feedback_followup_called_at %}
+                                <div class="small text-muted"><i class="fas fa-phone text-primary me-1"></i>Called {{ job.feedback_followup_called_at|date:"d M, h:i A" }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-bold text-dark">
+                                &#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}
+                            </td>
+                            <td class="text-end">
+                                <div class="d-inline-flex gap-1 align-items-center">
+                                    <!-- 1. Send WhatsApp Message -->
+                                    <form method="post" action="{% url 'update_feedback_followup' job.job_code %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <input type="hidden" name="feedback_action" value="send_now">
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Queue WhatsApp Feedback Request">
+                                            <i class="fab fa-whatsapp me-1"></i>Send
+                                        </button>
+                                    </form>
+
+                                    <!-- 2. Quick Call Status Dropdown -->
+                                    <div class="dropdown d-inline">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Quick Outcome">
+                                            <i class="fas fa-phone me-1"></i>Status
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li>
+                                                <form method="post" action="{% url 'update_feedback_followup' job.job_code %}">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                    <input type="hidden" name="feedback_action" value="no_answer">
+                                                    <button type="submit" class="dropdown-item">
+                                                        <i class="fas fa-phone-slash text-secondary me-2"></i>No Answer / Switched Off
+                                                    </button>
+                                                </form>
+                                            </li>
+                                            <li>
+                                                <form method="post" action="{% url 'update_feedback_followup' job.job_code %}">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                    <input type="hidden" name="feedback_action" value="call_later">
+                                                    <button type="submit" class="dropdown-item">
+                                                        <i class="fas fa-clock text-warning me-2"></i>Call Later / Customer Busy
+                                                    </button>
+                                                </form>
+                                            </li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li>
+                                                <button type="button" class="dropdown-item text-danger open-feedback-modal-btn"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#recordFeedbackModal"
+                                                    data-job-code="{{ job.job_code }}"
+                                                    data-customer="{{ job.customer_name }}"
+                                                    data-device="{{ job.device_brand }} {{ job.device_model }}"
+                                                    data-action="called_issue">
+                                                    <i class="fas fa-triangle-exclamation me-2"></i>Reported Issue / Complaint
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    <!-- 3. Record Feedback Modal Button -->
+                                    <button type="button" class="btn btn-sm btn-primary open-feedback-modal-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#recordFeedbackModal"
+                                        data-job-code="{{ job.job_code }}"
+                                        data-customer="{{ job.customer_name }}"
+                                        data-device="{{ job.device_brand }} {{ job.device_model }}"
+                                        data-action="mark_received">
+                                        <i class="fas fa-star me-1"></i>Feedback
+                                    </button>
                                 </div>
+                                {% if job.feedback_followup_note %}
+                                <div class="text-muted small mt-1 text-truncate" style="max-width: 250px;" title="{{ job.feedback_followup_note }}">
+                                    <i class="fas fa-sticky-note me-1 text-warning"></i>{{ job.feedback_followup_note }}
+                                </div>
+                                {% endif %}
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center text-muted">No technician feedback data available.</td>
+                            <td colspan="7" class="text-center text-muted py-5">
+                                <i class="fas fa-check-circle text-success fs-2 mb-2 d-block"></i>
+                                <span class="fw-semibold">No pending feedback calls for this filter!</span>
+                                <div class="small text-muted mt-1">All recently closed clients have been followed up or no jobs match the selection.</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Follow-up Activity History -->
+            {% if feedback_followup_history %}
+            <div class="mt-4 pt-3 border-top">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold mb-0 text-dark"><i class="fas fa-history text-muted me-2"></i>Recent Call Log &amp; Activity</h6>
+                    <span class="badge text-bg-light border text-muted">Last {{ feedback_followup_history|length }} events</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Job</th>
+                                <th>Customer</th>
+                                <th>Outcome</th>
+                                <th>Rating</th>
+                                <th class="text-end">Amount</th>
+                                <th>Notes / Feedback</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in feedback_followup_history %}
+                            <tr>
+                                <td><a href="{% url 'staff_job_detail' job.job_code %}" class="fw-semibold">{{ job.job_code }}</a></td>
+                                <td>{{ job.customer_name }}</td>
+                                <td><span class="followup-status {{ job.feedback_followup_status }}">{{ job.get_feedback_followup_status_display }}</span></td>
+                                <td>
+                                    {% if job.feedback_rating %}
+                                        <span class="badge {% if job.feedback_rating >= 8 %}bg-success{% elif job.feedback_rating >= 6 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                                            {{ job.feedback_rating }}/10
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+                                <td class="text-muted small">{{ job.feedback_comment|default:job.feedback_followup_note|truncatechars:90 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if active_tab == 'analytics' %}
+    <!-- TAB 2: ANALYTICS & REVIEWS -->
+    <!-- Filters Toolbar -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+                <h5 class="fw-bold mb-0"><i class="fas fa-filter text-primary me-2"></i>Filter Feedback &amp; Reviews</h5>
+                <a href="{% url 'feedback_analytics' %}?tab=analytics" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-rotate-left me-1"></i>Reset Filters
+                </a>
+            </div>
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="tab" value="analytics">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">From Date</label>
+                    <input type="date" name="start_date" value="{{ start_date }}" class="form-control">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">To Date</label>
+                    <input type="date" name="end_date" value="{{ end_date }}" class="form-control">
+                </div>
+                <div class="col-md-4">
+                    {% if selected_rating %}<input type="hidden" name="rating" value="{{ selected_rating }}">{% endif %}
+                    {% if selected_technician %}<input type="hidden" name="technician" value="{{ selected_technician.pk }}">{% endif %}
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-magnifying-glass me-1"></i>Apply Filter
+                    </button>
+                </div>
+            </form>
+
+            {% if start_date or end_date or selected_rating or selected_technician %}
+            <div class="mt-3 pt-3 border-top d-flex flex-wrap align-items-center gap-2">
+                <span class="small fw-semibold text-muted">Active Filters:</span>
+                {% if start_date %}<span class="badge text-bg-light border">From: {{ start_date }}</span>{% endif %}
+                {% if end_date %}<span class="badge text-bg-light border">To: {{ end_date }}</span>{% endif %}
+                {% if selected_rating %}<span class="badge text-bg-warning">Rating: {{ selected_rating }}/10</span>{% endif %}
+                {% if selected_technician %}<span class="badge text-bg-info">Technician: {{ selected_technician.user.username }}</span>{% endif %}
+                {% if selected_rating %}<a href="{{ clear_rating_url }}" class="btn btn-xs btn-outline-secondary ms-auto"><i class="fas fa-xmark me-1"></i>Clear Rating</a>{% endif %}
+                {% if selected_technician %}<a href="{{ clear_technician_url }}" class="btn btn-xs btn-outline-secondary"><i class="fas fa-xmark me-1"></i>Clear Tech</a>{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Rating Distribution & Technician Leaderboard -->
+    <div class="row g-4 mb-4">
+        <!-- Rating Distribution -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body p-4">
+                    <h5 class="fw-bold mb-3"><i class="fas fa-chart-bar text-primary me-2"></i>Rating Distribution</h5>
+                    {% for item in rating_distribution %}
+                        <a href="{{ item.filter_url }}" class="text-decoration-none text-dark d-block">
+                            <div class="dist-row {% if item.is_active %}bg-primary-subtle rounded{% endif %}">
+                                <div class="fw-bold small">{{ item.rating }} <i class="fas fa-star text-warning" style="font-size: 0.75rem;"></i></div>
+                                <div class="dist-track">
+                                    <div class="dist-fill" style="width: {{ item.percentage }}%;"></div>
+                                </div>
+                                <div class="text-end small fw-semibold text-muted">{{ item.count }}</div>
+                            </div>
+                        </a>
+                    {% endfor %}
+                    <div class="p-2 mt-3 rounded bg-light border text-muted small">
+                        <i class="fas fa-info-circle me-1 text-primary"></i>Click on any rating bar to filter matching customer feedback below.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Technician Leaderboard -->
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body p-4">
+                    <h5 class="fw-bold mb-3"><i class="fas fa-trophy text-warning me-2"></i>Technician Quality Leaderboard</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 60px;">Rank</th>
+                                    <th>Technician</th>
+                                    <th style="width: 100px;">Reviews</th>
+                                    <th style="width: 120px;">Avg Rating</th>
+                                    <th style="min-width: 140px;">Quality Score</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tech, data in tech_feedback.items %}
+                                <tr>
+                                    <td class="fw-bold text-muted">#{{ forloop.counter }}</td>
+                                    <td>
+                                        <a href="{{ data.filter_url }}" class="fw-semibold text-decoration-none text-dark">
+                                            {{ tech.user.get_full_name|default:tech.user.username }}
+                                        </a>
+                                    </td>
+                                    <td class="fw-semibold">{{ data.count }}</td>
+                                    <td>
+                                        <span class="fw-bold text-dark">{{ data.avg_rating|floatformat:1 }}</span> <span class="small text-muted">/ 10</span>
+                                    </td>
+                                    <td>
+                                        <div class="perf-track">
+                                            <div class="perf-fill {% if data.avg_rating >= 8 %}high{% elif data.avg_rating >= 6 %}mid{% else %}low{% endif %}" style="width: {{ data.percentage }}%;"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-4">No technician feedback recorded yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback Entries Table -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <h5 class="fw-bold mb-0">
+                    <i class="fas fa-comments text-primary me-2"></i>
+                    {% if selected_rating and selected_technician %}
+                        Feedback for {{ selected_technician.user.username }} (Rated {{ selected_rating }}/10)
+                    {% elif selected_technician %}
+                        Feedback for {{ selected_technician.user.username }}
+                    {% elif selected_rating %}
+                        Clients Who Rated {{ selected_rating }}/10
+                    {% else %}
+                        Customer Feedback Reviews
+                    {% endif %}
+                </h5>
+                <span class="badge text-bg-dark">{{ filtered_feedback_count }} review{{ filtered_feedback_count|pluralize }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Job Code</th>
+                            <th>Customer</th>
+                            <th>Rating</th>
+                            <th class="text-end">Amount</th>
+                            <th>Customer Comments</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in recent_feedback %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-decoration-none">
+                                    {{ job.job_code }}
+                                </a>
+                            </td>
+                            <td>
+                                <div class="fw-semibold text-dark">{{ job.customer_name }}</div>
+                                <div class="text-muted small">{{ job.customer_phone }}</div>
+                            </td>
+                            <td>
+                                <span class="badge {% if job.feedback_rating >= 8 %}bg-success{% elif job.feedback_rating >= 6 %}bg-warning text-dark{% else %}bg-danger{% endif %} fs-6 px-2 py-1">
+                                    {{ job.feedback_rating }}/10
+                                </span>
+                            </td>
+                            <td class="text-end fw-bold text-dark">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+                            <td>
+                                <div class="text-dark">{{ job.feedback_comment|default:"No comment provided" }}</div>
+                            </td>
+                            <td class="text-muted small">{{ job.feedback_date|date:"M d, Y" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-5">
+                                <i class="fas fa-inbox text-muted fs-3 mb-2 d-block"></i>
+                                No feedback reviews match the selected filter.
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -553,85 +684,149 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
-<div class="section-container">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h4 class="mb-0">
-            <i class="fas fa-message me-2"></i>
-            {% if selected_rating and selected_technician %}
-                {{ selected_technician.user.username }} - Clients Who Rated {{ selected_rating }}/10
-            {% elif selected_technician %}
-                Feedback For {{ selected_technician.user.username }}
-            {% elif selected_rating %}
-                Clients Who Rated {{ selected_rating }}/10
-            {% else %}
-                Recent Feedback
-            {% endif %}
-        </h4>
-        <span class="badge text-bg-dark">{{ filtered_feedback_count }} result{{ filtered_feedback_count|pluralize }}</span>
-    </div>
-    <div class="table-responsive feedback-scroll">
-        <table class="table table-striped align-middle">
-            <thead>
-                <tr>
-                    <th>Job Code</th>
-                    <th>Customer</th>
-                    <th>Phone</th>
-                    <th>Rating</th>
-                    <th class="text-end">Amount</th>
-                    <th>Comment</th>
-                    <th>Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for job in recent_feedback %}
-                <tr>
-                    <td><a href="{% url 'staff_job_detail' job.job_code %}" class="fw-semibold">{{ job.job_code }}</a></td>
-                    <td>{{ job.customer_name }}</td>
-                    <td>{{ job.customer_phone }}</td>
-                    <td>
-                        {{ job.feedback_rating }}/10
-                    </td>
-                    <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                    <td>{{ job.feedback_comment|truncatewords:12|default:"No comment provided" }}</td>
-                    <td>{{ job.feedback_date|date:"M d, Y" }}</td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="7" class="text-center text-muted">No feedback found for this filter.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<!-- ========================================== -->
+<!-- REUSABLE MODAL: RECORD CUSTOMER FEEDBACK   -->
+<!-- ========================================== -->
+<div class="modal fade" id="recordFeedbackModal" tabindex="-1" aria-labelledby="recordFeedbackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form id="recordFeedbackForm" method="post" action="">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="recordFeedbackModalLabel">
+                        <i class="fas fa-star me-2"></i>Record Customer Feedback
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4">
+                    <!-- Target Job Details Summary Box -->
+                    <div class="p-3 mb-3 rounded bg-light border">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="small text-muted text-uppercase fw-bold">Job Ticket</span>
+                                <div class="fw-bold fs-6 text-dark" id="modalJobCodeDisplay">-</div>
+                            </div>
+                            <div class="text-end">
+                                <span class="small text-muted text-uppercase fw-bold">Customer</span>
+                                <div class="fw-bold fs-6 text-dark" id="modalCustomerDisplay">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rating Picker (1 to 10) -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark d-flex justify-content-between align-items-center">
+                            <span>Customer Rating (1 to 10) <span class="text-danger">*</span></span>
+                            <span id="ratingSelectedLabel" class="badge bg-primary fs-6">10 / 10</span>
+                        </label>
+                        <input type="hidden" name="feedback_rating" id="feedbackRatingInput" value="10" required>
+                        <div class="rating-picker-grid">
+                            {% for r in "123456789" %}
+                            <div class="rating-picker-btn" data-val="{{ r }}">{{ r }}</div>
+                            {% endfor %}
+                            <div class="rating-picker-btn selected" data-val="10">10</div>
+                        </div>
+                        <div class="d-flex justify-content-between small text-muted mt-1 px-1">
+                            <span>1 - Poor / Unsatisfied</span>
+                            <span>10 - Excellent</span>
+                        </div>
+                    </div>
+
+                    <!-- Call Outcome / Status -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark">Feedback Outcome</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="radio" class="btn-check" name="feedback_action" id="actionHappy" value="mark_received" checked>
+                                <label class="btn btn-outline-success w-100 py-2 text-start" for="actionHappy">
+                                    <i class="fas fa-check-circle me-1"></i> Satisfied / Happy
+                                </label>
+                            </div>
+                            <div class="col-6">
+                                <input type="radio" class="btn-check" name="feedback_action" id="actionIssue" value="called_issue">
+                                <label class="btn btn-outline-danger w-100 py-2 text-start" for="actionIssue">
+                                    <i class="fas fa-triangle-exclamation me-1"></i> Has Complaint / Issue
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Feedback Comments / Note -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark">Customer Comments &amp; Notes</label>
+                        <textarea name="feedback_note" class="form-control" rows="3" placeholder="What did the customer say regarding repair quality, speed, pricing, or service?"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4 fw-bold">
+                        <i class="fas fa-save me-1"></i>Save Feedback
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
+
 <script>
-if (!window.__botgiFeedbackAnalyticsSwapBound) {
-    window.__botgiFeedbackAnalyticsSwapBound = true;
-    document.addEventListener('htmx:afterSwap', function (event) {
-        if (event.target && event.target.id === 'feedback-analytics-page' && typeof botgiHydrate === 'function') {
-            botgiHydrate(event.target);
-        }
-    });
-}
-if (!window.__botgiFeedbackReceivedRequiredBound) {
-    window.__botgiFeedbackReceivedRequiredBound = true;
-    document.addEventListener('click', function (event) {
-        const actionButton = event.target.closest('button[name="feedback_action"]');
-        if (!actionButton || !actionButton.form) return;
+document.addEventListener('DOMContentLoaded', function() {
+    // Dynamic modal population
+    const modal = document.getElementById('recordFeedbackModal');
+    const form = document.getElementById('recordFeedbackForm');
+    const jobDisplay = document.getElementById('modalJobCodeDisplay');
+    const custDisplay = document.getElementById('modalCustomerDisplay');
+    const ratingInput = document.getElementById('feedbackRatingInput');
+    const ratingLabel = document.getElementById('ratingSelectedLabel');
+    const ratingBtns = document.querySelectorAll('.rating-picker-btn');
 
-        const ratingInput = actionButton.form.querySelector('[name="feedback_rating"]');
-        const noteInput = actionButton.form.querySelector('[name="feedback_note"]');
-        const isReceivedAction = actionButton.value === 'mark_received';
-        if (ratingInput) {
-            ratingInput.required = isReceivedAction;
-        }
-        if (noteInput) {
-            noteInput.required = isReceivedAction;
-        }
+    document.querySelectorAll('.open-feedback-modal-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const jobCode = this.getAttribute('data-job-code');
+            const customer = this.getAttribute('data-customer');
+            const defaultAction = this.getAttribute('data-action') || 'mark_received';
+
+            if (form && jobCode) {
+                form.action = '/staff/job/' + encodeURIComponent(jobCode) + '/feedback-followup/';
+            }
+            if (jobDisplay) jobDisplay.textContent = jobCode;
+            if (custDisplay) custDisplay.textContent = customer;
+
+            if (defaultAction === 'called_issue') {
+                const issueRadio = document.getElementById('actionIssue');
+                if (issueRadio) issueRadio.checked = true;
+            } else {
+                const happyRadio = document.getElementById('actionHappy');
+                if (happyRadio) happyRadio.checked = true;
+            }
+        });
     });
-}
+
+    // Rating selector behavior
+    ratingBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const val = this.getAttribute('data-val');
+            ratingBtns.forEach(b => b.classList.remove('selected'));
+            this.classList.add('selected');
+            if (ratingInput) ratingInput.value = val;
+            if (ratingLabel) {
+                ratingLabel.textContent = val + ' / 10';
+                if (parseInt(val) >= 8) {
+                    ratingLabel.className = 'badge bg-success fs-6';
+                } else if (parseInt(val) >= 6) {
+                    ratingLabel.className = 'badge bg-warning text-dark fs-6';
+                } else {
+                    ratingLabel.className = 'badge bg-danger fs-6';
+                }
+            }
+        });
+    });
+});
 </script>
-</div>
 {% endblock %}
