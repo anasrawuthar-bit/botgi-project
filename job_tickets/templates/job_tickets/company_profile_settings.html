@@ -50,6 +50,9 @@
                                         <button class="nav-link" id="tab-whatsapp-integration" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#whatsapp-integration" aria-controls="whatsapp-integration" aria-selected="false">
                                             <i class="fab fa-whatsapp me-2"></i>WhatsApp Integration
                                         </button>
+                                        <button class="nav-link" id="tab-display-scale" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#display-scale" aria-controls="display-scale" aria-selected="false">
+                                            <i class="fas fa-desktop me-2"></i>Display & Zoom Scale
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -679,6 +682,83 @@
                                             <button type="submit" name="whatsapp_settings_submit" value="1" class="btn btn-success">
                                                 <i class="fas fa-save"></i> Save WhatsApp Settings
                                             </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="tab-pane fade" id="display-scale" role="tabpanel" aria-labelledby="tab-display-scale" tabindex="0">
+                                        <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                                            <div>
+                                                <h4 class="mb-1 fw-bold text-dark">Interface Zoom & Density Scale</h4>
+                                                <p class="text-muted small mb-0">Customize text scale and spacing density for this workstation. Saved instantly in your browser.</p>
+                                            </div>
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2.5 py-1">
+                                                <i class="fa-solid fa-bolt me-1"></i>Applies Instantly
+                                            </span>
+                                        </div>
+
+                                        <div class="row g-3 mb-4" id="settings-scale-grid">
+                                            <!-- 85% Compact -->
+                                            <div class="col-md-6 col-lg-3">
+                                                <div class="card border rounded-3 p-3 h-100 scale-option-card" data-scale="85" onclick="setUiScale('85')" role="button" tabindex="0">
+                                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                                        <span class="badge bg-light text-dark border">85% Zoom</span>
+                                                        <i class="fa-solid fa-compress text-muted"></i>
+                                                    </div>
+                                                    <h6 class="fw-bold text-dark mb-1">Ultra Compact</h6>
+                                                    <small class="text-muted">Maximum data density. Ideal for handling heavy ticket queues and multi-bench monitors.</small>
+                                                </div>
+                                            </div>
+
+                                            <!-- 90% Modern SaaS (Default) -->
+                                            <div class="col-md-6 col-lg-3">
+                                                <div class="card border rounded-3 p-3 h-100 scale-option-card" data-scale="90" onclick="setUiScale('90')" role="button" tabindex="0">
+                                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                                        <span class="badge bg-primary text-white">90% SaaS (Default)</span>
+                                                        <i class="fa-solid fa-star text-warning"></i>
+                                                    </div>
+                                                    <h6 class="fw-bold text-dark mb-1">Modern SaaS</h6>
+                                                    <small class="text-muted">Recommended clean balanced scale. Sleek, zoomed-out look like Stripe or Linear.</small>
+                                                </div>
+                                            </div>
+
+                                            <!-- 100% Comfortable -->
+                                            <div class="col-md-6 col-lg-3">
+                                                <div class="card border rounded-3 p-3 h-100 scale-option-card" data-scale="100" onclick="setUiScale('100')" role="button" tabindex="0">
+                                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                                        <span class="badge bg-light text-dark border">100% Zoom</span>
+                                                        <i class="fa-solid fa-expand text-muted"></i>
+                                                    </div>
+                                                    <h6 class="fw-bold text-dark mb-1">Comfortable</h6>
+                                                    <small class="text-muted">Standard browser default size with larger typography and roomy spacing.</small>
+                                                </div>
+                                            </div>
+
+                                            <!-- 110% Large -->
+                                            <div class="col-md-6 col-lg-3">
+                                                <div class="card border rounded-3 p-3 h-100 scale-option-card" data-scale="110" onclick="setUiScale('110')" role="button" tabindex="0">
+                                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                                        <span class="badge bg-light text-dark border">110% Zoom</span>
+                                                        <i class="fa-solid fa-magnifying-glass-plus text-muted"></i>
+                                                    </div>
+                                                    <h6 class="fw-bold text-dark mb-1">Large / HiDPI</h6>
+                                                    <small class="text-muted">Enlarged text size for high-resolution 4K screens or enhanced readability.</small>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Fine-tune Slider -->
+                                        <div class="p-3 bg-light rounded-3 border mb-3">
+                                            <label for="custom-scale-slider" class="form-label fw-semibold text-dark small d-flex justify-content-between mb-1">
+                                                <span>Fine-Tune Zoom Slider</span>
+                                                <span id="current-scale-label" class="badge bg-primary">90%</span>
+                                            </label>
+                                            <input type="range" class="form-range" id="custom-scale-slider" min="80" max="115" step="5" value="90" oninput="setUiScale(this.value)">
+                                            <div class="d-flex justify-content-between text-muted" style="font-size: 0.72rem;">
+                                                <span>80% (Dense)</span>
+                                                <span>90% (SaaS Default)</span>
+                                                <span>100% (Standard)</span>
+                                                <span>115% (Enlarged)</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

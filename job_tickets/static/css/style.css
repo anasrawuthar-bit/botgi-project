@@ -1,5 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
+html {
+    font-size: 14px; /* SaaS compact density baseline (~90% scale vs standard 16px) */
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+}
+
+html[data-ui-scale="80"] { font-size: 12.8px !important; }
+html[data-ui-scale="85"] { font-size: 13.5px !important; }
+html[data-ui-scale="90"] { font-size: 14px !important; }
+html[data-ui-scale="95"] { font-size: 15px !important; }
+html[data-ui-scale="100"] { font-size: 16px !important; }
+html[data-ui-scale="105"] { font-size: 16.8px !important; }
+html[data-ui-scale="110"] { font-size: 17.5px !important; }
+html[data-ui-scale="115"] { font-size: 18.4px !important; }
+
 :root {
     /* ── Primary Brand & Slate Palette (Option 1: Modern SaaS) ───── */
     --primary: #4f46e5;            /* Indigo 600 */
@@ -419,19 +434,19 @@ h6,
     background-color: #f8fafc !important;
     color: #475569 !important;
     font-weight: 600;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.8rem 1rem;
+    letter-spacing: 0.04em;
+    padding: 0.6rem 0.85rem;
     border-bottom: 1px solid var(--border-color) !important;
     border-top: none;
     white-space: nowrap;
 }
 
 .table tbody td {
-    padding: 0.85rem 1rem;
+    padding: 0.62rem 0.85rem;
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.875rem;
+    font-size: 0.825rem;
     color: var(--text-secondary);
 }
 
@@ -677,9 +692,9 @@ h6,
 
 /* ── App Layout Wrapper ──────────────────────────────────────── */
 :root {
-    --sidebar-expanded-width: 260px;
-    --sidebar-collapsed-width: 108px;
-    --sidebar-label-max-width: 156px;
+    --sidebar-expanded-width: 240px;
+    --sidebar-collapsed-width: 96px;
+    --sidebar-label-max-width: 148px;
 }
 
 .app-layout {
@@ -691,6 +706,22 @@ h6,
 
 .app-main {
     flex: 1;
+}
+
+.app-workspace {
+    width: 100%;
+    max-width: 1640px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .app-workspace {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
 }
 
 /* ── Guest Topbar (Unauthenticated) ─────────────────────────── */
@@ -1870,3 +1901,47 @@ body.inventory-workspace .site-footer {
         transform: translateX(-8px);
     }
 }
+
+/* ── Display Scale Customizer ────────────────────────────────── */
+.scale-option-card {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-color) !important;
+    background: #ffffff;
+}
+
+.scale-option-card:hover {
+    transform: translateY(-2px);
+    border-color: #cbd5e1 !important;
+    box-shadow: var(--shadow-md);
+}
+
+.scale-option-card.active,
+.scale-option-card[data-active="true"] {
+    border-color: var(--primary) !important;
+    background: var(--primary-light) !important;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2) !important;
+}
+
+.sidebar-scale-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.sidebar-scale-btn:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: #f8fafc;
+}
+
