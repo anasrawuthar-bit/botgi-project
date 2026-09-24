@@ -4,86 +4,88 @@
 <div class="section-container" id="reports-dashboard-page">
     <style>
         #reports-dashboard-page {
-            --bs-link-color: var(--accent-navy);
-            --bs-link-hover-color: var(--primary-dark);
+            --bs-link-color: var(--primary);
+            --bs-link-hover-color: var(--primary-hover);
         }
         #reports-dashboard-page .reports-heading-icon {
-            color: var(--accent-orange);
+            color: var(--primary);
         }
         #reports-dashboard-page .reports-period {
-            background: var(--light-gray);
-            border: 1px solid #e8ecf3;
-            border-radius: 14px;
-            padding: 1rem;
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.25rem;
             margin-bottom: 1.5rem;
+            box-shadow: var(--shadow-sm);
         }
         #reports-dashboard-page .form-label {
-            color: var(--accent-navy);
-            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-size: 0.8125rem;
             font-weight: 600;
         }
         #reports-dashboard-page .nav-pills {
-            --bs-nav-link-color: var(--accent-navy);
-            --bs-nav-link-hover-color: var(--accent-navy);
-            --bs-nav-pills-link-active-bg: var(--accent-orange);
-            --bs-nav-pills-link-active-color: var(--accent-navy);
-            --bs-nav-pills-border-radius: 10px;
+            --bs-nav-link-color: var(--muted-text);
+            --bs-nav-link-hover-color: var(--primary);
+            --bs-nav-pills-link-active-bg: var(--primary);
+            --bs-nav-pills-link-active-color: #ffffff;
+            --bs-nav-pills-border-radius: 8px;
         }
         #reports-dashboard-page .nav-link {
             font-weight: 600;
-            transition: background-color 0.2s ease, color 0.2s ease;
+            padding: 0.45rem 1rem;
+            font-size: 0.875rem;
+            transition: all 0.15s ease;
         }
         #reports-dashboard-page .nav-link:not(.active):hover {
-            background: rgba(252, 163, 17, 0.12);
+            background: var(--primary-light);
+            color: var(--primary);
         }
         #reports-dashboard-page a:focus-visible,
         #reports-dashboard-page button:focus-visible {
-            outline: 3px solid var(--accent-orange);
-            outline-offset: 3px;
+            outline: 3px solid var(--border-focus);
+            outline-offset: 2px;
             box-shadow: none;
         }
         #reports-dashboard-page .btn-outline-secondary {
-            --bs-btn-color: var(--accent-navy);
-            --bs-btn-border-color: #cfd6e5;
-            --bs-btn-hover-color: var(--accent-navy);
-            --bs-btn-hover-bg: var(--light-gray);
-            --bs-btn-hover-border-color: var(--accent-navy);
-            --bs-btn-active-color: var(--white);
-            --bs-btn-active-bg: var(--accent-navy);
-            --bs-btn-active-border-color: var(--accent-navy);
-            border-radius: 10px;
+            border-color: #cbd5e1;
+            color: var(--text-secondary);
+            background: #ffffff;
+            border-radius: var(--radius-sm);
             font-weight: 600;
         }
-        #reports-dashboard-page .btn-primary {
-            --bs-btn-hover-color: var(--accent-navy);
-            --bs-btn-hover-bg: #e89408;
-            --bs-btn-hover-border-color: #e89408;
-            --bs-btn-active-color: var(--accent-navy);
-            --bs-btn-active-bg: #e89408;
-            --bs-btn-active-border-color: #e89408;
+        #reports-dashboard-page .btn-outline-secondary:hover {
+            background: #f8fafc;
+            color: var(--text-primary);
+            border-color: #94a3b8;
         }
-        #reports-dashboard-page .btn-outline-primary {
-            --bs-btn-hover-color: var(--white);
-            --bs-btn-hover-bg: var(--accent-navy);
-            --bs-btn-hover-border-color: var(--accent-navy);
-            --bs-btn-active-color: var(--white);
-            --bs-btn-active-bg: var(--accent-navy);
-            --bs-btn-active-border-color: var(--accent-navy);
+        #reports-dashboard-page .btn-primary {
+            background-color: var(--primary);
+            border-color: var(--primary);
+            color: #ffffff !important;
+        }
+        #reports-dashboard-page .btn-primary:hover {
+            background-color: var(--primary-hover);
+            border-color: var(--primary-hover);
+            color: #ffffff !important;
         }
         #reports-dashboard-page .card-box .display-6 {
-            color: var(--accent-navy);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 800;
         }
         #reports-dashboard-page .card-box .display-6:hover {
             text-decoration: underline !important;
-            text-decoration-color: var(--accent-orange) !important;
+            text-decoration-color: var(--primary) !important;
             text-underline-offset: 0.2em;
         }
         #reports-dashboard-page .list-group-item-action {
-            color: var(--accent-navy);
-            border-color: #e8ecf3;
+            color: var(--text-secondary);
+            border-color: var(--border-color);
+            transition: all 0.15s ease;
         }
         #reports-dashboard-page .list-group-item-action:hover {
-            background: rgba(252, 163, 17, 0.09);
+            background: var(--primary-light);
+            color: var(--primary);
         }
     </style>
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
