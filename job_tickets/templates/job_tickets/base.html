@@ -74,7 +74,7 @@
     </style>
 </head>
 
-<body{% if user.is_authenticated %} class="sidebar-collapsed{% if request.resolver_match.url_name|slice:":10" == "inventory_" %} inventory-workspace{% endif %}"{% endif %}
+<body{% if user.is_authenticated %}{% if request.resolver_match.url_name|slice:":10" == "inventory_" %} class="inventory-workspace"{% endif %}{% endif %}
     data-botgi-web-version="{{ release_info.web_version }}"
     data-botgi-release-meta-url="{% url 'app_release_meta' %}"
     data-botgi-release-poll-ms="{{ release_info.poll_interval_ms }}">
@@ -226,11 +226,11 @@
         class="sidebar-desktop-toggle sidebar-desktop-toggle-floating"
         id="sidebarDesktopToggleBtn"
         type="button"
-        aria-label="Expand sidebar"
-        aria-expanded="false"
-        title="Expand sidebar"
+        aria-label="Collapse sidebar"
+        aria-expanded="true"
+        title="Collapse sidebar"
     >
-        <i class="fa-solid fa-angles-right"></i>
+        <i class="fa-solid fa-angles-left"></i>
     </button>
     {% elif not user.is_authenticated %}
     {# ── Unauthenticated: slim guest top bar ────────────────── #}
@@ -658,11 +658,11 @@
                 try {
                     var storedValue = window.localStorage.getItem(desktopSidebarStorageKey);
                     if (storedValue === null) {
-                        return true;
+                        return false;
                     }
                     return storedValue === 'true';
                 } catch (error) {
-                    return document.body.classList.contains('sidebar-collapsed');
+                    return false;
                 }
             }
 

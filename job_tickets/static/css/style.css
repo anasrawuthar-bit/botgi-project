@@ -792,39 +792,41 @@ h6,
 }
 
 .sidebar-desktop-toggle {
-    width: 38px;
-    height: 38px;
+    width: 26px;
+    height: 26px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background: #fff;
-    color: var(--text-primary);
+    border: 1px solid #cbd5e1;
+    border-radius: 50%;
+    background: #ffffff;
+    color: var(--text-muted);
+    font-size: 0.72rem;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .sidebar-desktop-toggle:hover,
 .sidebar-desktop-toggle:focus {
-    background: #f8fafc;
+    background: #ffffff;
     color: var(--primary);
-    border-color: #c7d2fe;
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
 }
 
 .sidebar-desktop-toggle-floating {
     position: fixed;
-    top: 1rem;
-    left: calc(var(--sidebar-expanded-width) - 19px);
+    top: 1.15rem;
+    left: calc(var(--sidebar-expanded-width) - 13px);
     z-index: 1042;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
-    transition: left 0.34s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    transition: left 0.34s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s ease;
 }
 
 .sidebar-desktop-toggle-floating:hover,
 .sidebar-desktop-toggle-floating:focus {
-    transform: translateY(-1px);
+    transform: scale(1.08);
 }
 
 body.modal-open .sidebar-desktop-toggle-floating,
@@ -1225,7 +1227,7 @@ body.modal-open .sidebar-toggle-btn {
     }
 
     body.sidebar-collapsed .sidebar-desktop-toggle-floating {
-        left: calc(var(--sidebar-collapsed-width) - 19px);
+        left: calc(var(--sidebar-collapsed-width) - 13px);
     }
 
     body.sidebar-collapsed .sidebar-brand {
