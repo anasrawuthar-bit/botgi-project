@@ -204,14 +204,24 @@ class TaskCreateForm(forms.Form):
         queryset=TechnicianProfile.objects.none(),
         required=False,
         empty_label='--- Unassigned ---',
-        widget=forms.Select(attrs={'class': 'form-select'}),
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'data-searchable-select': 'true',
+            'data-icon': 'fa-solid fa-user-gear',
+            'data-placeholder': 'Type to search technician...',
+        }),
         label='Assign To',
     )
     job_reference = forms.ModelChoiceField(
         queryset=JobTicket.objects.none(),
         required=False,
         empty_label='--- No linked job ---',
-        widget=forms.Select(attrs={'class': 'form-select'}),
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'data-searchable-select': 'true',
+            'data-icon': 'fa-solid fa-ticket-alt',
+            'data-placeholder': 'Type to search job code, customer, device...',
+        }),
         label='Linked Job (optional)',
     )
 
@@ -219,10 +229,26 @@ class TaskCreateForm(forms.Form):
         workspace = kwargs.pop('workspace', None)
         super().__init__(*args, **kwargs)
         self.fields['assigned_to'].queryset = get_assignable_technician_queryset(workspace)
+
+        def tech_label(obj):
+            full_name = obj.user.get_full_name()
+            if full_name and full_name.strip() and full_name.strip() != obj.user.username:
+                return f"{full_name.strip()} ({obj.user.username})"
+            return obj.user.username
+
+        self.fields['assigned_to'].label_from_instance = tech_label
+
         qs = JobTicket.objects.order_by('-created_at')
         if workspace:
             qs = qs.filter(workspace=workspace)
-        self.fields['job_reference'].queryset = qs.only('id', 'job_code', 'status')[:500]
+        self.fields['job_reference'].queryset = qs.only('id', 'job_code', 'customer_name', 'device_type', 'status')[:500]
+
+        def job_label(obj):
+            device = f" • {obj.device_type}" if obj.device_type else ""
+            customer = f" • {obj.customer_name}" if obj.customer_name else ""
+            return f"{obj.job_code}{customer}{device}"
+
+        self.fields['job_reference'].label_from_instance = job_label
 
 
 class TaskMessageForm(forms.Form):

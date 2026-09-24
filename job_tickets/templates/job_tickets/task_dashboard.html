@@ -483,6 +483,17 @@
     }
 
     connectSocket();
+
+    const createTaskModalEl = document.getElementById('createTaskModal');
+    if (createTaskModalEl) {
+        createTaskModalEl.addEventListener('hidden.bs.modal', function () {
+            const form = createTaskModalEl.querySelector('form');
+            if (form) form.reset();
+            createTaskModalEl.querySelectorAll('select[data-searchable-select]').forEach(function (sel) {
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
+    }
 })();
 </script>
 {% endblock %}
