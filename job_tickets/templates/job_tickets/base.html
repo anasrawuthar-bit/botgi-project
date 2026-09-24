@@ -78,8 +78,8 @@
             }
         }
 
-        body.modal-open .sidebar-desktop-toggle-floating,
-        body.modal-open #sidebarDesktopToggleBtn,
+        body.modal-open .sidebar-desktop-toggle,
+        body.modal-open .sidebar-rail-toggle-btn,
         body.modal-open .sidebar-toggle-btn {
             display: none !important;
         }
@@ -113,7 +113,7 @@
     <aside class="app-sidebar" id="appSidebar">
         <div class="sidebar-brand">
             <div class="sidebar-brand-head">
-                <a href="{% url 'home' %}" class="sidebar-brand-link">
+                <a href="{% url 'home' %}" class="sidebar-brand-link" data-tooltip="{{ company.company_name|default:'GI Hostings' }}">
                     {% if company.display_logo_url %}
                         <img src="{{ company.display_logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="sidebar-brand-logo" onerror="this.onerror=null; this.src='/static/img/logo.png';">
                     {% else %}
@@ -124,6 +124,16 @@
                         <small>{{ company.tagline|default:"Service Billing" }}</small>
                     </span>
                 </a>
+                <button
+                    class="sidebar-desktop-toggle"
+                    id="sidebarDesktopToggleBtn"
+                    type="button"
+                    aria-label="Collapse sidebar (Ctrl+B)"
+                    aria-expanded="true"
+                    data-tooltip="Collapse sidebar (Ctrl+B)"
+                >
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
             </div>
         </div>
 
@@ -133,25 +143,25 @@
                 {% if staff_access.staff_dashboard %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'staff_dashboard' %}active{% endif %}"
-                        href="{% url 'staff_dashboard' %}" title="Dashboard">
+                        href="{% url 'staff_dashboard' %}" data-tooltip="Dashboard">
                         <i class="fa-solid fa-table-columns"></i><span class="sidebar-link-label">Dashboard</span>
                     </a>
                 </li>
                 <li>
                     <a class="sidebar-link {% if 'task' in request.resolver_match.url_name %}active{% endif %}"
-                        href="{% url 'task_dashboard' %}" title="Tasks">
+                        href="{% url 'task_dashboard' %}" data-tooltip="Tasks">
                         <i class="fa-solid fa-list-check"></i><span class="sidebar-link-label">Tasks</span>
                     </a>
                 </li>
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'client_dashboard' %}active{% endif %}"
-                        href="{% url 'client_dashboard' %}" title="Clients">
+                        href="{% url 'client_dashboard' %}" data-tooltip="Clients">
                         <i class="fa-solid fa-address-book"></i><span class="sidebar-link-label">Clients</span>
                     </a>
                 </li>
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'vendor_dashboard' %}active{% endif %}"
-                        href="{% url 'vendor_dashboard' %}" title="Vendors">
+                        href="{% url 'vendor_dashboard' %}" data-tooltip="Vendors">
                         <i class="fa-solid fa-truck-loading"></i><span class="sidebar-link-label">Vendors</span>
                     </a>
                 </li>
@@ -164,7 +174,7 @@
                         href="{% url 'inventory_dashboard' %}"
                         target="_blank"
                         rel="noopener"
-                        title="Inventory">
+                        data-tooltip="Inventory">
                         <i class="fa-solid fa-warehouse"></i><span class="sidebar-link-label">Inventory</span>
                     </a>
                 </li>
@@ -173,7 +183,7 @@
                 {% if staff_access.team_management %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'staff_technicians' or request.resolver_match.url_name == 'staff_technician_reports' %}active{% endif %}"
-                        href="{% url 'staff_technicians' %}" title="Team">
+                        href="{% url 'staff_technicians' %}" data-tooltip="Team">
                         <i class="fa-solid fa-users-gear"></i><span class="sidebar-link-label">Team</span>
                     </a>
                 </li>
@@ -182,7 +192,7 @@
                 {% if staff_access.reports_dashboard %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'reports_dashboard' %}active{% endif %}"
-                        href="{% url 'reports_dashboard' %}" title="Reports">
+                        href="{% url 'reports_dashboard' %}" data-tooltip="Reports">
                         <i class="fa-solid fa-chart-line"></i><span class="sidebar-link-label">Reports</span>
                     </a>
                 </li>
@@ -191,7 +201,7 @@
                 {% if staff_access.feedback_analytics %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'feedback_analytics' %}active{% endif %}"
-                        href="{% url 'feedback_analytics' %}" title="Feedback">
+                        href="{% url 'feedback_analytics' %}" data-tooltip="Feedback">
                         <i class="fa-solid fa-star"></i><span class="sidebar-link-label">Feedback</span>
                     </a>
                 </li>
@@ -200,7 +210,7 @@
                 {% if staff_access.company_settings %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'company_profile_settings' %}active{% endif %}"
-                        href="{% url 'company_profile_settings' %}" title="Settings">
+                        href="{% url 'company_profile_settings' %}" data-tooltip="Settings">
                         <i class="fa-solid fa-gear"></i><span class="sidebar-link-label">Settings</span>
                     </a>
                 </li>
@@ -210,13 +220,13 @@
                 {# Technician user #}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'technician_dashboard' %}active{% endif %}"
-                        href="{% url 'technician_dashboard' %}" title="Dashboard">
+                        href="{% url 'technician_dashboard' %}" data-tooltip="Dashboard">
                         <i class="fa-solid fa-screwdriver-wrench"></i><span class="sidebar-link-label">Dashboard</span>
                     </a>
                 </li>
                 <li>
                     <a class="sidebar-link {% if 'task' in request.resolver_match.url_name %}active{% endif %}"
-                        href="{% url 'technician_task_dashboard' %}" title="Tasks">
+                        href="{% url 'technician_task_dashboard' %}" data-tooltip="Tasks">
                         <i class="fa-solid fa-list-check"></i><span class="sidebar-link-label">Tasks</span>
                     </a>
                 </li>
@@ -225,28 +235,25 @@
         </nav>
 
         <div class="sidebar-footer">
-            <div class="sidebar-user-badge" title="{{ user.username }}">
+            <div class="sidebar-user-badge" data-tooltip="{{ user.username }}">
                 <span class="sidebar-user-avatar">{{ user.username|make_list|first|upper }}</span>
                 <span class="sidebar-user-name">{{ user.username }}</span>
                 <button type="button" class="sidebar-scale-btn ms-auto" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal" title="Display Zoom / Density Scale" aria-label="Adjust display scale">
                     <i class="fa-solid fa-display"></i>
                 </button>
             </div>
-            <a class="sidebar-logout-btn" href="{% url 'logout' %}" title="Logout">
-                <i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-logout-label">Logout</span>
-            </a>
+            <div class="sidebar-footer-actions">
+                <a class="sidebar-logout-btn" href="{% url 'logout' %}" data-tooltip="Logout">
+                    <i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-logout-label">Logout</span>
+                </a>
+                <button class="sidebar-rail-toggle-btn" id="sidebarRailToggleBtn" type="button" aria-label="Collapse sidebar (Ctrl+B)" data-tooltip="Collapse sidebar (Ctrl+B)">
+                    <i class="fa-solid fa-angles-left"></i>
+                    <span class="sidebar-rail-toggle-label">Collapse</span>
+                    <kbd class="sidebar-kbd">Ctrl+B</kbd>
+                </button>
+            </div>
         </div>
     </aside>
-    <button
-        class="sidebar-desktop-toggle sidebar-desktop-toggle-floating"
-        id="sidebarDesktopToggleBtn"
-        type="button"
-        aria-label="Collapse sidebar"
-        aria-expanded="true"
-        title="Collapse sidebar"
-    >
-        <i class="fa-solid fa-angles-left"></i>
-    </button>
     {% elif not user.is_authenticated %}
     {# ── Unauthenticated: slim guest top bar ────────────────── #}
     <nav class="guest-topbar">
@@ -646,6 +653,7 @@
         (function () {
             var mobileToggleBtn = document.getElementById('sidebarToggleBtn');
             var desktopToggleBtn = document.getElementById('sidebarDesktopToggleBtn');
+            var railToggleBtn = document.getElementById('sidebarRailToggleBtn');
             var sidebar = document.getElementById('appSidebar');
             var backdrop = document.getElementById('sidebarBackdrop');
             var desktopSidebarStorageKey = 'appSidebarCollapsed';
@@ -657,15 +665,34 @@
 
             function syncDesktopSidebarState(collapsed) {
                 document.body.classList.toggle('sidebar-collapsed', collapsed);
-                if (!desktopToggleBtn) return;
+                var label = collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)';
 
-                desktopToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-                desktopToggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
-                desktopToggleBtn.setAttribute('title', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+                if (desktopToggleBtn) {
+                    desktopToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                    desktopToggleBtn.setAttribute('aria-label', label);
+                    desktopToggleBtn.setAttribute('data-tooltip', label);
+                    var icon = desktopToggleBtn.querySelector('i');
+                    if (icon) {
+                        icon.className = collapsed ? 'fa-solid fa-chevron-right' : 'fa-solid fa-chevron-left';
+                    }
+                }
 
-                var icon = desktopToggleBtn.querySelector('i');
-                if (icon) {
-                    icon.className = collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
+                if (railToggleBtn) {
+                    railToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                    railToggleBtn.setAttribute('aria-label', label);
+                    railToggleBtn.setAttribute('data-tooltip', label);
+                    var railIcon = railToggleBtn.querySelector('i');
+                    if (railIcon) {
+                        railIcon.className = collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
+                    }
+                    var railText = railToggleBtn.querySelector('.sidebar-rail-toggle-label');
+                    if (railText) {
+                        railText.textContent = collapsed ? 'Expand' : 'Collapse';
+                    }
+                }
+
+                if (sidebarTooltip) {
+                    sidebarTooltip.classList.remove('visible');
                 }
             }
 
@@ -689,6 +716,13 @@
                 }
             }
 
+            function toggleDesktopSidebar() {
+                if (!isDesktopView()) return;
+                var nextCollapsed = !document.body.classList.contains('sidebar-collapsed');
+                syncDesktopSidebarState(nextCollapsed);
+                persistDesktopSidebarState(nextCollapsed);
+            }
+
             function openSidebar() {
                 document.body.classList.add('sidebar-open');
             }
@@ -710,33 +744,78 @@
             }
 
             if (desktopToggleBtn) {
-                desktopToggleBtn.addEventListener('click', function () {
-                    if (!isDesktopView()) return;
-                    var nextCollapsed = !document.body.classList.contains('sidebar-collapsed');
-                    syncDesktopSidebarState(nextCollapsed);
-                    persistDesktopSidebarState(nextCollapsed);
-                });
+                desktopToggleBtn.addEventListener('click', toggleDesktopSidebar);
+            }
+
+            if (railToggleBtn) {
+                railToggleBtn.addEventListener('click', toggleDesktopSidebar);
             }
 
             if (backdrop) {
                 backdrop.addEventListener('click', closeSidebar);
             }
 
+            // Keyboard shortcut: Ctrl+B or Cmd+B to toggle sidebar, Escape to close mobile sidebar
             document.addEventListener('keydown', function (e) {
                 if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
                     closeSidebar();
+                    return;
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'b') {
+                    var activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select' || (document.activeElement && document.activeElement.isContentEditable)) {
+                        return;
+                    }
+                    e.preventDefault();
+                    if (isDesktopView()) {
+                        toggleDesktopSidebar();
+                    } else {
+                        if (document.body.classList.contains('sidebar-open')) {
+                            closeSidebar();
+                        } else {
+                            openSidebar();
+                        }
+                    }
                 }
             });
 
+            // Instant zero-latency floating tooltip for collapsed mode
+            var sidebarTooltip = document.createElement('div');
+            sidebarTooltip.className = 'sidebar-floating-tooltip';
+            sidebarTooltip.setAttribute('role', 'tooltip');
+            document.body.appendChild(sidebarTooltip);
+
+            document.addEventListener('mouseover', function (e) {
+                if (!document.body.classList.contains('sidebar-collapsed') || !isDesktopView()) {
+                    sidebarTooltip.classList.remove('visible');
+                    return;
+                }
+                var target = e.target.closest('[data-tooltip]');
+                if (target && sidebar.contains(target)) {
+                    var text = target.getAttribute('data-tooltip');
+                    if (!text) {
+                        sidebarTooltip.classList.remove('visible');
+                        return;
+                    }
+                    var rect = target.getBoundingClientRect();
+                    sidebarTooltip.textContent = text;
+                    sidebarTooltip.style.top = (rect.top + rect.height / 2) + 'px';
+                    sidebarTooltip.style.left = (rect.right + 10) + 'px';
+                    sidebarTooltip.classList.add('visible');
+                } else {
+                    sidebarTooltip.classList.remove('visible');
+                }
+            });
+
+            document.addEventListener('mouseleave', function () {
+                sidebarTooltip.classList.remove('visible');
+            });
+            window.addEventListener('scroll', function () {
+                sidebarTooltip.classList.remove('visible');
+            }, true);
+
             function updateToggleVisibilityForModals() {
                 var hasOpenModal = !!document.querySelector('.modal.show');
-                if (desktopToggleBtn) {
-                    if (hasOpenModal) {
-                        desktopToggleBtn.style.setProperty('display', 'none', 'important');
-                    } else {
-                        desktopToggleBtn.style.removeProperty('display');
-                    }
-                }
                 if (mobileToggleBtn) {
                     if (hasOpenModal) {
                         mobileToggleBtn.style.setProperty('display', 'none', 'important');
@@ -747,13 +826,8 @@
             }
 
             document.addEventListener('show.bs.modal', function () {
-                if (desktopToggleBtn) desktopToggleBtn.style.setProperty('display', 'none', 'important');
                 if (mobileToggleBtn) mobileToggleBtn.style.setProperty('display', 'none', 'important');
-            });
-
-            document.addEventListener('shown.bs.modal', function () {
-                if (desktopToggleBtn) desktopToggleBtn.style.setProperty('display', 'none', 'important');
-                if (mobileToggleBtn) mobileToggleBtn.style.setProperty('display', 'none', 'important');
+                if (sidebarTooltip) sidebarTooltip.classList.remove('visible');
             });
 
             document.addEventListener('hidden.bs.modal', function () {
