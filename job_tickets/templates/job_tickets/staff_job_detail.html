@@ -851,15 +851,22 @@
                         <i class="fas fa-comment-dots text-success"></i>Feedback Follow-up
                     </h5>
                     {% with st=job.feedback_followup_status %}
-                    <span class="badge 
-                        {% if st == 'called_issue' %}bg-danger
-                        {% elif st == 'no_answer' %}bg-secondary
-                        {% elif st == 'call_later' %}bg-warning text-dark
-                        {% elif st == 'received' or st == 'called_happy' %}bg-success
-                        {% else %}bg-primary-subtle text-primary border border-primary-subtle
-                        {% endif %} px-2 py-1">
-                        {{ job.get_feedback_followup_status_display }}
-                    </span>
+                    <div class="d-flex align-items-center gap-1">
+                        <span class="badge 
+                            {% if st == 'called_issue' or st == 'unreachable' %}bg-danger
+                            {% elif st == 'no_answer' %}bg-secondary
+                            {% elif st == 'call_later' %}bg-warning text-dark
+                            {% elif st == 'received' or st == 'called_happy' %}bg-success
+                            {% else %}bg-primary-subtle text-primary border border-primary-subtle
+                            {% endif %} px-2 py-1">
+                            {{ job.get_feedback_followup_status_display }}
+                        </span>
+                        {% if job.feedback_call_attempts %}
+                        <span class="badge {% if job.feedback_call_attempts >= 3 %}bg-danger{% else %}bg-warning text-dark{% endif %}" title="{{ job.feedback_call_attempts }} unsuccessful attempt{{ job.feedback_call_attempts|pluralize }}">
+                            Attempt {{ job.feedback_call_attempts }}/3
+                        </span>
+                        {% endif %}
+                    </div>
                     {% endwith %}
                 </div>
 

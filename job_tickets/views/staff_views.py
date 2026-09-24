@@ -1461,6 +1461,55 @@ def update_feedback_followup(request, job_code):
         job.feedback_date = timezone.now()
         update_fields.extend(['feedback_rating', 'feedback_comment', 'feedback_date'])
         success_message = 'Feedback marked as received successfully.'
+    elif action == 'no_answer':
+        job.feedback_call_attempts = (getattr(job, 'feedback_call_attempts', 0) or 0) + 1
+        job.feedback_followup_called_at = timezone.now()
+        update_fields.extend(['feedback_call_attempts', 'feedback_followup_called_at', 'feedback_due_at'])
+
+        if job.feedback_call_attempts >= 3:
+            job.feedback_followup_status = JobTicket.FEEDBACK_UNREACHABLE
+            job.feedback_followup_note = _append_feedback_note(
+                job.feedback_followup_note,
+                f"Attempt {job.feedback_call_attempts}/3: No answer. Max attempts reached; marked unreachable."
+            )
+            success_message = f"Call attempt {job.feedback_call_attempts}/3 recorded. Customer marked as unreachable."
+        else:
+            job.feedback_followup_status = JobTicket.FEEDBACK_NO_ANSWER
+            job.feedback_due_at = timezone.now() + timedelta(days=1)
+            job.feedback_followup_note = _append_feedback_note(
+                job.feedback_followup_note,
+                f"Attempt {job.feedback_call_attempts}/3: No answer. Rescheduled for tomorrow."
+            )
+            success_message = f"No answer recorded (Attempt {job.feedback_call_attempts}/3). Re-queued for tomorrow."
+    elif action == 'call_later':
+        job.feedback_followup_status = JobTicket.FEEDBACK_CALL_LATER
+        job.feedback_followup_called_at = timezone.now()
+        update_fields.extend(['feedback_followup_called_at', 'feedback_due_at'])
+
+        callback_date_str = (request.POST.get('callback_date') or '').strip()
+        callback_preset = (request.POST.get('callback_preset') or '').strip()
+
+        target_due = None
+        if callback_date_str:
+            try:
+                target_date = datetime.strptime(callback_date_str, '%Y-%m-%d').date()
+                target_due = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
+            except ValueError:
+                pass
+
+        if not target_due:
+            if callback_preset == '1_day':
+                target_due = timezone.now() + timedelta(days=1)
+            else:
+                target_due = timezone.now() + timedelta(days=2)
+
+        job.feedback_due_at = target_due
+        formatted_date = target_due.strftime('%d %b %Y')
+        job.feedback_followup_note = _append_feedback_note(
+            job.feedback_followup_note,
+            f"Callback requested on {formatted_date}. {note}".strip()
+        )
+        success_message = f"Callback scheduled for {formatted_date}."
     elif action in status_map:
         job.feedback_followup_status = status_map[action]
         job.feedback_followup_called_at = timezone.now()

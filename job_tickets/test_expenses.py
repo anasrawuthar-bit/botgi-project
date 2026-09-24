@@ -300,12 +300,59 @@ class FeedbackCenterTests(TestCase):
         self.client.force_login(self.user)
         res = self.client.post(reverse('update_feedback_followup', args=[self.closed_job.job_code]), {
             'feedback_action': 'no_answer',
-            'feedback_note': 'Customer phone was unreachable',
+            'feedback_note': 'Customer phone was busy',
         })
         self.assertEqual(res.status_code, 302)
         self.closed_job.refresh_from_db()
         self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_NO_ANSWER)
-        self.assertIn('Customer phone was unreachable', self.closed_job.feedback_followup_note)
+        self.assertEqual(self.closed_job.feedback_call_attempts, 1)
+        self.assertIn('Attempt 1/3: No answer. Rescheduled for tomorrow.', self.closed_job.feedback_followup_note)
+        # Due at is pushed into future (tomorrow)
+        self.assertGreater(self.closed_job.feedback_due_at, timezone.now())
+
+    def test_update_feedback_followup_no_answer_reaches_unreachable_on_third_attempt(self):
+        self.client.force_login(self.user)
+        self.closed_job.feedback_call_attempts = 2
+        self.closed_job.save(update_fields=['feedback_call_attempts'])
+
+        res = self.client.post(reverse('update_feedback_followup', args=[self.closed_job.job_code]), {
+            'feedback_action': 'no_answer',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.closed_job.refresh_from_db()
+        self.assertEqual(self.closed_job.feedback_call_attempts, 3)
+        self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_UNREACHABLE)
+        self.assertIn('Attempt 3/3: No answer. Max attempts reached; marked unreachable.', self.closed_job.feedback_followup_note)
+
+    def test_update_feedback_followup_call_later_default_preset(self):
+        self.client.force_login(self.user)
+        res = self.client.post(reverse('update_feedback_followup', args=[self.closed_job.job_code]), {
+            'feedback_action': 'call_later',
+            'callback_preset': '2_days',
+            'feedback_note': 'Call after 5 PM',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.closed_job.refresh_from_db()
+        self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_CALL_LATER)
+        # Approx 2 days from now
+        diff = self.closed_job.feedback_due_at - timezone.now()
+        self.assertGreaterEqual(diff.total_seconds(), 86400 * 1.8)
+        self.assertIn('Callback requested', self.closed_job.feedback_followup_note)
+        self.assertIn('Call after 5 PM', self.closed_job.feedback_followup_note)
+
+    def test_update_feedback_followup_call_later_custom_date(self):
+        self.client.force_login(self.user)
+        res = self.client.post(reverse('update_feedback_followup', args=[self.closed_job.job_code]), {
+            'feedback_action': 'call_later',
+            'callback_preset': 'custom',
+            'callback_date': '2026-10-20',
+            'feedback_note': 'Customer traveling until Oct 20',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.closed_job.refresh_from_db()
+        self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_CALL_LATER)
+        self.assertEqual(timezone.localtime(self.closed_job.feedback_due_at).strftime('%Y-%m-%d'), '2026-10-20')
+        self.assertIn('Customer traveling until Oct 20', self.closed_job.feedback_followup_note)
 
     def test_update_feedback_followup_mark_received(self):
         self.client.force_login(self.user)
@@ -319,4 +366,5 @@ class FeedbackCenterTests(TestCase):
         self.assertEqual(self.closed_job.feedback_followup_status, JobTicket.FEEDBACK_RECEIVED)
         self.assertEqual(self.closed_job.feedback_rating, 9)
         self.assertIn('Very happy', self.closed_job.feedback_comment)
+
 

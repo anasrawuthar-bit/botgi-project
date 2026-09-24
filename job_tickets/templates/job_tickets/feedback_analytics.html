@@ -202,9 +202,23 @@
                 <h1 class="h3 mt-2 mb-1 fw-bold text-dark">Feedback & Quality Center</h1>
                 <p class="mb-0 text-muted">Follow up with recently served clients, record satisfaction feedback, and monitor technician quality.</p>
             </div>
-            <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary" data-no-loader="true">
-                <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
-            </a>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                {% if auto_whatsapp_enabled %}
+                <span class="badge bg-success-subtle text-success border border-success p-2" title="WhatsApp feedback message will automatically send on Day 7 after delivery">
+                    <i class="fab fa-whatsapp me-1"></i>Auto-WhatsApp Day 7: Active
+                </span>
+                {% else %}
+                <span class="badge bg-light text-muted border p-2" title="Automatic WhatsApp sending is turned off; manual sending only">
+                    <i class="fab fa-whatsapp me-1"></i>Auto-WhatsApp Day 7: Manual
+                </span>
+                {% endif %}
+                <a href="{% url 'company_profile_settings' %}" class="btn btn-sm btn-outline-primary" title="Configure WhatsApp Settings">
+                    <i class="fas fa-gear"></i>
+                </a>
+                <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary" data-no-loader="true">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+                </a>
+            </div>
         </div>
     </div>
 
@@ -314,6 +328,11 @@
                         <i class="fas fa-check-circle text-success"></i> Received <span class="badge rounded-pill text-bg-success">{{ feedback_received_count }}</span>
                     </a>
                     {% endif %}
+                    {% if feedback_unreachable_count %}
+                    <a href="{% url 'feedback_analytics' %}?tab=queue&queue_status=unreachable" class="queue-pill-btn {% if queue_status == 'unreachable' %}active{% endif %}">
+                        <i class="fas fa-ban text-muted"></i> Unreachable <span class="badge rounded-pill text-bg-secondary">{{ feedback_unreachable_count }}</span>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
 
@@ -360,6 +379,11 @@
                                 <span class="followup-status {{ job.feedback_followup_status }}">
                                     {{ job.get_feedback_followup_status_display }}
                                 </span>
+                                {% if job.feedback_call_attempts %}
+                                <span class="badge {% if job.feedback_call_attempts >= 3 %}bg-danger{% else %}bg-warning text-dark{% endif %} ms-1" title="{{ job.feedback_call_attempts }} unsuccessful attempt{{ job.feedback_call_attempts|pluralize }}">
+                                    {{ job.feedback_call_attempts }}/3
+                                </span>
+                                {% endif %}
                                 {% if job.feedback_message_sent_at %}
                                 <div class="small text-muted mt-1"><i class="fab fa-whatsapp text-success me-1"></i>Sent {{ job.feedback_message_sent_at|date:"d M, h:i A" }}</div>
                                 {% endif %}
@@ -393,20 +417,19 @@
                                                     {% csrf_token %}
                                                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                                     <input type="hidden" name="feedback_action" value="no_answer">
-                                                    <button type="submit" class="dropdown-item">
-                                                        <i class="fas fa-phone-slash text-secondary me-2"></i>No Answer / Switched Off
+                                                    <button type="submit" class="dropdown-item" title="Postpones callback to tomorrow (Attempt +1)">
+                                                        <i class="fas fa-phone-slash text-secondary me-2"></i>No Answer (Try Tomorrow)
                                                     </button>
                                                 </form>
                                             </li>
                                             <li>
-                                                <form method="post" action="{% url 'update_feedback_followup' job.job_code %}">
-                                                    {% csrf_token %}
-                                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                    <input type="hidden" name="feedback_action" value="call_later">
-                                                    <button type="submit" class="dropdown-item">
-                                                        <i class="fas fa-clock text-warning me-2"></i>Call Later / Customer Busy
-                                                    </button>
-                                                </form>
+                                                <button type="button" class="dropdown-item open-call-later-modal-btn"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#callLaterModal"
+                                                    data-job-code="{{ job.job_code }}"
+                                                    data-customer="{{ job.customer_name }}">
+                                                    <i class="fas fa-clock text-warning me-2"></i>Call Later / Schedule Callback...
+                                                </button>
                                             </li>
                                             <li><hr class="dropdown-divider"></li>
                                             <li>
@@ -775,9 +798,108 @@
     </div>
 </div>
 
+<!-- ========================================== -->
+<!-- REUSABLE MODAL: SCHEDULE CALLBACK (CALL LATER) -->
+<!-- ========================================== -->
+<div class="modal fade" id="callLaterModal" tabindex="-1" aria-labelledby="callLaterModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form id="callLaterForm" method="post" action="">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <input type="hidden" name="feedback_action" value="call_later">
+                
+                <div class="modal-header bg-warning-subtle text-dark border-bottom">
+                    <h5 class="modal-title fw-bold" id="callLaterModalLabel">
+                        <i class="fas fa-clock text-warning me-2"></i>Schedule Customer Callback
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4">
+                    <!-- Target Job Details Summary Box -->
+                    <div class="p-3 mb-3 rounded bg-light border">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="small text-muted text-uppercase fw-bold">Job Ticket</span>
+                                <div class="fw-bold fs-6 text-dark" id="modalCallLaterJobDisplay">-</div>
+                            </div>
+                            <div class="text-end">
+                                <span class="small text-muted text-uppercase fw-bold">Customer</span>
+                                <div class="fw-bold fs-6 text-dark" id="modalCallLaterCustomerDisplay">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preset Options -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark mb-2">When should we call back?</label>
+                        <div class="d-flex flex-column gap-2">
+                            <div class="form-check p-3 border rounded bg-white">
+                                <input class="form-check-input callback-preset-radio" type="radio" name="callback_preset" id="preset2Days" value="2_days" checked>
+                                <label class="form-check-label fw-semibold text-dark w-100 cursor-pointer" for="preset2Days">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span>In 2 Days <span class="badge bg-primary-subtle text-primary border ms-1">Recommended Default</span></span>
+                                        <small class="text-muted fw-bold">+2 Days</small>
+                                    </div>
+                                    <div class="small text-muted fw-normal mt-1">Standard postponement; gives customer extra time.</div>
+                                </label>
+                            </div>
+
+                            <div class="form-check p-3 border rounded bg-white">
+                                <input class="form-check-input callback-preset-radio" type="radio" name="callback_preset" id="preset1Day" value="1_day">
+                                <label class="form-check-label fw-semibold text-dark w-100 cursor-pointer" for="preset1Day">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span>Tomorrow</span>
+                                        <small class="text-muted fw-bold">+1 Day</small>
+                                    </div>
+                                    <div class="small text-muted fw-normal mt-1">Quick retry next business day.</div>
+                                </label>
+                            </div>
+
+                            <div class="form-check p-3 border rounded bg-white">
+                                <input class="form-check-input callback-preset-radio" type="radio" name="callback_preset" id="presetCustom" value="custom">
+                                <label class="form-check-label fw-semibold text-dark w-100 cursor-pointer" for="presetCustom">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span>Specific Date Picked by Customer</span>
+                                        <small class="text-muted fw-bold">Custom</small>
+                                    </div>
+                                    <div class="small text-muted fw-normal mt-1">Customer specified a precise date they prefer to be contacted.</div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Date Picker Field (shown when custom is selected) -->
+                    <div class="mb-3 d-none" id="customDateContainer">
+                        <label class="form-label fw-bold text-dark" for="callbackDateInput">
+                            Select Callback Date <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" name="callback_date" id="callbackDateInput">
+                        <div class="form-text small text-muted">The ticket will reappear in the calling queue on this morning.</div>
+                    </div>
+
+                    <!-- Optional Callback Note -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark">Callback Note / Special Instructions</label>
+                        <textarea name="feedback_note" class="form-control" rows="2" placeholder="e.g., Customer requested call after 4 PM, traveling until Monday..."></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning px-4 fw-bold text-dark">
+                        <i class="fas fa-calendar-check me-1"></i>Schedule Callback
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Dynamic modal population
+    // Dynamic modal population - Record Feedback
     const modal = document.getElementById('recordFeedbackModal');
     const form = document.getElementById('recordFeedbackForm');
     const jobDisplay = document.getElementById('modalJobCodeDisplay');
@@ -823,6 +945,58 @@ document.addEventListener('DOMContentLoaded', function() {
                     ratingLabel.className = 'badge bg-warning text-dark fs-6';
                 } else {
                     ratingLabel.className = 'badge bg-danger fs-6';
+                }
+            }
+        });
+    });
+
+    // Dynamic modal population - Schedule Callback (Call Later)
+    const callLaterForm = document.getElementById('callLaterForm');
+    const callLaterJobDisplay = document.getElementById('modalCallLaterJobDisplay');
+    const callLaterCustDisplay = document.getElementById('modalCallLaterCustomerDisplay');
+    const customDateContainer = document.getElementById('customDateContainer');
+    const callbackDateInput = document.getElementById('callbackDateInput');
+
+    document.querySelectorAll('.open-call-later-modal-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const jobCode = this.getAttribute('data-job-code');
+            const customer = this.getAttribute('data-customer');
+
+            if (callLaterForm && jobCode) {
+                callLaterForm.action = '/staff/job/' + encodeURIComponent(jobCode) + '/feedback-followup/';
+            }
+            if (callLaterJobDisplay) callLaterJobDisplay.textContent = jobCode;
+            if (callLaterCustDisplay) callLaterCustDisplay.textContent = customer;
+
+            // Reset preset selection to 2_days
+            const preset2Days = document.getElementById('preset2Days');
+            if (preset2Days) preset2Days.checked = true;
+            if (customDateContainer) customDateContainer.classList.add('d-none');
+            if (callbackDateInput) {
+                callbackDateInput.required = false;
+                callbackDateInput.value = '';
+            }
+        });
+    });
+
+    // Custom date picker visibility toggle on preset radio change
+    document.querySelectorAll('.callback-preset-radio').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            if (this.value === 'custom') {
+                if (customDateContainer) customDateContainer.classList.remove('d-none');
+                if (callbackDateInput) {
+                    callbackDateInput.required = true;
+                    if (!callbackDateInput.value) {
+                        const d = new Date();
+                        d.setDate(d.getDate() + 3);
+                        callbackDateInput.value = d.toISOString().split('T')[0];
+                    }
+                    callbackDateInput.focus();
+                }
+            } else {
+                if (customDateContainer) customDateContainer.classList.add('d-none');
+                if (callbackDateInput) {
+                    callbackDateInput.required = false;
                 }
             }
         });

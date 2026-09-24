@@ -181,6 +181,7 @@ def feedback_analytics(request):
     feedback_done_statuses = [
         JobTicket.FEEDBACK_RECEIVED,
         JobTicket.FEEDBACK_CALLED_HAPPY,
+        JobTicket.FEEDBACK_UNREACHABLE,
     ]
 
     # Base queryset for followup stats — reused to avoid repeating filters
@@ -205,7 +206,7 @@ def feedback_analytics(request):
     feedback_call_later_count = followup_counts['call_later'] or 0
     feedback_no_answer_count = followup_counts['no_answer'] or 0
 
-    # These two don't share the same base filter — keep separate but they're simple counts
+    # These don't share the same base filter — keep separate but they're simple counts
     feedback_issue_count = scope_to_workspace(JobTicket.objects, workspace).filter(
         status='Closed',
         feedback_followup_status=JobTicket.FEEDBACK_CALLED_ISSUE,
@@ -213,6 +214,10 @@ def feedback_analytics(request):
     feedback_received_count = scope_to_workspace(JobTicket.objects, workspace).filter(
         status='Closed',
         feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
+    ).count()
+    feedback_unreachable_count = scope_to_workspace(JobTicket.objects, workspace).filter(
+        status='Closed',
+        feedback_followup_status=JobTicket.FEEDBACK_UNREACHABLE,
     ).count()
 
     filtered_followup_qs = followup_base
@@ -237,6 +242,14 @@ def feedback_analytics(request):
             status='Closed',
             feedback_followup_status=JobTicket.FEEDBACK_RECEIVED,
         )
+    elif queue_status == 'unreachable':
+        filtered_followup_qs = scope_to_workspace(JobTicket.objects, workspace).filter(
+            status='Closed',
+            feedback_followup_status=JobTicket.FEEDBACK_UNREACHABLE,
+        )
+
+    company_profile = CompanyProfile.get_profile(workspace=workspace)
+    auto_whatsapp_enabled = bool(company_profile and getattr(company_profile, 'notify_on_feedback', False))
 
     feedback_followup_jobs = list(
         filtered_followup_qs
@@ -285,6 +298,8 @@ def feedback_analytics(request):
         'feedback_no_answer_count': feedback_no_answer_count,
         'feedback_issue_count': feedback_issue_count,
         'feedback_received_count': feedback_received_count,
+        'feedback_unreachable_count': feedback_unreachable_count,
+        'auto_whatsapp_enabled': auto_whatsapp_enabled,
         'feedback_followup_history': feedback_followup_history,
     }
     return render(request, 'job_tickets/feedback_analytics.html', context)

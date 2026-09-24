@@ -898,6 +898,7 @@ class JobTicket(models.Model):
     FEEDBACK_CALLED_ISSUE = 'called_issue'
     FEEDBACK_NO_ANSWER = 'no_answer'
     FEEDBACK_CALL_LATER = 'call_later'
+    FEEDBACK_UNREACHABLE = 'unreachable'
     FEEDBACK_FOLLOWUP_CHOICES = [
         (FEEDBACK_PENDING, 'Pending'),
         (FEEDBACK_MESSAGE_SENT, 'Message Sent'),
@@ -906,6 +907,7 @@ class JobTicket(models.Model):
         (FEEDBACK_CALLED_ISSUE, 'Called - Issue'),
         (FEEDBACK_NO_ANSWER, 'No Answer'),
         (FEEDBACK_CALL_LATER, 'Call Later'),
+        (FEEDBACK_UNREACHABLE, 'Unreachable (3 Attempts)'),
     ]
 
     STATUS_CHOICES = [
@@ -1069,6 +1071,10 @@ class JobTicket(models.Model):
         blank=True,
         related_name='marked_feedback_followups',
     )
+    feedback_call_attempts = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of unsuccessful call attempts (e.g. no answer)."
+    )
 
     def __str__(self):
         return f"Job Code: {self.job_code} - {self.customer_name}"
@@ -1109,6 +1115,7 @@ class JobTicket(models.Model):
             and self.feedback_followup_status not in {
                 self.FEEDBACK_RECEIVED,
                 self.FEEDBACK_CALLED_HAPPY,
+                self.FEEDBACK_UNREACHABLE,
             }
         )
 
