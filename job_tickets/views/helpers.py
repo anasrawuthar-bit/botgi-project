@@ -913,18 +913,26 @@ def get_monthly_summary_context(
             if log.id not in closed_product_sale_log_ids
             and 'Specialized Service' not in (log.description or '')
         ]
-        closed_service_revenue = sum(
-            ((log.part_cost or Decimal('0.00')) + (log.service_charge or Decimal('0.00')) for log in closed_service_logs),
+        closed_service_parts = sum(
+            (log.part_cost or Decimal('0.00') for log in closed_service_logs),
             Decimal('0.00'),
         )
+        closed_service_labor = sum(
+            (log.service_charge or Decimal('0.00') for log in closed_service_logs),
+            Decimal('0.00'),
+        )
+        closed_service_revenue = closed_service_parts + closed_service_labor
         closed_vendor_services = SpecializedService.objects.filter(job_ticket__in=jobs_queryset)
         closed_vendor_expense = sum_vendor_net_cost(closed_vendor_services)
         closed_vendor_revenue = closed_vendor_services.aggregate(
             total=Coalesce(Sum('client_charge', output_field=DecimalField()), Decimal('0.00'))
         )['total']
         closed_discount = _sum_job_discounts(jobs_queryset)
+        closed_spare_revenue = closed_service_parts + closed_stock_sales['total_revenue']
+        closed_labor_revenue = closed_service_labor + closed_vendor_revenue
+        closed_gross_revenue = closed_spare_revenue + closed_labor_revenue
         closed_revenue = _net_amount_after_discount(
-            closed_service_revenue + closed_stock_sales['total_revenue'] + closed_vendor_revenue,
+            closed_gross_revenue,
             closed_discount,
         )
         closed_expense = closed_stock_sales['total_cogs'] + closed_vendor_expense
@@ -935,6 +943,9 @@ def get_monthly_summary_context(
             'expense': closed_expense,
             'profit': closed_profit,
             'discount': closed_discount,
+            'spare_revenue': closed_spare_revenue,
+            'service_revenue': closed_labor_revenue,
+            'gross_revenue': closed_gross_revenue,
         }
 
     def summarize_closed_bill_receivables(jobs_queryset):
@@ -1124,11 +1135,23 @@ def get_monthly_summary_context(
         'current_month_in_closed_expense': current_month_in_closed_summary['expense'],
         'current_month_in_closed_profit': current_month_in_closed_summary['profit'],
         'current_month_in_closed_discount': current_month_in_closed_summary['discount'],
+        'current_month_in_closed_spare': current_month_in_closed_summary['spare_revenue'],
+        'current_month_in_closed_service': current_month_in_closed_summary['service_revenue'],
+        'current_month_in_closed_gross': current_month_in_closed_summary['gross_revenue'],
         'previous_month_in_closed_count': previous_month_in_closed_jobs.count(),
         'previous_month_in_closed_revenue': previous_month_in_closed_summary['revenue'],
         'previous_month_in_closed_expense': previous_month_in_closed_summary['expense'],
         'previous_month_in_closed_profit': previous_month_in_closed_summary['profit'],
         'previous_month_in_closed_discount': previous_month_in_closed_summary['discount'],
+        'previous_month_in_closed_spare': previous_month_in_closed_summary['spare_revenue'],
+        'previous_month_in_closed_service': previous_month_in_closed_summary['service_revenue'],
+        'previous_month_in_closed_gross': previous_month_in_closed_summary['gross_revenue'],
+        'total_closed_spare_revenue': service_parts_revenue + stock_sales_income,
+        'total_closed_service_revenue': service_labor_revenue + vendor_revenue,
+        'jobs_created_closed_count': current_month_in_closed_jobs.count(),
+        'jobs_created_open_count': jobs_created.exclude(status='Closed').count(),
+        'jobs_created_closed_pct': round((current_month_in_closed_jobs.count() / jobs_created.count() * 100), 1) if jobs_created.count() > 0 else Decimal('0.0'),
+        'jobs_created_open_pct': round((jobs_created.exclude(status='Closed').count() / jobs_created.count() * 100), 1) if jobs_created.count() > 0 else Decimal('0.0'),
         'pending_completed_count': pending_completed_jobs.count(),
         'pending_completed_parts': pending_completed_summary['parts'],
         'pending_completed_service': pending_completed_summary['service'],
