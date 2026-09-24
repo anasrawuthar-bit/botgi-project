@@ -763,6 +763,86 @@
                 {% endif %}
             </div>
 
+            <!-- Job Expenses & Direct Costs Card -->
+            <div class="card-box mb-4 shadow-sm border-start border-4 border-warning">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <div>
+                        <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+                            <i class="fa-solid fa-receipt text-warning"></i>Job Expenses & Direct Costs
+                        </h5>
+                        <small class="text-muted">Direct costs incurred specifically for this ticket (courier, external lab, local parts).</small>
+                    </div>
+                    {% if staff_access.expense_management %}
+                    <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#addJobExpenseModal">
+                        <i class="fas fa-plus me-1"></i> Add Expense
+                    </button>
+                    {% endif %}
+                </div>
+
+                {% if job_expenses %}
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Expense #</th>
+                                <th>Title / Notes</th>
+                                <th>Category</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for exp in job_expenses %}
+                            <tr>
+                                <td class="text-muted">{{ exp.expense_date|date:"d M Y" }}</td>
+                                <td><span class="badge bg-light text-dark border">{{ exp.expense_number|default:exp.id }}</span></td>
+                                <td>
+                                    <strong>{{ exp.title }}</strong>
+                                    {% if exp.notes %}<br><small class="text-muted">{{ exp.notes }}</small>{% endif %}
+                                    {% if exp.is_billable_to_customer %}
+                                        <span class="badge bg-success-subtle text-success border ms-1" style="font-size: 0.7rem;">Billable</span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-secondary-subtle text-dark">{{ exp.get_category_display }}</span></td>
+                                <td class="text-end fw-bold text-dark">&#8377;{{ exp.amount|floatformat:2 }}</td>
+                                <td class="text-end">
+                                    {% if staff_access.expense_management %}
+                                    <form method="post" action="{% url 'expense_delete' exp.id %}" class="d-inline" onsubmit="return confirm('Delete this job expense?');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Delete"><i class="fas fa-times"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-3 bg-light rounded text-center text-muted mb-3 small">
+                    No direct expenses recorded for this job ticket yet.
+                </div>
+                {% endif %}
+
+                <!-- Real Job Profitability Calculation Block -->
+                <div class="p-3 rounded border bg-light">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong class="text-uppercase small text-muted">Ticket Profitability Summary</strong>
+                        <span class="badge {% if job_net_profit >= 0 %}bg-success{% else %}bg-danger{% endif %} fs-6">
+                            Net Profit: &#8377;{{ job_net_profit|floatformat:2 }}
+                        </span>
+                    </div>
+                    <div class="row g-2 small text-muted">
+                        <div class="col-6 col-md-3">Billed Grand Total: <strong class="text-dark d-block">&#8377;{{ grand_total|floatformat:2 }}</strong></div>
+                        <div class="col-6 col-md-3">Parts Cost: <strong class="text-danger d-block">- &#8377;{{ total_parts_cost|floatformat:2 }}</strong></div>
+                        <div class="col-6 col-md-3">Vendor Outsourcing: <strong class="text-danger d-block">- &#8377;{{ specialized_service.vendor_net_payable|default:"0.00"|floatformat:2 }}</strong></div>
+                        <div class="col-6 col-md-3">Direct Job Expenses: <strong class="text-danger d-block">- &#8377;{{ job_expenses_total|floatformat:2 }}</strong></div>
+                    </div>
+                </div>
+            </div>
+
             {% if job.status == 'Closed' and job.feedback_followup_enabled and job.feedback_due_at and not job.feedback_rating and job.feedback_followup_status != 'received' and job.feedback_followup_status != 'called_happy' %}
             <div class="card-box mb-4 shadow-sm">
                 <!-- Card Header with Icon and Status Badge -->
@@ -1279,6 +1359,80 @@
       </form>
     </div>
   </div>
+</div>
+
+<!-- Modal: Add Job Expense -->
+<div class="modal fade" id="addJobExpenseModal" tabindex="-1" aria-labelledby="addJobExpenseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="{% url 'expense_create' %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <input type="hidden" name="job_ticket" value="{{ job.id }}">
+
+                <div class="modal-header bg-light py-3">
+                    <h5 class="modal-title fw-bold" id="addJobExpenseModalLabel">
+                        <i class="fa-solid fa-receipt text-warning me-2"></i>Add Expense for Job {{ job.job_code }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Expense Title <span class="text-danger">*</span></label>
+                        {{ job_expense_form.title }}
+                        <small class="text-muted">e.g. Courier charge, local part purchase, technician travel.</small>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Amount (&#8377;) <span class="text-danger">*</span></label>
+                            {{ job_expense_form.amount }}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Category</label>
+                            {{ job_expense_form.category }}
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Payment Mode</label>
+                            {{ job_expense_form.payment_mode }}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Expense Date</label>
+                            {{ job_expense_form.expense_date }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        {{ job_expense_form.is_billable_to_customer }}
+                        <label class="form-check-label small" for="{{ job_expense_form.is_billable_to_customer.id_for_label }}">
+                            Pass on / Bill this expense to the customer on their invoice
+                        </label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Attach Receipt / Invoice (Optional)</label>
+                        {{ job_expense_form.receipt_file }}
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold">Notes / Remarks</label>
+                        {{ job_expense_form.notes }}
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning px-4">
+                        <i class="fas fa-check me-1"></i> Save Job Expense
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>

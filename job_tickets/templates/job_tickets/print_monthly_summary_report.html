@@ -443,6 +443,17 @@
                         <td class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</td>
                         <td class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</td>
                     </tr>
+                    {% if period_overhead_expenses %}
+                    <tr class="text-muted">
+                        <td colspan="3">Less Shop Overhead Expenses (Rent, Utilities, Maintenance, etc.)</td>
+                        <td class="text-end text-danger">- &#8377;{{ period_overhead_expenses|floatformat:2 }}</td>
+                        <td></td>
+                    </tr>
+                    <tr class="fw-bold table-success">
+                        <td colspan="4">True Net Operating Profit</td>
+                        <td class="text-end text-success">&#8377;{{ period_net_profit|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
                 </tfoot>
             </table>
         </div>

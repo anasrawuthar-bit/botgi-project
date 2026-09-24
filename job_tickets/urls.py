@@ -164,4 +164,9 @@ urlpatterns = [
     path('api/mobile/tasks/<int:task_id>/status/', views.mobile_api_task_update_status, name='mobile_api_task_update_status'),
     path('api/mobile/tasks/<int:task_id>/message/', views.mobile_api_task_message_send, name='mobile_api_task_message_send'),
     path('api/mobile/tasks/<int:task_id>/messages/', views.mobile_api_task_messages, name='mobile_api_task_messages'),
+
+    # Expense Management
+    path('staff/expenses/', views.expense_dashboard, name='expense_dashboard'),
+    path('staff/expenses/create/', views.expense_create, name='expense_create'),
+    path('staff/expenses/<int:expense_id>/delete/', views.expense_delete, name='expense_delete'),
 ]

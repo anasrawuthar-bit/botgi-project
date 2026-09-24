@@ -301,6 +301,14 @@
                                readonly> </div>
                 </td>
             </tr>
+            {% if job_expenses %}
+            <tr class="billing-total-row">
+                <td colspan="2" class="text-end text-muted small">
+                    <i class="fa-solid fa-receipt text-warning me-1"></i> Direct Job Expenses ({{ job_expenses|length }}):
+                </td>
+                <td><strong class="text-danger small">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></td>
+            </tr>
+            {% endif %}
             <tr class="fw-bold billing-grand-total-row">
                 <td colspan="2" class="text-end"><strong>Grand Total:</strong></td>
                 <td><strong id="grand-total-display">&#8377;{{ grand_total|floatformat:2 }}</strong></td>

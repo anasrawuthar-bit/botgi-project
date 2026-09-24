@@ -9,3 +9,4 @@ from .vendor_views import *  # noqa: F401,F403
 from .mobile_api_views import *  # noqa: F401,F403
 from .company_views import *  # noqa: F401,F403
 from .user_views import *  # noqa: F401,F403
+from .expense_views import *  # noqa: F401,F403

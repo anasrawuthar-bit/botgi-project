@@ -173,11 +173,12 @@
             </div>
         </div>
         <div class="row g-3 mb-4">
-            <div class="col-md-4"><div class="card-box h-100"><h3 class="h6 text-muted">Revenue after discounts</h3><p class="h3 mb-0">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</p></div></div>
-            <div class="col-md-4"><div class="card-box h-100"><h3 class="h6 text-muted">Recorded costs</h3><p class="h3 mb-0">&#8377;{{ financial_summary.overall_expense|floatformat:2 }}</p></div></div>
-            <div class="col-md-4"><div class="card-box h-100"><h3 class="h6 text-muted">Margin after recorded costs</h3><p class="h3 mb-0">&#8377;{{ financial_summary.overall_profit|floatformat:2 }}</p></div></div>
+            <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Revenue after discounts</h3><p class="h4 mb-0 text-dark">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</p></div></div>
+            <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Direct Job Costs (COGS)</h3><p class="h4 mb-0 text-danger">&#8377;{{ financial_summary.overall_expense|floatformat:2 }}</p></div></div>
+            <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Shop Overhead Expenses</h3><p class="h4 mb-0 text-warning">&#8377;{{ financial_summary.period_overhead_expenses|default:"0.00"|floatformat:2 }}</p></div></div>
+            <div class="col-md-3"><div class="card-box h-100 border-start border-4 border-success"><h3 class="h6 text-muted">True Net Profit</h3><p class="h4 mb-0 text-success fw-bold">&#8377;{{ financial_summary.period_net_profit|default:financial_summary.overall_profit|floatformat:2 }}</p></div></div>
         </div>
-        <p class="small text-muted">Costs include recorded stock costs and vendor charges. Revenue is not a cash-collection total; operating overheads are not deducted.</p>
+        <p class="small text-muted">Direct costs include parts stock, vendor charges, and job-linked direct expenses. Shop overhead includes general utility, rent, and non-job operating expenses recorded for this period.</p>
         <div class="table-responsive mb-4"><table class="table align-middle">
             <caption>Revenue and recorded costs for the selected period</caption>
             <thead><tr><th scope="col">Category</th><th scope="col" class="text-end">Revenue</th><th scope="col" class="text-end">Cost</th><th scope="col" class="text-end">Margin</th></tr></thead>

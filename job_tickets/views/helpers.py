@@ -23,6 +23,7 @@ from ..models import (
     CompanyUserMembership,
     DailyJobCodeSequence,
     DeviceChecklistTemplate,
+    Expense,
     InventoryBill,
     InventoryBillLog,
     InventoryCreditPayment,
@@ -50,7 +51,7 @@ from ..models import (
     VendorPayment,
     WhatsAppIntegrationSettings,
 )
-from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, TaskCreateForm, TaskMessageForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset
+from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, TaskCreateForm, TaskMessageForm, ExpenseForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset
 from ..gst_utils import effective_tax_rate
 from ..phone_utils import normalize_indian_phone, phone_lookup_variants
 from ..whatsapp_service import verify_receipt_access_token
@@ -1044,6 +1045,22 @@ def get_monthly_summary_context(
     overall_profit = overall_revenue - overall_expense
     overall_margin = (overall_profit / overall_revenue * 100) if overall_revenue > 0 else Decimal('0.00')
 
+    # Period Expenses (Direct Job Costs & Shop Overhead)
+    period_start_date = start_of_period.date() if hasattr(start_of_period, 'date') else start_of_period
+    period_end_date = end_of_period.date() if hasattr(end_of_period, 'date') else end_of_period
+    scoped_expenses = scope_to_workspace(Expense.objects.all(), workspace).filter(
+        expense_date__gte=period_start_date,
+        expense_date__lt=period_end_date,
+    )
+    period_job_expenses = scoped_expenses.filter(job_ticket__isnull=False).aggregate(
+        total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00'))
+    )['total']
+    period_overhead_expenses = scoped_expenses.filter(job_ticket__isnull=True).aggregate(
+        total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00'))
+    )['total']
+    period_total_expenses = period_job_expenses + period_overhead_expenses
+    period_net_profit = overall_profit - period_overhead_expenses
+
     closed_financial_blocks = [
         {
             'label': 'Service Parts',
@@ -1169,6 +1186,12 @@ def get_monthly_summary_context(
         'monthly_net_profit': overall_profit,
         'profit_margin': overall_margin,
         'repair_parts_income': service_parts_revenue,
+
+        # Expense Management Metrics
+        'period_job_expenses': period_job_expenses,
+        'period_overhead_expenses': period_overhead_expenses,
+        'period_total_expenses': period_total_expenses,
+        'period_net_profit': period_net_profit,
     }
 
 def validate_sales_invoice_number_uniqueness(

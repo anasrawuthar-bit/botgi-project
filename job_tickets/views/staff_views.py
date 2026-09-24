@@ -1230,6 +1230,9 @@ def job_billing_staff(request, job_code):
     product_sale_log_ids = list(
         ProductSale.objects.filter(job_ticket=job, service_log__isnull=False).values_list('service_log_id', flat=True)
     )
+
+    job_expenses = job.expenses.all().select_related('recorded_by').order_by('-expense_date', '-id')
+    job_expenses_total = job_expenses.aggregate(total=Coalesce(Sum('amount'), Decimal('0.00')))['total']
     
     context = {
         'job': job,
@@ -1245,6 +1248,8 @@ def job_billing_staff(request, job_code):
         'product_sale_log_ids': product_sale_log_ids,
         'products_for_sale': Product.objects.all().order_by('name'),
         'payment_methods': InventoryCreditPayment.METHOD_CHOICES,
+        'job_expenses': job_expenses,
+        'job_expenses_total': job_expenses_total,
     }
     return render(request, 'job_tickets/job_billing_staff.html', context)
 
@@ -1841,6 +1846,21 @@ def staff_job_detail(request, job_code):
     whatsapp_direct_url = f"https://wa.me/{clean_target}?text={wa_default_msg}" if clean_target else ''
     whatsapp_queue_history = job.message_queues.all().order_by('-created_at')[:10]
 
+    job_expenses = job.expenses.all().select_related('recorded_by').order_by('-expense_date', '-id')
+    job_expenses_total = job_expenses.aggregate(total=Coalesce(Sum('amount'), Decimal('0.00')))['total']
+    parts_cost = Decimal(str(job.part_total or 0))
+    vendor_payable = (
+        Decimal(str(specialized_service.vendor_net_payable or 0))
+        if specialized_service and specialized_service.vendor_cost
+        else Decimal('0.00')
+    )
+    job_net_profit = grand_total - parts_cost - vendor_payable - job_expenses_total
+
+    job_expense_form = ExpenseForm(
+        initial={'job_ticket': job.id, 'category': Expense.CATEGORY_JOB_PARTS_OUTSOURCE},
+        workspace=job.workspace,
+    )
+
     context = {
         'job': job,
         'service_logs': job.service_logs.all(),
@@ -1871,6 +1891,10 @@ def staff_job_detail(request, job_code):
         'whatsapp_clean_phone': clean_target,
         'whatsapp_queue_history': whatsapp_queue_history,
         'whatsapp_settings': whatsapp_settings,
+        'job_expenses': job_expenses,
+        'job_expenses_total': job_expenses_total,
+        'job_net_profit': job_net_profit,
+        'job_expense_form': job_expense_form,
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
 

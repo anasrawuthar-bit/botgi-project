@@ -2219,3 +2219,114 @@ class UserSessionActivity(models.Model):
             browser = 'Unknown Browser'
 
         return f"{browser} on {os_name}"
+
+
+class Expense(models.Model):
+    """Business expense tracking for both direct job costs and general operational overhead."""
+
+    CATEGORY_RENT = 'rent'
+    CATEGORY_UTILITIES = 'utilities'
+    CATEGORY_REFRESHMENTS = 'refreshments'
+    CATEGORY_TRAVEL = 'travel'
+    CATEGORY_TOOLS_EQUIPMENT = 'tools_equipment'
+    CATEGORY_JOB_PARTS_OUTSOURCE = 'job_parts_outsource'
+    CATEGORY_SOFTWARE_INTERNET = 'software_internet'
+    CATEGORY_OFFICE_SUPPLIES = 'office_supplies'
+    CATEGORY_SALARY_ADVANCE = 'salary_advance'
+    CATEGORY_MAINTENANCE = 'maintenance'
+    CATEGORY_OTHER = 'other'
+
+    CATEGORY_CHOICES = [
+        (CATEGORY_RENT, 'Rent'),
+        (CATEGORY_UTILITIES, 'Electricity & Utilities'),
+        (CATEGORY_REFRESHMENTS, 'Tea, Snacks & Refreshments'),
+        (CATEGORY_TRAVEL, 'Travel & Conveyance'),
+        (CATEGORY_TOOLS_EQUIPMENT, 'Tools & Equipment'),
+        (CATEGORY_JOB_PARTS_OUTSOURCE, 'Job Parts / External Lab / Outsourcing'),
+        (CATEGORY_SOFTWARE_INTERNET, 'Internet & Software'),
+        (CATEGORY_OFFICE_SUPPLIES, 'Office & Cleaning Supplies'),
+        (CATEGORY_SALARY_ADVANCE, 'Staff Advance / Wages'),
+        (CATEGORY_MAINTENANCE, 'Shop Maintenance & Repairs'),
+        (CATEGORY_OTHER, 'Other Overhead'),
+    ]
+
+    PAYMENT_MODE_CASH = 'cash'
+    PAYMENT_MODE_UPI = 'upi'
+    PAYMENT_MODE_BANK = 'bank_transfer'
+    PAYMENT_MODE_CARD = 'card'
+    PAYMENT_MODE_PETTY_CASH = 'petty_cash'
+    PAYMENT_MODE_OTHER = 'other'
+
+    PAYMENT_MODE_CHOICES = [
+        (PAYMENT_MODE_CASH, 'Cash'),
+        (PAYMENT_MODE_UPI, 'UPI / GPay / PhonePe'),
+        (PAYMENT_MODE_BANK, 'Bank Transfer / NEFT'),
+        (PAYMENT_MODE_CARD, 'Debit / Credit Card'),
+        (PAYMENT_MODE_PETTY_CASH, 'Petty Cash'),
+        (PAYMENT_MODE_OTHER, 'Other'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.CASCADE,
+        related_name='expenses',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    expense_number = models.CharField(max_length=50, blank=True, db_index=True)
+    title = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default=CATEGORY_OTHER, db_index=True)
+    payment_mode = models.CharField(max_length=30, choices=PAYMENT_MODE_CHOICES, default=PAYMENT_MODE_CASH)
+    expense_date = models.DateField(default=timezone.localdate, db_index=True)
+
+    # Optional Link to Job Ticket
+    job_ticket = models.ForeignKey(
+        'JobTicket',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expenses',
+        db_index=True,
+    )
+    is_billable_to_customer = models.BooleanField(
+        default=False,
+        help_text="Whether this expense is passed on or billed to the customer."
+    )
+
+    recorded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='recorded_expenses',
+    )
+    receipt_file = models.FileField(upload_to='expense_receipts/', null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-expense_date', '-id']
+        indexes = [
+            models.Index(fields=['workspace', 'expense_date']),
+            models.Index(fields=['workspace', 'category']),
+            models.Index(fields=['job_ticket']),
+        ]
+
+    def __str__(self):
+        return f"{self.expense_number or self.id} - {self.title} ({self.amount})"
+
+    @property
+    def is_job_related(self):
+        return self.job_ticket_id is not None
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding or not self.pk
+        super().save(*args, **kwargs)
+        if is_new and not self.expense_number:
+            date_prefix = (self.expense_date or timezone.localdate()).strftime('%Y%m')
+            self.expense_number = f"EXP-{date_prefix}-{self.id:04d}"
+            Expense.objects.filter(pk=self.pk).update(expense_number=self.expense_number)
+

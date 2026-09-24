@@ -622,6 +622,8 @@ def export_monthly_summary_csv(request):
     writer.writerow(['Closed Bill Total', money(context['closed_receivable_bill_total'])])
     writer.writerow(['Closed Bill Paid', money(context['closed_receivable_paid'])])
     writer.writerow(['Closed Bill Balance', money(context['closed_receivable_balance'])])
+    writer.writerow(['Shop Overhead Expenses (Period)', money(context.get('period_overhead_expenses', Decimal('0.00')))])
+    writer.writerow(['True Net Operating Profit', money(context.get('period_net_profit', context['overall_profit']))])
     writer.writerow([])
 
     writer.writerow(['Closed Job Financial Blocks'])

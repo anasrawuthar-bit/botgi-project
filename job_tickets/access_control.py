@@ -9,6 +9,7 @@ ACCESS_CONTROL_GROUP = "Access Control"
 ACCESS_GROUPS = {
     "staff_dashboard": "Access: Staff Dashboard",
     "task_management": "Access: Task Management",
+    "expense_management": "Access: Expense Management",
     "team_management": "Access: Team Management",
     "inventory": "Access: Inventory Module",
     "feedback_analytics": "Access: Feedback Analytics",
@@ -22,6 +23,7 @@ ACCESS_GROUPS = {
 ACCESS_OPTIONS = [
     {"key": "staff_dashboard", "label": "Staff Dashboard", "section": "general"},
     {"key": "task_management", "label": "Task Management", "section": "general"},
+    {"key": "expense_management", "label": "Expense Management", "section": "general"},
     {"key": "team_management", "label": "Staff & Technician Management", "section": "general"},
     {"key": "inventory", "label": "Inventory Module", "section": "general"},
     {"key": "feedback_analytics", "label": "Customer Feedback Analytics", "section": "general"},

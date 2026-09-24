@@ -8,6 +8,7 @@ from django.utils import timezone
 from .models import (
     Client,
     CompanyProfile,
+    Expense,
     InventoryEntry,
     InventoryParty,
     JobTicket,
@@ -241,7 +242,7 @@ class TaskCreateForm(forms.Form):
         qs = JobTicket.objects.order_by('-created_at')
         if workspace:
             qs = qs.filter(workspace=workspace)
-        self.fields['job_reference'].queryset = qs.only('id', 'job_code', 'customer_name', 'device_type', 'status')[:500]
+        self.fields['job_reference'].queryset = qs.only('id', 'job_code', 'customer_name', 'device_type', 'status')
 
         def job_label(obj):
             device = f" • {obj.device_type}" if obj.device_type else ""
@@ -260,6 +261,73 @@ class TaskMessageForm(forms.Form):
         }),
         label='Message',
     )
+
+
+class ExpenseForm(forms.ModelForm):
+    class Meta:
+        model = Expense
+        fields = [
+            'title',
+            'amount',
+            'category',
+            'expense_date',
+            'payment_mode',
+            'job_ticket',
+            'is_billable_to_customer',
+            'receipt_file',
+            'notes',
+        ]
+        widgets = {
+            'title': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g. Courier charges, Tea & snacks, Shop rent...',
+                'required': 'required',
+            }),
+            'amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0.01',
+                'placeholder': '0.00',
+                'required': 'required',
+            }),
+            'category': forms.Select(attrs={'class': 'form-select'}),
+            'expense_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'payment_mode': forms.Select(attrs={'class': 'form-select'}),
+            'job_ticket': forms.Select(attrs={
+                'class': 'form-select',
+                'data-searchable-select': 'true',
+                'data-icon': 'fa-solid fa-ticket-alt',
+                'data-placeholder': 'Type to search job code, customer, device...',
+            }),
+            'is_billable_to_customer': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'receipt_file': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Optional internal notes...'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        workspace = kwargs.pop('workspace', None)
+        super().__init__(*args, **kwargs)
+        self.fields['job_ticket'].empty_label = '--- None (General / Non-Job Overhead) ---'
+        self.fields['job_ticket'].required = False
+
+        qs = JobTicket.objects.order_by('-created_at')
+        if workspace:
+            qs = qs.filter(workspace=workspace)
+        self.fields['job_ticket'].queryset = qs.only('id', 'job_code', 'customer_name', 'device_type', 'status')
+
+        def job_label(obj):
+            device = f" • {obj.device_type}" if obj.device_type else ""
+            customer = f" • {obj.customer_name}" if obj.customer_name else ""
+            return f"{obj.job_code}{customer}{device}"
+
+        self.fields['job_ticket'].label_from_instance = job_label
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get('amount')
+        if amount is not None and amount <= Decimal('0.00'):
+            raise forms.ValidationError("Expense amount must be greater than zero.")
+        return amount
+
 
 class VendorForm(forms.ModelForm):
     class Meta:

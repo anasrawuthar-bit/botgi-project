@@ -258,6 +258,15 @@
                 </li>
                 {% endif %}
 
+                {% if staff_access.expense_management %}
+                <li>
+                    <a class="sidebar-link {% if 'expense' in request.resolver_match.url_name %}active{% endif %}"
+                        href="{% url 'expense_dashboard' %}" data-tooltip="Expenses">
+                        <i class="fa-solid fa-receipt"></i><span class="sidebar-link-label">Expenses</span>
+                    </a>
+                </li>
+                {% endif %}
+
                 {% if staff_access.inventory %}
                 <li>
                     <a
