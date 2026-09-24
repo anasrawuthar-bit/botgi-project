@@ -3758,7 +3758,7 @@ def _make_workspace_and_user(username='p3-user'):
         is_staff=True,
     )
     from job_tickets.access_control import apply_staff_access
-    apply_staff_access(user, {'staff_dashboard', 'inventory'})
+    apply_staff_access(user, {'staff_dashboard', 'inventory', 'task_management'})
     ws = CompanyWorkspace.objects.create(name=f'P3 Workspace {username}', owner=user)
     from job_tickets.models import CompanyUserMembership
     CompanyUserMembership.objects.create(
@@ -5551,6 +5551,69 @@ class StandaloneTaskSystemTests(TestCase):
         self.assertEqual(status_resp.status_code, 302)
         task.refresh_from_db()
         self.assertEqual(task.status, 'in_progress')
+
+    def test_task_management_access_control(self):
+        limited_staff = User.objects.create_user(
+            username='limited_task_staff',
+            password='Password123!',
+            is_staff=True,
+        )
+        CompanyUserMembership.objects.create(
+            workspace=self.workspace,
+            user=limited_staff,
+            role=CompanyUserMembership.ROLE_STAFF,
+        )
+        # Deny task_management permission (only give staff_dashboard)
+        apply_staff_access(limited_staff, {'staff_dashboard'})
+
+        self.client.force_login(limited_staff)
+        # Access should be denied (redirects to unauthorized)
+        resp = self.client.get(reverse('task_dashboard'))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('unauthorized'), resp.url)
+
+        # Post create should also be denied
+        create_resp = self.client.post(reverse('task_create'), {'title': 'Blocked Task'})
+        self.assertEqual(create_resp.status_code, 302)
+        self.assertIn(reverse('unauthorized'), create_resp.url)
+
+        # Now grant task_management permission
+        apply_staff_access(limited_staff, {'staff_dashboard', 'task_management'})
+        resp = self.client.get(reverse('task_dashboard'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_task_management_in_staff_technicians_page_and_edit_user(self):
+        apply_staff_access(self.staff_user, {'staff_dashboard', 'team_management', 'task_management'})
+        self.client.force_login(self.staff_user)
+
+        # 1. Verify Task Management is listed in staff_technicians page
+        resp = self.client.get(reverse('staff_technicians'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Task Management')
+
+        # 2. Edit another staff user to toggle Task Management on
+        target_staff = User.objects.create_user(
+            username='target_sub_staff',
+            password='Password123!',
+            is_staff=True,
+        )
+        CompanyUserMembership.objects.create(
+            workspace=self.workspace,
+            user=target_staff,
+            role=CompanyUserMembership.ROLE_STAFF,
+        )
+        apply_staff_access(target_staff, {'staff_dashboard'})
+
+        edit_resp = self.client.post(reverse('edit_user', args=[target_staff.id]), {
+            'username': 'target_sub_staff',
+            'role': 'staff',
+            'access_staff_dashboard': 'on',
+            'access_task_management': 'on',
+        })
+        self.assertEqual(edit_resp.status_code, 302)
+
+        from job_tickets.access_control import user_has_staff_access
+        self.assertTrue(user_has_staff_access(target_staff, 'task_management'))
 
     def test_technician_task_web_flow(self):
         task = Task.objects.create(

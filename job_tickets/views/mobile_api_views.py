@@ -1975,6 +1975,9 @@ def mobile_api_tasks(request):
     if error_response:
         return error_response
 
+    if user.is_staff and not user_has_staff_access(user, "task_management"):
+        return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+
     workspace = _mobile_request_workspace(request, user)
     is_tech = hasattr(user, 'technician_profile')
 
@@ -2022,6 +2025,9 @@ def mobile_api_task_detail(request, task_id):
     if error_response:
         return error_response
 
+    if user.is_staff and not user_has_staff_access(user, "task_management"):
+        return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+
     workspace = _mobile_request_workspace(request, user)
     is_tech = hasattr(user, 'technician_profile')
 
@@ -2049,7 +2055,10 @@ def mobile_api_task_update_status(request, task_id):
 
     task = get_object_or_404(Task, pk=task_id)
     is_tech = hasattr(user, 'technician_profile') and task.assigned_to == user.technician_profile
-    if not user.is_staff and not is_tech:
+    if user.is_staff:
+        if not user_has_staff_access(user, "task_management"):
+            return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+    elif not is_tech:
         return JsonResponse({'error': 'forbidden', 'message': 'Access denied.'}, status=403)
 
     try:
@@ -2094,7 +2103,10 @@ def mobile_api_task_message_send(request, task_id):
 
     task = get_object_or_404(Task, pk=task_id)
     is_tech = hasattr(user, 'technician_profile') and task.assigned_to == user.technician_profile
-    if not user.is_staff and not is_tech:
+    if user.is_staff:
+        if not user_has_staff_access(user, "task_management"):
+            return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+    elif not is_tech:
         return JsonResponse({'error': 'forbidden', 'message': 'Access denied.'}, status=403)
 
     body = ''
@@ -2149,7 +2161,10 @@ def mobile_api_task_messages(request, task_id):
 
     task = get_object_or_404(Task, pk=task_id)
     is_tech = hasattr(user, 'technician_profile') and task.assigned_to == user.technician_profile
-    if not user.is_staff and not is_tech:
+    if user.is_staff:
+        if not user_has_staff_access(user, "task_management"):
+            return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+    elif not is_tech:
         return JsonResponse({'error': 'forbidden', 'message': 'Access denied.'}, status=403)
 
     qs = task.messages.select_related('sender').all()

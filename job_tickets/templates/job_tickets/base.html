@@ -232,12 +232,18 @@
                         <i class="fa-solid fa-table-columns"></i><span class="sidebar-link-label">Dashboard</span>
                     </a>
                 </li>
+                {% endif %}
+
+                {% if staff_access.task_management %}
                 <li>
                     <a class="sidebar-link {% if 'task' in request.resolver_match.url_name %}active{% endif %}"
                         href="{% url 'task_dashboard' %}" data-tooltip="Tasks">
                         <i class="fa-solid fa-list-check"></i><span class="sidebar-link-label">Tasks</span>
                     </a>
                 </li>
+                {% endif %}
+
+                {% if staff_access.staff_dashboard %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'client_dashboard' %}active{% endif %}"
                         href="{% url 'client_dashboard' %}" data-tooltip="Clients">

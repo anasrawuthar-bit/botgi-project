@@ -2461,7 +2461,7 @@ def staff_job_filtered_archive_view(request, status_code):
 @login_required
 def task_dashboard(request):
     """Priority-ordered dashboard of standalone tasks with search and filtering."""
-    denied = _staff_access_required(request, "staff_dashboard")
+    denied = _staff_access_required(request, "task_management")
     if denied:
         return denied
 
@@ -2534,7 +2534,7 @@ def task_dashboard(request):
 @require_POST
 def task_create(request):
     """Create a new standalone task."""
-    denied = _staff_access_required(request, "staff_dashboard")
+    denied = _staff_access_required(request, "task_management")
     if denied:
         return denied
 
@@ -2580,7 +2580,7 @@ def task_create(request):
 @login_required
 def task_detail(request, task_id):
     """View task detail with message thread, attachments, and status controls."""
-    denied = _staff_access_required(request, "staff_dashboard")
+    denied = _staff_access_required(request, "task_management")
     if denied:
         return denied
 
@@ -2616,7 +2616,11 @@ def task_message_send(request, task_id):
     task = get_object_or_404(qs, id=task_id)
 
     is_tech = hasattr(request.user, 'technician_profile') and task.assigned_to == request.user.technician_profile
-    if not request.user.is_staff and not is_tech:
+    if request.user.is_staff:
+        denied = _staff_access_required(request, "task_management")
+        if denied:
+            return denied
+    elif not is_tech:
         return HttpResponseForbidden("Access denied.")
 
     form = TaskMessageForm(request.POST)
@@ -2661,7 +2665,11 @@ def task_update_status(request, task_id):
     task = get_object_or_404(qs, id=task_id)
 
     is_tech = hasattr(request.user, 'technician_profile') and task.assigned_to == request.user.technician_profile
-    if not request.user.is_staff and not is_tech:
+    if request.user.is_staff:
+        denied = _staff_access_required(request, "task_management")
+        if denied:
+            return denied
+    elif not is_tech:
         return HttpResponseForbidden("Access denied.")
 
     old_status = task.status
@@ -2710,7 +2718,7 @@ def task_update_status(request, task_id):
 @require_POST
 def task_delete(request, task_id):
     """Delete a task (staff only)."""
-    denied = _staff_access_required(request, "staff_dashboard")
+    denied = _staff_access_required(request, "task_management")
     if denied:
         return denied
 
