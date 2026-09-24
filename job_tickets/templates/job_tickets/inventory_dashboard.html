@@ -15,23 +15,27 @@
         <div class="col-lg-9 col-xl-9 inventory-shell-main-col">
             <div class="inventory-hero card-box mb-4">
                 <div class="inventory-hero-copy">
-                    <p class="inventory-eyebrow mb-2">Inventory Control Center</p>
-                    <h1 class="inventory-hero-title mb-2"><i class="fas fa-warehouse me-2"></i>Inventory Dashboard</h1>
-                    <p class="inventory-hero-subtitle mb-3">Monitor stock movement, value, and risk products from one place.</p>
-                    <div class="inventory-hero-chips d-flex flex-wrap gap-2">
-                        <span class="inventory-chip"><i class="fas fa-users me-1"></i>{{ party_count }} Parties</span>
-                        <span class="inventory-chip"><i class="fas fa-boxes-stacked me-1"></i>{{ product_count }} Products</span>
-                        <span class="inventory-chip"><i class="fas fa-shield-halved me-1"></i>{{ reserved_alert_count }} Reserved Alerts</span>
+                    <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                        <span class="inventory-eyebrow">INVENTORY CONTROL CENTER</span>
+                        <div class="inventory-hero-chips d-inline-flex gap-2">
+                            <span class="inventory-chip"><i class="fas fa-users me-1 text-primary"></i>{{ party_count }} Parties</span>
+                            <span class="inventory-chip"><i class="fas fa-boxes-stacked me-1 text-info"></i>{{ product_count }} Products</span>
+                            {% if reserved_alert_count > 0 %}
+                            <span class="inventory-chip text-warning border-warning-subtle"><i class="fas fa-triangle-exclamation me-1"></i>{{ reserved_alert_count }} Alerts</span>
+                            {% endif %}
+                        </div>
                     </div>
+                    <h1 class="inventory-hero-title mb-1"><i class="fas fa-warehouse me-2 text-primary"></i>Inventory Dashboard</h1>
+                    <p class="inventory-hero-subtitle mb-0">Monitor stock movement, value, and risk products from one place.</p>
                 </div>
                 <div class="inventory-hero-actions d-flex flex-wrap gap-2">
                     <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-primary btn-sm">
-                        <i class="fas fa-cart-arrow-down me-1"></i>New Purchase
+                        <i class="fas fa-plus me-1"></i>New Purchase
                     </a>
-                    <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-secondary btn-sm">
+                    <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-emerald btn-sm">
                         <i class="fas fa-cart-shopping me-1"></i>New Sale
                     </a>
-                    <a href="{% url 'inventory_product_dashboard' %}" class="btn btn-outline-primary btn-sm">
+                    <a href="{% url 'inventory_product_dashboard' %}" class="btn btn-outline-secondary btn-sm">
                         <i class="fas fa-boxes-stacked me-1"></i>Products
                     </a>
                 </div>
@@ -40,26 +44,42 @@
             <div class="row g-3 mb-4">
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">Inventory Value</p>
-                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ inventory_value|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Inventory Value</span>
+                            <span class="inventory-kpi-icon bg-indigo-light text-primary"><i class="fa-solid fa-coins"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ inventory_value|floatformat:2 }}</h3>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-warehouse me-1"></i>Current Stock Valuation</span>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">Purchase (Month)</p>
-                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ monthly_purchase_total|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Purchase (Month)</span>
+                            <span class="inventory-kpi-icon bg-sky-light text-info"><i class="fa-solid fa-cart-arrow-down"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ monthly_purchase_total|floatformat:2 }}</h3>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-calendar me-1"></i>Purchased This Month</span>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">Sales (Month)</p>
-                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ monthly_sales_total|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Sales (Month)</span>
+                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-chart-line"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ monthly_sales_total|floatformat:2 }}</h3>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-receipt me-1"></i>Billed This Month</span>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">Net Stock Qty</p>
-                        <h4 class="inventory-kpi-value mb-0">{{ monthly_net_stock_qty }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Net Stock Qty</span>
+                            <span class="inventory-kpi-icon bg-purple-light text-purple"><i class="fa-solid fa-boxes-stacked"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">{{ monthly_net_stock_qty }}</h3>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-box-archive me-1"></i>In-Stock Units</span>
                     </div>
                 </div>
             </div>
@@ -67,29 +87,41 @@
             <div class="row g-3 mb-4">
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">To Pay</p>
-                        <h4 class="inventory-kpi-value text-warning mb-0">&#8377;{{ credit_summary.payable_total|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">To Pay</span>
+                            <span class="inventory-kpi-icon bg-amber-light text-warning"><i class="fa-solid fa-arrow-trend-up"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value text-warning mb-1">&#8377;{{ credit_summary.payable_total|floatformat:2 }}</h3>
                         <div class="small text-muted">{{ credit_summary.payable_count }} purchase bill(s)</div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">To Collect</p>
-                        <h4 class="inventory-kpi-value text-success mb-0">&#8377;{{ credit_summary.receivable_total|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">To Collect</span>
+                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-arrow-trend-down"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value text-success mb-1">&#8377;{{ credit_summary.receivable_total|floatformat:2 }}</h3>
                         <div class="small text-muted">{{ credit_summary.receivable_count }} sales bill(s)</div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">Paid This Month</p>
-                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ credit_summary.month_paid_total|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Paid This Month</span>
+                            <span class="inventory-kpi-icon bg-slate-light text-secondary"><i class="fa-solid fa-money-bill-transfer"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ credit_summary.month_paid_total|floatformat:2 }}</h3>
                         <div class="small text-muted">Supplier payments</div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
-                        <p class="inventory-kpi-label mb-1">Received This Month</p>
-                        <h4 class="inventory-kpi-value mb-0">&#8377;{{ credit_summary.month_received_total|floatformat:2 }}</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Received This Month</span>
+                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-hand-holding-dollar"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ credit_summary.month_received_total|floatformat:2 }}</h3>
                         <div class="small text-muted">Customer payments</div>
                     </div>
                 </div>
@@ -98,30 +130,33 @@
             <div class="row g-4 mb-4">
                 <div class="col-xl-6">
                     <div class="card-box h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="mb-0"><i class="fas fa-arrow-up-wide-short me-2"></i>Payables</h5>
-                            <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-outline-secondary btn-sm">Purchase Register</a>
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="inventory-section-icon text-warning"><i class="fas fa-arrow-up-wide-short"></i></span>
+                                <h5 class="mb-0">Payables</h5>
+                            </div>
+                            <a href="{% url 'inventory_purchase_dashboard' %}" class="btn btn-outline-secondary btn-sm">Purchase Register <i class="fa-solid fa-arrow-right ms-1"></i></a>
                         </div>
                         <div class="table-responsive inventory-scroll-region inventory-scroll-region--compact">
-                            <table class="table table-sm table-striped mb-0">
+                            <table class="table table-hover align-middle mb-0 inventory-table">
                                 <thead>
                                     <tr>
                                         <th>Invoice</th>
                                         <th>Party</th>
-                                        <th>Balance</th>
-                                        <th>Action</th>
+                                        <th class="text-end">Balance</th>
+                                        <th class="text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for row in credit_summary.payable_rows %}
                                     <tr>
-                                        <td>{{ row.invoice_number }}</td>
-                                        <td>{{ row.party.name }}</td>
-                                        <td><strong class="text-warning">&#8377;{{ row.balance_amount|floatformat:2 }}</strong></td>
-                                        <td>
+                                        <td><span class="font-monospace fw-semibold">{{ row.invoice_number }}</span></td>
+                                        <td><span class="fw-medium text-dark">{{ row.party.name }}</span></td>
+                                        <td class="text-end"><span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">&#8377;{{ row.balance_amount|floatformat:2 }}</span></td>
+                                        <td class="text-center">
                                             <button
                                                 type="button"
-                                                class="btn btn-outline-primary btn-sm inventory-credit-payment-btn"
+                                                class="btn btn-outline-warning btn-sm inventory-credit-payment-btn"
                                                 data-bs-toggle="modal"
                                                 data-bs-target="#inventoryCreditPaymentModal"
                                                 data-bill-id="{{ row.bill_id }}"
@@ -135,7 +170,7 @@
                                         </td>
                                     </tr>
                                     {% empty %}
-                                    <tr><td colspan="4" class="text-center text-muted">No supplier payables.</td></tr>
+                                    <tr><td colspan="4" class="text-center text-muted py-4"><i class="fa-solid fa-check-circle me-1 text-success"></i> No supplier payables.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -144,27 +179,30 @@
                 </div>
                 <div class="col-xl-6">
                     <div class="card-box h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="mb-0"><i class="fas fa-arrow-down-wide-short me-2"></i>Receivables</h5>
-                            <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-outline-secondary btn-sm">Sales Register</a>
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="inventory-section-icon text-success"><i class="fas fa-arrow-down-wide-short"></i></span>
+                                <h5 class="mb-0">Receivables</h5>
+                            </div>
+                            <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-outline-secondary btn-sm">Sales Register <i class="fa-solid fa-arrow-right ms-1"></i></a>
                         </div>
                         <div class="table-responsive inventory-scroll-region inventory-scroll-region--compact">
-                            <table class="table table-sm table-striped mb-0">
+                            <table class="table table-hover align-middle mb-0 inventory-table">
                                 <thead>
                                     <tr>
                                         <th>Invoice</th>
                                         <th>Party</th>
-                                        <th>Balance</th>
-                                        <th>Action</th>
+                                        <th class="text-end">Balance</th>
+                                        <th class="text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for row in credit_summary.receivable_rows %}
                                     <tr>
-                                        <td>{{ row.invoice_number }}</td>
-                                        <td>{{ row.party.name }}</td>
-                                        <td><strong class="text-success">&#8377;{{ row.balance_amount|floatformat:2 }}</strong></td>
-                                        <td>
+                                        <td><span class="font-monospace fw-semibold">{{ row.invoice_number }}</span></td>
+                                        <td><span class="fw-medium text-dark">{{ row.party.name }}</span></td>
+                                        <td class="text-end"><span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">&#8377;{{ row.balance_amount|floatformat:2 }}</span></td>
+                                        <td class="text-center">
                                             <button
                                                 type="button"
                                                 class="btn btn-outline-success btn-sm inventory-credit-payment-btn"
@@ -181,7 +219,7 @@
                                         </td>
                                     </tr>
                                     {% empty %}
-                                    <tr><td colspan="4" class="text-center text-muted">No customer receivables.</td></tr>
+                                    <tr><td colspan="4" class="text-center text-muted py-4"><i class="fa-solid fa-check-circle me-1 text-success"></i> No customer receivables.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -191,39 +229,42 @@
             </div>
 
             <div class="card-box inventory-movement mb-4">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                    <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Monthly Movement Snapshot</h5>
-                    <span class="badge bg-light text-dark border">{% now "F Y" %}</span>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="inventory-section-icon text-primary"><i class="fas fa-chart-line"></i></span>
+                        <h5 class="mb-0">Monthly Movement Snapshot</h5>
+                    </div>
+                    <span class="badge bg-slate-light text-dark border">{% now "F Y" %}</span>
                 </div>
                 <div class="row g-3">
                     <div class="col-md-6 col-xl-3">
                         <div class="inventory-movement-item h-100">
                             <p class="inventory-movement-label mb-1">Stock In</p>
-                            <h6 class="mb-1">{{ monthly_stock_in_qty }} units</h6>
-                            <p class="mb-0 text-success">&#8377;{{ monthly_stock_in_amount|floatformat:2 }}</p>
+                            <h5 class="mb-1 fw-bold">{{ monthly_stock_in_qty }} units</h5>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">&#8377;{{ monthly_stock_in_amount|floatformat:2 }}</span>
                         </div>
                     </div>
                     <div class="col-md-6 col-xl-3">
                         <div class="inventory-movement-item h-100">
                             <p class="inventory-movement-label mb-1">Stock Out</p>
-                            <h6 class="mb-1">{{ monthly_stock_out_qty }} units</h6>
-                            <p class="mb-0 text-danger">&#8377;{{ monthly_stock_out_amount|floatformat:2 }}</p>
+                            <h5 class="mb-1 fw-bold">{{ monthly_stock_out_qty }} units</h5>
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">&#8377;{{ monthly_stock_out_amount|floatformat:2 }}</span>
                         </div>
                     </div>
                     <div class="col-md-6 col-xl-3">
                         <div class="inventory-movement-item h-100">
                             <p class="inventory-movement-label mb-1">Sales Return</p>
-                            <h6 class="mb-1">{{ monthly_sales_return_qty }} units</h6>
-                            <p class="mb-0 text-muted">&#8377;{{ monthly_sales_return_total|floatformat:2 }}</p>
+                            <h5 class="mb-1 fw-bold">{{ monthly_sales_return_qty }} units</h5>
+                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">&#8377;{{ monthly_sales_return_total|floatformat:2 }}</span>
                         </div>
                     </div>
                     <div class="col-md-6 col-xl-3">
                         <div class="inventory-movement-item h-100">
                             <p class="inventory-movement-label mb-1">Net Movement Value</p>
-                            <h6 class="mb-1 {% if monthly_net_amount >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            <h5 class="mb-1 fw-bold {% if monthly_net_amount >= 0 %}text-success{% else %}text-danger{% endif %}">
                                 &#8377;{{ monthly_net_amount|floatformat:2 }}
-                            </h6>
-                            <p class="mb-0 text-muted">Purchase + Returns vs Sales + Purchase Returns</p>
+                            </h5>
+                            <p class="mb-0 small text-muted">Purchase + Returns vs Sales</p>
                         </div>
                     </div>
                 </div>

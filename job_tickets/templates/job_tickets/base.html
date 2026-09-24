@@ -768,6 +768,14 @@
                     }
                     e.preventDefault();
                     if (isDesktopView()) {
+                        var inventoryShell = document.querySelector('[data-inventory-shell]');
+                        if (inventoryShell && document.body.classList.contains('inventory-workspace')) {
+                            var invToggle = inventoryShell.querySelector('[data-inventory-sidebar-toggle]');
+                            if (invToggle) {
+                                invToggle.click();
+                                return;
+                            }
+                        }
                         toggleDesktopSidebar();
                     } else {
                         if (document.body.classList.contains('sidebar-open')) {
@@ -779,19 +787,27 @@
                 }
             });
 
-            // Instant zero-latency floating tooltip for collapsed mode
+            // Instant zero-latency floating tooltip for collapsed mode (app and inventory)
             var sidebarTooltip = document.createElement('div');
             sidebarTooltip.className = 'sidebar-floating-tooltip';
             sidebarTooltip.setAttribute('role', 'tooltip');
             document.body.appendChild(sidebarTooltip);
 
             document.addEventListener('mouseover', function (e) {
-                if (!document.body.classList.contains('sidebar-collapsed') || !isDesktopView()) {
+                if (!isDesktopView()) {
                     sidebarTooltip.classList.remove('visible');
                     return;
                 }
                 var target = e.target.closest('[data-tooltip]');
-                if (target && sidebar.contains(target)) {
+                if (!target) {
+                    sidebarTooltip.classList.remove('visible');
+                    return;
+                }
+                var inAppSidebar = sidebar && sidebar.contains(target) && document.body.classList.contains('sidebar-collapsed');
+                var inventoryShell = target.closest('[data-inventory-shell]');
+                var inInventorySidebar = inventoryShell && inventoryShell.classList.contains('inventory-shell-collapsed');
+
+                if (inAppSidebar || inInventorySidebar) {
                     var text = target.getAttribute('data-tooltip');
                     if (!text) {
                         sidebarTooltip.classList.remove('visible');
