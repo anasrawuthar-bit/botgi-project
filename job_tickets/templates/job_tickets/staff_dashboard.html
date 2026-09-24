@@ -57,22 +57,6 @@
         width: 22px;
     }
 
-    /* KPI Cards */
-    .kpi-card {
-        cursor: pointer;
-        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-        background: #ffffff;
-        border: 1px solid var(--border-color) !important;
-    }
-    .kpi-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 20px -5px rgba(15, 23, 42, 0.08) !important;
-        border-color: #cbd5e1 !important;
-    }
-    .kpi-card:focus-visible {
-        outline: 2px solid var(--primary);
-        outline-offset: 2px;
-    }
 
     /* Modern Dashboard Tabs */
     .dashboard-nav-tabs {
@@ -278,80 +262,6 @@
     </div>
     {% endif %}
 
-    <!-- 3. Executive KPI Stat Grid -->
-    <div class="row g-3 mb-4">
-        <!-- 1. Pending Intake -->
-        <div class="col-6 col-lg-3">
-            <div class="card border-0 shadow-sm rounded-3 h-100 kpi-card" onclick="switchDashboardTab('pending-tab')" role="button" tabindex="0" title="View Pending Intake">
-                <div class="card-body p-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <span class="small fw-semibold text-muted text-uppercase" style="letter-spacing: 0.04em; font-size: 0.72rem;">Pending Intake</span>
-                        <div class="stat-icon-wrap" style="width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #fef3c7; color: #d97706;">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </div>
-                    </div>
-                    <div class="h2 fw-bold text-dark mb-1" style="font-family: 'Plus Jakarta Sans', sans-serif;">{{ pending_count }}</div>
-                    <div class="small text-muted d-flex align-items-center gap-1" style="font-size: 0.78rem;">
-                        <span class="text-warning fw-bold">&bull;</span> Awaiting technician
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 2. Active Repairs -->
-        <div class="col-6 col-lg-3">
-            <div class="card border-0 shadow-sm rounded-3 h-100 kpi-card" onclick="switchDashboardTab('in-progress-tab')" role="button" tabindex="0" title="View In Progress Jobs">
-                <div class="card-body p-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <span class="small fw-semibold text-muted text-uppercase" style="letter-spacing: 0.04em; font-size: 0.72rem;">Active Bench</span>
-                        <div class="stat-icon-wrap" style="width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #e0e7ff; color: #4f46e5;">
-                            <i class="fa-solid fa-screwdriver-wrench"></i>
-                        </div>
-                    </div>
-                    <div class="h2 fw-bold text-dark mb-1" style="font-family: 'Plus Jakarta Sans', sans-serif;">{{ in_progress_jobs_count }}</div>
-                    <div class="small text-muted d-flex align-items-center gap-1" style="font-size: 0.78rem;">
-                        <span class="text-primary fw-bold">&bull;</span> Bench repairs
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 3. Ready for Pickup -->
-        <div class="col-6 col-lg-3">
-            <div class="card border-0 shadow-sm rounded-3 h-100 kpi-card" onclick="switchDashboardTab('ready-tab')" role="button" tabindex="0" title="View Ready for Pickup">
-                <div class="card-body p-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <span class="small fw-semibold text-muted text-uppercase" style="letter-spacing: 0.04em; font-size: 0.72rem;">Ready / Pickup</span>
-                        <div class="stat-icon-wrap" style="width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #dcfce7; color: #16a34a;">
-                            <i class="fa-solid fa-circle-check"></i>
-                        </div>
-                    </div>
-                    <div class="h2 fw-bold text-dark mb-1" style="font-family: 'Plus Jakarta Sans', sans-serif;">{{ ready_count }}</div>
-                    <div class="small text-muted d-flex align-items-center gap-1" style="font-size: 0.78rem;">
-                        <span class="text-success fw-bold">&bull;</span> Ready for billing
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 4. Specialized & Alerts -->
-        <div class="col-6 col-lg-3">
-            <div class="card border-0 shadow-sm rounded-3 h-100 kpi-card" onclick="switchDashboardTab('specialized-tab')" role="button" tabindex="0" title="View Specialized Services">
-                <div class="card-body p-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <span class="small fw-semibold text-muted text-uppercase" style="letter-spacing: 0.04em; font-size: 0.72rem;">Specialized / Alerts</span>
-                        <div class="stat-icon-wrap" style="width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: #0284c7;">
-                            <i class="fa-solid fa-share-nodes"></i>
-                        </div>
-                    </div>
-                    <div class="h2 fw-bold text-dark mb-1" style="font-family: 'Plus Jakarta Sans', sans-serif;">{{ awaiting_assignment_jobs|length }}</div>
-                    <div class="small text-muted d-flex align-items-center gap-1" style="font-size: 0.78rem;">
-                        <span class="text-info fw-bold">&bull;</span> {{ reminder_alert_count|default:"0" }} reminder{{ reminder_alert_count|pluralize }} active
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- 4. Unified Operations Console Card with Tabs -->
     <div class="card border-0 shadow-sm rounded-3 mb-4" style="border: 1px solid var(--border-color) !important; overflow: hidden;">
@@ -410,10 +320,9 @@
                             <h5 class="fw-bold text-dark mb-0">Pending Intake Queue</h5>
                             <small class="text-muted">Devices received at reception awaiting technician bench assignment.</small>
                         </div>
-                        <button type="button" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1.5"
-                            data-bs-toggle="modal" data-bs-target="#createJobTicketModal">
-                            <i class="fa-solid fa-plus"></i> New Ticket
-                        </button>
+                        <span class="badge bg-warning-subtle text-dark border border-warning-subtle fw-semibold px-2.5 py-1">
+                            {{ pending_count }} pending intake
+                        </span>
                     </div>
                     {% if pending_jobs %}
                     <div class="table-responsive">
