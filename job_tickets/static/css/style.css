@@ -788,7 +788,7 @@ h6,
     flex-direction: column;
     transform: translateX(0);
     overflow-x: hidden;
-    transition: width 0.34s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s ease, box-shadow 0.3s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
     box-shadow: 2px 0 15px rgba(15, 23, 42, 0.03);
 }
 
@@ -963,7 +963,6 @@ h6,
     max-width: var(--sidebar-label-max-width);
     opacity: 1;
     transform: translateX(0);
-    transition: max-width 0.28s ease, opacity 0.18s ease, transform 0.28s ease;
 }
 
 .sidebar-link:hover {
@@ -1316,44 +1315,74 @@ h6,
 @media (min-width: 768px) {
     .app-layout.has-sidebar {
         margin-left: var(--sidebar-expanded-width);
-        /* offset by sidebar width */
-        transition: margin-left 0.34s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
+    html.sidebar-collapsed body .app-layout.has-sidebar,
     body.sidebar-collapsed .app-layout.has-sidebar {
         margin-left: var(--sidebar-collapsed-width);
     }
 
+    html.sidebar-collapsed body .app-sidebar,
     body.sidebar-collapsed .app-sidebar {
         width: var(--sidebar-collapsed-width);
     }
 
+    /* Transitions ONLY active during explicit user interaction (toggle button / shortcut) */
+    body.sidebar-transitioning .app-sidebar {
+        transition: width 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s ease, box-shadow 0.3s ease !important;
+    }
+
+    body.sidebar-transitioning .app-layout.has-sidebar {
+        transition: margin-left 0.24s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+
+    body.sidebar-transitioning .sidebar-brand-copy,
+    body.sidebar-transitioning .sidebar-user-name,
+    body.sidebar-transitioning .sidebar-link-label,
+    body.sidebar-transitioning .sidebar-logout-label,
+    body.sidebar-transitioning .sidebar-rail-toggle-label {
+        transition: max-width 0.22s ease, opacity 0.15s ease, transform 0.22s ease !important;
+    }
+
+    html.sidebar-collapsed body .sidebar-brand,
     body.sidebar-collapsed .sidebar-brand {
         padding: 0.85rem 0.5rem;
         justify-content: center;
     }
 
+    html.sidebar-collapsed body .sidebar-brand-head,
     body.sidebar-collapsed .sidebar-brand-head {
         justify-content: center;
         gap: 0;
     }
 
+    html.sidebar-collapsed body .sidebar-brand-link,
     body.sidebar-collapsed .sidebar-brand-link {
         justify-content: center;
         gap: 0;
         width: 100%;
     }
 
+    html.sidebar-collapsed body .sidebar-brand-logo,
     body.sidebar-collapsed .sidebar-brand-logo {
         height: 34px;
         width: 34px;
         margin: 0 auto;
     }
 
+    html.sidebar-collapsed body .sidebar-desktop-toggle,
     body.sidebar-collapsed .sidebar-desktop-toggle {
         display: none !important;
     }
 
+    html.sidebar-collapsed body .sidebar-brand-copy,
+    html.sidebar-collapsed body .sidebar-user-name,
+    html.sidebar-collapsed body .sidebar-scale-btn,
+    html.sidebar-collapsed body .sidebar-chevron,
+    html.sidebar-collapsed body .sidebar-link-label,
+    html.sidebar-collapsed body .sidebar-logout-label,
+    html.sidebar-collapsed body .sidebar-rail-toggle-label,
+    html.sidebar-collapsed body .sidebar-kbd,
     body.sidebar-collapsed .sidebar-brand-copy,
     body.sidebar-collapsed .sidebar-user-name,
     body.sidebar-collapsed .sidebar-scale-btn,
@@ -1363,22 +1392,25 @@ h6,
     body.sidebar-collapsed .sidebar-rail-toggle-label,
     body.sidebar-collapsed .sidebar-kbd {
         max-width: 0 !important;
-        opacity: 0;
-        transform: translateX(-8px);
+        opacity: 0 !important;
+        transform: translateX(-8px) !important;
         margin: 0 !important;
         padding: 0 !important;
         display: none !important;
     }
 
+    html.sidebar-collapsed body .sidebar-nav,
     body.sidebar-collapsed .sidebar-nav {
         padding: 0.85rem 0.5rem;
     }
 
+    html.sidebar-collapsed body .sidebar-menu,
     body.sidebar-collapsed .sidebar-menu {
         gap: 0.35rem;
         align-items: center;
     }
 
+    html.sidebar-collapsed body .sidebar-link,
     body.sidebar-collapsed .sidebar-link {
         width: 44px;
         height: 44px;
@@ -1390,26 +1422,31 @@ h6,
         border-left: 1px solid transparent;
     }
 
+    html.sidebar-collapsed body .sidebar-link i,
     body.sidebar-collapsed .sidebar-link i {
         width: auto;
         margin: 0;
         font-size: 1.15rem;
     }
 
+    html.sidebar-collapsed body .sidebar-link.active,
     body.sidebar-collapsed .sidebar-link.active {
         background: var(--primary-light);
         color: var(--primary);
         border: 1px solid #c7d2fe;
     }
 
+    html.sidebar-collapsed body .sidebar-submenu,
     body.sidebar-collapsed .sidebar-submenu {
         display: none !important;
     }
 
+    html.sidebar-collapsed body .sidebar-footer,
     body.sidebar-collapsed .sidebar-footer {
         padding: 0.85rem 0.5rem;
     }
 
+    html.sidebar-collapsed body .sidebar-user-badge,
     body.sidebar-collapsed .sidebar-user-badge {
         justify-content: center;
         gap: 0;
@@ -1419,11 +1456,14 @@ h6,
         border: none;
     }
 
+    html.sidebar-collapsed body .sidebar-footer-actions,
     body.sidebar-collapsed .sidebar-footer-actions {
         align-items: center;
         gap: 0.35rem;
     }
 
+    html.sidebar-collapsed body .sidebar-logout-btn,
+    html.sidebar-collapsed body .sidebar-rail-toggle-btn,
     body.sidebar-collapsed .sidebar-logout-btn,
     body.sidebar-collapsed .sidebar-rail-toggle-btn {
         width: 44px;
@@ -1435,6 +1475,8 @@ h6,
         border-radius: 8px;
     }
 
+    html.sidebar-collapsed body .sidebar-logout-btn i,
+    html.sidebar-collapsed body .sidebar-rail-toggle-btn i,
     body.sidebar-collapsed .sidebar-logout-btn i,
     body.sidebar-collapsed .sidebar-rail-toggle-btn i {
         width: auto;
@@ -1521,6 +1563,7 @@ body.inventory-workspace .section-container {
     margin: 0.4rem 0.5rem;
 }
 
+html.sidebar-collapsed body .sidebar-menu-divider,
 body.sidebar-collapsed .sidebar-menu-divider {
     width: 28px;
     margin: 0.35rem auto;

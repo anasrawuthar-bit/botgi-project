@@ -84,12 +84,40 @@
             display: none !important;
         }
     </style>
+    <script>
+        (function () {
+            try {
+                if (window.matchMedia('(min-width: 768px)').matches) {
+                    var isCollapsed = document.cookie.indexOf('botgi_sidebar_collapsed=1') !== -1 ||
+                                      localStorage.getItem('appSidebarCollapsed') === 'true' ||
+                                      localStorage.getItem('botgi_sidebar_collapsed') === 'true';
+                    if (isCollapsed) {
+                        document.documentElement.classList.add('sidebar-collapsed');
+                    }
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
 
-<body{% if user.is_authenticated %}{% if request.resolver_match.url_name|slice:":10" == "inventory_" or request.resolver_match.url_name == "product_dashboard" %} class="inventory-workspace"{% endif %}{% endif %}
+<body{% if user.is_authenticated %} class="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}sidebar-collapsed{% endif %}{% if request.resolver_match.url_name|slice:":10" == "inventory_" or request.resolver_match.url_name == "product_dashboard" %} inventory-workspace{% endif %}"{% endif %}
     data-botgi-web-version="{{ release_info.web_version }}"
     data-botgi-release-meta-url="{% url 'app_release_meta' %}"
     data-botgi-release-poll-ms="{{ release_info.poll_interval_ms }}">
+    <script>
+        (function () {
+            try {
+                if (window.matchMedia('(min-width: 768px)').matches) {
+                    if (document.documentElement.classList.contains('sidebar-collapsed') ||
+                        localStorage.getItem('appSidebarCollapsed') === 'true' ||
+                        localStorage.getItem('botgi_sidebar_collapsed') === 'true' ||
+                        document.cookie.indexOf('botgi_sidebar_collapsed=1') !== -1) {
+                        document.body.classList.add('sidebar-collapsed');
+                    }
+                }
+            } catch (e) {}
+        })();
+    </script>
     {% if user.is_authenticated %}
     {# ── Mobile top strip with hamburger ────────────────────── #}
     <div class="sidebar-topbar">
@@ -132,11 +160,11 @@
                     class="sidebar-desktop-toggle"
                     id="sidebarDesktopToggleBtn"
                     type="button"
-                    aria-label="Collapse sidebar (Ctrl+B)"
-                    aria-expanded="true"
-                    data-tooltip="Collapse sidebar (Ctrl+B)"
+                    aria-label="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
+                    aria-expanded="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}false{% else %}true{% endif %}"
+                    data-tooltip="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
                 >
-                    <i class="fa-solid fa-chevron-left"></i>
+                    <i class="fa-solid {% if request.COOKIES.botgi_sidebar_collapsed == '1' %}fa-chevron-right{% else %}fa-chevron-left{% endif %}"></i>
                 </button>
             </div>
         </div>
@@ -301,9 +329,12 @@
                 <a class="sidebar-logout-btn" href="{% url 'logout' %}" data-tooltip="Logout">
                     <i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-logout-label">Logout</span>
                 </a>
-                <button class="sidebar-rail-toggle-btn" id="sidebarRailToggleBtn" type="button" aria-label="Collapse sidebar (Ctrl+B)" data-tooltip="Collapse sidebar (Ctrl+B)">
-                    <i class="fa-solid fa-angles-left"></i>
-                    <span class="sidebar-rail-toggle-label">Collapse</span>
+                <button class="sidebar-rail-toggle-btn" id="sidebarRailToggleBtn" type="button"
+                    aria-label="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
+                    data-tooltip="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
+                    aria-expanded="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}false{% else %}true{% endif %}">
+                    <i class="fa-solid {% if request.COOKIES.botgi_sidebar_collapsed == '1' %}fa-angles-right{% else %}fa-angles-left{% endif %}"></i>
+                    <span class="sidebar-rail-toggle-label">{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand{% else %}Collapse{% endif %}</span>
                     <kbd class="sidebar-kbd">Ctrl+B</kbd>
                 </button>
             </div>
@@ -720,6 +751,7 @@
 
             function syncDesktopSidebarState(collapsed) {
                 document.body.classList.toggle('sidebar-collapsed', collapsed);
+                document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
                 var label = collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)';
 
                 if (desktopToggleBtn) {
@@ -753,11 +785,15 @@
 
             function readStoredDesktopState() {
                 try {
-                    var storedValue = window.localStorage.getItem(desktopSidebarStorageKey);
-                    if (storedValue === null) {
-                        return false;
+                    var cookieMatch = document.cookie.match(/(?:^|;\s*)botgi_sidebar_collapsed=([^;]*)/);
+                    if (cookieMatch) {
+                        return cookieMatch[1] === '1';
                     }
-                    return storedValue === 'true';
+                    var storedValue = window.localStorage.getItem(desktopSidebarStorageKey) || window.localStorage.getItem('botgi_sidebar_collapsed');
+                    if (storedValue !== null) {
+                        return storedValue === 'true';
+                    }
+                    return false;
                 } catch (error) {
                     return false;
                 }
@@ -766,16 +802,24 @@
             function persistDesktopSidebarState(collapsed) {
                 try {
                     window.localStorage.setItem(desktopSidebarStorageKey, String(collapsed));
+                    window.localStorage.setItem('botgi_sidebar_collapsed', String(collapsed));
+                    document.cookie = "botgi_sidebar_collapsed=" + (collapsed ? "1" : "0") + "; path=/; max-age=31536000; SameSite=Lax";
                 } catch (error) {
                     return;
                 }
             }
 
+            var sidebarTransitionTimer = null;
             function toggleDesktopSidebar() {
                 if (!isDesktopView()) return;
+                document.body.classList.add('sidebar-transitioning');
                 var nextCollapsed = !document.body.classList.contains('sidebar-collapsed');
                 syncDesktopSidebarState(nextCollapsed);
                 persistDesktopSidebarState(nextCollapsed);
+                window.clearTimeout(sidebarTransitionTimer);
+                sidebarTransitionTimer = window.setTimeout(function () {
+                    document.body.classList.remove('sidebar-transitioning');
+                }, 260);
             }
 
             function openSidebar() {
