@@ -86,11 +86,11 @@
     </style>
 </head>
 
-<body{% if user.is_authenticated %}{% if request.resolver_match.url_name|slice:":10" == "inventory_" %} class="inventory-workspace"{% endif %}{% endif %}
+<body{% if user.is_authenticated %}{% if request.resolver_match.url_name|slice:":10" == "inventory_" or request.resolver_match.url_name == "product_dashboard" %} class="inventory-workspace"{% endif %}{% endif %}
     data-botgi-web-version="{{ release_info.web_version }}"
     data-botgi-release-meta-url="{% url 'app_release_meta' %}"
     data-botgi-release-poll-ms="{{ release_info.poll_interval_ms }}">
-    {% if user.is_authenticated and request.resolver_match.url_name|slice:":10" != "inventory_" %}
+    {% if user.is_authenticated %}
     {# ── Mobile top strip with hamburger ────────────────────── #}
     <div class="sidebar-topbar">
         <button class="sidebar-toggle-btn" id="sidebarToggleBtn" type="button" aria-label="Open menu">
@@ -121,7 +121,11 @@
                     {% endif %}
                     <span class="sidebar-brand-copy">
                         <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
+                        {% if request.resolver_match.url_name|slice:":10" == "inventory_" or request.resolver_match.url_name == "product_dashboard" %}
+                        <small>Inventory Control</small>
+                        {% else %}
                         <small>{{ company.tagline|default:"Service Billing" }}</small>
+                        {% endif %}
                     </span>
                 </a>
                 <button
@@ -139,7 +143,60 @@
 
         <nav class="sidebar-nav">
             <ul class="sidebar-menu">
-                {% if user.is_staff %}
+                {% if request.resolver_match.url_name|slice:":10" == "inventory_" or request.resolver_match.url_name == "product_dashboard" %}
+                {# ── Dedicated Inventory Full-Height Sidebar ── #}
+                {% if user.is_staff and staff_access.staff_dashboard %}
+                <li>
+                    <a class="sidebar-link sidebar-return-link" href="{% url 'staff_dashboard' %}" data-tooltip="Back to Main Dashboard">
+                        <i class="fa-solid fa-arrow-left"></i><span class="sidebar-link-label">Main Dashboard</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-divider"></li>
+                {% endif %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_dashboard' %}active{% endif %}"
+                        href="{% url 'inventory_dashboard' %}" data-tooltip="Overview">
+                        <i class="fa-solid fa-chart-pie"></i><span class="sidebar-link-label">Overview</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_product_dashboard' or request.resolver_match.url_name == 'product_dashboard' or request.resolver_match.url_name == 'inventory_product_ledger' %}active{% endif %}"
+                        href="{% url 'inventory_product_dashboard' %}" data-tooltip="Products">
+                        <i class="fa-solid fa-boxes-stacked"></i><span class="sidebar-link-label">Products</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_party_dashboard' or request.resolver_match.url_name == 'inventory_party_ledger' %}active{% endif %}"
+                        href="{% url 'inventory_party_dashboard' %}" data-tooltip="Parties">
+                        <i class="fa-solid fa-users"></i><span class="sidebar-link-label">Parties</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-divider"></li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_purchase_dashboard' %}active{% endif %}"
+                        href="{% url 'inventory_purchase_dashboard' %}" data-tooltip="Purchase">
+                        <i class="fa-solid fa-cart-arrow-down"></i><span class="sidebar-link-label">Purchase</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_purchase_return_dashboard' %}active{% endif %}"
+                        href="{% url 'inventory_purchase_return_dashboard' %}" data-tooltip="Purchase Return">
+                        <i class="fa-solid fa-rotate-left"></i><span class="sidebar-link-label">Purchase Return</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_sales_dashboard' %}active{% endif %}"
+                        href="{% url 'inventory_sales_dashboard' %}" data-tooltip="Sales">
+                        <i class="fa-solid fa-cart-shopping"></i><span class="sidebar-link-label">Sales</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}"
+                        href="{% url 'inventory_sales_return_dashboard' %}" data-tooltip="Sales Return">
+                        <i class="fa-solid fa-rotate-right"></i><span class="sidebar-link-label">Sales Return</span>
+                    </a>
+                </li>
+                {% elif user.is_staff %}
                 {% if staff_access.staff_dashboard %}
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'staff_dashboard' %}active{% endif %}"
@@ -172,8 +229,6 @@
                     <a
                         class="sidebar-link {% if request.resolver_match.url_name == 'inventory_dashboard' or request.resolver_match.url_name == 'inventory_product_dashboard' or request.resolver_match.url_name == 'product_dashboard' or request.resolver_match.url_name == 'inventory_party_dashboard' or request.resolver_match.url_name == 'inventory_purchase_dashboard' or request.resolver_match.url_name == 'inventory_purchase_return_dashboard' or request.resolver_match.url_name == 'inventory_sales_dashboard' or request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}"
                         href="{% url 'inventory_dashboard' %}"
-                        target="_blank"
-                        rel="noopener"
                         data-tooltip="Inventory">
                         <i class="fa-solid fa-warehouse"></i><span class="sidebar-link-label">Inventory</span>
                     </a>
@@ -281,7 +336,7 @@
     </nav>
     {% endif %}
 
-    <div class="app-layout {% if user.is_authenticated and request.resolver_match.url_name|slice:":10" != "inventory_" %}has-sidebar{% endif %}">
+    <div class="app-layout {% if user.is_authenticated %}has-sidebar{% endif %}">
         <main class="app-main">
             <div class="app-workspace container-fluid my-3 pb-3">
                 <div class="mb-3 d-none" data-auto-page-title>
@@ -768,14 +823,6 @@
                     }
                     e.preventDefault();
                     if (isDesktopView()) {
-                        var inventoryShell = document.querySelector('[data-inventory-shell]');
-                        if (inventoryShell && document.body.classList.contains('inventory-workspace')) {
-                            var invToggle = inventoryShell.querySelector('[data-inventory-sidebar-toggle]');
-                            if (invToggle) {
-                                invToggle.click();
-                                return;
-                            }
-                        }
                         toggleDesktopSidebar();
                     } else {
                         if (document.body.classList.contains('sidebar-open')) {
@@ -873,128 +920,6 @@
         }());
     </script>
 
-    <script>
-        (function () {
-            var inventorySidebarStorageKey = 'inventoryModuleCollapsedV2';
-
-            function isInventoryDesktopView() {
-                return window.matchMedia('(min-width: 992px)').matches;
-            }
-
-            function getInventoryShells() {
-                return Array.prototype.slice.call(document.querySelectorAll('[data-inventory-shell]'));
-            }
-
-            function readInventorySidebarState() {
-                try {
-                    var storedValue = window.localStorage.getItem(inventorySidebarStorageKey);
-                    if (storedValue === null) {
-                        return true;
-                    }
-                    return storedValue === 'true';
-                } catch (error) {
-                    return true;
-                }
-            }
-
-            function persistInventorySidebarState(collapsed) {
-                try {
-                    window.localStorage.setItem(inventorySidebarStorageKey, String(collapsed));
-                } catch (error) {
-                    return;
-                }
-            }
-
-            function syncInventorySidebarState(collapsed) {
-                var shouldCollapse = isInventoryDesktopView() && collapsed;
-
-                getInventoryShells().forEach(function (shell) {
-                    decorateInventoryShell(shell, shouldCollapse);
-                });
-            }
-
-            function decorateInventoryShell(shell, shouldCollapse) {
-                if (!shell) {
-                    return;
-                }
-                shell.classList.toggle('inventory-shell-collapsed', shouldCollapse);
-
-                var toggleBtn = shell.querySelector('[data-inventory-sidebar-toggle]');
-                if (!toggleBtn) {
-                    return;
-                }
-
-                toggleBtn.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
-                toggleBtn.setAttribute('aria-label', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
-                toggleBtn.setAttribute('title', shouldCollapse ? 'Expand inventory module' : 'Collapse inventory module');
-
-                var icon = toggleBtn.querySelector('i');
-                if (icon) {
-                    icon.className = shouldCollapse ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
-                }
-            }
-
-            function decorateInventoryResponse(html) {
-                if (!html || !isInventoryDesktopView()) {
-                    return html;
-                }
-                var parser = new DOMParser();
-                var nextDocument = parser.parseFromString(html, 'text/html');
-                var shells = Array.prototype.slice.call(nextDocument.querySelectorAll('[data-inventory-shell]'));
-                if (!shells.length) {
-                    return html;
-                }
-                var shouldCollapse = readInventorySidebarState();
-                shells.forEach(function (shell) {
-                    decorateInventoryShell(shell, shouldCollapse);
-                });
-                return nextDocument.documentElement.outerHTML;
-            }
-
-            function refreshInventoryShells() {
-                syncInventorySidebarState(readInventorySidebarState());
-            }
-
-            refreshInventoryShells();
-
-            document.addEventListener('click', function (event) {
-                var toggleBtn = event.target.closest('[data-inventory-sidebar-toggle]');
-                if (!toggleBtn) {
-                    return;
-                }
-
-                var shell = toggleBtn.closest('[data-inventory-shell]');
-                if (!shell || !isInventoryDesktopView()) {
-                    return;
-                }
-
-                var nextCollapsed = !shell.classList.contains('inventory-shell-collapsed');
-                syncInventorySidebarState(nextCollapsed);
-                persistInventorySidebarState(nextCollapsed);
-            });
-
-            window.addEventListener('resize', refreshInventoryShells);
-            document.addEventListener('botgi:content-replaced', function () {
-                window.setTimeout(refreshInventoryShells, 0);
-            });
-            document.addEventListener('htmx:beforeSwap', function (event) {
-                var detail = event.detail || {};
-                var target = detail.target;
-                if (
-                    !target
-                    || !target.matches
-                    || !target.matches('.app-main > .app-workspace, .app-main > .container')
-                    || typeof detail.serverResponse !== 'string'
-                ) {
-                    return;
-                }
-                detail.serverResponse = decorateInventoryResponse(detail.serverResponse);
-            });
-            document.addEventListener('htmx:afterSwap', function () {
-                refreshInventoryShells();
-            });
-        }());
-    </script>
 
     <!-- UI Scale / Display Customizer Modal -->
     <div class="modal fade" id="uiScaleQuickModal" tabindex="-1" aria-labelledby="uiScaleQuickModalLabel" aria-hidden="true">
