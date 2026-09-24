@@ -267,7 +267,7 @@
             </strong>
         </div>
         <div class="small text-muted">
-            <i class="fas fa-info-circle me-1"></i>Financial totals include only jobs closed in this period. Unclaimed ready jobs are tracked as pending.
+            <i class="fas fa-info-circle me-1"></i>Financial totals include closed jobs and direct retail inventory sales for this period.
         </div>
     </div>
 
@@ -275,10 +275,10 @@
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="metric-card">
-                <p class="label">Closed Net Revenue</p>
+                <p class="label">Total Net Revenue</p>
                 <p class="value text-dark">&#8377;{{ overall_revenue|floatformat:2 }}</p>
                 <p class="note">
-                    Parts: &#8377;{{ total_closed_spare_revenue|floatformat:2 }} + Service: &#8377;{{ total_closed_service_revenue|floatformat:2 }}
+                    Parts &amp; Stock: &#8377;{{ total_closed_spare_revenue|floatformat:2 }} + Service: &#8377;{{ total_closed_service_revenue|floatformat:2 }}
                 </p>
             </div>
         </div>
@@ -598,7 +598,7 @@
                 </tbody>
                 <tfoot>
                     <tr class="fw-bold table-primary">
-                        <td colspan="2">Total Direct Closed Jobs ({{ jobs_closed_count }})</td>
+                        <td colspan="2">Total Direct Performance ({{ jobs_closed_count }} Closed Jobs{% if direct_stock_sales_count %} + {{ direct_stock_sales_count }} Retail Sales{% endif %})</td>
                         <td class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</td>
                         <td class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</td>
                         <td class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</td>
@@ -648,15 +648,25 @@
 
     <!-- 7. STOCK SALES INFORMATION -->
     <div class="card-box mb-4">
-        <div class="section-title-line">
-            <i class="fas fa-boxes-stacked text-primary"></i>
-            <h2>Stock Sales Information</h2>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div class="section-title-line mb-0">
+                <i class="fas fa-boxes-stacked text-primary"></i>
+                <h2>Stock Sales Information</h2>
+            </div>
+            <a href="{% url 'inventory_sales_dashboard' %}" class="btn btn-sm btn-outline-primary no-print">
+                <i class="fas fa-arrow-up-right-from-square me-1"></i>Inventory Sales Register
+            </a>
         </div>
+        <p class="text-muted small mb-3">
+            Inventory stock movement and product sales billed during this period (including direct retail sales and job-linked parts).
+        </p>
+
+        {% if stock_sales_units > 0 %}
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="metric-card">
                     <p class="label">Units Sold</p>
-                    <p class="value">{{ stock_sales_units }}</p>
+                    <p class="value text-primary">{{ stock_sales_units }}</p>
                 </div>
             </div>
             <div class="col-md-3">
@@ -701,12 +711,12 @@
                         <td><strong>{{ product.name }}</strong></td>
                         <td>{{ product.sku }}</td>
                         <td>{{ product.category }}</td>
-                        <td class="text-end">{{ product.units_sold }}</td>
+                        <td class="text-end fw-semibold">{{ product.units_sold }}</td>
                         <td class="text-end">{{ product.sale_lines }}</td>
                         <td class="text-end">&#8377;{{ product.average_unit_price|floatformat:2 }}</td>
                         <td class="text-end"><strong>&#8377;{{ product.revenue|floatformat:2 }}</strong></td>
                         <td class="text-end">&#8377;{{ product.cogs|floatformat:2 }}</td>
-                        <td class="text-end text-success">&#8377;{{ product.profit|floatformat:2 }}</td>
+                        <td class="text-end text-success fw-bold">&#8377;{{ product.profit|floatformat:2 }}</td>
                     </tr>
                     {% empty %}
                     <tr>
@@ -718,6 +728,12 @@
                 </tbody>
             </table>
         </div>
+        {% else %}
+        <div class="p-4 text-center text-muted bg-light rounded-3">
+            <i class="fas fa-box-open fa-2x mb-2 text-secondary"></i>
+            <p class="mb-0">No inventory stock products were sold during this report period.</p>
+        </div>
+        {% endif %}
     </div>
 
     <div class="text-center mt-4 no-print">

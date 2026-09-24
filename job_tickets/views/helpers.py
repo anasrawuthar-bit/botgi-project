@@ -703,8 +703,8 @@ def parse_product_sale_log(description):
         'name': match.group('name').strip(),
     }
 
-def summarize_stock_sales(finished_jobs_qs, service_logs=None):
-    """Build stock sale metrics from ProductSale ledger (with legacy fallback)."""
+def summarize_stock_sales(finished_jobs_qs, service_logs=None, direct_entries=None, direct_returns=None):
+    """Build stock sale metrics from ProductSale ledger (with legacy fallback) and direct inventory sales."""
     sales = list(
         ProductSale.objects.filter(job_ticket__in=finished_jobs_qs).select_related('product', 'service_log')
     )
@@ -752,6 +752,65 @@ def summarize_stock_sales(finished_jobs_qs, service_logs=None):
         row['revenue'] += revenue
         row['cogs'] += cogs
         row['profit'] += profit
+
+    if direct_entries:
+        for entry in direct_entries:
+            revenue = entry.total_amount or Decimal('0.00')
+            product_obj = entry.product
+            unit_cost = (product_obj.cost_price if product_obj else Decimal('0.00')) or Decimal('0.00')
+            quantity = entry.quantity or 0
+            cogs = unit_cost * Decimal(quantity)
+            profit = revenue - cogs
+
+            total_revenue += revenue
+            total_cogs += cogs
+            total_profit += profit
+            total_units += quantity
+            sale_lines_count += 1
+
+            if product_obj:
+                row = product_rows.setdefault(
+                    product_obj.id,
+                    {
+                        'product_id': product_obj.id,
+                        'name': product_obj.name,
+                        'sku': product_obj.sku or '-',
+                        'category': product_obj.category or '-',
+                        'units_sold': 0,
+                        'sale_lines': 0,
+                        'revenue': Decimal('0.00'),
+                        'cogs': Decimal('0.00'),
+                        'profit': Decimal('0.00'),
+                        'average_unit_price': Decimal('0.00'),
+                    },
+                )
+                row['units_sold'] += quantity
+                row['sale_lines'] += 1
+                row['revenue'] += revenue
+                row['cogs'] += cogs
+                row['profit'] += profit
+
+    if direct_returns:
+        for entry in direct_returns:
+            revenue = entry.total_amount or Decimal('0.00')
+            product_obj = entry.product
+            unit_cost = (product_obj.cost_price if product_obj else Decimal('0.00')) or Decimal('0.00')
+            quantity = entry.quantity or 0
+            cogs = unit_cost * Decimal(quantity)
+            profit = revenue - cogs
+
+            total_revenue -= revenue
+            total_cogs -= cogs
+            total_profit -= profit
+            total_units -= quantity
+            sale_lines_count += 1
+
+            if product_obj and product_obj.id in product_rows:
+                row = product_rows[product_obj.id]
+                row['units_sold'] -= quantity
+                row['revenue'] -= revenue
+                row['cogs'] -= cogs
+                row['profit'] -= profit
 
     # Legacy fallback: include product sale logs that predate ProductSale ledger rows.
     if service_logs is not None:
@@ -1020,8 +1079,39 @@ def get_monthly_summary_context(
             job.discount_total = _money_or_zero(job.discount_amount)
             job.net_total = _net_amount_after_discount(job.total, job.discount_total)
 
+    period_start_date = start_of_period.date() if hasattr(start_of_period, 'date') else start_of_period
+    period_end_date = end_of_period.date() if hasattr(end_of_period, 'date') else end_of_period
+
+    direct_sales_entries = list(
+        scope_to_workspace(
+            InventoryEntry.objects.filter(
+                entry_type='sale',
+                entry_date__gte=period_start_date,
+                entry_date__lt=period_end_date,
+                job_ticket__isnull=True,
+            ),
+            workspace,
+        ).select_related('product', 'bill')
+    )
+    direct_return_entries = list(
+        scope_to_workspace(
+            InventoryEntry.objects.filter(
+                entry_type='sale_return',
+                entry_date__gte=period_start_date,
+                entry_date__lt=period_end_date,
+                job_ticket__isnull=True,
+            ),
+            workspace,
+        ).select_related('product', 'bill')
+    )
+
     logs_in_period = list(ServiceLog.objects.filter(job_ticket__in=monthly_closed_jobs).select_related('job_ticket'))
-    stock_sales = summarize_stock_sales(monthly_closed_jobs, logs_in_period)
+    stock_sales = summarize_stock_sales(
+        monthly_closed_jobs,
+        logs_in_period,
+        direct_entries=direct_sales_entries,
+        direct_returns=direct_return_entries,
+    )
     product_sale_log_ids = stock_sales['service_log_ids']
 
     non_product_logs = [log for log in logs_in_period if log.id not in product_sale_log_ids]
@@ -1038,6 +1128,11 @@ def get_monthly_summary_context(
     stock_sales_income = stock_sales['total_revenue']
     stock_sales_cogs = stock_sales['total_cogs']
     stock_sales_profit = stock_sales['total_profit']
+
+    direct_stock_sales_revenue = sum((e.total_amount or Decimal('0.00') for e in direct_sales_entries), Decimal('0.00')) - sum((e.total_amount or Decimal('0.00') for e in direct_return_entries), Decimal('0.00'))
+    direct_stock_sales_cogs = sum(((e.product.cost_price or Decimal('0.00')) * Decimal(e.quantity or 0) for e in direct_sales_entries if e.product), Decimal('0.00')) - sum(((e.product.cost_price or Decimal('0.00')) * Decimal(e.quantity or 0) for e in direct_return_entries if e.product), Decimal('0.00'))
+    direct_stock_sales_profit = direct_stock_sales_revenue - direct_stock_sales_cogs
+    direct_stock_sales_units = sum((e.quantity or 0 for e in direct_sales_entries), 0) - sum((e.quantity or 0 for e in direct_return_entries), 0)
 
     vendor_services_in_period = SpecializedService.objects.filter(job_ticket__in=monthly_closed_jobs)
     vendor_expense = sum_vendor_net_cost(vendor_services_in_period)
@@ -1057,8 +1152,6 @@ def get_monthly_summary_context(
     overall_margin = (overall_profit / overall_revenue * 100) if overall_revenue > 0 else Decimal('0.00')
 
     # Period Expenses (Direct Job Costs & Shop Overhead)
-    period_start_date = start_of_period.date() if hasattr(start_of_period, 'date') else start_of_period
-    period_end_date = end_of_period.date() if hasattr(end_of_period, 'date') else end_of_period
     scoped_expenses = scope_to_workspace(Expense.objects.all(), workspace).filter(
         expense_date__gte=period_start_date,
         expense_date__lt=period_end_date,
@@ -1148,6 +1241,11 @@ def get_monthly_summary_context(
         'previous_month_in_closed_gross': previous_month_in_closed_summary['gross_revenue'],
         'total_closed_spare_revenue': service_parts_revenue + stock_sales_income,
         'total_closed_service_revenue': service_labor_revenue + vendor_revenue,
+        'direct_stock_sales_revenue': direct_stock_sales_revenue,
+        'direct_stock_sales_cogs': direct_stock_sales_cogs,
+        'direct_stock_sales_profit': direct_stock_sales_profit,
+        'direct_stock_sales_units': direct_stock_sales_units,
+        'direct_stock_sales_count': len(direct_sales_entries),
         'jobs_created_closed_count': current_month_in_closed_jobs.count(),
         'jobs_created_open_count': jobs_created.exclude(status='Closed').count(),
         'jobs_created_closed_pct': round((current_month_in_closed_jobs.count() / jobs_created.count() * 100), 1) if jobs_created.count() > 0 else Decimal('0.0'),
