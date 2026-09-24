@@ -14,6 +14,7 @@ from .helpers import (
     _normalize_checklist_answer,
     _staff_access_required,
 )
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from ..whatsapp_service import (
     _phone_to_international,
     create_message_queue,
@@ -2366,84 +2367,123 @@ def staff_job_archive_view(request):
     if not request.user.is_staff or not access.get("reports_overview"):
         return redirect('unauthorized')
 
-    # Get URL parameters for filtering
-    start_date_str = request.GET.get('start_date')
-    end_date_str = request.GET.get('end_date')
-    
-    # Start with a queryset of ALL jobs, ordered by latest first
+    current_workspace = getattr(request, 'current_workspace', None)
     jobs_queryset = scope_to_workspace(
-        JobTicket.objects, getattr(request, 'current_workspace', None),
-    ).order_by('-created_at')
+        JobTicket.objects, current_workspace
+    ).select_related('assigned_to__user').order_by('-created_at')
 
-    # --- Date Filtering Logic ---
+    # 1. Search Query (Job Code, Customer Name, Phone, Device)
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        jobs_queryset = jobs_queryset.filter(
+            Q(job_code__icontains=q) |
+            Q(customer_name__icontains=q) |
+            Q(customer_phone__icontains=q) |
+            Q(device_brand__icontains=q) |
+            Q(device_model__icontains=q) |
+            Q(device_type__icontains=q)
+        )
+
+    # 2. Status Filter
+    selected_status = (request.GET.get('status') or '').strip()
+    if selected_status:
+        jobs_queryset = jobs_queryset.filter(status=selected_status)
+
+    # 3. Date Presets & Range Filter
+    preset = (request.GET.get('preset') or '').strip()
+    start_date_str = (request.GET.get('start_date') or '').strip()
+    end_date_str = (request.GET.get('end_date') or '').strip()
+    today = timezone.localdate()
+
     start_date = None
     end_date = None
-    
-    if start_date_str and end_date_str:
+    if preset == 'today':
+        start_date = today
+        end_date = today
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    elif preset == 'this_week':
+        start_date = today - timedelta(days=today.weekday())
+        end_date = today
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    elif preset == 'this_month':
+        start_date = today.replace(day=1)
+        end_date = today
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    elif preset == 'all_time':
+        start_date = None
+        end_date = None
+        start_date_str = ''
+        end_date_str = ''
+    elif start_date_str and end_date_str:
         try:
-            # 1. Parse Dates
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            
-            # 2. Create Timezone-Aware Boundaries for Query
-            start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0))
-            end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
-            
-            # 3. Apply Filter to Queryset (Filtering by Created Date)
-            jobs_queryset = jobs_queryset.filter(
-                created_at__gte=start_of_period,
-                created_at__lte=end_of_period
-            )
-            
         except ValueError:
+            start_date = None
+            end_date = None
             messages.error(request, "Invalid date format provided for filtering.")
-            # Keep jobs_queryset unfiltered on error
-    
-    jobs_list = list(jobs_queryset.prefetch_related('service_logs'))
-    calculate_job_totals(jobs_list)
-    for job in jobs_list:
-        job.discount_total = _money_or_zero(job.discount_amount)
-        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
 
-    total_amount_sum = sum((job.total for job in jobs_list), Decimal('0.00'))
-    total_discount_sum = sum((job.discount_total for job in jobs_list), Decimal('0.00'))
-    grand_total_amount = _net_amount_after_discount(total_amount_sum, total_discount_sum)
+    if start_date and end_date:
+        start_of_period = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
+        end_of_period = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
+        jobs_queryset = jobs_queryset.filter(
+            created_at__gte=start_of_period,
+            created_at__lte=end_of_period
+        )
 
-    # --- Context Setup ---
+    total_jobs_count = jobs_queryset.count()
+
+    # 4. Pagination (25 per page)
+    paginator = Paginator(jobs_queryset, 25)
+    page_number = request.GET.get('page')
+    try:
+        page_obj = paginator.page(page_number)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+
+    # 5. Context Setup (No Amount calculation needed)
     context = {
-        'jobs': jobs_list,
+        'page_obj': page_obj,
+        'jobs': page_obj.object_list,
+        'total_jobs_count': total_jobs_count,
+        'q': q,
+        'selected_status': selected_status,
+        'preset': preset,
         'current_start_date': start_date_str,
         'current_end_date': end_date_str,
-        'today_date_str': timezone.localdate().strftime('%Y-%m-%d'),
-        # Assuming you have a helper for company start date:
-        'company_start_date': get_company_start_date().strftime('%Y-%m-%d'), 
-        'total_jobs_count': len(jobs_list),
-        'total_jobs_amount': grand_total_amount,
+        'today_date_str': today.strftime('%Y-%m-%d'),
+        'company_start_date': get_company_start_date().strftime('%Y-%m-%d'),
+        'status_choices': JobTicket.STATUS_CHOICES,
     }
     return render(request, 'job_tickets/staff_job_archive.html', context)
+
 
 def staff_job_filtered_archive_view(request, status_code):
     access = get_staff_access(request.user)
     if not request.user.is_staff or not access.get("reports_overview"):
         return redirect('unauthorized')
 
-    # Get optional date filters
-    start_date_str = request.GET.get('start_date')
-    end_date_str = request.GET.get('end_date')
-    status_filter = request.GET.get('status_filter')  # New: sub-status filter for returned jobs
-    
-    # Start with a queryset of ALL jobs, ordered by latest first
-    jobs_queryset = scope_to_workspace(
-        JobTicket.objects, getattr(request, 'current_workspace', None),
-    ).order_by('-created_at')
-    
-    # --- Status Filtering Logic ---
-    report_title = "Filtered Job Archive"
+    start_date_str = (request.GET.get('start_date') or '').strip()
+    end_date_str = (request.GET.get('end_date') or '').strip()
+    status_filter = (request.GET.get('status_filter') or '').strip()
+    preset = (request.GET.get('preset') or '').strip()
+    q = (request.GET.get('q') or '').strip()
+    today = timezone.localdate()
 
-    # Define Q object for filtering
+    current_workspace = getattr(request, 'current_workspace', None)
+    jobs_queryset = scope_to_workspace(
+        JobTicket.objects, current_workspace,
+    ).select_related('assigned_to__user').order_by('-created_at')
+
+    # Status Group Filtering
+    report_title = "Filtered Job Archive"
     q_status_filter = Q()
-    
-    # Standard statuses for display clarity
+
     if status_code == 'Pending':
         q_status_filter = Q(status='Pending')
         report_title = "Pending Jobs Archive"
@@ -2455,85 +2495,102 @@ def staff_job_filtered_archive_view(request, status_code):
         report_title = "Completed/Ready Jobs Archive"
     elif status_code == 'Returned':
         closed_returned_job_ids = get_returned_to_closed_job_ids()
-        
         if status_filter == 'closed':
-            # Jobs that were closed directly from Returned status
             q_status_filter = Q(id__in=closed_returned_job_ids, status='Closed')
             report_title = "Returned -> Closed Jobs"
         elif status_filter == 'returned':
-            # Jobs that are currently in returned status
             q_status_filter = Q(status='Returned')
             report_title = "Returned Jobs - Still Returned"
         else:
-            # Show current Returned jobs and jobs closed directly from Returned status
             q_status_filter = Q(status='Returned') | Q(id__in=closed_returned_job_ids, status='Closed')
             report_title = "Returned -> Closed Jobs"
     elif status_code == 'Closed':
         q_status_filter = Q(status='Closed')
         report_title = "Closed Jobs Archive"
-    
+
     jobs_queryset = jobs_queryset.filter(q_status_filter)
 
-    # --- Date Filtering Logic (Copied from staff_job_archive_view) ---
+    # Search filter
+    if q:
+        jobs_queryset = jobs_queryset.filter(
+            Q(job_code__icontains=q) |
+            Q(customer_name__icontains=q) |
+            Q(customer_phone__icontains=q) |
+            Q(device_brand__icontains=q) |
+            Q(device_model__icontains=q) |
+            Q(device_type__icontains=q)
+        )
+
+    # Date filter
     start_date = None
     end_date = None
-    
-    if start_date_str and end_date_str:
+    if preset == 'today':
+        start_date = today
+        end_date = today
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    elif preset == 'this_week':
+        start_date = today - timedelta(days=today.weekday())
+        end_date = today
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    elif preset == 'this_month':
+        start_date = today.replace(day=1)
+        end_date = today
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    elif preset == 'all_time':
+        start_date = None
+        end_date = None
+        start_date_str = ''
+        end_date_str = ''
+    elif start_date_str and end_date_str:
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            
-            start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0))
-            end_of_period = timezone.make_aware(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
-            
-            # Apply Filter by Created Date
-            jobs_queryset = jobs_queryset.filter(
-                created_at__gte=start_of_period,
-                created_at__lte=end_of_period
-            )
-            
         except ValueError:
+            start_date = None
+            end_date = None
             messages.error(request, "Invalid date format provided for filtering.")
 
-        # Fetch job objects (including prefetched service_logs) to calculate totals per job
-    jobs_list = list(jobs_queryset.prefetch_related('service_logs'))
-    
-    # Reuse the helper function to calculate individual job totals (part_total, service_total, total)
-    calculate_job_totals(jobs_list) 
-    
-    # Calculate the grand total and grand discount from the list
-    for job in jobs_list:
-        job.discount_total = _money_or_zero(job.discount_amount)
-        job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+    if start_date and end_date:
+        start_of_period = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
+        end_of_period = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
+        jobs_queryset = jobs_queryset.filter(
+            created_at__gte=start_of_period,
+            created_at__lte=end_of_period
+        )
 
-    total_amount_sum = sum((job.total for job in jobs_list), Decimal('0.00'))
-    total_discount_sum = sum((job.discount_total for job in jobs_list), Decimal('0.00'))
-    
-    # Grand Total (Subtotal - Discount)
-    grand_total_amount = _net_amount_after_discount(total_amount_sum, total_discount_sum)
-    total_jobs_count = len(jobs_list)
-    
-    # Calculate counts for returned jobs filtering
+    total_jobs_count = jobs_queryset.count()
+
+    paginator = Paginator(jobs_queryset, 25)
+    page_number = request.GET.get('page')
+    try:
+        page_obj = paginator.page(page_number)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+
     returned_count = 0
     closed_returned_count = 0
     if status_code == 'Returned':
-        # Count jobs currently in Returned status
         returned_count = JobTicket.objects.filter(status='Returned').count()
-        # Count jobs closed directly from Returned status
         closed_returned_count = get_returned_to_closed_jobs().count()
-    
-    # --- Context Setup ---
+
     context = {
-        'jobs': jobs_list,
+        'page_obj': page_obj,
+        'jobs': page_obj.object_list,
         'report_title': report_title,
+        'q': q,
+        'preset': preset,
         'current_start_date': start_date_str,
         'current_end_date': end_date_str,
-        'today_date_str': timezone.localdate().strftime('%Y-%m-%d'),
-        'company_start_date': get_company_start_date().strftime('%Y-%m-%d'), 
-        'status_code': status_code, # Pass code back for form actions
-        'status_filter': status_filter,  # Pass current sub-status filter
+        'today_date_str': today.strftime('%Y-%m-%d'),
+        'company_start_date': get_company_start_date().strftime('%Y-%m-%d'),
+        'status_code': status_code,
+        'status_filter': status_filter,
         'total_jobs_count': total_jobs_count,
-        'total_jobs_amount': grand_total_amount,
         'returned_count': returned_count,
         'closed_returned_count': closed_returned_count,
     }

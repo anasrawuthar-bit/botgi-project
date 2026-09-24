@@ -87,143 +87,297 @@
             background: var(--primary-light);
             color: var(--primary);
         }
+        .workload-stat-card {
+            border: 1px solid var(--border-color, #e2e8f0);
+            border-radius: 10px;
+            background: #ffffff;
+            padding: 0.85rem 0.75rem;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.18s ease-in-out;
+            display: block;
+        }
+        .workload-stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary, #3b82f6);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
     </style>
+
+    <!-- Top Header -->
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
-            <h1 class="section-title mb-2"><i class="fas fa-chart-line reports-heading-icon me-2" aria-hidden="true"></i>Company Reports</h1>
-            <p class="text-muted mb-0">Track daily activity, review financials, and compare team performance.</p>
+            <h1 class="section-title mb-1"><i class="fas fa-chart-line reports-heading-icon me-2" aria-hidden="true"></i>Company Reports</h1>
+            <p class="text-muted mb-0">Track live daily activity, review financials, and compare technician performance.</p>
         </div>
-        {% if staff_access.staff_dashboard %}<a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary">Back to Dashboard</a>{% endif %}
+        {% if staff_access.staff_dashboard %}
+        <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+        </a>
+        {% endif %}
     </div>
 
-    <div class="reports-period">
-    <form method="get" class="row g-3 align-items-end mb-3" data-async-form data-async-target="#reports-dashboard-page">
-        <input type="hidden" name="tab" value="{{ active_tab }}">
-        <div class="col-sm-5 col-lg-4">
-            <label for="report-start" class="form-label">Period start</label>
-            <input id="report-start" type="date" name="start_date" value="{{ current_report_start }}" class="form-control" required>
-        </div>
-        <div class="col-sm-5 col-lg-4">
-            <label for="report-end" class="form-label">Period end</label>
-            <input id="report-end" type="date" name="end_date" value="{{ current_report_end }}" class="form-control" required>
-        </div>
-        <div class="col-sm-2 col-lg-4"><button class="btn btn-primary" type="submit">Apply period</button></div>
-    </form>
-    <div class="d-flex flex-wrap gap-2 align-items-center">
-        <a class="btn btn-sm btn-outline-secondary" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
-        <a class="btn btn-sm btn-outline-secondary" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
-        <span class="small text-muted">Financial and performance reports: {{ current_report_start }} &ndash; {{ current_report_end }}</span>
-    </div>
-    </div>
-
-    <nav class="nav nav-pills flex-wrap gap-2 border-bottom pb-3 mb-4" aria-label="Report sections">
-        {% if staff_access.reports_overview %}<a class="nav-link {% if active_tab == 'overview' %}active{% endif %}" {% if active_tab == 'overview' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=overview">Overview</a>{% endif %}
-        {% if staff_access.reports_financial %}<a class="nav-link {% if active_tab == 'financial' %}active{% endif %}" {% if active_tab == 'financial' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=financial">Financial</a>{% endif %}
-        {% if staff_access.reports_technician %}<a class="nav-link {% if active_tab == 'technician' %}active{% endif %}" {% if active_tab == 'technician' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=technician">Technicians</a>{% endif %}
-        {% if staff_access.reports_vendor %}<a class="nav-link {% if active_tab == 'vendor' %}active{% endif %}" {% if active_tab == 'vendor' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=vendor">Vendors</a>{% endif %}
-    </nav>
-
-    {% if active_tab == 'overview' and staff_access.reports_overview %}
-    <section aria-labelledby="daily-heading">
-        <h2 id="daily-heading" class="h4">Today's activity <span class="text-muted small">{{ today_date_str }}</span></h2>
-        <p class="small text-muted">Always shows today, independent of the reporting period. A job completed and closed today appears in both activity counts.</p>
-        <div class="row g-3 mb-4">
-            <div class="col-md-4"><div class="card-box h-100">
-                <h3 class="h6 text-muted">Jobs received</h3>
-                <a class="display-6 fw-semibold text-decoration-none" href="{% url 'daily_jobs_report' today_date_str 'in' %}">{{ todays_jobs_in }}</a>
-                <p class="small text-muted mt-2 mb-0">New jobs created today</p>
-            </div></div>
-            <div class="col-md-4"><div class="card-box h-100">
-                <h3 class="h6 text-muted">Jobs completed</h3>
-                <a class="display-6 fw-semibold text-decoration-none" href="{% url 'daily_jobs_report' today_date_str 'completed' %}">{{ todays_jobs_completed }}</a>
-                <p class="small text-muted mt-2 mb-0">Job value after discounts: <strong>&#8377;{{ todays_completed_total|floatformat:2 }}</strong></p>
-            </div></div>
-            <div class="col-md-4"><div class="card-box h-100">
-                <h3 class="h6 text-muted">Jobs closed</h3>
-                <a class="display-6 fw-semibold text-decoration-none" href="{% url 'daily_jobs_report' today_date_str 'out' %}">{{ todays_jobs_out }}</a>
-                <p class="small text-muted mt-2 mb-0">Job value after discounts: <strong>&#8377;{{ todays_closed_total|floatformat:2 }}</strong></p>
-            </div></div>
-        </div>
-        <p class="small text-muted">Job values show service and parts charges after discounts, not cash collected.</p>
-    </section>
-    <section aria-labelledby="workload-heading" class="mt-4">
-        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-3">
-            <div><h2 id="workload-heading" class="h4 mb-1">Current workload</h2><p class="small text-muted mb-0">Current status across all dates</p></div>
-            <a class="btn btn-outline-primary btn-sm" href="{% url 'print_active_workload_report' %}">Print active workload</a>
-        </div>
-        <div class="list-group">
-            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_archive_view' %}">All jobs <strong>{{ all_jobs_count }}</strong></a>
-            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Pending' %}">Pending <strong>{{ pending_count }}</strong></a>
-            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Active' %}">Inspection, repairing &amp; specialized service <strong>{{ in_progress_count }}</strong></a>
-            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'CompletedReady' %}">Completed / ready for pickup <strong>{{ completed_awaiting_billing_count }}</strong></a>
-            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Returned' %}">Returned, including subsequently closed <strong>{{ returned_count }}</strong></a>
-            <a class="list-group-item list-group-item-action d-flex justify-content-between gap-3" href="{% url 'staff_job_filtered_archive_view' 'Closed' %}">Closed <strong>{{ closed_count }}</strong></a>
-        </div>
-        <p class="small text-muted mt-2">Returned jobs that were subsequently closed also appear in the closed count.</p>
-    </section>
-    {% endif %}
-
-    {% if active_tab == 'financial' and staff_access.reports_financial %}
-    <section aria-labelledby="financial-heading">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-            <div><h2 class="h4 mb-1" id="financial-heading">Financial summary</h2><p class="small text-muted mb-0">{{ current_report_start }} &ndash; {{ current_report_end }} &middot; {{ financial_summary.jobs_closed_count }} closed jobs</p></div>
-            <div class="d-flex gap-2 flex-wrap">
-                <a class="btn btn-outline-primary" href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">View / print summary</a>
-                <a class="btn btn-outline-secondary" href="{% url 'export_monthly_summary_csv' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">Export CSV</a>
+    {% if staff_access.reports_overview %}
+    <!-- ============================================================== -->
+    <!-- 1. LIVE EXECUTIVE OVERVIEW (TODAY'S ACTIVITY & WORKLOAD)       -->
+    <!-- ============================================================== -->
+    <div class="mb-4">
+        <!-- Today's Activity -->
+        <section aria-labelledby="daily-heading" class="mb-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+                <h2 id="daily-heading" class="h5 fw-bold text-dark mb-0">
+                    <i class="fas fa-sun text-warning me-2"></i>Today's activity
+                    <span class="badge bg-light text-muted border ms-2 fw-normal fs-6">{{ today_date_str }}</span>
+                </h2>
+                <span class="small text-muted">Live counters for today &middot; Independent of period filter</span>
             </div>
-        </div>
-        <div class="row g-3 mb-4">
-            <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Revenue after discounts</h3><p class="h4 mb-0 text-dark">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</p></div></div>
-            <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Direct Job Costs (COGS)</h3><p class="h4 mb-0 text-danger">&#8377;{{ financial_summary.overall_expense|floatformat:2 }}</p></div></div>
-            <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Shop Overhead Expenses</h3><p class="h4 mb-0 text-warning">&#8377;{{ financial_summary.period_overhead_expenses|default:"0.00"|floatformat:2 }}</p></div></div>
-            <div class="col-md-3"><div class="card-box h-100 border-start border-4 border-success"><h3 class="h6 text-muted">True Net Profit</h3><p class="h4 mb-0 text-success fw-bold">&#8377;{{ financial_summary.period_net_profit|default:financial_summary.overall_profit|floatformat:2 }}</p></div></div>
-        </div>
-        <p class="small text-muted">Direct costs include parts stock, vendor charges, and job-linked direct expenses. Shop overhead includes general utility, rent, and non-job operating expenses recorded for this period.</p>
-        <div class="table-responsive mb-4"><table class="table align-middle">
-            <caption>Revenue and recorded costs for the selected period</caption>
-            <thead><tr><th scope="col">Category</th><th scope="col" class="text-end">Revenue</th><th scope="col" class="text-end">Cost</th><th scope="col" class="text-end">Margin</th></tr></thead>
-            <tbody>{% for block in financial_summary.closed_financial_blocks %}<tr><th scope="row">{{ block.label }}</th><td class="text-end">&#8377;{{ block.revenue|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.profit|floatformat:2 }}</td></tr>{% endfor %}</tbody>
-        </table></div>
-        <div class="border rounded p-3">
-            <h3 class="h6">Linked credit bills for jobs closed in this period</h3>
+            
             <div class="row g-3">
-                <div class="col-md-4">Bill value <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_bill_total|floatformat:2 }}</strong></div>
-                <div class="col-md-4">Paid to date <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_paid|floatformat:2 }}</strong></div>
-                <div class="col-md-4">Outstanding balance <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_balance|floatformat:2 }}</strong></div>
+                <!-- Received -->
+                <div class="col-md-4">
+                    <div class="card-box h-100 p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <h3 class="h6 text-muted mb-0">Jobs Received</h3>
+                            <span class="badge bg-info-subtle text-info border border-info-subtle">Intake</span>
+                        </div>
+                        <a class="display-6 fw-bold text-decoration-none text-dark d-block my-1" href="{% url 'daily_jobs_report' today_date_str 'in' %}">
+                            {{ todays_jobs_in }}
+                        </a>
+                        <p class="small text-muted mt-2 pt-2 border-top mb-0">
+                            <i class="fas fa-arrow-down-long text-info me-1"></i>New device tickets logged today
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Completed -->
+                <div class="col-md-4">
+                    <div class="card-box h-100 p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <h3 class="h6 text-muted mb-0">Jobs Completed</h3>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">Completed</span>
+                        </div>
+                        <a class="display-6 fw-bold text-decoration-none text-dark d-block my-1" href="{% url 'daily_jobs_report' today_date_str 'completed' %}">
+                            {{ todays_jobs_completed }}
+                        </a>
+                        <div class="small text-muted mt-2 pt-2 border-top d-flex flex-wrap align-items-center gap-1">
+                            <span>Parts: <strong class="text-dark">&#8377;{{ todays_completed_spare|floatformat:2 }}</strong></span>
+                            <span class="fw-bold text-muted mx-1">+</span>
+                            <span>Service: <strong class="text-dark">&#8377;{{ todays_completed_service|floatformat:2 }}</strong></span>
+                            <span class="fw-bold text-muted mx-1">=</span>
+                            <span class="fw-bold text-success">&#8377;{{ todays_completed_total|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Closed -->
+                <div class="col-md-4">
+                    <div class="card-box h-100 p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <h3 class="h6 text-muted mb-0">Jobs Closed</h3>
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Delivered</span>
+                        </div>
+                        <a class="display-6 fw-bold text-decoration-none text-dark d-block my-1" href="{% url 'daily_jobs_report' today_date_str 'out' %}">
+                            {{ todays_jobs_out }}
+                        </a>
+                        <div class="small text-muted mt-2 pt-2 border-top d-flex flex-wrap align-items-center gap-1">
+                            <span>Parts: <strong class="text-dark">&#8377;{{ todays_closed_spare|floatformat:2 }}</strong></span>
+                            <span class="fw-bold text-muted mx-1">+</span>
+                            <span>Service: <strong class="text-dark">&#8377;{{ todays_closed_service|floatformat:2 }}</strong></span>
+                            <span class="fw-bold text-muted mx-1">=</span>
+                            <span class="fw-bold text-primary">&#8377;{{ todays_closed_total|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <p class="small text-muted mt-3 mb-0">Current balances for linked credit bills; payments may have been received outside the selected period.</p>
+        </section>
+
+        <!-- Current Workload Backlog -->
+        <section aria-labelledby="workload-heading" class="mb-2">
+            <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-2">
+                <div>
+                    <h2 id="workload-heading" class="h5 fw-bold text-dark mb-0">
+                        <i class="fas fa-layer-group text-primary me-2"></i>Current Workload Backlog
+                    </h2>
+                    <span class="small text-muted">Real-time status distribution across all dates</span>
+                </div>
+                <a class="btn btn-outline-primary btn-sm" href="{% url 'print_active_workload_report' %}">
+                    <i class="fas fa-print me-1"></i>Print active workload
+                </a>
+            </div>
+            
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_archive_view' %}">
+                        <span class="small text-muted d-block">All Jobs</span>
+                        <strong class="fs-5 text-dark">{{ all_jobs_count }}</strong>
+                    </a>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Pending' %}">
+                        <span class="small text-muted d-block">Pending</span>
+                        <strong class="fs-5 text-warning">{{ pending_count }}</strong>
+                    </a>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Active' %}">
+                        <span class="small text-muted d-block">In Progress</span>
+                        <strong class="fs-5 text-info">{{ in_progress_count }}</strong>
+                    </a>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'CompletedReady' %}">
+                        <span class="small text-muted d-block">Ready / Pickup</span>
+                        <strong class="fs-5 text-success">{{ completed_awaiting_billing_count }}</strong>
+                    </a>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Returned' %}">
+                        <span class="small text-muted d-block">Returned</span>
+                        <strong class="fs-5 text-danger">{{ returned_count }}</strong>
+                    </a>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Closed' %}">
+                        <span class="small text-muted d-block">Closed</span>
+                        <strong class="fs-5 text-secondary">{{ closed_count }}</strong>
+                    </a>
+                </div>
+            </div>
+            <p class="small text-muted mt-2 mb-0">Returned jobs that were subsequently closed also appear in the closed count.</p>
+        </section>
+    </div>
+    {% endif %}
+
+    {% if staff_access.reports_financial or staff_access.reports_technician or staff_access.reports_vendor %}
+    <!-- ============================================================== -->
+    <!-- 2. PERIOD-BASED REPORTS (FINANCIAL, TECHNICIANS, VENDORS)       -->
+    <!-- ============================================================== -->
+    <div class="mt-4 pt-3 border-top">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+            <div>
+                <h2 class="h5 fw-bold text-dark mb-0">
+                    <i class="fas fa-calendar-alt text-primary me-2"></i>Period Performance &amp; Detailed Analytics
+                </h2>
+                <span class="small text-muted">Select a report section and period range to analyze historical financial and staff performance.</span>
+            </div>
         </div>
-    </section>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav nav-pills flex-wrap gap-2 border-bottom pb-3 mb-3" aria-label="Report sections">
+            {% if staff_access.reports_financial %}
+            <a class="nav-link {% if active_tab == 'financial' %}active{% endif %}" {% if active_tab == 'financial' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=financial">
+                <i class="fas fa-coins me-1"></i>Financial Summary
+            </a>
+            {% endif %}
+            {% if staff_access.reports_technician %}
+            <a class="nav-link {% if active_tab == 'technician' %}active{% endif %}" {% if active_tab == 'technician' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=technician">
+                <i class="fas fa-user-cog me-1"></i>Technicians
+            </a>
+            {% endif %}
+            {% if staff_access.reports_vendor %}
+            <a class="nav-link {% if active_tab == 'vendor' %}active{% endif %}" {% if active_tab == 'vendor' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=vendor">
+                <i class="fas fa-truck me-1"></i>Vendors
+            </a>
+            {% endif %}
+        </nav>
+
+        <!-- The Period Filter Form (Rendered ONLY for Financial, Technicians, Vendors) -->
+        <div class="reports-period mb-4">
+            <form method="get" class="row g-3 align-items-end mb-2" data-async-form data-async-target="#reports-dashboard-page">
+                <input type="hidden" name="tab" value="{{ active_tab }}">
+                <div class="col-sm-5 col-lg-4">
+                    <label for="report-start" class="form-label">Period start</label>
+                    <input id="report-start" type="date" name="start_date" value="{{ current_report_start }}" class="form-control" required>
+                </div>
+                <div class="col-sm-5 col-lg-4">
+                    <label for="report-end" class="form-label">Period end</label>
+                    <input id="report-end" type="date" name="end_date" value="{{ current_report_end }}" class="form-control" required>
+                </div>
+                <div class="col-sm-2 col-lg-4">
+                    <button class="btn btn-primary w-100" type="submit">
+                        <i class="fas fa-filter me-1"></i>Apply period
+                    </button>
+                </div>
+            </form>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a class="btn btn-sm btn-outline-secondary" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
+                <a class="btn btn-sm btn-outline-secondary" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
+                <span class="small text-muted ms-auto">Active period: <strong>{{ current_report_start }}</strong> &ndash; <strong>{{ current_report_end }}</strong></span>
+            </div>
+        </div>
+
+        <!-- Tab 1: Financial Summary -->
+        {% if active_tab == 'financial' and staff_access.reports_financial %}
+        <section aria-labelledby="financial-heading">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+                <div>
+                    <h2 class="h4 mb-1" id="financial-heading">Financial summary</h2>
+                    <p class="small text-muted mb-0">{{ current_report_start }} &ndash; {{ current_report_end }} &middot; {{ financial_summary.jobs_closed_count }} closed jobs</p>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a class="btn btn-outline-primary" href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">View / print summary</a>
+                    <a class="btn btn-outline-secondary" href="{% url 'export_monthly_summary_csv' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">Export CSV</a>
+                </div>
+            </div>
+            <div class="row g-3 mb-4">
+                <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Revenue after discounts</h3><p class="h4 mb-0 text-dark">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</p></div></div>
+                <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Direct Job Costs (COGS)</h3><p class="h4 mb-0 text-danger">&#8377;{{ financial_summary.overall_expense|floatformat:2 }}</p></div></div>
+                <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Shop Overhead Expenses</h3><p class="h4 mb-0 text-warning">&#8377;{{ financial_summary.period_overhead_expenses|default:"0.00"|floatformat:2 }}</p></div></div>
+                <div class="col-md-3"><div class="card-box h-100 border-start border-4 border-success"><h3 class="h6 text-muted">True Net Profit</h3><p class="h4 mb-0 text-success fw-bold">&#8377;{{ financial_summary.period_net_profit|default:financial_summary.overall_profit|floatformat:2 }}</p></div></div>
+            </div>
+            <p class="small text-muted">Direct costs include parts stock, vendor charges, and job-linked direct expenses. Shop overhead includes general utility, rent, and non-job operating expenses recorded for this period.</p>
+            <div class="table-responsive mb-4"><table class="table align-middle">
+                <caption>Revenue and recorded costs for the selected period</caption>
+                <thead><tr><th scope="col">Category</th><th scope="col" class="text-end">Revenue</th><th scope="col" class="text-end">Cost</th><th scope="col" class="text-end">Margin</th></tr></thead>
+                <tbody>{% for block in financial_summary.closed_financial_blocks %}<tr><th scope="row">{{ block.label }}</th><td class="text-end">&#8377;{{ block.revenue|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.profit|floatformat:2 }}</td></tr>{% endfor %}</tbody>
+            </table></div>
+            <div class="border rounded p-3">
+                <h3 class="h6">Linked credit bills for jobs closed in this period</h3>
+                <div class="row g-3">
+                    <div class="col-md-4">Bill value <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_bill_total|floatformat:2 }}</strong></div>
+                    <div class="col-md-4">Paid to date <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_paid|floatformat:2 }}</strong></div>
+                    <div class="col-md-4">Outstanding balance <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_balance|floatformat:2 }}</strong></div>
+                </div>
+                <p class="small text-muted mt-3 mb-0">Current balances for linked credit bills; payments may have been received outside the selected period.</p>
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- Tab 2: Technician Performance -->
+        {% if active_tab == 'technician' and staff_access.reports_technician %}
+        <section aria-labelledby="technician-heading">
+            <h2 class="h4" id="technician-heading">Technician performance</h2>
+            <p class="text-muted small">{{ tech_start_date }} &ndash; {{ tech_end_date }} &middot; Completed and closed jobs. Parts and service sales exclude vendor service lines and are before job discounts.</p>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th scope="col">Technician</th><th scope="col" class="text-end">Jobs</th><th scope="col" class="text-end">Parts sales</th><th scope="col" class="text-end">Service sales</th><th scope="col">Report</th></tr></thead>
+                <tbody>{% for tech in monthly_tech_performance %}<tr>
+                    <th scope="row">{{ tech.user.get_full_name|default:tech.user.username }}<span class="d-block small text-muted fw-normal">{{ tech.unique_id }}</span></th>
+                    <td class="text-end">{{ tech.jobs_done }}</td><td class="text-end">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td><td class="text-end">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
+                    <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'technician_report_print' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">View / print</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'technician_report_export_csv' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">CSV</a></div></td>
+                </tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">No technicians available in this workspace.</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </section>
+        {% endif %}
+
+        <!-- Tab 3: Vendor Performance -->
+        {% if active_tab == 'vendor' and staff_access.reports_vendor %}
+        <section aria-labelledby="vendor-heading">
+            <h2 class="h4" id="vendor-heading">Vendor performance</h2>
+            <p class="text-muted small">{{ vendor_start_date }} &ndash; {{ vendor_end_date }} &middot; Services returned by vendors during this period, including jobs awaiting customer pickup.</p>
+            <div class="table-responsive"><table class="table table-hover align-middle">
+                <thead><tr><th scope="col">Vendor</th><th scope="col" class="text-end">Jobs returned</th><th scope="col" class="text-end">Vendor cost</th><th scope="col" class="text-end">Client charges</th><th scope="col" class="text-end">Margin before job discounts</th><th scope="col">Report</th></tr></thead>
+                <tbody>{% for vendor in vendor_performance %}<tr>
+                    <th scope="row">{{ vendor.company_name }}</th><td class="text-end">{{ vendor.total_jobs_given }}</td><td class="text-end">&#8377;{{ vendor.total_vendor_cost|floatformat:2 }}</td><td class="text-end">&#8377;{{ vendor.total_client_charge|floatformat:2 }}</td><td class="text-end fw-semibold">&#8377;{{ vendor.profit|floatformat:2 }}</td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date }}&amp;end_date={{ vendor_end_date }}">View report</a></td>
+                </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No vendors available in this workspace.</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </section>
+        {% endif %}
+    </div>
     {% endif %}
 
-    {% if active_tab == 'technician' and staff_access.reports_technician %}
-    <section aria-labelledby="technician-heading">
-        <h2 class="h4" id="technician-heading">Technician performance</h2>
-        <p class="text-muted small">{{ tech_start_date }} &ndash; {{ tech_end_date }} &middot; Completed and closed jobs. Parts and service sales exclude vendor service lines and are before job discounts.</p>
-        <div class="table-responsive"><table class="table table-hover align-middle">
-            <thead><tr><th scope="col">Technician</th><th scope="col" class="text-end">Jobs</th><th scope="col" class="text-end">Parts sales</th><th scope="col" class="text-end">Service sales</th><th scope="col">Report</th></tr></thead>
-            <tbody>{% for tech in monthly_tech_performance %}<tr>
-                <th scope="row">{{ tech.user.get_full_name|default:tech.user.username }}<span class="d-block small text-muted fw-normal">{{ tech.unique_id }}</span></th>
-                <td class="text-end">{{ tech.jobs_done }}</td><td class="text-end">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td><td class="text-end">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
-                <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'technician_report_print' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">View / print</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'technician_report_export_csv' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">CSV</a></div></td>
-            </tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">No technicians available in this workspace.</td></tr>{% endfor %}</tbody>
-        </table></div>
-    </section>
+    {% if not staff_access.reports_overview and not staff_access.reports_technician and not staff_access.reports_vendor and not staff_access.reports_financial %}
+    <p class="alert alert-warning">No report sections are enabled for your account. Please contact an admin.</p>
     {% endif %}
-
-    {% if active_tab == 'vendor' and staff_access.reports_vendor %}
-    <section aria-labelledby="vendor-heading">
-        <h2 class="h4" id="vendor-heading">Vendor performance</h2>
-        <p class="text-muted small">{{ vendor_start_date }} &ndash; {{ vendor_end_date }} &middot; Services returned by vendors during this period, including jobs awaiting customer pickup.</p>
-        <div class="table-responsive"><table class="table table-hover align-middle">
-            <thead><tr><th scope="col">Vendor</th><th scope="col" class="text-end">Jobs returned</th><th scope="col" class="text-end">Vendor cost</th><th scope="col" class="text-end">Client charges</th><th scope="col" class="text-end">Margin before job discounts</th><th scope="col">Report</th></tr></thead>
-            <tbody>{% for vendor in vendor_performance %}<tr>
-                <th scope="row">{{ vendor.company_name }}</th><td class="text-end">{{ vendor.total_jobs_given }}</td><td class="text-end">&#8377;{{ vendor.total_vendor_cost|floatformat:2 }}</td><td class="text-end">&#8377;{{ vendor.total_client_charge|floatformat:2 }}</td><td class="text-end fw-semibold">&#8377;{{ vendor.profit|floatformat:2 }}</td>
-                <td><a class="btn btn-sm btn-outline-primary" href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date }}&amp;end_date={{ vendor_end_date }}">View report</a></td>
-            </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No vendors available in this workspace.</td></tr>{% endfor %}</tbody>
-        </table></div>
-    </section>
-    {% endif %}
-    {% if not staff_access.reports_overview and not staff_access.reports_technician and not staff_access.reports_vendor and not staff_access.reports_financial %}<p class="alert alert-warning">No report sections are enabled for your account. Please contact an admin.</p>{% endif %}
 </div>
 {% endblock %}

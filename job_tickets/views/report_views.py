@@ -17,11 +17,11 @@ def reports_dashboard(request):
         return redirect('unauthorized')
 
     access = get_staff_access(request.user)
-    allowed_tabs = [key for key in ['overview', 'financial', 'technician', 'vendor']
-                    if access.get('reports_' + key)]
-    active_tab = request.GET.get('tab', 'overview')
-    if active_tab not in allowed_tabs:
-        active_tab = allowed_tabs[0] if allowed_tabs else 'overview'
+    period_tabs = [key for key in ['financial', 'technician', 'vendor'] if access.get('reports_' + key)]
+    allowed_tabs = ['overview'] + period_tabs if access.get('reports_overview') else period_tabs
+    active_tab = request.GET.get('tab')
+    if not active_tab or active_tab not in allowed_tabs:
+        active_tab = 'financial' if 'financial' in period_tabs else (period_tabs[0] if period_tabs else 'overview')
 
     current_workspace = getattr(request, 'current_workspace', None)
     report_jobs = scope_to_workspace(JobTicket.objects, current_workspace)
