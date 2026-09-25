@@ -549,6 +549,10 @@ def inventory_quick_add_product(request):
                 'unit_price': format(product.unit_price, '.2f'),
                 'gst_rate': format(product.gst_rate, '.2f'),
                 'tax_category': product.tax_category,
+                'bin_location': product.bin_location or '',
+                'has_serial_tracking': bool(product.has_serial_tracking),
+                'vendor_warranty_months': product.vendor_warranty_months or 0,
+                'customer_warranty_months': product.customer_warranty_months or 0,
             },
         }
     )
@@ -1095,3 +1099,70 @@ def product_dashboard(request):
         'from_inventory': current_url_name == 'inventory_product_dashboard',
     }
     return render(request, 'job_tickets/product_dashboard.html', context)
+
+
+@login_required
+def inventory_track_serial(request):
+    if not request.user.is_staff or not user_has_staff_access(request.user, "inventory"):
+        return JsonResponse({'ok': False, 'error': 'Unauthorized'}, status=403)
+
+    query = (request.GET.get('serial') or '').strip()
+    if not query:
+        return JsonResponse({'ok': False, 'error': 'Serial number query is required.'}, status=400)
+
+    workspace = getattr(request, 'current_workspace', None)
+    item = scope_to_workspace(
+        ProductItemSerial.objects.filter(serial_number__iexact=query),
+        workspace,
+    ).select_related(
+        'product', 'purchase_entry__party', 'purchase_entry__bill',
+        'sale_entry__party', 'sale_entry__bill', 'job_ticket'
+    ).first()
+
+    if not item:
+        return JsonResponse({
+            'ok': True,
+            'found': False,
+            'message': f"No item found with Serial / IMEI '{query}'.",
+        })
+
+    purchase_party = item.purchase_entry.party.name if item.purchase_entry and item.purchase_entry.party else ''
+    purchase_invoice = item.purchase_entry.invoice_number if item.purchase_entry else ''
+    sale_party = item.sale_entry.party.name if item.sale_entry and item.sale_entry.party else ''
+    sale_invoice = item.sale_entry.invoice_number if item.sale_entry else ''
+    job_code = item.job_ticket.daily_job_code if item.job_ticket else ''
+
+    today = timezone.localdate()
+    vendor_warranty_days = (item.vendor_warranty_until - today).days if item.vendor_warranty_until else None
+    customer_warranty_days = (item.customer_warranty_until - today).days if item.customer_warranty_until else None
+
+    return JsonResponse({
+        'ok': True,
+        'found': True,
+        'item': {
+            'serial_number': item.serial_number,
+            'product_id': item.product.id,
+            'product_name': item.product.name,
+            'sku': item.product.sku or '',
+            'bin_location': item.product.bin_location or 'Not specified',
+            'status': item.status,
+            'status_label': item.get_status_display(),
+            'purchase_date': item.purchase_date.isoformat() if item.purchase_date else '',
+            'purchase_cost': format(item.purchase_cost, '.2f'),
+            'supplier_name': purchase_party,
+            'purchase_invoice': purchase_invoice,
+            'sale_date': item.sale_date.isoformat() if item.sale_date else '',
+            'sale_price': format(item.sale_price, '.2f'),
+            'customer_name': sale_party,
+            'sale_invoice': sale_invoice,
+            'job_ticket_code': job_code,
+            'vendor_warranty_until': item.vendor_warranty_until.isoformat() if item.vendor_warranty_until else '',
+            'is_vendor_warranty_active': item.is_vendor_warranty_active,
+            'vendor_warranty_days': vendor_warranty_days,
+            'customer_warranty_until': item.customer_warranty_until.isoformat() if item.customer_warranty_until else '',
+            'is_customer_warranty_active': item.is_customer_warranty_active,
+            'customer_warranty_days': customer_warranty_days,
+            'notes': item.notes or '',
+        },
+    })
+

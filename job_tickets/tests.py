@@ -5947,3 +5947,129 @@ class ClientManagementLifecycleTests(TestCase):
         self.assertContains(response, 'Outstanding Credit')
         self.assertContains(response, '300.00')
 
+
+class InventorySerialTrackingPhase2Tests(TestCase):
+    """Test Phase 2 serial/IMEI tracking, bin locations, warranty, and lifecycle audit."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='inventory-p2-tester',
+            password='StrongPass123!',
+            is_staff=True,
+        )
+        apply_staff_access(self.user, {'staff_dashboard', 'inventory'})
+        self.workspace = CompanyWorkspace.objects.create(name='ERP Test WS', owner=self.user)
+        CompanyUserMembership.objects.create(
+            workspace=self.workspace,
+            user=self.user,
+            role=CompanyUserMembership.ROLE_ADMIN,
+        )
+        self.client.force_login(self.user)
+        self.supplier = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Global Hardware Distributors',
+            party_type='supplier',
+            phone='9811122233',
+        )
+        self.customer = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Rohit Sharma',
+            party_type='customer',
+            phone='9844455566',
+        )
+        self.product = Product.objects.create(
+            workspace=self.workspace,
+            name='iPhone 15 Pro OLED Display',
+            sku='SCR-IP15P-OLED',
+            bin_location='Rack A / Shelf 2 / Bin 04',
+            has_serial_tracking=True,
+            vendor_warranty_months=12,
+            customer_warranty_months=6,
+            cost_price=Decimal('12000.00'),
+            unit_price=Decimal('16500.00'),
+            gst_rate=Decimal('18.00'),
+            stock_quantity=0,
+        )
+
+    def test_product_phase2_fields(self):
+        self.assertEqual(self.product.bin_location, 'Rack A / Shelf 2 / Bin 04')
+        self.assertTrue(self.product.has_serial_tracking)
+        self.assertEqual(self.product.vendor_warranty_months, 12)
+        self.assertEqual(self.product.customer_warranty_months, 6)
+
+    def test_purchase_and_sale_serial_lifecycle(self):
+        purchase_url = reverse('inventory_purchase_dashboard')
+        post_data = {
+            'inventory_entry_submit': 'purchase',
+            'entry_date': '2026-09-25',
+            'invoice_number': 'INV-SUP-8891',
+            'party': str(self.supplier.id),
+            'bill_discount_amount': '0.00',
+            'bill_notes': 'Inward stock for displays',
+            'line_product_id[]': [str(self.product.id)],
+            'line_quantity[]': ['2'],
+            'line_unit_price[]': ['12000.00'],
+            'line_gst_rate[]': ['18.00'],
+            'line_serials[]': ['SN-DISP-001, SN-DISP-002'],
+        }
+        resp = self.client.post(purchase_url, post_data)
+        self.assertEqual(resp.status_code, 302)
+
+        # Verify serial records created in stock
+        from .models import ProductItemSerial, InventoryEntry
+        serials = list(ProductItemSerial.objects.filter(product=self.product).order_by('serial_number'))
+        self.assertEqual(len(serials), 2)
+        self.assertEqual(serials[0].serial_number, 'SN-DISP-001')
+        self.assertEqual(serials[0].status, 'in_stock')
+        self.assertEqual(serials[0].purchase_cost, Decimal('12000.00'))
+        self.assertIsNotNone(serials[0].vendor_warranty_until)
+        self.assertTrue(serials[0].is_vendor_warranty_active)
+
+        # Now sell one serialized item
+        sale_url = reverse('inventory_sales_dashboard')
+        sale_data = {
+            'inventory_entry_submit': 'sale',
+            'entry_date': '2026-09-25',
+            'party': str(self.customer.id),
+            'bill_discount_amount': '0.00',
+            'bill_payment_status': 'paid',
+            'bill_notes': 'Screen replacement sale',
+            'line_product_id[]': [str(self.product.id)],
+            'line_quantity[]': ['1'],
+            'line_unit_price[]': ['16500.00'],
+            'line_gst_rate[]': ['18.00'],
+            'line_serials[]': ['SN-DISP-001'],
+        }
+        sale_resp = self.client.post(sale_url, sale_data)
+        self.assertEqual(sale_resp.status_code, 302)
+
+        # Verify serial status transition to sold
+        serials[0].refresh_from_db()
+        self.assertEqual(serials[0].status, 'sold')
+        self.assertEqual(serials[0].sale_price, Decimal('16500.00'))
+        self.assertIsNotNone(serials[0].customer_warranty_until)
+        self.assertTrue(serials[0].is_customer_warranty_active)
+
+        # Verify track serial endpoint returns complete lifecycle audit
+        track_url = reverse('inventory_track_serial') + '?serial=SN-DISP-001'
+        track_resp = self.client.get(track_url)
+        self.assertEqual(track_resp.status_code, 200)
+        data = track_resp.json()
+        self.assertTrue(data['ok'])
+        self.assertTrue(data['found'])
+        self.assertEqual(data['item']['serial_number'], 'SN-DISP-001')
+        self.assertEqual(data['item']['status'], 'sold')
+        self.assertEqual(data['item']['bin_location'], 'Rack A / Shelf 2 / Bin 04')
+        self.assertEqual(data['item']['supplier_name'], 'Global Hardware Distributors')
+        self.assertEqual(data['item']['customer_name'], 'Rohit Sharma')
+        self.assertTrue(data['item']['is_customer_warranty_active'])
+
+        # Verify non-existent serial returns found=False
+        miss_url = reverse('inventory_track_serial') + '?serial=UNKNOWN-999'
+        miss_resp = self.client.get(miss_url)
+        self.assertEqual(miss_resp.status_code, 200)
+        miss_data = miss_resp.json()
+        self.assertTrue(miss_data['ok'])
+        self.assertFalse(miss_data['found'])
+
+

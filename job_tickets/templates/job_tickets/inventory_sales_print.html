@@ -184,7 +184,14 @@
                 {% for line in sale_entries %}
                 <tr>
                     <td>{{ forloop.counter }}</td>
-                    <td>{{ line.product.name }}</td>
+                    <td>
+                        {{ line.product.name }}
+                        {% if line.serial_numbers_text %}
+                            <div style="font-size: 0.78rem; color: #4b5563; font-family: monospace; margin-top: 2px;">
+                                <strong>S/N:</strong> {{ line.serial_numbers_text }}
+                            </div>
+                        {% endif %}
+                    </td>
                     <td class="num">{{ line.quantity }}</td>
                     <td class="num">&#8377;{{ line.unit_price|floatformat:2 }}</td>
                     <td class="num">&#8377;{{ line.line_subtotal|floatformat:2 }}</td>

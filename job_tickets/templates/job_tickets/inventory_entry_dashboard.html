@@ -375,6 +375,9 @@
                                     <span class="badge bg-light text-dark border px-2 py-1"><kbd class="bg-white text-dark border">Ctrl+S</kbd> Save</span>
                                     <span class="badge bg-light text-dark border px-2 py-1"><kbd class="bg-white text-dark border">F11</kbd> Fullscreen</span>
                                 </div>
+                                <button type="button" class="btn btn-outline-info btn-sm px-2 py-1" id="open-track-serial-btn" title="Track Serial / IMEI (Alt+T)" aria-label="Track Serial">
+                                    <i class="fas fa-barcode me-1"></i><span class="d-none d-md-inline">Track S/N</span>
+                                </button>
                                 <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-1" id="toggle-modal-fullscreen-btn" title="Toggle Fullscreen Canvas (F11)" aria-label="Toggle Fullscreen">
                                     <i class="fas fa-expand" id="fullscreen-toggle-icon"></i>
                                 </button>
@@ -542,6 +545,19 @@
                                             <div id="erp-insight-margin-wrap">
                                                 <span class="text-muted">Margin:</span> <strong id="erp-insight-margin" class="text-success font-monospace">0.0%</strong>
                                             </div>
+                                            <div id="erp-insight-location-wrap" class="d-none">
+                                                <i class="fas fa-location-dot text-danger me-1"></i>
+                                                <span class="text-muted">Location:</span> <strong id="erp-insight-location" class="text-dark font-monospace">-</strong>
+                                            </div>
+                                            <div id="erp-insight-warranty-wrap" class="d-none">
+                                                <i class="fas fa-shield-halved text-success me-1"></i>
+                                                <span class="text-muted">Warranty:</span> <span id="erp-insight-warranty" class="badge bg-success-subtle text-success border border-success-subtle font-monospace">-</span>
+                                            </div>
+                                            <div id="erp-insight-serial-badge" class="d-none">
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace">
+                                                    <i class="fas fa-barcode me-1"></i>Serialized
+                                                </span>
+                                            </div>
                                         </div>
                                         <div id="erp-insight-alert" class="d-none">
                                             <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-triangle-exclamation me-1"></i>Low Stock Alert</span>
@@ -631,6 +647,10 @@
                                                                     data-reserved="{{ product.reserved_stock }}"
                                                                     data-sku="{{ product.sku|default:'' }}"
                                                                     data-gst-rate="{{ product.effective_gst_rate|default:18 }}"
+                                                                    data-bin="{{ product.bin_location|default:'' }}"
+                                                                    data-has-serial="{{ product.has_serial_tracking|yesno:'true,false' }}"
+                                                                    data-vendor-warranty="{{ product.vendor_warranty_months|default:0 }}"
+                                                                    data-customer-warranty="{{ product.customer_warranty_months|default:0 }}"
                                                                 >
                                                                     {{ product.name }} (Stock: {{ product.stock_quantity }})
                                                                 </option>
@@ -644,6 +664,21 @@
                                                         placeholder="Scan barcode or type item name..."
                                                     >
                                                     <datalist class="inventory-line-product-options"></datalist>
+                                                    <div class="line-serials-container mt-1 d-none">
+                                                        <div class="d-flex align-items-center gap-1">
+                                                            <span class="badge bg-light text-secondary border font-monospace line-serials-badge" style="font-size: 0.72rem; cursor: pointer;" title="Serial / IMEI numbers for this item">
+                                                                <i class="fas fa-barcode me-1 text-primary"></i>S/N: <span class="line-serials-count">0</span>/<span class="line-serials-max">1</span>
+                                                            </span>
+                                                            <input
+                                                                type="text"
+                                                                name="line_serials[]"
+                                                                class="form-control form-control-sm font-monospace line-serials-input py-0 px-1"
+                                                                style="font-size: 0.72rem; height: 23px;"
+                                                                placeholder="Scan / type Serials (comma separated)"
+                                                                autocomplete="off"
+                                                            >
+                                                        </div>
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm text-center" value="1">
@@ -708,6 +743,26 @@
                                                 <label for="quick-product-unit-price" class="form-label small mb-1">Sales Price</label>
                                                 <input type="number" min="0" step="0.01" id="quick-product-unit-price" class="form-control form-control-sm" value="0.00" placeholder="0.00">
                                             </div>
+                                            <div class="col-md-4">
+                                                <label for="quick-product-bin" class="form-label small mb-1">Rack / Bin Location</label>
+                                                <input type="text" id="quick-product-bin" class="form-control form-control-sm" placeholder="e.g. Rack A-02">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label for="quick-product-vendor-warranty" class="form-label small mb-1">Vendor Warranty (M)</label>
+                                                <input type="number" min="0" step="1" id="quick-product-vendor-warranty" class="form-control form-control-sm" value="0" placeholder="Months">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label for="quick-product-customer-warranty" class="form-label small mb-1">Customer Warranty (M)</label>
+                                                <input type="number" min="0" step="1" id="quick-product-customer-warranty" class="form-control form-control-sm" value="0" placeholder="Months">
+                                            </div>
+                                            <div class="col-12 mt-2">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" id="quick-product-has-serial">
+                                                    <label class="form-check-label small fw-semibold" for="quick-product-has-serial">
+                                                        <i class="fas fa-barcode me-1 text-primary"></i>Track Unique Serial / IMEI Numbers
+                                                    </label>
+                                                </div>
+                                            </div>
                                         </div>
                                         <div id="quick-product-errors" class="alert alert-danger py-2 px-3 mt-3 mb-0 d-none"></div>
                                         <div class="d-flex justify-content-end gap-2 mt-3">
@@ -737,6 +792,10 @@
                                                             data-reserved="{{ product.reserved_stock }}"
                                                             data-sku="{{ product.sku|default:'' }}"
                                                             data-gst-rate="{{ product.effective_gst_rate|default:18 }}"
+                                                            data-bin="{{ product.bin_location|default:'' }}"
+                                                            data-has-serial="{{ product.has_serial_tracking|yesno:'true,false' }}"
+                                                            data-vendor-warranty="{{ product.vendor_warranty_months|default:0 }}"
+                                                            data-customer-warranty="{{ product.customer_warranty_months|default:0 }}"
                                                         >
                                                             {{ product.name }} (Stock: {{ product.stock_quantity }})
                                                         </option>
@@ -750,6 +809,21 @@
                                                 placeholder="Scan barcode or type item name..."
                                             >
                                             <datalist class="inventory-line-product-options"></datalist>
+                                            <div class="line-serials-container mt-1 d-none">
+                                                <div class="d-flex align-items-center gap-1">
+                                                    <span class="badge bg-light text-secondary border font-monospace line-serials-badge" style="font-size: 0.72rem; cursor: pointer;" title="Serial / IMEI numbers for this item">
+                                                        <i class="fas fa-barcode me-1 text-primary"></i>S/N: <span class="line-serials-count">0</span>/<span class="line-serials-max">1</span>
+                                                    </span>
+                                                    <input
+                                                        type="text"
+                                                        name="line_serials[]"
+                                                        class="form-control form-control-sm font-monospace line-serials-input py-0 px-1"
+                                                        style="font-size: 0.72rem; height: 23px;"
+                                                        placeholder="Scan / type Serials (comma separated)"
+                                                        autocomplete="off"
+                                                    >
+                                                </div>
+                                            </div>
                                         </td>
                                         <td>
                                             <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm text-center" value="1">
@@ -1256,6 +1330,125 @@
     </div>
 </div>
 
+<div class="modal fade" id="trackSerialModal" tabindex="-1" aria-labelledby="trackSerialModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-0 rounded-4">
+            <div class="modal-header bg-dark text-white rounded-top-4 py-3 px-4">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary rounded-circle p-2 d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                        <i class="fas fa-barcode"></i>
+                    </span>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0 text-white" id="trackSerialModalLabel">Serial / IMEI Lifecycle Audit</h5>
+                        <small class="text-white-50">Instant item lookup, warranty status & traceability timeline</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="track-serial-form" class="mb-4">
+                    <div class="input-group input-group-lg shadow-sm">
+                        <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search"></i></span>
+                        <input type="text" class="form-control border-start-0 ps-0" id="track-serial-input" placeholder="Enter or scan Serial / IMEI number..." required autocomplete="off">
+                        <button class="btn btn-primary px-4 fw-semibold" type="submit" id="track-serial-submit-btn">
+                            <span class="spinner-border spinner-border-sm me-1 d-none" id="track-serial-spinner"></span>
+                            Audit Serial
+                        </button>
+                    </div>
+                </form>
+
+                <div id="track-serial-empty" class="text-center py-5 text-muted">
+                    <div class="mb-3">
+                        <i class="fas fa-qrcode fa-3x opacity-25"></i>
+                    </div>
+                    <h6 class="fw-semibold">No Serial Audited Yet</h6>
+                    <p class="small text-muted mb-0">Scan with barcode gun or type an IMEI / S/N above to trace its lifecycle.</p>
+                </div>
+
+                <div id="track-serial-error" class="alert alert-danger d-none rounded-3 py-3" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i><span id="track-serial-error-msg"></span>
+                </div>
+
+                <div id="track-serial-result" class="d-none">
+                    <div class="card border rounded-3 overflow-hidden mb-3">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2 px-3">
+                            <span class="fw-bold text-dark font-monospace fs-6" id="audit-serial-no">-</span>
+                            <span class="badge" id="audit-status-badge">-</span>
+                        </div>
+                        <div class="card-body p-3">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="small text-muted">Product / Model</div>
+                                    <div class="fw-bold text-dark fs-6" id="audit-product-name">-</div>
+                                    <div class="text-muted small font-monospace" id="audit-sku-barcode">SKU: -</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="small text-muted">Storage / Bin Location</div>
+                                    <div class="fw-bold text-dark" id="audit-bin-location">
+                                        <i class="fas fa-map-marker-alt text-danger me-1"></i><span>-</span>
+                                    </div>
+                                    <div class="mt-2 small text-muted">Warranty Overview</div>
+                                    <div id="audit-warranty-info" class="small fw-semibold text-secondary">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card border rounded-3 h-100">
+                                <div class="card-body p-3">
+                                    <h6 class="card-subtitle mb-2 text-muted fw-bold text-uppercase small">
+                                        <i class="fas fa-truck-loading me-1 text-primary"></i>Inward Purchase Logistics
+                                    </h6>
+                                    <dl class="row mb-0 small">
+                                        <dt class="col-5 text-muted">Bill / Entry</dt>
+                                        <dd class="col-7 font-monospace" id="audit-purchase-bill">-</dd>
+                                        <dt class="col-5 text-muted">Purchase Date</dt>
+                                        <dd class="col-7" id="audit-purchase-date">-</dd>
+                                        <dt class="col-5 text-muted">Supplier</dt>
+                                        <dd class="col-7" id="audit-purchase-supplier">-</dd>
+                                        <dt class="col-5 text-muted">Cost Price</dt>
+                                        <dd class="col-7 fw-bold" id="audit-purchase-cost">-</dd>
+                                        <dt class="col-5 text-muted">Vendor Warranty</dt>
+                                        <dd class="col-7" id="audit-vendor-warranty">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border rounded-3 h-100">
+                                <div class="card-body p-3">
+                                    <h6 class="card-subtitle mb-2 text-muted fw-bold text-uppercase small">
+                                        <i class="fas fa-cash-register me-1 text-success"></i>Outward Sale / Consumption
+                                    </h6>
+                                    <dl class="row mb-0 small">
+                                        <dt class="col-5 text-muted">Bill / Invoice</dt>
+                                        <dd class="col-7 font-monospace" id="audit-sale-bill">-</dd>
+                                        <dt class="col-5 text-muted">Sale Date</dt>
+                                        <dd class="col-7" id="audit-sale-date">-</dd>
+                                        <dt class="col-5 text-muted">Customer</dt>
+                                        <dd class="col-7" id="audit-sale-customer">-</dd>
+                                        <dt class="col-5 text-muted">Selling Price</dt>
+                                        <dd class="col-7 fw-bold" id="audit-sale-price">-</dd>
+                                        <dt class="col-5 text-muted">Cust. Warranty</dt>
+                                        <dd class="col-7" id="audit-customer-warranty">-</dd>
+                                        <dt class="col-5 text-muted">Job Ticket</dt>
+                                        <dd class="col-7" id="audit-job-ticket">-</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2 px-3">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{ inventory_bill_payload|json_script:"inventory-bill-payload" }}
 
 {% if entry_form.errors or line_entry_error or auto_open_add_modal %}
@@ -1318,6 +1511,8 @@ function initInventoryEntryDashboard() {
     const addPartySelect = addEntryModal ? addEntryModal.querySelector('select[name="party"]') : null;
     const partyBalances = {{ party_balances_json|safe|default:"{}" }};
     const productsCatalog = {{ products_catalog_json|safe|default:"{}" }};
+    const availableSerials = {{ available_serials_json|safe|default:"{}" }};
+    const trackSerialUrl = "{% url 'inventory_track_serial' %}";
     const walkinCustomerId = "{{ walkin_customer_id }}";
     const walkinCustomerName = "{{ walkin_customer_name }}";
     const partyBalanceBadge = document.getElementById('selected-party-balance-badge');
@@ -1333,6 +1528,21 @@ function initInventoryEntryDashboard() {
     const erpInsightMargin = document.getElementById('erp-insight-margin');
     const erpInsightMarginWrap = document.getElementById('erp-insight-margin-wrap');
     const erpInsightAlert = document.getElementById('erp-insight-alert');
+    const erpInsightLocationWrap = document.getElementById('erp-insight-location-wrap');
+    const erpInsightLocation = document.getElementById('erp-insight-location');
+    const erpInsightWarrantyWrap = document.getElementById('erp-insight-warranty-wrap');
+    const erpInsightWarranty = document.getElementById('erp-insight-warranty');
+    const erpInsightSerialBadge = document.getElementById('erp-insight-serial-badge');
+    const openTrackSerialBtn = document.getElementById('open-track-serial-btn');
+    const trackSerialModalEl = document.getElementById('trackSerialModal');
+    const trackSerialForm = document.getElementById('track-serial-form');
+    const trackSerialInput = document.getElementById('track-serial-input');
+    const trackSerialSubmitBtn = document.getElementById('track-serial-submit-btn');
+    const trackSerialSpinner = document.getElementById('track-serial-spinner');
+    const trackSerialEmpty = document.getElementById('track-serial-empty');
+    const trackSerialError = document.getElementById('track-serial-error');
+    const trackSerialErrorMsg = document.getElementById('track-serial-error-msg');
+    const trackSerialResult = document.getElementById('track-serial-result');
     const toggleFullscreenBtn = document.getElementById('toggle-modal-fullscreen-btn');
     const fullscreenToggleIcon = document.getElementById('fullscreen-toggle-icon');
     const fullscreenStorageKey = 'botgi_inventory_modal_fullscreen';
@@ -1358,6 +1568,10 @@ function initInventoryEntryDashboard() {
     const quickProductBrandInput = document.getElementById('quick-product-brand');
     const quickProductCostPriceInput = document.getElementById('quick-product-cost-price');
     const quickProductUnitPriceInput = document.getElementById('quick-product-unit-price');
+    const quickProductBinLocationInput = document.getElementById('quick-product-bin-location');
+    const quickProductHasSerialInput = document.getElementById('quick-product-has-serial');
+    const quickProductVendorWarrantyInput = document.getElementById('quick-product-vendor-warranty');
+    const quickProductCustomerWarrantyInput = document.getElementById('quick-product-customer-warranty');
     const quickProductErrors = document.getElementById('quick-product-errors');
     const saveQuickProductBtn = document.getElementById('save-quick-product-btn');
     const cancelQuickProductBtn = document.getElementById('cancel-quick-product-btn');
@@ -1727,6 +1941,10 @@ function initInventoryEntryDashboard() {
         if (quickProductBrandInput) quickProductBrandInput.value = '';
         if (quickProductCostPriceInput) quickProductCostPriceInput.value = '0.00';
         if (quickProductUnitPriceInput) quickProductUnitPriceInput.value = '0.00';
+        if (quickProductBinLocationInput) quickProductBinLocationInput.value = '';
+        if (quickProductHasSerialInput) quickProductHasSerialInput.checked = false;
+        if (quickProductVendorWarrantyInput) quickProductVendorWarrantyInput.value = '0';
+        if (quickProductCustomerWarrantyInput) quickProductCustomerWarrantyInput.value = '0';
         setErrorMessages(quickProductErrors, []);
     }
 
@@ -2114,6 +2332,37 @@ function initInventoryEntryDashboard() {
                 erpInsightAlert.classList.add('d-none');
             }
         }
+
+        if (erpInsightLocationWrap && erpInsightLocation) {
+            if (prod.bin_location) {
+                erpInsightLocation.textContent = prod.bin_location;
+                erpInsightLocationWrap.classList.remove('d-none');
+            } else {
+                erpInsightLocationWrap.classList.add('d-none');
+            }
+        }
+
+        if (erpInsightWarrantyWrap && erpInsightWarranty) {
+            const vW = Number(prod.vendor_warranty_months || 0);
+            const cW = Number(prod.customer_warranty_months || 0);
+            if (vW > 0 || cW > 0) {
+                const parts = [];
+                if (vW > 0) parts.push(`Vendor: ${vW}m`);
+                if (cW > 0) parts.push(`Cust: ${cW}m`);
+                erpInsightWarranty.textContent = parts.join(' | ');
+                erpInsightWarrantyWrap.classList.remove('d-none');
+            } else {
+                erpInsightWarrantyWrap.classList.add('d-none');
+            }
+        }
+
+        if (erpInsightSerialBadge) {
+            if (prod.has_serial_tracking) {
+                erpInsightSerialBadge.classList.remove('d-none');
+            } else {
+                erpInsightSerialBadge.classList.add('d-none');
+            }
+        }
     }
 
     function findProductByQueryOrBarcode(rawQuery) {
@@ -2130,6 +2379,111 @@ function initInventoryEntryDashboard() {
         const byPartial = allProds.filter((p) => (p.sku && p.sku.toLowerCase().includes(q)) || (p.name && p.name.toLowerCase().includes(q)));
         if (byPartial.length === 1) return byPartial[0];
         return null;
+    }
+
+    function syncLineSerialsUi(row) {
+        if (!row) return;
+        const select = row.querySelector('.inventory-line-product');
+        const serialContainer = row.querySelector('.line-serials-container');
+        const serialInput = row.querySelector('.line-serials-input');
+        const serialCountBadge = row.querySelector('.line-serials-count');
+        const qtyInput = row.querySelector('input[name="line_quantity[]"]');
+        if (!serialContainer) return;
+
+        const prodId = select ? String(select.value || '') : '';
+        const prod = (prodId && productsCatalog[prodId]) ? productsCatalog[prodId] : null;
+        const hasSerial = Boolean(prod && prod.has_serial_tracking);
+
+        if (hasSerial) {
+            serialContainer.classList.remove('d-none');
+            const qty = Math.max(1, parseNumber(qtyInput?.value) || 1);
+            const rawVal = serialInput?.value || '';
+            const enteredSerials = rawVal
+                .split(/[\r\n,]+/)
+                .map((s) => s.trim())
+                .filter(Boolean);
+            if (serialCountBadge) {
+                serialCountBadge.textContent = `${enteredSerials.length}/${qty}`;
+                if (enteredSerials.length === qty) {
+                    serialCountBadge.className = 'input-group-text bg-success-subtle text-success fw-bold border-start-0 py-0 px-2 line-serials-count';
+                } else if (enteredSerials.length > qty) {
+                    serialCountBadge.className = 'input-group-text bg-warning-subtle text-warning-emphasis fw-bold border-start-0 py-0 px-2 line-serials-count';
+                } else {
+                    serialCountBadge.className = 'input-group-text bg-light text-muted border-start-0 py-0 px-2 line-serials-count';
+                }
+            }
+        } else {
+            serialContainer.classList.add('d-none');
+            if (serialInput) serialInput.value = '';
+        }
+    }
+
+    function applySerialToRow(product, serialNumber) {
+        if (!product || !serialNumber || !lineBody) return;
+        const prodId = String(product.id);
+        const existingRows = Array.from(lineBody.querySelectorAll('.inventory-line-row'));
+
+        let targetRow = existingRows.find((r) => {
+            const sel = r.querySelector('.inventory-line-product');
+            return sel && String(sel.value || '') === prodId;
+        });
+
+        if (targetRow) {
+            const serialInput = targetRow.querySelector('.line-serials-input');
+            const qtyInput = targetRow.querySelector('input[name="line_quantity[]"]');
+            if (serialInput) {
+                const currentSerials = (serialInput.value || '')
+                    .split(/[\r\n,]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                if (!currentSerials.includes(serialNumber)) {
+                    currentSerials.push(serialNumber);
+                    serialInput.value = currentSerials.join(', ');
+                    if (qtyInput) {
+                        const curQty = Math.max(1, parseNumber(qtyInput.value) || 1);
+                        if (currentSerials.length > curQty) {
+                            qtyInput.value = currentSerials.length;
+                        }
+                    }
+                }
+            }
+            recalculateBill();
+            syncLineSerialsUi(targetRow);
+            flashRow(targetRow);
+            showErpItemInsight(targetRow);
+            schedulePurchaseDraftSave();
+            showToastMessage(`Attached S/N ${serialNumber} to ${product.name}`, 'success');
+            return;
+        }
+
+        targetRow = existingRows.find((r) => !(r.querySelector('.inventory-line-product')?.value || '').trim());
+        if (!targetRow) {
+            targetRow = createEditableLineRow();
+        }
+
+        if (targetRow) {
+            const prodSelect = targetRow.querySelector('.inventory-line-product');
+            if (targetRow._lineProductPickerController) {
+                targetRow._lineProductPickerController.setSelectedValue(prodId);
+            } else if (prodSelect) {
+                prodSelect.value = prodId;
+            }
+            const serialInput = targetRow.querySelector('.line-serials-input');
+            if (serialInput) {
+                serialInput.value = serialNumber;
+            }
+            const qtyInput = targetRow.querySelector('input[name="line_quantity[]"]');
+            if (qtyInput) {
+                qtyInput.value = 1;
+            }
+            suggestRateForLine(targetRow);
+            recalculateBill();
+            syncLineSerialsUi(targetRow);
+            flashRow(targetRow);
+            showErpItemInsight(targetRow);
+            schedulePurchaseDraftSave();
+            showToastMessage(`Scanned S/N ${serialNumber} (${product.name})`, 'success');
+        }
     }
 
     function applyProductToRowOrIncrement(product, currentRow, autoFocusQty) {
@@ -2151,6 +2505,7 @@ function initInventoryEntryDashboard() {
                 qtyInput.value = currentQty + 1;
             }
             recalculateBill();
+            syncLineSerialsUi(existingRow);
             flashRow(existingRow);
             showErpItemInsight(existingRow);
             schedulePurchaseDraftSave();
@@ -2184,6 +2539,7 @@ function initInventoryEntryDashboard() {
             }
             suggestRateForLine(targetRow);
             recalculateBill();
+            syncLineSerialsUi(targetRow);
             flashRow(targetRow);
             showErpItemInsight(targetRow);
             schedulePurchaseDraftSave();
@@ -2207,7 +2563,9 @@ function initInventoryEntryDashboard() {
         const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
         const totalInput = row.querySelector('.line-total-amount-input');
         const pickerInput = row.querySelector('.inventory-line-product-picker');
+        const serialInput = row.querySelector('.line-serials-input');
         initializeLineProductPicker(row);
+        syncLineSerialsUi(row);
 
         row.addEventListener('focusin', function () {
             showErpItemInsight(row);
@@ -2222,15 +2580,31 @@ function initInventoryEntryDashboard() {
             select.addEventListener('change', function () {
                 suggestRateForLine(row);
                 recalculateBill();
+                syncLineSerialsUi(row);
                 showErpItemInsight(row);
             });
         }
         [qtyInput, rateInput, gstInput].forEach((input) => {
             if (!input) return;
             input.addEventListener('input', function () {
+                if (input === qtyInput) {
+                    syncLineSerialsUi(row);
+                }
                 recalculateBill();
             });
         });
+        if (serialInput) {
+            serialInput.addEventListener('input', function () {
+                syncLineSerialsUi(row);
+                schedulePurchaseDraftSave();
+            });
+            serialInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    syncLineSerialsUi(row);
+                }
+            });
+        }
         if (totalInput) {
             totalInput.addEventListener('input', function () {
                 recalculateSingleLine(row, 'total');
@@ -2377,6 +2751,7 @@ function initInventoryEntryDashboard() {
         const rateInput = row.querySelector('input[name="line_unit_price[]"]');
         const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
         const totalInput = row.querySelector('.line-total-amount-input');
+        const serialInput = row.querySelector('.line-serials-input');
         if (productSelect) productSelect.value = '';
         if (row._lineProductPickerController) {
             row._lineProductPickerController.reset();
@@ -2385,6 +2760,8 @@ function initInventoryEntryDashboard() {
         if (rateInput) rateInput.value = '0.00';
         if (gstInput) gstInput.value = defaultLineGstRate;
         if (totalInput) totalInput.value = '0.00';
+        if (serialInput) serialInput.value = '';
+        syncLineSerialsUi(row);
     }
 
     function draftLineHasMeaningfulContent(lineData) {
@@ -2394,6 +2771,7 @@ function initInventoryEntryDashboard() {
             || parseNumber(lineData.quantity) > 1
             || parseNumber(lineData.unit_price) > 0
             || Math.abs(parseNumber(lineData.gst_rate) - parseNumber(defaultLineGstRate)) > 0.0001
+            || Boolean((lineData.serials || '').trim())
         );
     }
 
@@ -2416,6 +2794,7 @@ function initInventoryEntryDashboard() {
                 quantity: row.querySelector('input[name="line_quantity[]"]')?.value || '1',
                 unit_price: row.querySelector('input[name="line_unit_price[]"]')?.value || '0.00',
                 gst_rate: row.querySelector('input[name="line_gst_rate[]"]')?.value || defaultLineGstRate,
+                serials: row.querySelector('.line-serials-input')?.value || '',
             })),
         };
         const hasMeaningfulContent = Boolean(
@@ -2573,6 +2952,11 @@ function initInventoryEntryDashboard() {
             if (qtyInput) qtyInput.value = lineData.quantity || '1';
             if (rateInput) rateInput.value = lineData.unit_price || '0.00';
             if (gstInput) gstInput.value = lineData.gst_rate || defaultLineGstRate;
+            if (lineData.serials) {
+                const rowSerialInput = row.querySelector('.line-serials-input');
+                if (rowSerialInput) rowSerialInput.value = lineData.serials;
+            }
+            syncLineSerialsUi(row);
         });
         recalculateBill();
         updatePurchaseDraftUi(true);
@@ -2799,6 +3183,10 @@ function initInventoryEntryDashboard() {
         formData.append('unit_price', quickProductUnitPriceInput?.value.trim() || '0');
         formData.append('purchase_price_tax_mode', 'without_tax');
         formData.append('sales_price_tax_mode', 'without_tax');
+        formData.append('bin_location', quickProductBinLocationInput?.value.trim() || '');
+        formData.append('has_serial_tracking', quickProductHasSerialInput?.checked ? 'true' : '');
+        formData.append('vendor_warranty_months', quickProductVendorWarrantyInput?.value.trim() || '0');
+        formData.append('customer_warranty_months', quickProductCustomerWarrantyInput?.value.trim() || '0');
 
         saveQuickProductBtn.disabled = true;
         setErrorMessages(quickProductErrors, []);
@@ -3000,6 +3388,16 @@ function initInventoryEntryDashboard() {
                 return;
             }
 
+            if (event.altKey && (event.key === 't' || event.key === 'T')) {
+                event.preventDefault();
+                if (openTrackSerialBtn) {
+                    openTrackSerialBtn.click();
+                } else if (trackSerialModalEl && typeof bootstrap !== 'undefined') {
+                    bootstrap.Modal.getOrCreateInstance(trackSerialModalEl).show();
+                }
+                return;
+            }
+
             const now = Date.now();
             const timeDiff = now - barcodeLastKeyTime;
             barcodeLastKeyTime = now;
@@ -3008,6 +3406,19 @@ function initInventoryEntryDashboard() {
                 if (barcodeBuffer.length >= 3 && timeDiff < 100) {
                     const scanned = barcodeBuffer.trim();
                     barcodeBuffer = '';
+
+                    const serialUpper = scanned.toUpperCase();
+                    if (availableSerials && availableSerials[serialUpper]) {
+                        const sInfo = availableSerials[serialUpper];
+                        const matchedProd = productsCatalog[String(sInfo.product_id)];
+                        if (matchedProd) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            applySerialToRow(matchedProd, sInfo.serial_number);
+                            return;
+                        }
+                    }
+
                     const matched = findProductByQueryOrBarcode(scanned);
                     if (matched) {
                         event.preventDefault();
@@ -3069,6 +3480,150 @@ function initInventoryEntryDashboard() {
             });
         }
     }
+
+    async function auditSerialLifecycle(serial) {
+        const cleanSerial = (serial || '').trim();
+        if (!cleanSerial) return;
+        if (!trackSerialUrl) return;
+
+        if (trackSerialSpinner) trackSerialSpinner.classList.remove('d-none');
+        if (trackSerialSubmitBtn) trackSerialSubmitBtn.disabled = true;
+        if (trackSerialEmpty) trackSerialEmpty.classList.add('d-none');
+        if (trackSerialError) trackSerialError.classList.add('d-none');
+        if (trackSerialResult) trackSerialResult.classList.add('d-none');
+
+        try {
+            const url = new URL(trackSerialUrl, window.location.origin);
+            url.searchParams.set('serial', cleanSerial);
+            const res = await window.fetch(url.toString(), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+                throw new Error(data.error || 'Failed to query serial number.');
+            }
+            if (!data.found || !data.item) {
+                if (trackSerialErrorMsg) trackSerialErrorMsg.textContent = data.message || `No lifecycle record found for "${cleanSerial}".`;
+                if (trackSerialError) trackSerialError.classList.remove('d-none');
+                return;
+            }
+
+            const item = data.item;
+            const snEl = document.getElementById('audit-serial-no');
+            const statusBadge = document.getElementById('audit-status-badge');
+            const prodName = document.getElementById('audit-product-name');
+            const skuBarcode = document.getElementById('audit-sku-barcode');
+            const binLoc = document.getElementById('audit-bin-location');
+            const warrantyInfo = document.getElementById('audit-warranty-info');
+
+            const pBill = document.getElementById('audit-purchase-bill');
+            const pDate = document.getElementById('audit-purchase-date');
+            const pSupp = document.getElementById('audit-purchase-supplier');
+            const pCost = document.getElementById('audit-purchase-cost');
+            const vWarr = document.getElementById('audit-vendor-warranty');
+
+            const sBill = document.getElementById('audit-sale-bill');
+            const sDate = document.getElementById('audit-sale-date');
+            const sCust = document.getElementById('audit-sale-customer');
+            const sPrice = document.getElementById('audit-sale-price');
+            const cWarr = document.getElementById('audit-customer-warranty');
+            const jobTicket = document.getElementById('audit-job-ticket');
+
+            if (snEl) snEl.textContent = item.serial_number;
+            if (statusBadge) {
+                statusBadge.textContent = item.status_label || item.status;
+                const statusClasses = {
+                    in_stock: 'bg-success text-white',
+                    sold: 'bg-primary text-white',
+                    consumed_in_job: 'bg-info text-dark',
+                    defective_rma: 'bg-danger text-white',
+                    written_off: 'bg-secondary text-white'
+                };
+                statusBadge.className = 'badge ' + (statusClasses[item.status] || 'bg-dark text-white');
+            }
+
+            if (prodName) prodName.textContent = item.product_name || '-';
+            if (skuBarcode) skuBarcode.textContent = item.sku ? `SKU / Barcode: ${item.sku}` : 'SKU: -';
+            if (binLoc) {
+                binLoc.innerHTML = `<i class="fas fa-map-marker-alt text-danger me-1"></i><span class="font-monospace fw-bold">${item.bin_location || 'Not Tagged'}</span>`;
+            }
+
+            if (warrantyInfo) {
+                const wParts = [];
+                if (item.vendor_warranty_until) {
+                    wParts.push(`Vendor: ${item.is_vendor_warranty_active ? 'Active (' + item.vendor_warranty_days + 'd left)' : 'Expired'}`);
+                }
+                if (item.customer_warranty_until) {
+                    wParts.push(`Cust: ${item.is_customer_warranty_active ? 'Active (' + item.customer_warranty_days + 'd left)' : 'Expired'}`);
+                }
+                warrantyInfo.textContent = wParts.length ? wParts.join(' • ') : 'Standard warranty';
+            }
+
+            if (pBill) pBill.textContent = item.purchase_invoice || 'N/A';
+            if (pDate) pDate.textContent = item.purchase_date || 'N/A';
+            if (pSupp) pSupp.textContent = item.supplier_name || 'N/A';
+            if (pCost) pCost.textContent = item.purchase_cost ? `₹ ${item.purchase_cost}` : '₹ 0.00';
+            if (vWarr) {
+                if (item.vendor_warranty_until) {
+                    vWarr.innerHTML = `<span class="${item.is_vendor_warranty_active ? 'text-success' : 'text-danger'} fw-semibold">${item.vendor_warranty_until} (${item.vendor_warranty_days}d)</span>`;
+                } else {
+                    vWarr.textContent = 'None';
+                }
+            }
+
+            if (sBill) sBill.textContent = item.sale_invoice || 'Not sold yet';
+            if (sDate) sDate.textContent = item.sale_date || '-';
+            if (sCust) sCust.textContent = item.customer_name || '-';
+            if (sPrice) sPrice.textContent = item.sale_price ? `₹ ${item.sale_price}` : '-';
+            if (cWarr) {
+                if (item.customer_warranty_until) {
+                    cWarr.innerHTML = `<span class="${item.is_customer_warranty_active ? 'text-success' : 'text-danger'} fw-semibold">${item.customer_warranty_until} (${item.customer_warranty_days}d)</span>`;
+                } else {
+                    cWarr.textContent = 'None';
+                }
+            }
+            if (jobTicket) jobTicket.textContent = item.job_ticket_code || '-';
+
+            if (trackSerialResult) trackSerialResult.classList.remove('d-none');
+        } catch (err) {
+            if (trackSerialErrorMsg) trackSerialErrorMsg.textContent = err.message || 'Error auditing serial.';
+            if (trackSerialError) trackSerialError.classList.remove('d-none');
+        } finally {
+            if (trackSerialSpinner) trackSerialSpinner.classList.add('d-none');
+            if (trackSerialSubmitBtn) trackSerialSubmitBtn.disabled = false;
+        }
+    }
+
+    if (trackSerialForm) {
+        trackSerialForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (trackSerialInput) auditSerialLifecycle(trackSerialInput.value);
+        });
+    }
+
+    if (openTrackSerialBtn && trackSerialModalEl && typeof bootstrap !== 'undefined') {
+        openTrackSerialBtn.addEventListener('click', function () {
+            bootstrap.Modal.getOrCreateInstance(trackSerialModalEl).show();
+        });
+    }
+
+    if (trackSerialModalEl) {
+        trackSerialModalEl.addEventListener('shown.bs.modal', function () {
+            if (trackSerialInput) {
+                trackSerialInput.focus();
+                trackSerialInput.select();
+            }
+        });
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.altKey && (e.key === 't' || e.key === 'T')) {
+            e.preventDefault();
+            if (trackSerialModalEl && typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(trackSerialModalEl).show();
+            }
+        }
+    });
 
     const editModal = document.getElementById('editInventoryEntryModal');
     if (!editModal) return;

@@ -343,6 +343,24 @@ class Product(models.Model):
         default=0,
         help_text="Minimum quantity to keep in stock for essential/reserved items.",
     )
+    bin_location = models.CharField(
+        max_length=60,
+        blank=True,
+        default='',
+        help_text="Rack / Shelf / Bin storage location in warehouse or shop.",
+    )
+    has_serial_tracking = models.BooleanField(
+        default=False,
+        help_text="Enable unique Serial / IMEI tracking for this product.",
+    )
+    vendor_warranty_months = models.PositiveIntegerField(
+        default=0,
+        help_text="Warranty period from supplier in months.",
+    )
+    customer_warranty_months = models.PositiveIntegerField(
+        default=0,
+        help_text="Warranty period provided to customer in months.",
+    )
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -574,6 +592,11 @@ class InventoryEntry(models.Model):
     stock_before = models.IntegerField(default=0)
     stock_after = models.IntegerField(default=0)
 
+    serial_numbers_text = models.TextField(
+        blank=True,
+        default='',
+        help_text="Serial / IMEI numbers for this entry line.",
+    )
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_entries')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -589,6 +612,87 @@ class InventoryEntry(models.Model):
         if self.entry_type in {'purchase', 'sale_return'}:
             return self.quantity
         return -self.quantity
+
+
+class ProductItemSerial(models.Model):
+    STATUS_IN_STOCK = 'in_stock'
+    STATUS_SOLD = 'sold'
+    STATUS_CONSUMED_IN_JOB = 'consumed_in_job'
+    STATUS_DEFECTIVE_RMA = 'defective_rma'
+    STATUS_WRITTEN_OFF = 'written_off'
+    STATUS_CHOICES = [
+        (STATUS_IN_STOCK, 'In Stock'),
+        (STATUS_SOLD, 'Sold'),
+        (STATUS_CONSUMED_IN_JOB, 'Consumed in Job'),
+        (STATUS_DEFECTIVE_RMA, 'Defective / RMA Return'),
+        (STATUS_WRITTEN_OFF, 'Written Off'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='product_serials',
+        db_index=True,
+    )
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='serial_items')
+    serial_number = models.CharField(max_length=100, db_index=True)
+    status = models.CharField(max_length=25, choices=STATUS_CHOICES, default=STATUS_IN_STOCK, db_index=True)
+
+    purchase_entry = models.ForeignKey(
+        InventoryEntry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inward_serials',
+    )
+    purchase_date = models.DateField(null=True, blank=True)
+    purchase_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    vendor_warranty_until = models.DateField(null=True, blank=True)
+
+    sale_entry = models.ForeignKey(
+        InventoryEntry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='outward_serials',
+    )
+    sale_date = models.DateField(null=True, blank=True)
+    sale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    customer_warranty_until = models.DateField(null=True, blank=True)
+
+    job_ticket = models.ForeignKey(
+        'JobTicket',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='consumed_serials',
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'product', 'serial_number'], name='unique_product_serial_per_workspace'),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.serial_number} ({self.get_status_display()})"
+
+    @property
+    def is_vendor_warranty_active(self):
+        if not self.vendor_warranty_until:
+            return False
+        return self.vendor_warranty_until >= timezone.localdate()
+
+    @property
+    def is_customer_warranty_active(self):
+        if not self.customer_warranty_until:
+            return False
+        return self.customer_warranty_until >= timezone.localdate()
 
 
 class InventoryCreditPayment(models.Model):

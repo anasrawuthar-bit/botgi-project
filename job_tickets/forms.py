@@ -394,6 +394,10 @@ class ProductForm(forms.ModelForm):
             'unit_price',
             'stock_quantity',
             'reserved_stock',
+            'bin_location',
+            'has_serial_tracking',
+            'vendor_warranty_months',
+            'customer_warranty_months',
             'description',
         ]
         labels = {
@@ -408,6 +412,10 @@ class ProductForm(forms.ModelForm):
             'unit_price': 'Sales Price',
             'stock_quantity': 'Opening Stock Quantity',
             'reserved_stock': 'Reserved Stock Alert',
+            'bin_location': 'Rack / Shelf / Bin Location',
+            'has_serial_tracking': 'Track Unique Serial / IMEI',
+            'vendor_warranty_months': 'Vendor Warranty (Months)',
+            'customer_warranty_months': 'Customer Warranty (Months)',
         }
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -424,6 +432,10 @@ class ProductForm(forms.ModelForm):
             'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'stock_quantity': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
             'reserved_stock': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
+            'bin_location': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Rack A - Shelf 2'}),
+            'has_serial_tracking': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'vendor_warranty_months': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
+            'customer_warranty_months': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }
 

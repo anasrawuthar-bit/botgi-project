@@ -39,6 +39,7 @@ from ..models import (
     JobTicketLog,
     MessageQueue,
     Product,
+    ProductItemSerial,
     ProductSale,
     ServiceLog,
     SpecializedService,
@@ -2250,12 +2251,14 @@ def _parse_inventory_decimal(raw_value, label, default='0.00'):
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(label)
 
-def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rates, workspace=None):
+def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rates, serials_list=None, workspace=None):
+    serials_list = serials_list or []
     max_lines = max(
         len(product_ids),
         len(quantities),
         len(unit_prices),
         len(gst_rates),
+        len(serials_list),
     )
 
     def get_row_value(values, idx):
@@ -2270,8 +2273,9 @@ def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rate
         qty_raw = get_row_value(quantities, idx)
         unit_price_raw = get_row_value(unit_prices, idx)
         gst_raw = get_row_value(gst_rates, idx)
+        serials_raw = get_row_value(serials_list, idx)
 
-        if not any([product_id, qty_raw, unit_price_raw, gst_raw]):
+        if not any([product_id, qty_raw, unit_price_raw, gst_raw, serials_raw]):
             continue
 
         line_no = idx + 1
@@ -2305,6 +2309,20 @@ def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rate
             )
         seen_product_ids.add(product.id)
 
+        parsed_serials = []
+        if serials_raw:
+            raw_tokens = re.split(r'[\r\n,]+', serials_raw)
+            for token in raw_tokens:
+                s = token.strip()
+                if s and s not in parsed_serials:
+                    parsed_serials.append(s)
+
+        if product.has_serial_tracking and parsed_serials:
+            if len(parsed_serials) > quantity:
+                raise ValueError(
+                    f"Line {line_no} ({product.name}): entered {len(parsed_serials)} serial number(s) but quantity is only {quantity}."
+                )
+
         line_items.append(
             {
                 'product': product,
@@ -2312,6 +2330,7 @@ def _collect_inventory_bill_lines(product_ids, quantities, unit_prices, gst_rate
                 'unit_price': unit_price,
                 'line_amount': Decimal(quantity) * unit_price,
                 'gst_rate': gst_rate,
+                'serials': parsed_serials,
             }
         )
 
@@ -2370,6 +2389,7 @@ def _apply_inventory_bill_discount(line_items, bill_discount_amount, bill_notes)
             'discount_amount': line_discounts[idx],
             'gst_rate': line['gst_rate'],
             'notes': bill_notes,
+            'serials': line.get('serials', []),
         }
         for idx, line in enumerate(line_items)
     ]
@@ -2835,6 +2855,9 @@ def _record_inventory_entries(
             gst_amount = (taxable_amount * gst_rate) / Decimal('100')
             total_amount = taxable_amount + gst_amount
 
+            serials = line.get('serials') or []
+            serial_text = ', '.join(serials)
+
             entry = InventoryEntry.objects.create(
                 workspace=workspace,
                 bill=bill,
@@ -2854,10 +2877,80 @@ def _record_inventory_entries(
                 total_amount=total_amount.quantize(Decimal('0.01')),
                 stock_before=stock_before,
                 stock_after=stock_after,
+                serial_numbers_text=serial_text,
                 notes=notes,
                 created_by=request.user,
             )
             created_entries.append(entry)
+
+            if serials:
+                from dateutil.relativedelta import relativedelta
+                if entry_type == 'purchase':
+                    for sn in serials:
+                        vendor_warranty_until = None
+                        if product.vendor_warranty_months > 0:
+                            vendor_warranty_until = entry_date + relativedelta(months=product.vendor_warranty_months)
+                        ProductItemSerial.objects.update_or_create(
+                            workspace=workspace,
+                            product=product,
+                            serial_number=sn,
+                            defaults={
+                                'status': ProductItemSerial.STATUS_IN_STOCK,
+                                'purchase_entry': entry,
+                                'purchase_date': entry_date,
+                                'purchase_cost': unit_price,
+                                'vendor_warranty_until': vendor_warranty_until,
+                                'notes': notes,
+                            },
+                        )
+                elif entry_type == 'sale':
+                    for sn in serials:
+                        customer_warranty_until = None
+                        if product.customer_warranty_months > 0:
+                            customer_warranty_until = entry_date + relativedelta(months=product.customer_warranty_months)
+                        item_serial = ProductItemSerial.objects.filter(
+                            workspace=workspace,
+                            product=product,
+                            serial_number=sn,
+                        ).first()
+                        if item_serial:
+                            item_serial.status = ProductItemSerial.STATUS_SOLD
+                            item_serial.sale_entry = entry
+                            item_serial.sale_date = entry_date
+                            item_serial.sale_price = unit_price
+                            item_serial.customer_warranty_until = customer_warranty_until
+                            item_serial.save(update_fields=[
+                                'status', 'sale_entry', 'sale_date', 'sale_price',
+                                'customer_warranty_until', 'updated_at'
+                            ])
+                        else:
+                            ProductItemSerial.objects.create(
+                                workspace=workspace,
+                                product=product,
+                                serial_number=sn,
+                                status=ProductItemSerial.STATUS_SOLD,
+                                sale_entry=entry,
+                                sale_date=entry_date,
+                                sale_price=unit_price,
+                                customer_warranty_until=customer_warranty_until,
+                            )
+                elif entry_type == 'sale_return':
+                    for sn in serials:
+                        item_serial = ProductItemSerial.objects.filter(
+                            workspace=workspace,
+                            product=product,
+                            serial_number=sn,
+                        ).first()
+                        if item_serial:
+                            item_serial.status = ProductItemSerial.STATUS_IN_STOCK
+                            item_serial.sale_entry = None
+                            item_serial.sale_date = None
+                            item_serial.sale_price = Decimal('0.00')
+                            item_serial.customer_warranty_until = None
+                            item_serial.save(update_fields=[
+                                'status', 'sale_entry', 'sale_date', 'sale_price',
+                                'customer_warranty_until', 'updated_at'
+                            ])
 
             # Keep master product pricing fresh from purchases.
             if entry_type in {'purchase', 'purchase_return'}:
@@ -4740,6 +4833,7 @@ def _inventory_entry_dashboard(request, entry_type):
                         request.POST.getlist('line_quantity[]'),
                         request.POST.getlist('line_unit_price[]'),
                         request.POST.getlist('line_gst_rate[]'),
+                        serials_list=request.POST.getlist('line_serials[]'),
                         workspace=current_workspace,
                     )
                     final_line_items = _apply_inventory_bill_discount(
@@ -5496,9 +5590,25 @@ def _inventory_entry_dashboard(request, entry_type):
             'gst_rate': float(p.effective_gst_rate or Decimal('18.00')),
             'category': p.category or '',
             'brand': p.brand or '',
+            'bin_location': p.bin_location or '',
+            'has_serial_tracking': bool(p.has_serial_tracking),
+            'vendor_warranty_months': p.vendor_warranty_months or 0,
+            'customer_warranty_months': p.customer_warranty_months or 0,
             'label': f"{p.name} (Stock: {p.stock_quantity})",
         }
     products_catalog_json = json.dumps(products_catalog_map)
+
+    in_stock_serials = ProductItemSerial.objects.filter(
+        workspace=current_workspace,
+        status=ProductItemSerial.STATUS_IN_STOCK,
+    ).values('product_id', 'serial_number')
+    available_serials_map = {}
+    for s in in_stock_serials:
+        pid_str = str(s['product_id'])
+        if pid_str not in available_serials_map:
+            available_serials_map[pid_str] = []
+        available_serials_map[pid_str].append(s['serial_number'])
+    available_serials_json = json.dumps(available_serials_map)
 
     just_recorded_bill_data = None
     just_bill_id = request.GET.get('just_recorded_bill')
@@ -5600,6 +5710,7 @@ def _inventory_entry_dashboard(request, entry_type):
         'walkin_customer_name': walkin_customer_name,
         'party_balances_json': party_balances_json,
         'products_catalog_json': products_catalog_json,
+        'available_serials_json': available_serials_json,
         'just_recorded_bill_data': just_recorded_bill_data,
     }
     return render(request, 'job_tickets/inventory_entry_dashboard.html', context)

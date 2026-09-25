@@ -38,6 +38,7 @@ urlpatterns = [
     path('staff/inventory/sales/print/<str:invoice_number>/', views.inventory_sales_print_view, name='inventory_sales_print_view'),
     path('staff/inventory/sales-return/', views.inventory_sales_return_dashboard, name='inventory_sales_return_dashboard'),
     path('staff/inventory/products/quick-add/', views.inventory_quick_add_product, name='inventory_quick_add_product'),
+    path('staff/inventory/track-serial/', views.inventory_track_serial, name='inventory_track_serial'),
     path('staff/vendors/', views.vendor_dashboard, name='vendor_dashboard'),
     path('staff/vendors/<int:vendor_id>/edit/', views.edit_vendor, name='edit_vendor'),
     path('staff/vendors/<int:vendor_id>/delete/', views.delete_vendor, name='delete_vendor'),
