@@ -55,12 +55,45 @@
     min-width: 4.75rem;
   }
 
-  .quick-pop-modal.modal-dialog-scrollable .modal-footer,
+  .quick-pop-modal .modal-dialog-scrollable {
+    max-height: calc(100vh - 2.5rem);
+  }
+
+  .quick-pop-modal .modal-dialog-scrollable .modal-content {
+    max-height: calc(100vh - 2.5rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .quick-pop-modal .modal-header {
+    flex-shrink: 0;
+    z-index: 15;
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .quick-pop-modal .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .quick-pop-modal .modal-content > form > .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
   .quick-pop-modal .modal-footer {
+    flex-shrink: 0;
     position: sticky;
     bottom: 0;
     background: #ffffff;
-    z-index: 10;
+    z-index: 15;
     border-top: 1px solid #e2e8f0;
     box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
   }

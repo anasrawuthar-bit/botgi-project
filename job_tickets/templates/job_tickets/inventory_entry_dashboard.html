@@ -395,9 +395,7 @@
                                         </div>
                                     </div>
                                 {% endif %}
-                                <div class="alert alert-info py-2 mb-3">
-                                    Add one or more product lines. Select existing products from your product list.
-                                </div>
+
 
                                 {% if entry_type == 'purchase' %}
                                     <div class="d-none">{{ entry_form.entry_date }}</div>
@@ -497,78 +495,7 @@
                                                 </div>
                                             </div>
                                         {% endif %}
-                                    </div>
                                 </div>
-
-                                {% if entry_type == 'purchase' or entry_type == 'sale' %}
-                                <div class="card border-0 bg-light p-3 mb-3">
-                                    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
-                                        <div>
-                                            <label class="form-label mb-0">Bill Settlement</label>
-                                            <div class="small text-muted">Paid bills will not appear in credit balance.</div>
-                                        </div>
-                                        <div class="btn-group" role="group" aria-label="Bill settlement">
-                                            <input
-                                                type="radio"
-                                                class="btn-check"
-                                                name="bill_payment_status"
-                                                id="bill-payment-status-paid"
-                                                value="paid"
-                                                autocomplete="off"
-                                                {% if bill_payment_status_value == 'paid' %}checked{% endif %}
-                                            >
-                                            <label class="btn btn-outline-success btn-sm" for="bill-payment-status-paid">
-                                                <i class="fas fa-circle-check me-1"></i>Paid
-                                            </label>
-                                            <input
-                                                type="radio"
-                                                class="btn-check"
-                                                name="bill_payment_status"
-                                                id="bill-payment-status-part-paid"
-                                                value="part_paid"
-                                                autocomplete="off"
-                                                {% if bill_payment_status_value == 'part_paid' %}checked{% endif %}
-                                            >
-                                            <label class="btn btn-outline-info btn-sm" for="bill-payment-status-part-paid">
-                                                <i class="fas fa-circle-half-stroke me-1"></i>Part Paid
-                                            </label>
-                                            <input
-                                                type="radio"
-                                                class="btn-check"
-                                                name="bill_payment_status"
-                                                id="bill-payment-status-unpaid"
-                                                value="unpaid"
-                                                autocomplete="off"
-                                                {% if bill_payment_status_value != 'paid' and bill_payment_status_value != 'part_paid' %}checked{% endif %}
-                                            >
-                                            <label class="btn btn-outline-warning btn-sm" for="bill-payment-status-unpaid">
-                                                <i class="fas fa-clock me-1"></i>Unpaid
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div id="bill-paid-fields" class="row g-2 {% if bill_payment_status_value != 'paid' and bill_payment_status_value != 'part_paid' %}d-none{% endif %}">
-                                        <div id="bill-part-paid-amount-col" class="col-md-3 {% if bill_payment_status_value != 'part_paid' %}d-none{% endif %}">
-                                            <label class="form-label small mb-1">Amount Paid (₹)</label>
-                                            <input type="number" step="0.01" min="0.01" name="bill_amount_paid" class="form-control form-control-sm" value="{{ bill_amount_paid_value }}" placeholder="0.00">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label class="form-label small mb-1">Method</label>
-                                            <select name="bill_payment_method" class="form-select form-select-sm">
-                                                <option value="cash" {% if bill_payment_method_value == 'cash' %}selected{% endif %}>Cash</option>
-                                                <option value="transfer" {% if bill_payment_method_value == 'transfer' %}selected{% endif %}>Transfer</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label class="form-label small mb-1">Payment Date</label>
-                                            <input type="date" name="bill_payment_date" class="form-control form-control-sm" value="{{ bill_payment_date_value }}">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label class="form-label small mb-1">Reference</label>
-                                            <input type="text" name="bill_payment_reference" class="form-control form-control-sm" value="{{ bill_payment_reference_value }}" placeholder="Optional">
-                                        </div>
-                                    </div>
-                                </div>
-                                {% endif %}
 
                                 <div class="table-responsive">
                                     <table class="table table-sm table-striped align-middle mb-0 inventory-modal-lines-table">
@@ -782,33 +709,112 @@
                                     </tr>
                                 </template>
 
-                                <div class="row g-3 mt-2">
+                                <div class="row g-3 mt-3">
                                     <div class="col-lg-7">
-                                        <label class="form-label">Bill Note</label>
-                                        <textarea name="bill_notes" class="form-control form-control-sm" rows="3" placeholder="Optional note for this bill (appears on all bill lines)">{{ bill_notes_value }}</textarea>
+                                        {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                                        <div class="card border-0 bg-light p-3 mb-3">
+                                            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+                                                <div>
+                                                    <label class="form-label fw-bold mb-0">
+                                                        <i class="fas fa-wallet text-primary me-1"></i>Bill Settlement
+                                                    </label>
+                                                    <div class="small text-muted">Paid bills will not appear in credit balance.</div>
+                                                </div>
+                                                <div class="btn-group" role="group" aria-label="Bill settlement">
+                                                    <input
+                                                        type="radio"
+                                                        class="btn-check"
+                                                        name="bill_payment_status"
+                                                        id="bill-payment-status-paid"
+                                                        value="paid"
+                                                        autocomplete="off"
+                                                        {% if bill_payment_status_value == 'paid' %}checked{% endif %}
+                                                    >
+                                                    <label class="btn btn-outline-success btn-sm" for="bill-payment-status-paid">
+                                                        <i class="fas fa-circle-check me-1"></i>Paid
+                                                    </label>
+                                                    <input
+                                                        type="radio"
+                                                        class="btn-check"
+                                                        name="bill_payment_status"
+                                                        id="bill-payment-status-part-paid"
+                                                        value="part_paid"
+                                                        autocomplete="off"
+                                                        {% if bill_payment_status_value == 'part_paid' %}checked{% endif %}
+                                                    >
+                                                    <label class="btn btn-outline-info btn-sm" for="bill-payment-status-part-paid">
+                                                        <i class="fas fa-circle-half-stroke me-1"></i>Part Paid
+                                                    </label>
+                                                    <input
+                                                        type="radio"
+                                                        class="btn-check"
+                                                        name="bill_payment_status"
+                                                        id="bill-payment-status-unpaid"
+                                                        value="unpaid"
+                                                        autocomplete="off"
+                                                        {% if bill_payment_status_value != 'paid' and bill_payment_status_value != 'part_paid' %}checked{% endif %}
+                                                    >
+                                                    <label class="btn btn-outline-warning btn-sm" for="bill-payment-status-unpaid">
+                                                        <i class="fas fa-clock me-1"></i>Unpaid
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div id="bill-paid-fields" class="row g-2 pt-1 {% if bill_payment_status_value != 'paid' and bill_payment_status_value != 'part_paid' %}d-none{% endif %}">
+                                                <div id="bill-part-paid-amount-col" class="col-md-6 {% if bill_payment_status_value != 'part_paid' %}d-none{% endif %}">
+                                                    <label class="form-label small fw-semibold mb-1">Amount Paid (₹)</label>
+                                                    <input type="number" step="0.01" min="0.01" name="bill_amount_paid" class="form-control form-control-sm" value="{{ bill_amount_paid_value }}" placeholder="0.00">
+                                                    <div id="bill-part-balance-note" class="form-text small text-info mt-1">
+                                                        Remaining Balance: ₹<span id="bill-live-part-balance">0.00</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label small mb-1">Payment Method</label>
+                                                    <select name="bill_payment_method" class="form-select form-select-sm">
+                                                        <option value="cash" {% if bill_payment_method_value == 'cash' %}selected{% endif %}>Cash</option>
+                                                        <option value="transfer" {% if bill_payment_method_value == 'transfer' %}selected{% endif %}>Bank / Online / UPI</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label small mb-1">Payment Date</label>
+                                                    <input type="date" name="bill_payment_date" class="form-control form-control-sm" value="{{ bill_payment_date_value }}">
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label small mb-1">Reference</label>
+                                                    <input type="text" name="bill_payment_reference" class="form-control form-control-sm" value="{{ bill_payment_reference_value }}" placeholder="Optional">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <label class="form-label small fw-semibold text-muted mb-1">Bill Note / Remarks</label>
+                                            <textarea name="bill_notes" class="form-control form-control-sm" rows="2" placeholder="Optional note for this bill (appears on all bill lines)">{{ bill_notes_value }}</textarea>
+                                        </div>
                                     </div>
                                     <div class="col-lg-5">
-                                        <div class="card border-0 bg-light p-3 h-100">
-                                            <div class="mb-2">
-                                                <label class="form-label mb-1">Bill Discount</label>
-                                                <input type="number" min="0" step="0.01" name="bill_discount_amount" id="bill-discount-amount" class="form-control form-control-sm" value="{{ bill_discount_value }}">
+                                        <div class="card border-0 bg-light p-3 h-100 d-flex flex-column justify-content-between">
+                                            <div>
+                                                <div class="mb-2">
+                                                    <label class="form-label small fw-semibold mb-1">Bill Discount (₹)</label>
+                                                    <input type="number" min="0" step="0.01" name="bill_discount_amount" id="bill-discount-amount" class="form-control form-control-sm" value="{{ bill_discount_value }}">
+                                                </div>
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                                    <span>Subtotal (Excl Tax)</span>
+                                                    <strong class="text-body" id="bill-subtotal">0.00</strong>
+                                                </div>
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                                    <span>Discount</span>
+                                                    <strong class="text-danger" id="bill-discount-view">0.00</strong>
+                                                </div>
+                                                <div class="d-flex justify-content-between small text-muted mb-2">
+                                                    <span>Total Tax (GST)</span>
+                                                    <strong class="text-body" id="bill-tax-total">0.00</strong>
+                                                </div>
                                             </div>
-                                            <div class="d-flex justify-content-between small">
-                                                <span>Subtotal (Excl Tax)</span>
-                                                <strong id="bill-subtotal">0.00</strong>
-                                            </div>
-                                            <div class="d-flex justify-content-between small">
-                                                <span>Discount</span>
-                                                <strong id="bill-discount-view">0.00</strong>
-                                            </div>
-                                            <div class="d-flex justify-content-between small">
-                                                <span>Total Tax</span>
-                                                <strong id="bill-tax-total">0.00</strong>
-                                            </div>
-                                            <hr class="my-2">
-                                            <div class="d-flex justify-content-between">
-                                                <span class="fw-semibold">Bill Total</span>
-                                                <strong id="bill-grand-total">0.00</strong>
+                                            <div class="pt-2 border-top">
+                                                <div class="d-flex justify-content-between align-items-center bg-white rounded p-2 border shadow-sm">
+                                                    <span class="fw-bold text-uppercase small text-muted">Grand Total</span>
+                                                    <span class="fs-4 fw-bolder text-primary">₹ <span id="bill-grand-total">0.00</span></span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1242,6 +1248,9 @@ function initInventoryEntryDashboard() {
         }
         if (billAmountPaidInput) {
             billAmountPaidInput.required = (status === 'part_paid');
+            if (status === 'part_paid') {
+                updatePartPaidBalanceHint();
+            }
         }
     }
 
@@ -1720,7 +1729,17 @@ function initInventoryEntryDashboard() {
         renderMoney(billDiscountViewEl, effectiveDiscount);
         renderMoney(billTaxTotalEl, totalTax);
         renderMoney(billGrandTotalEl, grandTotal);
+        updatePartPaidBalanceHint(grandTotal);
         updateSubmitState();
+    }
+
+    function updatePartPaidBalanceHint(grandTotalOverride) {
+        const livePartBalEl = document.getElementById('bill-live-part-balance');
+        if (!livePartBalEl) return;
+        const total = grandTotalOverride !== undefined ? grandTotalOverride : parseNumber(billGrandTotalEl?.textContent);
+        const paid = parseNumber(billAmountPaidInput?.value);
+        const bal = Math.max(0, round2(total - paid));
+        livePartBalEl.textContent = bal.toFixed(2);
     }
 
     function hasDuplicateProducts() {
@@ -2186,7 +2205,10 @@ function initInventoryEntryDashboard() {
         });
     });
     if (billAmountPaidInput) {
-        billAmountPaidInput.addEventListener('input', schedulePurchaseDraftSave);
+        billAmountPaidInput.addEventListener('input', function () {
+            updatePartPaidBalanceHint();
+            schedulePurchaseDraftSave();
+        });
     }
 
     function stripUnselectedRowsBeforeSubmit() {
