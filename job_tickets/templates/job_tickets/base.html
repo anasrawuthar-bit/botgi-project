@@ -151,6 +151,8 @@
                         <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
                         {% if request.resolver_match.url_name|slice:":10" == "inventory_" or request.resolver_match.url_name == "product_dashboard" %}
                         <small>Inventory Control</small>
+                        {% elif request.resolver_match.url_name == "company_profile_settings" %}
+                        <small>System Settings</small>
                         {% else %}
                         <small>{{ company.tagline|default:"Service Billing" }}</small>
                         {% endif %}
@@ -222,6 +224,63 @@
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'inventory_sales_return_dashboard' %}active{% endif %}"
                         href="{% url 'inventory_sales_return_dashboard' %}" data-tooltip="Sales Return">
                         <i class="fa-solid fa-rotate-right"></i><span class="sidebar-link-label">Sales Return</span>
+                    </a>
+                </li>
+                {% elif request.resolver_match.url_name == "company_profile_settings" %}
+                {# ── Dedicated Settings Full-Height Sidebar ── #}
+                {% if user.is_staff and staff_access.staff_dashboard %}
+                <li>
+                    <a class="sidebar-link sidebar-return-link" href="{% url 'staff_dashboard' %}" data-tooltip="Back to Main Dashboard">
+                        <i class="fa-solid fa-arrow-left"></i><span class="sidebar-link-label">Main Dashboard</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-divider"></li>
+                {% endif %}
+                <li>
+                    <a class="sidebar-link settings-nav-link active" href="#company-info" data-settings-tab="#company-info" data-tooltip="Company Info">
+                        <i class="fa-solid fa-building"></i><span class="sidebar-link-label">Company Info</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#contact-details" data-settings-tab="#contact-details" data-tooltip="Contact Details">
+                        <i class="fa-solid fa-address-card"></i><span class="sidebar-link-label">Contact Details</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#legal-tax" data-settings-tab="#legal-tax" data-tooltip="Legal & Tax">
+                        <i class="fa-solid fa-file-invoice"></i><span class="sidebar-link-label">Legal & Tax</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#bank-details" data-settings-tab="#bank-details" data-tooltip="Bank Details">
+                        <i class="fa-solid fa-building-columns"></i><span class="sidebar-link-label">Bank Details</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-divider"></li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#job-settings" data-settings-tab="#job-settings" data-tooltip="Bill / Ticket Configuration">
+                        <i class="fa-solid fa-receipt"></i><span class="sidebar-link-label">Bill / Ticket</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#billing-settings" data-settings-tab="#billing-settings" data-tooltip="Billing & GST">
+                        <i class="fa-solid fa-indian-rupee-sign"></i><span class="sidebar-link-label">Billing & GST</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#terms-policies" data-settings-tab="#terms-policies" data-tooltip="Terms & Policies">
+                        <i class="fa-solid fa-file-contract"></i><span class="sidebar-link-label">Terms & Policies</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-divider"></li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#whatsapp-integration" data-settings-tab="#whatsapp-integration" data-tooltip="WhatsApp Integration">
+                        <i class="fa-brands fa-whatsapp"></i><span class="sidebar-link-label">WhatsApp</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#display-scale" data-settings-tab="#display-scale" data-tooltip="Display & Zoom Scale">
+                        <i class="fa-solid fa-desktop"></i><span class="sidebar-link-label">Display & Scale</span>
                     </a>
                 </li>
                 {% elif user.is_staff %}

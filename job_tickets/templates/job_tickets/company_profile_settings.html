@@ -21,44 +21,53 @@
                         </div>
                         {% endif %}
 
-                        <div class="row g-4">
-                            <div class="col-lg-3">
-                                <div class="settings-sidebar sticky-lg-top">
-                                    <p class="sidebar-title mb-2">Categories</p>
-                                    <div class="nav nav-pills flex-lg-column gap-2 settings-nav" id="settings-category-nav" role="tablist" aria-orientation="vertical">
-                                        <button class="nav-link active" id="tab-company-info" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#company-info" aria-controls="company-info" aria-selected="true">
-                                            <i class="fas fa-building me-2"></i>Company Info
-                                        </button>
-                                        <button class="nav-link" id="tab-contact-details" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#contact-details" aria-controls="contact-details" aria-selected="false">
-                                            <i class="fas fa-address-card me-2"></i>Contact Details
-                                        </button>
-                                        <button class="nav-link" id="tab-legal-tax" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#legal-tax" aria-controls="legal-tax" aria-selected="false">
-                                            <i class="fas fa-file-invoice me-2"></i>Legal & Tax
-                                        </button>
-                                        <button class="nav-link" id="tab-bank-details" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#bank-details" aria-controls="bank-details" aria-selected="false">
-                                            <i class="fas fa-university me-2"></i>Bank Details
-                                        </button>
-                                        <button class="nav-link" id="tab-job-settings" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#job-settings" aria-controls="job-settings" aria-selected="false">
-                                            <i class="fas fa-ticket-alt me-2"></i>Bill/Ticket Configuration
-                                        </button>
-                                        <button class="nav-link" id="tab-billing-settings" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#billing-settings" aria-controls="billing-settings" aria-selected="false">
-                                            <i class="fas fa-rupee-sign me-2"></i>Billing & GST
-                                        </button>
-                                        <button class="nav-link" id="tab-terms-policies" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#terms-policies" aria-controls="terms-policies" aria-selected="false">
-                                            <i class="fas fa-file-contract me-2"></i>Terms & Policies
-                                        </button>
-                                        <button class="nav-link" id="tab-whatsapp-integration" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#whatsapp-integration" aria-controls="whatsapp-integration" aria-selected="false">
-                                            <i class="fab fa-whatsapp me-2"></i>WhatsApp Integration
-                                        </button>
-                                        <button class="nav-link" id="tab-display-scale" type="button" role="tab" data-bs-toggle="pill" data-bs-target="#display-scale" aria-controls="display-scale" aria-selected="false">
-                                            <i class="fas fa-desktop me-2"></i>Display & Zoom Scale
-                                        </button>
-                                    </div>
-                                </div>
+                        <!-- Mobile Category Quick-Pills (Visible only on mobile/tablet) -->
+                        <div class="d-lg-none mb-3">
+                            <div class="settings-mobile-nav-scroller d-flex gap-2 pb-2" style="overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch;">
+                                <button class="btn btn-sm btn-primary rounded-pill px-3 settings-mobile-pill active" type="button" data-settings-tab="#company-info">
+                                    <i class="fa-solid fa-building me-1"></i>Company
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#contact-details">
+                                    <i class="fa-solid fa-address-card me-1"></i>Contact
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#legal-tax">
+                                    <i class="fa-solid fa-file-invoice me-1"></i>Legal & Tax
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#bank-details">
+                                    <i class="fa-solid fa-building-columns me-1"></i>Bank
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#job-settings">
+                                    <i class="fa-solid fa-receipt me-1"></i>Bill / Ticket
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#billing-settings">
+                                    <i class="fa-solid fa-indian-rupee-sign me-1"></i>Billing & GST
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#terms-policies">
+                                    <i class="fa-solid fa-file-contract me-1"></i>Policies
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#whatsapp-integration">
+                                    <i class="fa-brands fa-whatsapp me-1"></i>WhatsApp
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#display-scale">
+                                    <i class="fa-solid fa-desktop me-1"></i>Display
+                                </button>
                             </div>
+                        </div>
 
-                            <div class="col-lg-9">
-                                <div class="tab-content" id="settings-category-content">
+                        <!-- Top Section Header & Quick Save Bar -->
+                        <div class="settings-top-banner d-flex justify-content-between align-items-center flex-wrap gap-2 pb-3 mb-4 border-bottom">
+                            <div>
+                                <h4 id="settings-section-title" class="fw-bold text-dark mb-1">Company Information</h4>
+                                <p id="settings-section-subtitle" class="text-muted small mb-0">Business profile branding, logo assets, and primary organization details.</p>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="submit" class="btn btn-primary px-3 py-1 fw-semibold shadow-sm" id="top-quick-save-btn">
+                                    <i class="fas fa-save me-1"></i>Save Changes
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="tab-content" id="settings-category-content">
                                     <div class="tab-pane fade show active" id="company-info" role="tabpanel" aria-labelledby="tab-company-info" tabindex="0">
                                         <h4 class="mb-3">Company Information</h4>
                                         <div class="row">
@@ -762,14 +771,12 @@
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
 
                         <div id="company-settings-save-bar">
                             <hr class="my-4">
                             <div class="text-end">
                                 <button type="submit" class="btn btn-primary btn-lg">
-                                    <i class="fas fa-save"></i> Save Company Settings
+                                    <i class="fas fa-save me-1"></i> Save Company Settings
                                 </button>
                             </div>
                         </div>
@@ -781,123 +788,235 @@
 </div>
 
 <style>
-.settings-sidebar {
-    background: #f8fbff;
-    border: 1px solid #d9e4f4;
-    border-radius: 12px;
-    padding: 0.8rem;
-    top: 1rem;
+.settings-top-banner {
+    background: transparent;
 }
 
-.sidebar-title {
-    font-size: 0.78rem;
+#settings-section-title {
+    font-size: 1.25rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #5b6f8c;
+    color: #0f172a;
+    letter-spacing: -0.01em;
 }
 
-.settings-nav .nav-link {
-    text-align: left;
-    background: #fff;
-    color: #2f4666;
-    border: 1px solid #d9e4f4;
-    font-weight: 600;
-    border-radius: 10px;
+#settings-section-subtitle {
+    font-size: 0.85rem;
+    color: #64748b;
 }
 
-.settings-nav .nav-link:hover {
-    background: #eef4ff;
-    color: #173866;
+.settings-mobile-pill {
+    white-space: nowrap;
+    font-weight: 500;
+    font-size: 0.8rem;
+    transition: all 0.15s ease-in-out;
 }
 
-.settings-nav .nav-link.active {
-    background: #102b52;
-    color: #fff;
-    border-color: #102b52;
+.settings-mobile-pill.active {
+    background-color: var(--primary-color, #1e40af) !important;
+    color: #ffffff !important;
+    border-color: var(--primary-color, #1e40af) !important;
 }
 
 .form-control, .form-select {
-    border-radius: 0.35rem;
+    border-radius: 0.375rem;
 }
 
 .alert {
-    border-radius: 0.35rem;
+    border-radius: 0.375rem;
 }
 
-@media (max-width: 991.98px) {
-    .settings-sidebar {
-        position: static !important;
-    }
+.scale-option-card {
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
 
-    .settings-nav {
-        flex-direction: row !important;
-        overflow-x: auto;
-        white-space: nowrap;
-        padding-bottom: 0.15rem;
-    }
+.scale-option-card:hover {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
+}
 
-    .settings-nav .nav-link {
-        min-width: max-content;
-    }
+.scale-option-card.active, .scale-option-card[data-active="true"] {
+    border-color: #2563eb !important;
+    background-color: #eff6ff !important;
 }
 </style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    if (typeof bootstrap === 'undefined') return;
-
-    const buttonSelector = '#settings-category-nav button[data-bs-toggle="pill"]';
-    const buttons = Array.from(document.querySelectorAll(buttonSelector));
-    if (!buttons.length) return;
-
     const storageKey = 'clientCompanySettingsActiveTab';
     const activeTabInput = document.getElementById('active-tab-input');
-    const serverRequestedTab = "{{ initial_tab|default:'#company-info'|escapejs }}";
+    const serverRequestedTab = "{{ initial_tab|default:''|escapejs }}";
+
+    const sectionMeta = {
+        '#company-info': {
+            title: 'Company Information',
+            subtitle: 'Business profile branding, logo assets, and primary organization details.'
+        },
+        '#contact-details': {
+            title: 'Contact Information',
+            subtitle: 'Workshop address, communication email, and client support phone numbers.'
+        },
+        '#legal-tax': {
+            title: 'Legal & Tax Identifiers',
+            subtitle: 'GSTIN, PAN number, registered legal entity name, and tax configuration.'
+        },
+        '#bank-details': {
+            title: 'Banking & Payment Receiving',
+            subtitle: 'Bank account details, IFSC, and UPI IDs printed on customer invoices.'
+        },
+        '#job-settings': {
+            title: 'Bill & Ticket Configuration',
+            subtitle: 'Job code prefixes, estimation terms, technician assignments, and paper receipts.'
+        },
+        '#billing-settings': {
+            title: 'Billing & GST System Defaults',
+            subtitle: 'Tax invoice numbering scheme, default GST rate, and rounding options.'
+        },
+        '#terms-policies': {
+            title: 'Terms, Conditions & Repair Policies',
+            subtitle: 'Legal clauses, warranty statements, and pickup disclaimers.'
+        },
+        '#whatsapp-integration': {
+            title: 'WhatsApp Automated Messaging Engine',
+            subtitle: 'Cloud API credentials, QR Web Bridge session, and diagnostics.'
+        },
+        '#display-scale': {
+            title: 'Display & Zoom Scale',
+            subtitle: 'Workspace density, typography scaling, and high-DPI monitor settings.'
+        }
+    };
 
     function syncCompanySaveBar(target) {
+        const isWhatsapp = (target === '#whatsapp-integration');
         const saveBar = document.getElementById('company-settings-save-bar');
-        if (!saveBar) return;
-        saveBar.classList.toggle('d-none', target === '#whatsapp-integration');
-    }
-
-    function syncActive(target) {
-        if (!target) return;
-        localStorage.setItem(storageKey, target);
-        if (activeTabInput) activeTabInput.value = target;
-        syncCompanySaveBar(target);
-    }
-
-    const targetToOpen = (serverRequestedTab && serverRequestedTab !== '#company-info')
-        ? serverRequestedTab
-        : localStorage.getItem(storageKey);
-
-    if (targetToOpen) {
-        const savedButton = document.querySelector(buttonSelector + '[data-bs-target="' + targetToOpen + '"]');
-        if (savedButton) {
-            bootstrap.Tab.getOrCreateInstance(savedButton).show();
+        if (saveBar) {
+            saveBar.classList.toggle('d-none', isWhatsapp);
+        }
+        const topQuickSave = document.getElementById('top-quick-save-btn');
+        if (topQuickSave) {
+            topQuickSave.classList.toggle('d-none', isWhatsapp);
         }
     }
 
-    buttons.forEach(function (button) {
-        button.addEventListener('shown.bs.tab', function (event) {
-            syncActive(event.target.getAttribute('data-bs-target'));
+    function activateSettingsTab(rawTarget, updateHash) {
+        if (!rawTarget) return;
+        let target = rawTarget.trim();
+        if (!target.startsWith('#')) {
+            target = '#' + target;
+        }
+
+        const pane = document.querySelector('#settings-category-content > ' + target);
+        if (!pane) {
+            target = '#company-info';
+        }
+
+        // 1. Activate tab pane
+        const allPanes = document.querySelectorAll('#settings-category-content > .tab-pane');
+        allPanes.forEach(function (p) {
+            p.classList.remove('show', 'active');
         });
+        const targetPane = document.querySelector('#settings-category-content > ' + target);
+        if (targetPane) {
+            targetPane.classList.add('show', 'active');
+        }
+
+        // 2. Sync sidebar navigation links
+        const sidebarLinks = document.querySelectorAll('.settings-nav-link[data-settings-tab]');
+        sidebarLinks.forEach(function (link) {
+            const matches = link.getAttribute('data-settings-tab') === target;
+            link.classList.toggle('active', matches);
+        });
+
+        // 3. Sync mobile navigation pills
+        const mobilePills = document.querySelectorAll('.settings-mobile-pill[data-settings-tab]');
+        mobilePills.forEach(function (pill) {
+            const matches = pill.getAttribute('data-settings-tab') === target;
+            pill.classList.toggle('active', matches);
+            if (matches) {
+                pill.classList.remove('btn-outline-primary');
+                pill.classList.add('btn-primary');
+                try {
+                    pill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                } catch (e) {}
+            } else {
+                pill.classList.remove('btn-primary');
+                pill.classList.add('btn-outline-primary');
+            }
+        });
+
+        // 4. Update banner title and subtitle
+        const meta = sectionMeta[target] || { title: 'Settings', subtitle: '' };
+        const titleEl = document.getElementById('settings-section-title');
+        const subtitleEl = document.getElementById('settings-section-subtitle');
+        if (titleEl) titleEl.textContent = meta.title;
+        if (subtitleEl) subtitleEl.textContent = meta.subtitle;
+
+        // 5. Toggle save bars
+        syncCompanySaveBar(target);
+
+        // 6. Persistence & state
+        try {
+            localStorage.setItem(storageKey, target);
+        } catch (e) {}
+        if (activeTabInput) activeTabInput.value = target;
+
+        // 7. Update browser hash if specified
+        if (updateHash) {
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', target);
+            } else {
+                window.location.hash = target;
+            }
+        }
+
+        // 8. Auto-close mobile sidebar drawer if open
+        if (document.body.classList.contains('sidebar-open')) {
+            document.body.classList.remove('sidebar-open');
+        }
+    }
+
+    // Determine initial tab: URL hash > server requested tab > localStorage > default
+    let initialTab = '#company-info';
+    if (window.location.hash && sectionMeta[window.location.hash]) {
+        initialTab = window.location.hash;
+    } else if (serverRequestedTab && sectionMeta[serverRequestedTab]) {
+        initialTab = serverRequestedTab;
+    } else {
+        try {
+            const saved = localStorage.getItem(storageKey);
+            if (saved && sectionMeta[saved]) {
+                initialTab = saved;
+            }
+        } catch (e) {}
+    }
+
+    activateSettingsTab(initialTab, false);
+
+    // Event listener for tab navigation (sidebar links and mobile pills)
+    document.addEventListener('click', function (e) {
+        const tabTrigger = e.target.closest('[data-settings-tab]');
+        if (!tabTrigger) return;
+        e.preventDefault();
+        const targetTab = tabTrigger.getAttribute('data-settings-tab');
+        if (targetTab) {
+            activateSettingsTab(targetTab, true);
+        }
+    });
+
+    window.addEventListener('hashchange', function () {
+        if (window.location.hash && sectionMeta[window.location.hash]) {
+            activateSettingsTab(window.location.hash, false);
+        }
     });
 
     const form = document.getElementById('company-settings-form');
     if (form) {
         form.addEventListener('submit', function () {
-            const activeButton = document.querySelector('#settings-category-nav .nav-link.active');
-            if (activeButton) {
-                syncActive(activeButton.getAttribute('data-bs-target'));
+            const activeLink = document.querySelector('.settings-nav-link.active') || document.querySelector('.settings-mobile-pill.active');
+            if (activeLink && activeTabInput) {
+                activeTabInput.value = activeLink.getAttribute('data-settings-tab');
             }
         });
-    }
-
-    const initialActive = document.querySelector('#settings-category-nav .nav-link.active');
-    if (initialActive) {
-        syncActive(initialActive.getAttribute('data-bs-target'));
     }
 
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
