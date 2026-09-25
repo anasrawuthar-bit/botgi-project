@@ -41,88 +41,127 @@
                 </div>
             </div>
 
+            <!-- Block 1: Warehouse & Stock Health -->
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="inventory-section-icon text-primary"><i class="fa-solid fa-boxes-stacked"></i></span>
+                    <h6 class="text-uppercase fw-bold text-secondary small mb-0 tracking-wider">Warehouse &amp; Stock Health</h6>
+                </div>
+                <span class="badge bg-light text-muted border small"><i class="fa-solid fa-cube me-1 text-primary"></i>{{ product_count }} Catalog Items</span>
+            </div>
             <div class="row g-3 mb-4">
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">Inventory Value</span>
-                            <span class="inventory-kpi-icon bg-indigo-light text-primary"><i class="fa-solid fa-coins"></i></span>
+                            <span class="inventory-kpi-label">Stock Valuation</span>
+                            <span class="inventory-kpi-icon bg-indigo-light text-primary"><i class="fa-solid fa-vault"></i></span>
                         </div>
                         <h3 class="inventory-kpi-value mb-1">&#8377;{{ inventory_value|floatformat:2 }}</h3>
-                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-warehouse me-1"></i>Current Stock Valuation</span>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-warehouse me-1"></i>Current Asset Value</span>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">Purchase (Month)</span>
-                            <span class="inventory-kpi-icon bg-sky-light text-info"><i class="fa-solid fa-cart-arrow-down"></i></span>
-                        </div>
-                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ monthly_purchase_total|floatformat:2 }}</h3>
-                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-calendar me-1"></i>Purchased This Month</span>
-                    </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <div class="card-box inventory-kpi h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">Sales (Month)</span>
-                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-chart-line"></i></span>
-                        </div>
-                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ monthly_sales_total|floatformat:2 }}</h3>
-                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-receipt me-1"></i>Billed This Month</span>
-                    </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <div class="card-box inventory-kpi h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">Net Stock Qty</span>
+                            <span class="inventory-kpi-label">Warehouse Stock</span>
                             <span class="inventory-kpi-icon bg-purple-light text-purple"><i class="fa-solid fa-boxes-stacked"></i></span>
                         </div>
-                        <h3 class="inventory-kpi-value mb-1">{{ monthly_net_stock_qty }}</h3>
-                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-box-archive me-1"></i>In-Stock Units</span>
+                        <h3 class="inventory-kpi-value mb-1">{{ total_in_stock_qty }} <span class="fs-6 fw-normal text-muted">units</span></h3>
+                        <div class="d-flex align-items-center gap-1 mt-1">
+                            <span class="badge bg-purple-subtle text-purple border border-purple-subtle font-monospace px-1 py-0" style="font-size: 0.72rem;">
+                                {% if monthly_net_stock_qty >= 0 %}+{% endif %}{{ monthly_net_stock_qty }} this month
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Low Stock Items</span>
+                            <span class="inventory-kpi-icon {% if low_stock_count > 0 %}bg-amber-light text-warning{% else %}bg-slate-light text-secondary{% endif %}">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1 {% if low_stock_count > 0 %}text-warning{% endif %}">{{ low_stock_count }}</h3>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-boxes-packing me-1"></i>Stock &le; 5 units</span>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">Reserved Alerts</span>
+                            <span class="inventory-kpi-icon {% if reserved_alert_count > 0 %}bg-rose-light text-danger{% else %}bg-emerald-light text-success{% endif %}">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1 {% if reserved_alert_count > 0 %}text-danger{% else %}text-success{% endif %}">{{ reserved_alert_count }}</h3>
+                        <span class="inventory-kpi-subtext text-muted"><i class="fa-solid fa-wrench me-1"></i>Jobs awaiting parts</span>
                     </div>
                 </div>
             </div>
 
+            <!-- Block 2: Commercial & Cashflow -->
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="inventory-section-icon text-success"><i class="fa-solid fa-chart-line"></i></span>
+                    <h6 class="text-uppercase fw-bold text-secondary small mb-0 tracking-wider">Commercial &amp; Cashflow</h6>
+                </div>
+                <span class="badge bg-slate-light text-dark border">{% now "F Y" %}</span>
+            </div>
             <div class="row g-3 mb-4">
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">To Pay</span>
-                            <span class="inventory-kpi-icon bg-amber-light text-warning"><i class="fa-solid fa-arrow-trend-up"></i></span>
+                            <span class="inventory-kpi-label">Sales (Month)</span>
+                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-cart-shopping"></i></span>
                         </div>
-                        <h3 class="inventory-kpi-value text-warning mb-1">&#8377;{{ credit_summary.payable_total|floatformat:2 }}</h3>
-                        <div class="small text-muted">{{ credit_summary.payable_count }} purchase bill(s)</div>
+                        <h3 class="inventory-kpi-value text-success mb-1">&#8377;{{ monthly_sales_total|floatformat:2 }}</h3>
+                        <div class="d-flex align-items-center gap-2 flex-wrap mt-1">
+                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0 fw-semibold" style="font-size: 0.72rem;" title="Gross Profit: Revenue &#8377;{{ monthly_sales_total|floatformat:2 }} - COGS &#8377;{{ monthly_sales_cogs|floatformat:2 }}">
+                                Profit: &#8377;{{ monthly_sales_profit|floatformat:0 }} ({{ monthly_sales_margin_pct }}%)
+                            </span>
+                            <span class="small text-muted font-monospace">{{ monthly_sales_qty }} sold</span>
+                        </div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">To Collect</span>
-                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-arrow-trend-down"></i></span>
+                            <span class="inventory-kpi-label">Purchases (Month)</span>
+                            <span class="inventory-kpi-icon bg-sky-light text-info"><i class="fa-solid fa-cart-arrow-down"></i></span>
+                        </div>
+                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ monthly_purchase_total|floatformat:2 }}</h3>
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <span class="badge bg-sky-subtle text-info border border-info-subtle px-2 py-0 font-monospace" style="font-size: 0.72rem;">
+                                {{ monthly_purchase_qty }} units received
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-xl-3">
+                    <div class="card-box inventory-kpi h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="inventory-kpi-label">To Collect (Receivables)</span>
+                            <span class="inventory-kpi-icon bg-amber-light text-warning"><i class="fa-solid fa-hand-holding-dollar"></i></span>
                         </div>
                         <h3 class="inventory-kpi-value text-success mb-1">&#8377;{{ credit_summary.receivable_total|floatformat:2 }}</h3>
-                        <div class="small text-muted">{{ credit_summary.receivable_count }} sales bill(s)</div>
-                    </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <div class="card-box inventory-kpi h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="inventory-kpi-label">Paid This Month</span>
-                            <span class="inventory-kpi-icon bg-slate-light text-secondary"><i class="fa-solid fa-money-bill-transfer"></i></span>
+                        <div class="d-flex align-items-center justify-content-between mt-1 small">
+                            <span class="text-muted">{{ credit_summary.receivable_count }} bill(s) open</span>
+                            <span class="text-warning fw-medium" title="Supplier Payables">Payable: &#8377;{{ credit_summary.payable_total|floatformat:0 }}</span>
                         </div>
-                        <h3 class="inventory-kpi-value mb-1">&#8377;{{ credit_summary.month_paid_total|floatformat:2 }}</h3>
-                        <div class="small text-muted">Supplier payments</div>
                     </div>
                 </div>
                 <div class="col-md-6 col-xl-3">
                     <div class="card-box inventory-kpi h-100">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <span class="inventory-kpi-label">Received This Month</span>
-                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-hand-holding-dollar"></i></span>
+                            <span class="inventory-kpi-icon bg-emerald-light text-success"><i class="fa-solid fa-money-bill-transfer"></i></span>
                         </div>
                         <h3 class="inventory-kpi-value mb-1">&#8377;{{ credit_summary.month_received_total|floatformat:2 }}</h3>
-                        <div class="small text-muted">Customer payments</div>
+                        <div class="d-flex align-items-center justify-content-between mt-1 small">
+                            <span class="text-muted">Collections</span>
+                            <span class="text-secondary" title="Total Supplier Payments This Month">Paid Out: &#8377;{{ credit_summary.month_paid_total|floatformat:0 }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -270,63 +309,69 @@
                 </div>
             </div>
 
-            <div class="row g-3 mb-4 inventory-action-grid">
-                <div class="col-md-6 col-xl-3">
-                    <a href="{% url 'inventory_product_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                        <h6><i class="fas fa-boxes-stacked me-2"></i>Product Master</h6>
-                        <p class="mb-0 text-muted small">Manage products, pricing, and stock levels.</p>
-                    </a>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <a href="{% url 'inventory_party_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                        <h6><i class="fas fa-users me-2"></i>Party Master</h6>
-                        <p class="mb-0 text-muted small">Maintain supplier and customer party records.</p>
-                    </a>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <a href="{% url 'inventory_purchase_return_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                        <h6><i class="fas fa-rotate-left me-2"></i>Purchase Return</h6>
-                        <p class="mb-0 text-muted small">Return stock to suppliers with traceable voucher.</p>
-                    </a>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                    <a href="{% url 'inventory_sales_return_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                        <h6><i class="fas fa-rotate-right me-2"></i>Sales Return</h6>
-                        <p class="mb-0 text-muted small">Capture customer returns and restore stock.</p>
-                    </a>
-                </div>
-            </div>
-
             <div class="card-box mb-4">
-                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
-                    <div>
-                        <h5 class="mb-1"><i class="fas fa-chart-line me-2"></i>Quick Reports</h5>
-                        <p class="mb-0 small text-muted">Open the pages used most often for checking stock and account movement.</p>
+                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3 pb-2 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="inventory-section-icon text-primary"><i class="fas fa-cubes"></i></span>
+                        <div>
+                            <h5 class="mb-0">Inventory Operations &amp; Registers</h5>
+                            <p class="mb-0 small text-muted">Direct shortcuts to masters, registers, returns, and ledger statements.</p>
+                        </div>
                     </div>
                 </div>
                 <div class="row g-3">
-                    <div class="col-md-6 col-xl-3">
-                        <a href="{% url 'inventory_product_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                            <h6><i class="fas fa-book-open me-2"></i>Product Ledgers</h6>
-                            <p class="mb-0 text-muted small">Open any product and review full stock movement.</p>
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{% url 'inventory_product_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <h6 class="mb-0 fw-semibold text-dark"><i class="fas fa-boxes-stacked me-2 text-primary"></i>Product Master &amp; Ledgers</h6>
+                                <i class="fas fa-arrow-right text-muted small"></i>
+                            </div>
+                            <p class="mb-0 text-muted small">Catalog, stock levels, cost/selling pricing, and item ledgers.</p>
                         </a>
                     </div>
-                    <div class="col-md-6 col-xl-3">
-                        <a href="{% url 'inventory_party_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                            <h6><i class="fas fa-file-invoice me-2"></i>Party Statements</h6>
-                            <p class="mb-0 text-muted small">Check bills, payments, payable, and receivable balances.</p>
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{% url 'inventory_party_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <h6 class="mb-0 fw-semibold text-dark"><i class="fas fa-users me-2 text-info"></i>Party Master &amp; Statements</h6>
+                                <i class="fas fa-arrow-right text-muted small"></i>
+                            </div>
+                            <p class="mb-0 text-muted small">Suppliers, customers, GST numbers, and ledger statements.</p>
                         </a>
                     </div>
-                    <div class="col-md-6 col-xl-3">
-                        <a href="{% url 'inventory_purchase_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                            <h6><i class="fas fa-cart-arrow-down me-2"></i>Purchase Register</h6>
-                            <p class="mb-0 text-muted small">Review supplier bills and outstanding payables.</p>
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{% url 'inventory_purchase_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <h6 class="mb-0 fw-semibold text-dark"><i class="fas fa-cart-arrow-down me-2 text-primary"></i>Purchase Register</h6>
+                                <i class="fas fa-arrow-right text-muted small"></i>
+                            </div>
+                            <p class="mb-0 text-muted small">Supplier bills, inwards, vendor credits, and payments.</p>
                         </a>
                     </div>
-                    <div class="col-md-6 col-xl-3">
-                        <a href="{% url 'inventory_sales_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card">
-                            <h6><i class="fas fa-cart-shopping me-2"></i>Sales Register</h6>
-                            <p class="mb-0 text-muted small">Review customer sales and receivable balances.</p>
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{% url 'inventory_sales_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <h6 class="mb-0 fw-semibold text-dark"><i class="fas fa-cart-shopping me-2 text-success"></i>Sales Register</h6>
+                                <i class="fas fa-arrow-right text-muted small"></i>
+                            </div>
+                            <p class="mb-0 text-muted small">Direct retail sales, repair job billing, and receivables.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{% url 'inventory_purchase_return_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <h6 class="mb-0 fw-semibold text-dark"><i class="fas fa-rotate-left me-2 text-warning"></i>Purchase Returns (Debit Notes)</h6>
+                                <i class="fas fa-arrow-right text-muted small"></i>
+                            </div>
+                            <p class="mb-0 text-muted small">Return stock to suppliers and manage debit note vouchers.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-4">
+                        <a href="{% url 'inventory_sales_return_dashboard' %}" class="card-box d-block text-decoration-none h-100 inventory-action-card p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <h6 class="mb-0 fw-semibold text-dark"><i class="fas fa-rotate-right me-2 text-danger"></i>Sales Returns (Credit Notes)</h6>
+                                <i class="fas fa-arrow-right text-muted small"></i>
+                            </div>
+                            <p class="mb-0 text-muted small">Handle customer returns, restock items, and issue credit notes.</p>
                         </a>
                     </div>
                 </div>

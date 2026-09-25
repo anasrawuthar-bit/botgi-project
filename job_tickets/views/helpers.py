@@ -3074,15 +3074,19 @@ def _inventory_bill_total(bill):
 
 
 def _inventory_bill_paid_total(bill):
-    """Return the sum of all InventoryCreditPayment.amount for the given bill."""
+    """Return the sum of all InventoryCreditPayment.amount for the given bill, including job payments if job-linked."""
     direction = _inventory_credit_direction_for_entry_type(bill.entry_type)
     if not direction:
         return Decimal('0.00')
-    return (
+    credit_total = (
         InventoryCreditPayment.objects
         .filter(bill=bill, direction=direction)
         .aggregate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))
     )['total'] or Decimal('0.00')
+    if getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
+        job_paid = _money_or_zero(bill.job_ticket.amount_paid)
+        return max(credit_total, job_paid)
+    return credit_total
 
 
 def _inventory_bill_vendor_credit_applied_total(bill):
@@ -3764,19 +3768,31 @@ def _build_inventory_credit_rows(entry_type, limit=None, workspace=None):
         return []
 
     bills = list(
-        scope_to_workspace(InventoryBill.objects.filter(entry_type=entry_type), workspace)
-        .select_related('party')
+        scope_to_workspace(InventoryBill.objects.filter(entry_type=entry_type, is_reversed=False), workspace)
+        .select_related('party', 'job_ticket')
         .annotate(bill_total=Coalesce(Sum('lines__total_amount', output_field=DecimalField()), Decimal('0.00')))
         .order_by('entry_date', 'id')
     )
     payment_totals = _inventory_credit_payment_totals([bill.id for bill in bills])
     rows = []
     for bill in bills:
+        # If linked job is already marked paid or settled, do not list as open receivable
+        if getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
+            if bill.job_ticket.payment_status == 'paid':
+                continue
+
         total_amount = _money_or_zero(getattr(bill, 'bill_total', Decimal('0.00')))
         if total_amount <= Decimal('0.00') and getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
             total_amount = _inventory_bill_total(bill)
         paid_amount = payment_totals.get((bill.id, direction), Decimal('0.00'))
-        balance_amount = total_amount - paid_amount
+        if getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
+            paid_amount = max(paid_amount, _money_or_zero(bill.job_ticket.amount_paid))
+        credit_applied = (
+            _inventory_bill_vendor_credit_applied_total(bill)
+            if entry_type == 'purchase'
+            else Decimal('0.00')
+        )
+        balance_amount = max(Decimal('0.00'), total_amount - paid_amount - credit_applied)
         if balance_amount <= Decimal('0.00'):
             continue
         rows.append(
@@ -3867,23 +3883,24 @@ def _record_inventory_credit_payment(request):
         if not bill:
             raise ValueError('Selected bill was not found.')
 
+        if bill.is_reversed:
+            raise ValueError('Cannot record payment for a reversed bill.')
+
         direction = _inventory_credit_direction_for_entry_type(bill.entry_type)
         if not direction:
             raise ValueError('Credit payment is available only for purchase and sales bills.')
 
-        bill_total = (
-            InventoryEntry.objects
-            .filter(bill=bill)
-            .aggregate(total=Coalesce(Sum('total_amount', output_field=DecimalField()), Decimal('0.00')))['total']
-            or Decimal('0.00')
+        if getattr(bill, 'job_ticket_id', None) and bill.job_ticket and bill.job_ticket.payment_status == 'paid':
+            raise ValueError('This bill is already fully settled.')
+
+        bill_total = _inventory_bill_total(bill)
+        paid_total = _inventory_bill_paid_total(bill)
+        vendor_credit_applied = (
+            _inventory_bill_vendor_credit_applied_total(bill)
+            if bill.entry_type == 'purchase'
+            else Decimal('0.00')
         )
-        paid_total = (
-            InventoryCreditPayment.objects
-            .filter(bill=bill, direction=direction)
-            .aggregate(total=Coalesce(Sum('amount', output_field=DecimalField()), Decimal('0.00')))['total']
-            or Decimal('0.00')
-        )
-        balance_before = bill_total - paid_total
+        balance_before = max(Decimal('0.00'), bill_total - paid_total - vendor_credit_applied)
         if balance_before <= Decimal('0.00'):
             raise ValueError('This bill is already fully settled.')
         if amount > balance_before:
@@ -3904,6 +3921,29 @@ def _record_inventory_credit_payment(request):
             notes=notes,
             created_by=request.user if request.user.is_authenticated else None,
         )
+
+        # Synchronize JobTicket if this bill is linked to a repair job
+        if getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
+            job = bill.job_ticket
+            new_amount_paid = (paid_total + amount).quantize(Decimal('0.01'))
+            job.amount_paid = new_amount_paid
+            job.payment_status = 'paid' if balance_after <= Decimal('0.00') else 'part_paid'
+            job.payment_method = dict(InventoryCreditPayment.METHOD_CHOICES).get(payment_method, payment_method)
+            if reference_no:
+                job.payment_reference = reference_no
+            job.payment_date = timezone.now()
+            job.save(update_fields=['amount_paid', 'payment_status', 'payment_method', 'payment_reference', 'payment_date', 'updated_at'])
+
+            JobTicketLog.objects.create(
+                job_ticket=job,
+                user=request.user if request.user.is_authenticated else None,
+                action='PAYMENT_RECEIVED',
+                details=(
+                    f"Payment of Rs.{_money_text(amount)} recorded via Inventory Dashboard "
+                    f"({job.payment_method}). New balance: Rs.{_money_text(balance_after)} "
+                    f"({job.get_payment_status_display()})."
+                ),
+            )
 
     return {
         'payment': payment,
@@ -3947,10 +3987,27 @@ def _build_inventory_dashboard_metrics(workspace=None):
     monthly_stock_out_amount = monthly_sales_total + monthly_purchase_return_total
     monthly_net_amount = monthly_stock_in_amount - monthly_stock_out_amount
 
+    # Physical total warehouse stock units across all catalog products
+    total_in_stock_qty = sum((p.stock_quantity or 0) for p in products_scope)
+
+    # Monthly retail sales COGS, Gross Profit & Margin %
+    monthly_sale_entries = entries_scope.filter(entry_date__gte=month_start, entry_type='sale').select_related('product')
+    monthly_sales_cogs = sum(
+        ((e.product.cost_price or Decimal('0.00')) * Decimal(e.quantity or 0) for e in monthly_sale_entries if e.product),
+        Decimal('0.00'),
+    )
+    monthly_sales_profit = max(Decimal('0.00'), monthly_sales_total - monthly_sales_cogs)
+    monthly_sales_margin_pct = (
+        (monthly_sales_profit / monthly_sales_total * Decimal('100.0')).quantize(Decimal('0.1'))
+        if monthly_sales_total > Decimal('0.00')
+        else Decimal('0.0')
+    )
+
     inventory_value = Decimal('0.00')
     for product in products_scope.only('stock_quantity', 'cost_price'):
         inventory_value += Decimal(product.stock_quantity or 0) * (product.cost_price or Decimal('0.00'))
 
+    low_stock_count = products_scope.filter(stock_quantity__lte=5).count()
     reserved_stock_products = list(
         products_scope.filter(
             reserved_stock__gt=0,
@@ -3970,12 +4027,16 @@ def _build_inventory_dashboard_metrics(workspace=None):
     return {
         'party_count': parties_scope.count(),
         'product_count': products_scope.count(),
-        'low_stock_count': products_scope.filter(stock_quantity__lte=5).count(),
+        'low_stock_count': low_stock_count,
         'reserved_alert_count': reserved_alert_count,
+        'total_in_stock_qty': total_in_stock_qty,
         'inventory_value': inventory_value.quantize(Decimal('0.01')) if inventory_value else Decimal('0.00'),
         'monthly_purchase_total': monthly_purchase_total,
         'monthly_purchase_return_total': monthly_purchase_return_total,
         'monthly_sales_total': monthly_sales_total,
+        'monthly_sales_cogs': monthly_sales_cogs,
+        'monthly_sales_profit': monthly_sales_profit,
+        'monthly_sales_margin_pct': monthly_sales_margin_pct,
         'monthly_sales_return_total': monthly_sales_return_total,
         'monthly_purchase_qty': monthly_purchase_qty,
         'monthly_purchase_return_qty': monthly_purchase_return_qty,

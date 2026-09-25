@@ -230,3 +230,120 @@ class ReportConsistencyTests(TestCase):
         self.assertContains(response, "Today's activity")
         self.assertNotContains(response, 'Revenue after discounts')
         self.assertNotContains(response, 'Export CSV')
+
+
+class InventoryDashboardAndCreditTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('inv-test-admin', is_staff=True, is_superuser=True)
+        self.workspace = CompanyWorkspace.objects.create(name='Inv Test Workspace', owner=self.user)
+        self.factory = RequestFactory()
+
+    def test_dashboard_metrics_stock_units_and_profit(self):
+        from .models import Product, InventoryParty, InventoryBill, InventoryEntry
+        from .views.helpers import _build_inventory_dashboard_metrics
+
+        party = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Test Supplier',
+            party_type='supplier',
+        )
+        product = Product.objects.create(
+            workspace=self.workspace,
+            name='Test SSD',
+            cost_price=Decimal('2000.00'),
+            unit_price=Decimal('3500.00'),
+            stock_quantity=50,
+        )
+        today = timezone.localdate()
+        bill = InventoryBill.objects.create(
+            workspace=self.workspace,
+            bill_number='SB-METRIC-001',
+            entry_type='sale',
+            entry_date=today,
+            party=party,
+        )
+        # Direct retail sale entry
+        InventoryEntry.objects.create(
+            workspace=self.workspace,
+            bill=bill,
+            entry_type='sale',
+            entry_date=today,
+            party=party,
+            product=product,
+            quantity=5,
+            unit_price=Decimal('3500.00'),
+            total_amount=Decimal('17500.00'),
+        )
+
+        metrics = _build_inventory_dashboard_metrics(workspace=self.workspace)
+        self.assertEqual(metrics['total_in_stock_qty'], 50)
+        self.assertEqual(metrics['monthly_sales_total'], Decimal('17500.00'))
+        self.assertEqual(metrics['monthly_sales_cogs'], Decimal('10000.00'))  # 5 * 2000
+        self.assertEqual(metrics['monthly_sales_profit'], Decimal('7500.00'))  # 17500 - 10000
+        self.assertEqual(metrics['monthly_sales_margin_pct'], Decimal('42.9'))  # 7500 / 17500 * 100
+
+    def test_job_linked_credit_bill_receives_payment_and_settles(self):
+        from .models import InventoryParty, InventoryBill, InventoryCreditPayment
+        from .views.helpers import (
+            _build_inventory_credit_rows,
+            _record_inventory_credit_payment,
+        )
+
+        party = InventoryParty.objects.create(
+            workspace=self.workspace,
+            name='Job Customer',
+            party_type='customer',
+        )
+        job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='VAL-TASK-TEST-INV',
+            customer_name='Job Customer',
+            status='Closed',
+            payment_status='unpaid',
+            amount_paid=Decimal('0.00'),
+        )
+        ServiceLog.objects.create(
+            job_ticket=job,
+            description='Screen Repair',
+            part_cost=Decimal('1500.00'),
+            service_charge=Decimal('1000.00'),
+        )
+        bill = InventoryBill.objects.create(
+            workspace=self.workspace,
+            bill_number='SB-TEST-001',
+            entry_type='sale',
+            entry_date=timezone.localdate(),
+            party=party,
+            job_ticket=job,
+        )
+
+        # Before payment: should appear in receivables with balance 2500
+        rows = _build_inventory_credit_rows('sale', workspace=self.workspace)
+        matching = [r for r in rows if r.bill_id == bill.id]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0].balance_amount, Decimal('2500.00'))
+
+        # Record payment via helper (simulating dashboard receive button)
+        req = self.factory.post(
+            '/staff/inventory/credit-payments/record/',
+            {
+                'bill_id': str(bill.id),
+                'amount': '2500.00',
+                'payment_method': 'cash',
+                'payment_date': timezone.localdate().isoformat(),
+            },
+        )
+        req.user = self.user
+        req.current_workspace = self.workspace
+
+        res = _record_inventory_credit_payment(req)
+        self.assertIn('Receive Payment recorded for Job Customer', res['message'])
+
+        # Verify job ticket was updated to paid
+        job.refresh_from_db()
+        self.assertEqual(job.payment_status, 'paid')
+        self.assertEqual(job.amount_paid, Decimal('2500.00'))
+
+        # Verify bill is no longer in open receivables
+        rows_after = _build_inventory_credit_rows('sale', workspace=self.workspace)
+        self.assertFalse(any(r.bill_id == bill.id for r in rows_after))
