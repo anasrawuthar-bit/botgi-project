@@ -444,12 +444,22 @@
                                     {% endif %}
                                     <div class="col-md-4">
                                         <div class="d-flex justify-content-between align-items-center gap-2">
-                                            <label class="form-label mb-0">{{ entry_form.party.label }}</label>
-                                            {% if entry_type == 'purchase' or entry_type == 'sale' %}
-                                                <button type="button" id="toggle-quick-party-btn" class="btn btn-link btn-sm text-decoration-none p-0">
-                                                    <i class="fas fa-plus me-1"></i>New {{ entry_form.party.label }}
+                                            <div class="d-flex align-items-center">
+                                                <label class="form-label mb-0">{{ entry_form.party.label }}</label>
+                                                <span id="selected-party-balance-badge" class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-2 d-none" style="font-size: 0.7rem;"></span>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                {% if entry_type == 'sale' and walkin_customer_id %}
+                                                <button type="button" id="select-walkin-customer-btn" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size: 0.73rem;" title="Select Walk-in Customer">
+                                                    <i class="fas fa-bolt text-warning me-1"></i>Walk-in
                                                 </button>
-                                            {% endif %}
+                                                {% endif %}
+                                                {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                                                    <button type="button" id="toggle-quick-party-btn" class="btn btn-link btn-sm text-decoration-none p-0">
+                                                        <i class="fas fa-plus me-1"></i>New {{ entry_form.party.label }}
+                                                    </button>
+                                                {% endif %}
+                                            </div>
                                         </div>
                                         <div class="visually-hidden">{{ entry_form.party }}</div>
                                         <input
@@ -831,6 +841,54 @@
                 </div>
             </div>
 
+            {% if just_recorded_bill_data %}
+            <div class="modal fade" id="postSaleActionModal" tabindex="-1" aria-labelledby="postSaleActionModalLabel" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content shadow border-0 overflow-hidden">
+                        <div class="modal-header bg-success text-white py-3">
+                            <h5 class="modal-title d-flex align-items-center" id="postSaleActionModalLabel">
+                                <i class="fas fa-circle-check fs-4 me-2"></i>Sale Recorded Successfully!
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-4 text-center">
+                            <div class="d-inline-block badge bg-light text-dark border px-3 py-2 fs-6 mb-3">
+                                Invoice: <strong class="text-primary">{{ just_recorded_bill_data.invoice_number }}</strong>
+                            </div>
+                            <div class="text-muted mb-1">
+                                Customer: <strong>{{ just_recorded_bill_data.party_name }}</strong>
+                                {% if just_recorded_bill_data.party_phone %}<span class="ms-1 text-muted">({{ just_recorded_bill_data.party_phone }})</span>{% endif %}
+                            </div>
+                            <div class="fs-2 fw-bolder text-dark my-2">₹ {{ just_recorded_bill_data.total_amount|floatformat:2 }}</div>
+                            <div class="small text-muted mb-4">
+                                Paid: <strong class="text-success">₹ {{ just_recorded_bill_data.paid_amount|floatformat:2 }}</strong>
+                                {% if just_recorded_bill_data.balance_amount > 0 %}
+                                    <span class="mx-2">•</span>
+                                    Balance Due: <strong class="text-warning-emphasis">₹ {{ just_recorded_bill_data.balance_amount|floatformat:2 }}</strong>
+                                {% endif %}
+                            </div>
+                            <div class="d-grid gap-2 col-11 mx-auto">
+                                <a href="{{ just_recorded_bill_data.print_url }}" target="_blank" class="btn btn-outline-primary btn-lg py-2 d-flex align-items-center justify-content-center gap-2">
+                                    <i class="fas fa-print"></i>
+                                    <span>Print A4 Invoice</span>
+                                </a>
+                                <a href="{{ just_recorded_bill_data.whatsapp_url }}" target="_blank" rel="noopener" class="btn btn-success btn-lg py-2 d-flex align-items-center justify-content-center gap-2">
+                                    <i class="fab fa-whatsapp fs-5"></i>
+                                    <span>Send Bill on WhatsApp</span>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-light py-2 px-3 d-flex justify-content-between">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" id="record-another-sale-btn" data-bs-dismiss="modal">
+                                <i class="fas fa-plus me-1"></i>Record Another Sale
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="modal fade quick-pop-modal" id="editInventoryEntryModal" tabindex="-1" aria-labelledby="editInventoryEntryModalLabel" aria-hidden="true">
                 {% if register_is_grouped %}
                 <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
@@ -1195,6 +1253,13 @@ function initInventoryEntryDashboard() {
     const addPartyPickerInput = document.getElementById('add-party-picker');
     const addPartyPickerList = document.getElementById('add-party-options');
     const addPartySelect = addEntryModal ? addEntryModal.querySelector('select[name="party"]') : null;
+    const partyBalances = {{ party_balances_json|safe|default:"{}" }};
+    const walkinCustomerId = "{{ walkin_customer_id }}";
+    const walkinCustomerName = "{{ walkin_customer_name }}";
+    const partyBalanceBadge = document.getElementById('selected-party-balance-badge');
+    const selectWalkinCustomerBtn = document.getElementById('select-walkin-customer-btn');
+    const postSaleActionModal = document.getElementById('postSaleActionModal');
+    const recordAnotherSaleBtn = document.getElementById('record-another-sale-btn');
     const quickAddPartyUrl = "{% url 'inventory_quick_add_party' %}";
     const invoicePreviewUrl = "{% url 'inventory_invoice_preview' %}";
     const quickAddProductUrl = "{% url 'inventory_quick_add_product' %}";
@@ -2291,6 +2356,37 @@ function initInventoryEntryDashboard() {
     syncPurchaseEntryDateFromInvoiceDate();
     recalculateBill();
     const addPartyPickerController = createPartyPickerController(addPartyPickerInput, addPartyPickerList, addPartySelect);
+
+    function updatePartyBalanceBadge() {
+        if (!partyBalanceBadge || !addPartySelect) return;
+        const selectedPartyId = String(addPartySelect.value || '');
+        const balance = (selectedPartyId && partyBalances[selectedPartyId] !== undefined) ? Number(partyBalances[selectedPartyId]) : 0;
+        if (balance > 0) {
+            partyBalanceBadge.textContent = (entryType === 'purchase' ? 'Payable: ₹ ' : 'Due: ₹ ') + balance.toFixed(2);
+            partyBalanceBadge.classList.remove('d-none');
+        } else {
+            partyBalanceBadge.classList.add('d-none');
+            partyBalanceBadge.textContent = '';
+        }
+    }
+
+    if (addPartySelect) {
+        addPartySelect.addEventListener('change', updatePartyBalanceBadge);
+    }
+
+    if (selectWalkinCustomerBtn && addPartyPickerController) {
+        selectWalkinCustomerBtn.addEventListener('click', function () {
+            if (walkinCustomerId) {
+                addPartyPickerController.setSelectedValue(walkinCustomerId);
+                if (addPartySelect) {
+                    addPartySelect.value = walkinCustomerId;
+                    addPartySelect.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                updatePartyBalanceBadge();
+            }
+        });
+    }
+
     const partyToggleOpenLabel = `<i class="fas fa-plus me-1"></i>New ${quickPartyLabel}`;
     const partyToggleCloseLabel = '<i class="fas fa-xmark me-1"></i>Close';
     const productToggleOpenLabel = '<i class="fas fa-box-open me-1"></i>New Product';
@@ -2492,12 +2588,32 @@ function initInventoryEntryDashboard() {
             addPartyPickerController.reset();
             restorePurchaseDraft();
             refreshSaleInvoicePreview();
+            updatePartyBalanceBadge();
         });
         addEntryModal.addEventListener('hidden.bs.modal', function () {
             schedulePurchaseDraftSave();
         });
     }
     refreshSaleInvoicePreview();
+    updatePartyBalanceBadge();
+
+    if (postSaleActionModal && typeof bootstrap !== 'undefined') {
+        const postSaleModalInstance = bootstrap.Modal.getOrCreateInstance(postSaleActionModal);
+        postSaleModalInstance.show();
+        if (window.history && window.history.replaceState) {
+            const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]just_recorded_bill=\d+/, '').replace(/^&/, '?');
+            window.history.replaceState({}, document.title, cleanUrl || window.location.pathname);
+        }
+
+        if (recordAnotherSaleBtn && addEntryModal) {
+            recordAnotherSaleBtn.addEventListener('click', function () {
+                const addModalInstance = bootstrap.Modal.getOrCreateInstance(addEntryModal);
+                setTimeout(() => {
+                    addModalInstance.show();
+                }, 350);
+            });
+        }
+    }
 
     const editModal = document.getElementById('editInventoryEntryModal');
     if (!editModal) return;

@@ -79,7 +79,7 @@ import base64
 import hmac
 import hashlib
 import json
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, quote
 
 PRODUCT_SALE_LOG_PATTERN = re.compile(
     r'^Product Sale - (?P<name>.+?) \(Qty: (?P<qty>\d+)\)(?: \[PROD#(?P<product_id>\d+)\])?$'
@@ -4760,6 +4760,7 @@ def _inventory_entry_dashboard(request, entry_type):
                         initial_payment=initial_payment,
                     )
                     shared_bill_number = created_entries[0].invoice_number if created_entries else invoice_number
+                    created_bill = created_entries[0].bill if created_entries and created_entries[0].bill_id else None
                     messages.success(
                         request,
                         (
@@ -4767,7 +4768,10 @@ def _inventory_entry_dashboard(request, entry_type):
                             f"invoice {shared_bill_number}."
                         ),
                     )
-                    return redirect(config['url_name'])
+                    redirect_target = reverse(config['url_name'])
+                    if entry_type == 'sale' and created_bill:
+                        redirect_target = f"{redirect_target}?just_recorded_bill={created_bill.id}"
+                    return redirect(redirect_target)
                 except ValueError as exc:
                     line_entry_error = str(exc)
                     messages.error(request, line_entry_error)
@@ -5449,6 +5453,91 @@ def _inventory_entry_dashboard(request, entry_type):
             ],
         }
 
+    walkin_customer_id = ''
+    walkin_customer_name = 'Walk-in Customer'
+    if entry_type == 'sale':
+        walkin_customer = scope_to_workspace(
+            InventoryParty.objects.filter(name__iexact='Walk-in Customer', is_active=True),
+            current_workspace,
+        ).first()
+        if not walkin_customer:
+            try:
+                walkin_customer = InventoryParty.objects.create(
+                    workspace=current_workspace,
+                    name='Walk-in Customer',
+                    party_type='customer',
+                    is_active=True,
+                )
+            except Exception:
+                pass
+        if walkin_customer:
+            walkin_customer_id = str(walkin_customer.id)
+            walkin_customer_name = walkin_customer.name
+
+    party_balances_map = {}
+    if entry_type in {'purchase', 'sale'}:
+        for bill in register_rows:
+            p_id = bill.get('party_id')
+            bal = bill.get('credit_balance_amount') or Decimal('0.00')
+            if p_id and bal > Decimal('0.00'):
+                party_balances_map[str(p_id)] = float(party_balances_map.get(str(p_id), Decimal('0.00')) + bal)
+    party_balances_json = json.dumps(party_balances_map)
+
+    just_recorded_bill_data = None
+    just_bill_id = request.GET.get('just_recorded_bill')
+    if just_bill_id and entry_type == 'sale':
+        try:
+            j_bill = scope_to_workspace(
+                InventoryBill.objects.filter(pk=int(just_bill_id), entry_type='sale'),
+                current_workspace,
+            ).select_related('party', 'workspace').first()
+            if j_bill:
+                b_total = _inventory_bill_total(j_bill)
+                b_paid = _inventory_bill_paid_total(j_bill)
+                b_balance = max(b_total - b_paid, Decimal('0.00'))
+                print_url = reverse('inventory_sales_print_bill_view', kwargs={'bill_id': j_bill.id})
+
+                party_phone = (j_bill.party.phone if j_bill.party else '').strip()
+                clean_digits = re.sub(r'\D', '', party_phone)
+                if clean_digits.startswith('91') and len(clean_digits) == 12:
+                    phone_for_wa = clean_digits
+                elif len(clean_digits) == 10:
+                    phone_for_wa = f"91{clean_digits}"
+                else:
+                    phone_for_wa = clean_digits if len(clean_digits) >= 10 else ''
+
+                shop_name = getattr(current_workspace, 'name', 'Our Store') if current_workspace else 'Our Store'
+                wa_msg = (
+                    f"Hello {j_bill.party.name if j_bill.party else 'Customer'},\n"
+                    f"Thank you for your purchase from {shop_name}!\n\n"
+                    f"Invoice No: {j_bill.invoice_number or j_bill.bill_number}\n"
+                    f"Date: {j_bill.entry_date}\n"
+                    f"Total: Rs. {b_total:.2f}\n"
+                    f"Paid: Rs. {b_paid:.2f}\n"
+                )
+                if b_balance > Decimal('0.00'):
+                    wa_msg += f"Balance Due: Rs. {b_balance:.2f}\n"
+                wa_msg += "\nThank you for choosing us!"
+
+                if phone_for_wa:
+                    wa_url = f"https://wa.me/{phone_for_wa}?text={quote(wa_msg)}"
+                else:
+                    wa_url = f"https://wa.me/?text={quote(wa_msg)}"
+
+                just_recorded_bill_data = {
+                    'id': j_bill.id,
+                    'invoice_number': j_bill.invoice_number or j_bill.bill_number,
+                    'party_name': j_bill.party.name if j_bill.party else 'Walk-in Customer',
+                    'party_phone': party_phone,
+                    'total_amount': b_total,
+                    'paid_amount': b_paid,
+                    'balance_amount': b_balance,
+                    'print_url': print_url,
+                    'whatsapp_url': wa_url,
+                }
+        except (ValueError, TypeError):
+            pass
+
     context = {
         'config': config,
         'entry_type': entry_type,
@@ -5490,6 +5579,10 @@ def _inventory_entry_dashboard(request, entry_type):
         'sale_invoice_preview': sale_invoice_preview,
         'inventory_bill_payload': inventory_bill_payload,
         'show_add_entry_button': entry_type not in {'purchase_return', 'sale_return'},
+        'walkin_customer_id': walkin_customer_id,
+        'walkin_customer_name': walkin_customer_name,
+        'party_balances_json': party_balances_json,
+        'just_recorded_bill_data': just_recorded_bill_data,
     }
     return render(request, 'job_tickets/inventory_entry_dashboard.html', context)
 

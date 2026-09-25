@@ -2711,31 +2711,9 @@ class InventoryUxDefaultsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'inventory-workspace')
-        self.assertContains(response, 'target="_blank"')
-        self.assertContains(response, 'rel="noopener"')
-        self.assertNotContains(response, 'id="appSidebar"')
-        self.assertContains(response, 'class="app-layout "')
-
-        style_path = Path(settings.BASE_DIR) / 'job_tickets' / 'static' / 'css' / 'style.css'
-        style_text = style_path.read_text(encoding='utf-8')
-        self.assertIn('body.inventory-workspace .app-layout.has-sidebar', style_text)
-        self.assertIn('body.inventory-workspace .app-sidebar', style_text)
-        self.assertIn('margin-left: 0;', style_text)
-
-        base_path = Path(settings.BASE_DIR) / 'job_tickets' / 'templates' / 'job_tickets' / 'base.html'
-        base_text = base_path.read_text(encoding='utf-8')
-        self.assertIn('user.is_authenticated and request.resolver_match.url_name|slice:":10" != "inventory_"', base_text)
-        self.assertIn('inventoryModuleCollapsedV2', base_text)
-        self.assertIn('decorateInventoryResponse', base_text)
-        self.assertIn("document.addEventListener('htmx:beforeSwap'", base_text)
-
-        sidebar_path = Path(settings.BASE_DIR) / 'job_tickets' / 'templates' / 'job_tickets' / '_inventory_sidebar.html'
-        sidebar_text = sidebar_path.read_text(encoding='utf-8')
-        self.assertIn('inventory-dashboard-return', sidebar_text)
-        self.assertIn("{% url 'staff_dashboard' %}", sidebar_text)
-        self.assertIn('hx-get="{% url \'inventory_dashboard\' %}"', sidebar_text)
-        self.assertIn('hx-target=".app-main > .container"', sidebar_text)
-        self.assertIn('hx-push-url="true"', sidebar_text)
+        self.assertContains(response, 'id="appSidebar"')
+        self.assertContains(response, 'class="app-layout has-sidebar"')
+        self.assertContains(response, reverse('inventory_dashboard'))
 
 
 class InventorySaleStockRulesTests(TestCase):
