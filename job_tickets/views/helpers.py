@@ -5365,6 +5365,20 @@ def _inventory_entry_dashboard(request, entry_type):
     register_rows = _build_inventory_bill_summaries(ordered_entries)
     _attach_inventory_credit_to_bill_summaries(register_rows)
 
+    # Settlement distribution metrics across all bills in current query/date range
+    total_bills_all_statuses = len(register_rows)
+    paid_bills_count = sum(1 for bill in register_rows if (bill.get('credit_balance_amount') or Decimal('0.00')) <= Decimal('0.00'))
+    part_paid_bills_count = sum(
+        1 for bill in register_rows
+        if (bill.get('credit_balance_amount') or Decimal('0.00')) > Decimal('0.00')
+        and (bill.get('credit_paid_amount') or Decimal('0.00')) > Decimal('0.00')
+    )
+    credit_bills_count = sum(
+        1 for bill in register_rows
+        if (bill.get('credit_balance_amount') or Decimal('0.00')) > Decimal('0.00')
+        and (bill.get('credit_paid_amount') or Decimal('0.00')) <= Decimal('0.00')
+    )
+
     if entry_type in {'purchase', 'sale'} and payment_status_filter != 'all':
         def bill_matches_payment_filter(bill):
             paid_amount = bill.get('credit_paid_amount') or Decimal('0.00')
@@ -5385,6 +5399,18 @@ def _inventory_entry_dashboard(request, entry_type):
     register_total_amount = sum((bill.get('total_amount') or Decimal('0.00') for bill in register_rows), Decimal('0.00'))
     register_paid_total = sum((bill.get('credit_paid_amount') or Decimal('0.00') for bill in register_rows), Decimal('0.00'))
     register_balance_total = sum((bill.get('credit_balance_amount') or Decimal('0.00') for bill in register_rows), Decimal('0.00'))
+
+    paid_pct = (
+        (register_paid_total / register_total_amount * Decimal('100.0')).quantize(Decimal('0.1'))
+        if register_total_amount > Decimal('0.00')
+        else Decimal('0.0')
+    )
+    balance_pct = (
+        (register_balance_total / register_total_amount * Decimal('100.0')).quantize(Decimal('0.1'))
+        if register_total_amount > Decimal('0.00')
+        else Decimal('0.0')
+    )
+    bill_amount_paid_value = (request.POST.get('bill_amount_paid') or '').strip()
 
     def money_text(amount):
         return format((amount or Decimal('0.00')).quantize(Decimal('0.01')), 'f')
@@ -5444,6 +5470,13 @@ def _inventory_entry_dashboard(request, entry_type):
         'total_amount': register_total_amount,
         'register_paid_total': register_paid_total,
         'register_balance_total': register_balance_total,
+        'paid_bills_count': paid_bills_count,
+        'part_paid_bills_count': part_paid_bills_count,
+        'credit_bills_count': credit_bills_count,
+        'total_bills_all_statuses': total_bills_all_statuses,
+        'paid_pct': paid_pct,
+        'balance_pct': balance_pct,
+        'bill_amount_paid_value': bill_amount_paid_value,
         'bill_discount_value': bill_discount_value,
         'bill_notes_value': bill_notes_value,
         'bill_payment_status_value': bill_payment_status_value,

@@ -47,7 +47,7 @@
             </div>
             {% endif %}
 
-            <div class="row g-3 mb-4">
+            <div class="row g-3 mb-3">
                 <div class="col-md-6 {% if entry_type == 'purchase' or entry_type == 'sale' %}col-xl{% else %}col-xl-4{% endif %}">
                     <div class="stat-card">
                         <p>Total Bills</p>
@@ -82,42 +82,90 @@
                 {% endif %}
             </div>
 
-                <div class="card-box h-100">
-                    <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
-                        <div>
-                            <h5 class="mb-1"><i class="fas fa-list me-2"></i>{{ config.title }} Register</h5>
-                            <p class="mb-0 small text-muted">Filter by date, party, invoice, product, and payment status.</p>
-                        </div>
-                        <form method="get" class="row g-2 align-items-center" data-async-form data-async-target="#inventory-entry-page">
-                            <div class="col-12 col-xl-4">
-                                <input type="text" name="q" class="form-control" placeholder="Search invoice, party, product..." value="{{ query }}">
-                            </div>
-                            <div class="col-6 col-md-auto">
-                                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
-                            </div>
-                            <div class="col-6 col-md-auto">
-                                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
-                            </div>
-                            {% if entry_type == 'purchase' or entry_type == 'sale' %}
-                            <div class="col-6 col-md-auto">
-                                <select name="payment_status" class="form-select">
-                                    <option value="all" {% if payment_status_filter == 'all' %}selected{% endif %}>All</option>
-                                    <option value="credit" {% if payment_status_filter == 'credit' %}selected{% endif %}>Credit</option>
-                                    <option value="part_paid" {% if payment_status_filter == 'part_paid' %}selected{% endif %}>Part Paid</option>
-                                    <option value="paid" {% if payment_status_filter == 'paid' %}selected{% endif %}>Paid</option>
-                                </select>
-                            </div>
-                            {% endif %}
-                            <div class="col-auto">
-                                <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search me-1"></i>Filter</button>
-                            </div>
-                            {% if query or start_date or end_date or payment_status_filter != 'all' %}
-                            <div class="col-auto">
-                                <a href="{% url config.url_name %}" class="btn btn-outline-secondary">Clear</a>
-                            </div>
-                            {% endif %}
-                        </form>
+            {% if entry_type == 'purchase' or entry_type == 'sale' %}
+            <!-- Visual Settlement & Credit Status Bar (Status Graph with Amount) -->
+            <div class="card-box p-3 mb-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="inventory-section-icon {% if entry_type == 'purchase' %}text-primary{% else %}text-success{% endif %}">
+                            <i class="fa-solid fa-scale-balanced"></i>
+                        </span>
+                        <span class="fw-bold text-dark small text-uppercase">Settlement &amp; Credit Distribution</span>
                     </div>
+                    <div class="d-flex align-items-center gap-3 small">
+                        <span class="text-success fw-semibold"><i class="fa-solid fa-circle-check me-1"></i>Settled: &#8377;{{ register_paid_total|floatformat:2 }} ({{ paid_pct }}%)</span>
+                        <span class="text-muted">|</span>
+                        <span class="text-warning fw-semibold"><i class="fa-solid fa-clock me-1"></i>Outstanding: &#8377;{{ register_balance_total|floatformat:2 }} ({{ balance_pct }}%)</span>
+                    </div>
+                </div>
+                <div class="progress" style="height: 10px; border-radius: 6px; background-color: #f1f5f9;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ paid_pct }}%;" aria-valuenow="{{ paid_pct }}" aria-valuemin="0" aria-valuemax="100" title="Settled: &#8377;{{ register_paid_total|floatformat:2 }}"></div>
+                    <div class="progress-bar bg-warning" role="progressbar" style="width: {{ balance_pct }}%;" aria-valuenow="{{ balance_pct }}" aria-valuemin="0" aria-valuemax="100" title="Outstanding: &#8377;{{ register_balance_total|floatformat:2 }}"></div>
+                </div>
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 pt-1 border-top small text-muted">
+                    <span>Total Billed: <strong class="text-dark">&#8377;{{ register_total_amount|floatformat:2 }}</strong> across {{ entry_count }} bill(s)</span>
+                    <div class="d-flex gap-3">
+                        <span><i class="fa-solid fa-circle text-success me-1" style="font-size: 0.6rem;"></i>Fully Paid: <strong class="text-dark">{{ paid_bills_count }}</strong></span>
+                        <span><i class="fa-solid fa-circle text-info me-1" style="font-size: 0.6rem;"></i>Part-Paid: <strong class="text-dark">{{ part_paid_bills_count }}</strong></span>
+                        <span><i class="fa-solid fa-circle text-warning me-1" style="font-size: 0.6rem;"></i>Open Credit: <strong class="text-dark">{{ credit_bills_count }}</strong></span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="card-box h-100">
+                <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
+                    <div>
+                        <h5 class="mb-1"><i class="fas fa-list me-2"></i>{{ config.title }} Register</h5>
+                        <p class="mb-2 small text-muted">Filter by date, party, invoice, product, and payment status.</p>
+                        {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                        <div class="d-flex flex-wrap align-items-center gap-1">
+                            <span class="small text-muted me-1">Filter:</span>
+                            <a href="?q={{ query }}&amp;start_date={{ start_date }}&amp;end_date={{ end_date }}&amp;payment_status=all" class="badge text-decoration-none {% if payment_status_filter == 'all' %}bg-primary text-white{% else %}bg-light text-secondary border{% endif %} px-2 py-1">
+                                All ({{ total_bills_all_statuses }})
+                            </a>
+                            <a href="?q={{ query }}&amp;start_date={{ start_date }}&amp;end_date={{ end_date }}&amp;payment_status=paid" class="badge text-decoration-none {% if payment_status_filter == 'paid' %}bg-success text-white{% else %}bg-light text-secondary border{% endif %} px-2 py-1">
+                                <i class="fa-solid fa-check me-1"></i>Paid ({{ paid_bills_count }})
+                            </a>
+                            <a href="?q={{ query }}&amp;start_date={{ start_date }}&amp;end_date={{ end_date }}&amp;payment_status=part_paid" class="badge text-decoration-none {% if payment_status_filter == 'part_paid' %}bg-info text-white{% else %}bg-light text-secondary border{% endif %} px-2 py-1">
+                                <i class="fa-solid fa-circle-half-stroke me-1"></i>Part Paid ({{ part_paid_bills_count }})
+                            </a>
+                            <a href="?q={{ query }}&amp;start_date={{ start_date }}&amp;end_date={{ end_date }}&amp;payment_status=credit" class="badge text-decoration-none {% if payment_status_filter == 'credit' %}bg-warning text-dark{% else %}bg-light text-secondary border{% endif %} px-2 py-1">
+                                <i class="fa-solid fa-clock me-1"></i>Credit ({{ credit_bills_count }})
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <form method="get" class="row g-2 align-items-center" data-async-form data-async-target="#inventory-entry-page">
+                        <div class="col-12 col-xl-4">
+                            <input type="text" name="q" class="form-control" placeholder="Search invoice, party, product..." value="{{ query }}">
+                        </div>
+                        <div class="col-6 col-md-auto">
+                            <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                        </div>
+                        <div class="col-6 col-md-auto">
+                            <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                        </div>
+                        {% if entry_type == 'purchase' or entry_type == 'sale' %}
+                        <div class="col-6 col-md-auto">
+                            <select name="payment_status" class="form-select">
+                                <option value="all" {% if payment_status_filter == 'all' %}selected{% endif %}>All</option>
+                                <option value="credit" {% if payment_status_filter == 'credit' %}selected{% endif %}>Credit</option>
+                                <option value="part_paid" {% if payment_status_filter == 'part_paid' %}selected{% endif %}>Part Paid</option>
+                                <option value="paid" {% if payment_status_filter == 'paid' %}selected{% endif %}>Paid</option>
+                            </select>
+                        </div>
+                        {% endif %}
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search me-1"></i>Filter</button>
+                        </div>
+                        {% if query or start_date or end_date or payment_status_filter != 'all' %}
+                        <div class="col-auto">
+                            <a href="{% url config.url_name %}" class="btn btn-outline-secondary">Clear</a>
+                        </div>
+                        {% endif %}
+                    </form>
+                </div>
 
                 <div class="table-responsive inventory-scroll-region">
                     <table class="table table-striped table-hover">
@@ -312,7 +360,7 @@
             {% endif %}
 
             <div class="modal fade quick-pop-modal" id="addInventoryEntryModal" tabindex="-1" aria-labelledby="addInventoryEntryModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title" id="addInventoryEntryModalLabel">
@@ -476,29 +524,45 @@
                                                 type="radio"
                                                 class="btn-check"
                                                 name="bill_payment_status"
+                                                id="bill-payment-status-part-paid"
+                                                value="part_paid"
+                                                autocomplete="off"
+                                                {% if bill_payment_status_value == 'part_paid' %}checked{% endif %}
+                                            >
+                                            <label class="btn btn-outline-info btn-sm" for="bill-payment-status-part-paid">
+                                                <i class="fas fa-circle-half-stroke me-1"></i>Part Paid
+                                            </label>
+                                            <input
+                                                type="radio"
+                                                class="btn-check"
+                                                name="bill_payment_status"
                                                 id="bill-payment-status-unpaid"
                                                 value="unpaid"
                                                 autocomplete="off"
-                                                {% if bill_payment_status_value != 'paid' %}checked{% endif %}
+                                                {% if bill_payment_status_value != 'paid' and bill_payment_status_value != 'part_paid' %}checked{% endif %}
                                             >
                                             <label class="btn btn-outline-warning btn-sm" for="bill-payment-status-unpaid">
                                                 <i class="fas fa-clock me-1"></i>Unpaid
                                             </label>
                                         </div>
                                     </div>
-                                    <div id="bill-paid-fields" class="row g-2 {% if bill_payment_status_value != 'paid' %}d-none{% endif %}">
-                                        <div class="col-md-4">
+                                    <div id="bill-paid-fields" class="row g-2 {% if bill_payment_status_value != 'paid' and bill_payment_status_value != 'part_paid' %}d-none{% endif %}">
+                                        <div id="bill-part-paid-amount-col" class="col-md-3 {% if bill_payment_status_value != 'part_paid' %}d-none{% endif %}">
+                                            <label class="form-label small mb-1">Amount Paid (₹)</label>
+                                            <input type="number" step="0.01" min="0.01" name="bill_amount_paid" class="form-control form-control-sm" value="{{ bill_amount_paid_value }}" placeholder="0.00">
+                                        </div>
+                                        <div class="col-md-3">
                                             <label class="form-label small mb-1">Method</label>
                                             <select name="bill_payment_method" class="form-select form-select-sm">
                                                 <option value="cash" {% if bill_payment_method_value == 'cash' %}selected{% endif %}>Cash</option>
                                                 <option value="transfer" {% if bill_payment_method_value == 'transfer' %}selected{% endif %}>Transfer</option>
                                             </select>
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <label class="form-label small mb-1">Payment Date</label>
                                             <input type="date" name="bill_payment_date" class="form-control form-control-sm" value="{{ bill_payment_date_value }}">
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <label class="form-label small mb-1">Reference</label>
                                             <input type="text" name="bill_payment_reference" class="form-control form-control-sm" value="{{ bill_payment_reference_value }}" placeholder="Optional">
                                         </div>
@@ -507,21 +571,21 @@
                                 {% endif %}
 
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-striped align-middle mb-0">
+                                    <table class="table table-sm table-striped align-middle mb-0 inventory-modal-lines-table">
                                         <thead>
                                             <tr>
                                                 {% if source_bill_mode %}
-                                                    <th style="min-width: 90px;">Select</th>
+                                                    <th style="width: 70px;">Select</th>
                                                 {% endif %}
-                                                <th style="min-width: 170px;">Product</th>
-                                                <th style="min-width: 90px;">Qty</th>
-                                                <th style="min-width: 120px;">Rate</th>
-                                                <th style="min-width: 130px;">Amount (Excl Tax)</th>
-                                                <th style="min-width: 90px;">GST %</th>
-                                                <th style="min-width: 120px;">Tax Amount</th>
-                                                <th style="min-width: 150px;">Total Amount</th>
+                                                <th>Product</th>
+                                                <th style="width: 85px;">Qty</th>
+                                                <th style="width: 110px;">Rate</th>
+                                                <th style="width: 120px;" class="text-end">Excl Tax</th>
+                                                <th style="width: 85px;">GST %</th>
+                                                <th style="width: 110px;" class="text-end">Tax</th>
+                                                <th style="width: 130px;" class="text-end">Total</th>
                                                 {% if not source_bill_mode %}
-                                                    <th style="min-width: 60px;">Action</th>
+                                                    <th style="width: 50px;" class="text-center">Action</th>
                                                 {% endif %}
                                             </tr>
                                         </thead>
@@ -763,7 +827,7 @@
 
             <div class="modal fade quick-pop-modal" id="editInventoryEntryModal" tabindex="-1" aria-labelledby="editInventoryEntryModalLabel" aria-hidden="true">
                 {% if register_is_grouped %}
-                <div class="modal-dialog modal-dialog-centered modal-xl">
+                <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title" id="editInventoryEntryModalLabel">
@@ -828,17 +892,17 @@
                                 </div>
 
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-striped align-middle mb-0">
+                                    <table class="table table-sm table-striped align-middle mb-0 inventory-modal-lines-table">
                                         <thead>
                                             <tr>
-                                                <th style="min-width: 220px;">Product</th>
-                                                <th style="min-width: 90px;">Qty</th>
-                                                <th style="min-width: 120px;">Rate</th>
-                                                <th style="min-width: 130px;">Amount (Excl Tax)</th>
-                                                <th style="min-width: 90px;">GST %</th>
-                                                <th style="min-width: 120px;">Tax Amount</th>
-                                                <th style="min-width: 150px;">Total Amount</th>
-                                                <th style="min-width: 60px;">Action</th>
+                                                <th>Product</th>
+                                                <th style="width: 85px;">Qty</th>
+                                                <th style="width: 110px;">Rate</th>
+                                                <th style="width: 120px;" class="text-end">Excl Tax</th>
+                                                <th style="width: 85px;">GST %</th>
+                                                <th style="width: 110px;" class="text-end">Tax</th>
+                                                <th style="width: 130px;" class="text-end">Total</th>
+                                                <th style="width: 50px;" class="text-center">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody id="edit-sale-lines-body"></tbody>
@@ -1117,6 +1181,8 @@ function initInventoryEntryDashboard() {
     const addBillNotesInput = addEntryModal ? addEntryModal.querySelector('textarea[name="bill_notes"]') : null;
     const billPaymentStatusInputs = addEntryModal ? Array.from(addEntryModal.querySelectorAll('input[name="bill_payment_status"]')) : [];
     const billPaidFields = document.getElementById('bill-paid-fields');
+    const billPartPaidAmountCol = document.getElementById('bill-part-paid-amount-col');
+    const billAmountPaidInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_amount_paid"]') : null;
     const billPaymentMethodInput = addEntryModal ? addEntryModal.querySelector('select[name="bill_payment_method"]') : null;
     const billPaymentDateInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_payment_date"]') : null;
     const billPaymentReferenceInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_payment_reference"]') : null;
@@ -1168,7 +1234,15 @@ function initInventoryEntryDashboard() {
 
     function syncBillPaymentFields() {
         if (!billPaidFields) return;
-        billPaidFields.classList.toggle('d-none', selectedBillPaymentStatus() !== 'paid');
+        const status = selectedBillPaymentStatus();
+        const showFields = (status === 'paid' || status === 'part_paid');
+        billPaidFields.classList.toggle('d-none', !showFields);
+        if (billPartPaidAmountCol) {
+            billPartPaidAmountCol.classList.toggle('d-none', status !== 'part_paid');
+        }
+        if (billAmountPaidInput) {
+            billAmountPaidInput.required = (status === 'part_paid');
+        }
     }
 
     function syncPurchaseEntryDateFromInvoiceDate() {
@@ -1486,7 +1560,8 @@ function initInventoryEntryDashboard() {
     function buildProductOptionNode(productData) {
         const option = document.createElement('option');
         option.value = String(productData?.id || '');
-        option.textContent = productData?.label || productData?.name || '';
+        const stockInfo = (productData?.stock_quantity !== undefined && productData?.stock_quantity !== null) ? ` (Stock: ${productData.stock_quantity})` : ' (Stock: 0)';
+        option.textContent = productData?.label || (productData?.name ? `${productData.name}${stockInfo}` : '');
         option.dataset.unitPrice = String(productData?.unit_price || '0.00');
         option.dataset.costPrice = String(productData?.cost_price || '0.00');
         return option;
@@ -1500,7 +1575,8 @@ function initInventoryEntryDashboard() {
             option = buildProductOptionNode(productData);
             select.appendChild(option);
         } else {
-            option.textContent = productData.label || productData.name || option.textContent;
+            const stockInfo = (productData?.stock_quantity !== undefined && productData?.stock_quantity !== null) ? ` (Stock: ${productData.stock_quantity})` : '';
+            option.textContent = productData.label || (productData.name ? `${productData.name}${stockInfo}` : option.textContent);
             option.dataset.unitPrice = String(productData.unit_price || '0.00');
             option.dataset.costPrice = String(productData.cost_price || '0.00');
         }
@@ -1912,6 +1988,7 @@ function initInventoryEntryDashboard() {
             bill_notes: addBillNotesInput ? addBillNotesInput.value.trim() : '',
             bill_discount_amount: billDiscountInput ? billDiscountInput.value : '0.00',
             bill_payment_status: selectedBillPaymentStatus(),
+            bill_amount_paid: billAmountPaidInput ? billAmountPaidInput.value : '',
             bill_payment_method: billPaymentMethodInput ? billPaymentMethodInput.value : 'cash',
             bill_payment_date: billPaymentDateInput ? billPaymentDateInput.value : '',
             bill_payment_reference: billPaymentReferenceInput ? billPaymentReferenceInput.value.trim() : '',
@@ -1929,6 +2006,8 @@ function initInventoryEntryDashboard() {
             || draft.bill_notes
             || parseNumber(draft.bill_discount_amount) > 0
             || draft.bill_payment_status === 'paid'
+            || draft.bill_payment_status === 'part_paid'
+            || parseNumber(draft.bill_amount_paid) > 0
             || draft.bill_payment_reference
             || draft.lines.some((line) => draftLineHasMeaningfulContent(line))
         );
@@ -2006,6 +2085,7 @@ function initInventoryEntryDashboard() {
         if (toggleQuickPartyBtn) toggleQuickPartyBtn.innerHTML = partyToggleOpenLabel;
         if (toggleQuickProductBtn) toggleQuickProductBtn.innerHTML = productToggleOpenLabel;
         setBillPaymentStatus(entryType === 'sale' ? 'paid' : 'unpaid');
+        if (billAmountPaidInput) billAmountPaidInput.value = '';
         if (billPaymentMethodInput) billPaymentMethodInput.value = 'cash';
         if (billPaymentDateInput) billPaymentDateInput.value = new Date().toISOString().slice(0, 10);
         if (addInvoiceDateInput && addEntryDateInput) addInvoiceDateInput.value = addEntryDateInput.value;
@@ -2039,6 +2119,9 @@ function initInventoryEntryDashboard() {
             billDiscountInput.value = draft.bill_discount_amount || '0.00';
         }
         setBillPaymentStatus(draft.bill_payment_status || (entryType === 'sale' ? 'paid' : 'unpaid'));
+        if (billAmountPaidInput && draft.bill_amount_paid) {
+            billAmountPaidInput.value = draft.bill_amount_paid;
+        }
         if (billPaymentMethodInput) {
             billPaymentMethodInput.value = draft.bill_payment_method || 'cash';
         }
@@ -2097,8 +2180,14 @@ function initInventoryEntryDashboard() {
         billDiscountInput.addEventListener('input', recalculateBill);
     }
     billPaymentStatusInputs.forEach((input) => {
-        input.addEventListener('change', syncBillPaymentFields);
+        input.addEventListener('change', function () {
+            syncBillPaymentFields();
+            schedulePurchaseDraftSave();
+        });
     });
+    if (billAmountPaidInput) {
+        billAmountPaidInput.addEventListener('input', schedulePurchaseDraftSave);
+    }
 
     function stripUnselectedRowsBeforeSubmit() {
         if (!hasSourceBill || !lineBody) return;
