@@ -5483,6 +5483,23 @@ def _inventory_entry_dashboard(request, entry_type):
                 party_balances_map[str(p_id)] = float(party_balances_map.get(str(p_id), Decimal('0.00')) + bal)
     party_balances_json = json.dumps(party_balances_map)
 
+    products_catalog_map = {}
+    for p in line_products:
+        products_catalog_map[str(p.id)] = {
+            'id': p.id,
+            'name': p.name,
+            'sku': p.sku or '',
+            'cost_price': float(p.cost_price or Decimal('0.00')),
+            'unit_price': float(p.unit_price or Decimal('0.00')),
+            'stock_quantity': p.stock_quantity,
+            'reserved_stock': p.reserved_stock,
+            'gst_rate': float(p.effective_gst_rate or Decimal('18.00')),
+            'category': p.category or '',
+            'brand': p.brand or '',
+            'label': f"{p.name} (Stock: {p.stock_quantity})",
+        }
+    products_catalog_json = json.dumps(products_catalog_map)
+
     just_recorded_bill_data = None
     just_bill_id = request.GET.get('just_recorded_bill')
     if just_bill_id and entry_type == 'sale':
@@ -5582,6 +5599,7 @@ def _inventory_entry_dashboard(request, entry_type):
         'walkin_customer_id': walkin_customer_id,
         'walkin_customer_name': walkin_customer_name,
         'party_balances_json': party_balances_json,
+        'products_catalog_json': products_catalog_json,
         'just_recorded_bill_data': just_recorded_bill_data,
     }
     return render(request, 'job_tickets/inventory_entry_dashboard.html', context)

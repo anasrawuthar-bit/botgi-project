@@ -362,11 +362,24 @@
             <div class="modal fade quick-pop-modal" id="addInventoryEntryModal" tabindex="-1" aria-labelledby="addInventoryEntryModalLabel" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="addInventoryEntryModalLabel">
-                                <i class="fas fa-file-circle-plus me-2"></i>{{ config.submit_label }}
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <div class="modal-header d-flex align-items-center justify-content-between py-2 px-3">
+                            <div class="d-flex align-items-center gap-2">
+                                <h5 class="modal-title mb-0 d-flex align-items-center" id="addInventoryEntryModalLabel">
+                                    <i class="fas fa-file-circle-plus me-2 text-primary"></i>{{ config.submit_label }}
+                                </h5>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace" style="font-size: 0.72rem;">ERP Billing</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="d-none d-lg-flex align-items-center gap-2 me-2 text-muted" style="font-size: 0.75rem;">
+                                    <span class="badge bg-light text-dark border px-2 py-1"><kbd class="bg-white text-dark border">Alt+A</kbd> Line</span>
+                                    <span class="badge bg-light text-dark border px-2 py-1"><kbd class="bg-white text-dark border">Ctrl+S</kbd> Save</span>
+                                    <span class="badge bg-light text-dark border px-2 py-1"><kbd class="bg-white text-dark border">F11</kbd> Fullscreen</span>
+                                </div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-1" id="toggle-modal-fullscreen-btn" title="Toggle Fullscreen Canvas (F11)" aria-label="Toggle Fullscreen">
+                                    <i class="fas fa-expand" id="fullscreen-toggle-icon"></i>
+                                </button>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
                         </div>
                         <form method="post">
                             <div class="modal-body">
@@ -507,22 +520,53 @@
                                         {% endif %}
                                 </div>
 
+                                <div id="erp-item-insight-strip" class="erp-item-insight-strip mb-2 d-none">
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                                            <div>
+                                                <i class="fas fa-box text-primary me-1"></i>
+                                                <span class="text-muted">Item:</span> <strong id="erp-insight-name" class="text-dark">-</strong>
+                                            </div>
+                                            <div>
+                                                <span class="text-muted">SKU/Barcode:</span> <strong id="erp-insight-sku" class="font-monospace text-secondary">-</strong>
+                                            </div>
+                                            <div>
+                                                <span class="text-muted">Stock:</span> <span id="erp-insight-stock-badge" class="badge bg-secondary-subtle text-dark border font-monospace">0 in stock</span>
+                                            </div>
+                                            <div>
+                                                <span class="text-muted">Cost:</span> <strong id="erp-insight-cost" class="text-dark font-monospace">₹ 0.00</strong>
+                                            </div>
+                                            <div>
+                                                <span class="text-muted">Rate:</span> <strong id="erp-insight-rate" class="text-dark font-monospace">₹ 0.00</strong>
+                                            </div>
+                                            <div id="erp-insight-margin-wrap">
+                                                <span class="text-muted">Margin:</span> <strong id="erp-insight-margin" class="text-success font-monospace">0.0%</strong>
+                                            </div>
+                                        </div>
+                                        <div id="erp-insight-alert" class="d-none">
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-triangle-exclamation me-1"></i>Low Stock Alert</span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="table-responsive">
                                     <table class="table table-sm table-striped align-middle mb-0 inventory-modal-lines-table">
                                         <thead>
                                             <tr>
                                                 {% if source_bill_mode %}
-                                                    <th style="width: 70px;">Select</th>
+                                                    <th style="width: 50px;">Select</th>
+                                                {% else %}
+                                                    <th style="width: 35px;" class="text-center text-muted">#</th>
                                                 {% endif %}
-                                                <th>Product</th>
+                                                <th>Product / Barcode</th>
                                                 <th style="width: 85px;">Qty</th>
-                                                <th style="width: 110px;">Rate</th>
-                                                <th style="width: 120px;" class="text-end">Excl Tax</th>
+                                                <th style="width: 115px;">Rate (₹)</th>
+                                                <th style="width: 110px;" class="text-end">Excl Tax</th>
                                                 <th style="width: 85px;">GST %</th>
-                                                <th style="width: 110px;" class="text-end">Tax</th>
-                                                <th style="width: 130px;" class="text-end">Total</th>
+                                                <th style="width: 105px;" class="text-end">Tax (₹)</th>
+                                                <th style="width: 120px;" class="text-end">Total (₹)</th>
                                                 {% if not source_bill_mode %}
-                                                    <th style="width: 50px;" class="text-center">Action</th>
+                                                    <th style="width: 45px;" class="text-center">Action</th>
                                                 {% endif %}
                                             </tr>
                                         </thead>
@@ -573,6 +617,7 @@
                                                 {% endfor %}
                                             {% else %}
                                             <tr class="inventory-line-row">
+                                                <td class="text-center text-muted small line-row-index align-middle">1</td>
                                                 <td>
                                                     <div class="visually-hidden">
                                                         <select name="line_product_id[]" class="form-select form-select-sm inventory-line-product">
@@ -582,6 +627,10 @@
                                                                     value="{{ product.id }}"
                                                                     data-unit-price="{{ product.unit_price }}"
                                                                     data-cost-price="{{ product.cost_price }}"
+                                                                    data-stock="{{ product.stock_quantity }}"
+                                                                    data-reserved="{{ product.reserved_stock }}"
+                                                                    data-sku="{{ product.sku|default:'' }}"
+                                                                    data-gst-rate="{{ product.effective_gst_rate|default:18 }}"
                                                                 >
                                                                     {{ product.name }} (Stock: {{ product.stock_quantity }})
                                                                 </option>
@@ -592,27 +641,27 @@
                                                         type="text"
                                                         class="form-control form-control-sm inventory-line-product-picker"
                                                         autocomplete="off"
-                                                        placeholder="Type product name"
+                                                        placeholder="Scan barcode or type item name..."
                                                     >
                                                     <datalist class="inventory-line-product-options"></datalist>
                                                 </td>
                                                 <td>
-                                                    <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm" value="1">
+                                                    <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm text-center" value="1">
                                                 </td>
                                                 <td>
-                                                    <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm" value="0.00">
+                                                    <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm font-monospace" value="0.00">
                                                 </td>
-                                                <td class="text-end fw-semibold line-taxable-amount">0.00</td>
+                                                <td class="text-end fw-semibold font-monospace line-taxable-amount">0.00</td>
                                                 <td>
-                                                    <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm" value="{{ default_gst_rate|floatformat:2 }}">
+                                                    <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm font-monospace" value="{{ default_gst_rate|floatformat:2 }}">
                                                 </td>
-                                                <td class="text-end fw-semibold line-gst-amount">0.00</td>
+                                                <td class="text-end fw-semibold font-monospace line-gst-amount">0.00</td>
                                                 <td>
-                                                    <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input" value="0.00">
+                                                    <input type="number" min="0" step="0.01" class="form-control form-control-sm font-monospace line-total-amount-input" value="0.00">
                                                 </td>
                                                 <td class="text-center">
-                                                    <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn">
-                                                        <i class="fas fa-trash"></i>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn" title="Remove line">
+                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </td>
                                             </tr>
@@ -674,6 +723,7 @@
 
                                 <template id="inventory-line-template">
                                     <tr class="inventory-line-row">
+                                        <td class="text-center text-muted small line-row-index align-middle">1</td>
                                         <td>
                                             <div class="visually-hidden">
                                                 <select name="line_product_id[]" class="form-select form-select-sm inventory-line-product">
@@ -683,6 +733,10 @@
                                                             value="{{ product.id }}"
                                                             data-unit-price="{{ product.unit_price }}"
                                                             data-cost-price="{{ product.cost_price }}"
+                                                            data-stock="{{ product.stock_quantity }}"
+                                                            data-reserved="{{ product.reserved_stock }}"
+                                                            data-sku="{{ product.sku|default:'' }}"
+                                                            data-gst-rate="{{ product.effective_gst_rate|default:18 }}"
                                                         >
                                                             {{ product.name }} (Stock: {{ product.stock_quantity }})
                                                         </option>
@@ -693,26 +747,26 @@
                                                 type="text"
                                                 class="form-control form-control-sm inventory-line-product-picker"
                                                 autocomplete="off"
-                                                placeholder="Type product name"
+                                                placeholder="Scan barcode or type item name..."
                                             >
                                             <datalist class="inventory-line-product-options"></datalist>
                                         </td>
                                         <td>
-                                            <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm" value="1">
+                                            <input type="number" min="1" step="1" name="line_quantity[]" class="form-control form-control-sm text-center" value="1">
                                         </td>
                                         <td>
-                                            <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm" value="0.00">
+                                            <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm font-monospace" value="0.00">
                                         </td>
-                                        <td class="text-end fw-semibold line-taxable-amount">0.00</td>
+                                        <td class="text-end fw-semibold line-taxable-amount font-monospace">0.00</td>
                                         <td>
-                                            <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm" value="{{ default_gst_rate|floatformat:2 }}">
+                                            <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm text-center" value="{{ default_gst_rate|floatformat:2 }}">
                                         </td>
-                                        <td class="text-end fw-semibold line-gst-amount">0.00</td>
+                                        <td class="text-end fw-semibold line-gst-amount font-monospace">0.00</td>
                                         <td>
-                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input" value="0.00">
+                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input font-monospace text-end" value="0.00">
                                         </td>
                                         <td class="text-center">
-                                            <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn">
+                                            <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn" title="Remove line">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </td>
@@ -830,11 +884,20 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-save me-1"></i>{{ config.submit_label }}
-                                </button>
+                            <div class="modal-footer d-flex justify-content-between py-2 px-3">
+                                <div class="d-flex align-items-center gap-2 text-muted small" style="font-size: 0.76rem;">
+                                    <span class="d-none d-sm-inline"><i class="fas fa-barcode me-1 text-primary"></i>Barcode Ready</span>
+                                    <span class="mx-1 d-none d-sm-inline">•</span>
+                                    <span><kbd class="bg-light text-dark border px-1">Tab</kbd> / <kbd class="bg-light text-dark border px-1">Enter</kbd> Next Line</span>
+                                    <span class="mx-1">•</span>
+                                    <span><kbd class="bg-light text-dark border px-1">Ctrl+S</kbd> Save</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-primary px-3">
+                                        <i class="fas fa-save me-1"></i>{{ config.submit_label }}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -1254,12 +1317,25 @@ function initInventoryEntryDashboard() {
     const addPartyPickerList = document.getElementById('add-party-options');
     const addPartySelect = addEntryModal ? addEntryModal.querySelector('select[name="party"]') : null;
     const partyBalances = {{ party_balances_json|safe|default:"{}" }};
+    const productsCatalog = {{ products_catalog_json|safe|default:"{}" }};
     const walkinCustomerId = "{{ walkin_customer_id }}";
     const walkinCustomerName = "{{ walkin_customer_name }}";
     const partyBalanceBadge = document.getElementById('selected-party-balance-badge');
     const selectWalkinCustomerBtn = document.getElementById('select-walkin-customer-btn');
     const postSaleActionModal = document.getElementById('postSaleActionModal');
     const recordAnotherSaleBtn = document.getElementById('record-another-sale-btn');
+    const erpInsightStrip = document.getElementById('erp-item-insight-strip');
+    const erpInsightName = document.getElementById('erp-insight-name');
+    const erpInsightSku = document.getElementById('erp-insight-sku');
+    const erpInsightStockBadge = document.getElementById('erp-insight-stock-badge');
+    const erpInsightCost = document.getElementById('erp-insight-cost');
+    const erpInsightRate = document.getElementById('erp-insight-rate');
+    const erpInsightMargin = document.getElementById('erp-insight-margin');
+    const erpInsightMarginWrap = document.getElementById('erp-insight-margin-wrap');
+    const erpInsightAlert = document.getElementById('erp-insight-alert');
+    const toggleFullscreenBtn = document.getElementById('toggle-modal-fullscreen-btn');
+    const fullscreenToggleIcon = document.getElementById('fullscreen-toggle-icon');
+    const fullscreenStorageKey = 'botgi_inventory_modal_fullscreen';
     const quickAddPartyUrl = "{% url 'inventory_quick_add_party' %}";
     const invoicePreviewUrl = "{% url 'inventory_invoice_preview' %}";
     const quickAddProductUrl = "{% url 'inventory_quick_add_product' %}";
@@ -1391,11 +1467,16 @@ function initInventoryEntryDashboard() {
         function syncAllOptionsFromSelect() {
             allOptions.length = 0;
             Array.from(selectInput.options)
-                .map((option) => ({
-                    value: option.value,
-                    label: cleanPickerLabel(option.textContent),
-                    disabled: option.disabled,
-                }))
+                .map((option) => {
+                    const optVal = option.value;
+                    const prod = (optVal && productsCatalog[optVal]) ? productsCatalog[optVal] : null;
+                    return {
+                        value: optVal,
+                        label: cleanPickerLabel(option.textContent),
+                        sku: prod ? (prod.sku || '') : '',
+                        disabled: option.disabled,
+                    };
+                })
                 .filter((option) => option.value)
                 .forEach((option) => allOptions.push(option));
             allOptions.sort((left, right) => left.label.localeCompare(right.label));
@@ -1404,7 +1485,10 @@ function initInventoryEntryDashboard() {
         function renderSuggestions(queryText) {
             const query = normalizeText(queryText);
             const matches = allOptions.filter((option) => {
-                return !query || normalizeText(option.label).includes(query);
+                if (!query) return true;
+                const labelMatch = normalizeText(option.label).includes(query);
+                const skuMatch = option.sku && normalizeText(option.sku).includes(query);
+                return labelMatch || skuMatch;
             });
 
             pickerList.innerHTML = '';
@@ -1430,9 +1514,11 @@ function initInventoryEntryDashboard() {
             optionNode.textContent = cleanPickerLabel(optionData.label || optionData.name || value);
             optionNode.disabled = !!optionData.disabled;
 
+            const prod = (value && productsCatalog[value]) ? productsCatalog[value] : null;
             const nextOption = {
                 value,
                 label: cleanPickerLabel(optionNode.textContent),
+                sku: prod ? (prod.sku || '') : (optionData.sku || ''),
                 disabled: optionNode.disabled,
             };
             const existingIndex = allOptions.findIndex((option) => option.value === value);
@@ -1461,13 +1547,26 @@ function initInventoryEntryDashboard() {
                 setSelectedValueInternal('', true);
                 return;
             }
+            // 1. Exact match on SKU (barcode scan)
+            const exactSkuMatch = allOptions.find((option) => option.sku && normalizeText(option.sku) === query);
+            if (exactSkuMatch) {
+                setSelectedValueInternal(exactSkuMatch.value, true);
+                pickerInput.value = exactSkuMatch.label;
+                return;
+            }
+            // 2. Exact match on Label
             const exactMatch = allOptions.find((option) => normalizeText(option.label) === query);
             if (exactMatch) {
                 setSelectedValueInternal(exactMatch.value, true);
                 pickerInput.value = exactMatch.label;
                 return;
             }
-            const partialMatches = allOptions.filter((option) => normalizeText(option.label).includes(query));
+            // 3. Partial match on Label or SKU
+            const partialMatches = allOptions.filter((option) => {
+                const labelMatch = normalizeText(option.label).includes(query);
+                const skuMatch = option.sku && normalizeText(option.sku).includes(query);
+                return labelMatch || skuMatch;
+            });
             if (partialMatches.length === 1) {
                 setSelectedValueInternal(partialMatches[0].value, true);
                 if (isStrict) {
@@ -1938,6 +2037,167 @@ function initInventoryEntryDashboard() {
         lineProductPickerControllers.forEach((controller) => controller.refreshOptions());
     }
 
+    function updateRowIndexes() {
+        if (!lineBody) return;
+        const rows = lineBody.querySelectorAll('.inventory-line-row');
+        rows.forEach((row, idx) => {
+            const indexEl = row.querySelector('.line-row-index');
+            if (indexEl) {
+                indexEl.textContent = idx + 1;
+            }
+        });
+    }
+
+    function flashRow(row) {
+        if (!row) return;
+        row.classList.remove('row-barcode-flash');
+        void row.offsetWidth;
+        row.classList.add('row-barcode-flash');
+    }
+
+    function showErpItemInsight(row) {
+        if (!erpInsightStrip) return;
+        if (!row) {
+            erpInsightStrip.classList.add('d-none');
+            return;
+        }
+        const select = row.querySelector('.inventory-line-product');
+        const productId = select ? String(select.value || '') : '';
+        const prod = (productId && productsCatalog[productId]) ? productsCatalog[productId] : null;
+        if (!prod) {
+            erpInsightStrip.classList.add('d-none');
+            return;
+        }
+
+        erpInsightStrip.classList.remove('d-none');
+        if (erpInsightName) erpInsightName.textContent = prod.name || 'Item';
+        if (erpInsightSku) erpInsightSku.textContent = prod.sku ? prod.sku : 'None';
+
+        const stock = Number(prod.stock_quantity || 0);
+        if (erpInsightStockBadge) {
+            erpInsightStockBadge.textContent = `${stock} in stock`;
+            if (stock <= 0) {
+                erpInsightStockBadge.className = 'badge bg-danger text-white font-monospace';
+            } else if (stock <= 5) {
+                erpInsightStockBadge.className = 'badge bg-warning text-dark font-monospace';
+            } else {
+                erpInsightStockBadge.className = 'badge bg-secondary-subtle text-dark border font-monospace';
+            }
+        }
+
+        const costPrice = Number(prod.cost_price || 0);
+        const unitPrice = Number(prod.unit_price || 0);
+        if (erpInsightCost) erpInsightCost.textContent = '₹ ' + costPrice.toFixed(2);
+        if (erpInsightRate) erpInsightRate.textContent = '₹ ' + unitPrice.toFixed(2);
+
+        if (erpInsightMarginWrap && erpInsightMargin) {
+            if (entryType === 'sale' && costPrice > 0) {
+                const margin = ((unitPrice - costPrice) / costPrice) * 100;
+                erpInsightMargin.textContent = margin.toFixed(1) + '%';
+                erpInsightMargin.className = 'font-monospace ' + (margin < 0 ? 'text-danger fw-bold' : margin < 10 ? 'text-warning fw-bold' : 'text-success fw-bold');
+                erpInsightMarginWrap.classList.remove('d-none');
+            } else {
+                erpInsightMarginWrap.classList.add('d-none');
+            }
+        }
+
+        if (erpInsightAlert) {
+            if (entryType === 'sale' && stock <= 5) {
+                const alertText = erpInsightAlert.querySelector('span');
+                if (alertText) {
+                    alertText.innerHTML = stock <= 0
+                        ? '<i class="fas fa-circle-exclamation me-1"></i>Out of Stock'
+                        : `<i class="fas fa-triangle-exclamation me-1"></i>Low Stock (${stock} remaining)`;
+                }
+                erpInsightAlert.classList.remove('d-none');
+            } else {
+                erpInsightAlert.classList.add('d-none');
+            }
+        }
+    }
+
+    function findProductByQueryOrBarcode(rawQuery) {
+        const q = (rawQuery || '').trim().toLowerCase();
+        if (!q) return null;
+        const allProds = Object.values(productsCatalog);
+        // 1. Exact SKU match
+        const bySku = allProds.find((p) => p.sku && p.sku.toLowerCase() === q);
+        if (bySku) return bySku;
+        // 2. Exact Name match
+        const byName = allProds.find((p) => p.name && p.name.toLowerCase() === q);
+        if (byName) return byName;
+        // 3. Partial match
+        const byPartial = allProds.filter((p) => (p.sku && p.sku.toLowerCase().includes(q)) || (p.name && p.name.toLowerCase().includes(q)));
+        if (byPartial.length === 1) return byPartial[0];
+        return null;
+    }
+
+    function applyProductToRowOrIncrement(product, currentRow, autoFocusQty) {
+        if (!product || !lineBody) return;
+        const prodId = String(product.id);
+        const existingRows = Array.from(lineBody.querySelectorAll('.inventory-line-row'));
+
+        // Check if product already exists in another row
+        const existingRow = existingRows.find((r) => {
+            const sel = r.querySelector('.inventory-line-product');
+            return sel && String(sel.value || '') === prodId;
+        });
+
+        if (existingRow && existingRow !== currentRow) {
+            // Increment quantity on the existing row
+            const qtyInput = existingRow.querySelector('input[name="line_quantity[]"]');
+            if (qtyInput) {
+                const currentQty = Math.max(1, parseNumber(qtyInput.value) || 1);
+                qtyInput.value = currentQty + 1;
+            }
+            recalculateBill();
+            flashRow(existingRow);
+            showErpItemInsight(existingRow);
+            schedulePurchaseDraftSave();
+            showToastMessage(`Incremented ${product.name} quantity to ${qtyInput ? qtyInput.value : ''}`, 'info');
+
+            // Clear current row's picker input if it was just typed/scanned there
+            if (currentRow) {
+                const curPicker = currentRow.querySelector('.inventory-line-product-picker');
+                const curSelect = currentRow.querySelector('.inventory-line-product');
+                if (curSelect && !curSelect.value) {
+                    if (curPicker) curPicker.value = '';
+                }
+            }
+            return;
+        }
+
+        let targetRow = currentRow;
+        if (!targetRow) {
+            targetRow = existingRows.find((r) => !(r.querySelector('.inventory-line-product')?.value || '').trim());
+            if (!targetRow) {
+                targetRow = createEditableLineRow();
+            }
+        }
+
+        if (targetRow) {
+            const prodSelect = targetRow.querySelector('.inventory-line-product');
+            if (targetRow._lineProductPickerController) {
+                targetRow._lineProductPickerController.setSelectedValue(prodId);
+            } else if (prodSelect) {
+                prodSelect.value = prodId;
+            }
+            suggestRateForLine(targetRow);
+            recalculateBill();
+            flashRow(targetRow);
+            showErpItemInsight(targetRow);
+            schedulePurchaseDraftSave();
+
+            if (autoFocusQty) {
+                const qtyInput = targetRow.querySelector('input[name="line_quantity[]"]');
+                if (qtyInput) {
+                    qtyInput.focus();
+                    qtyInput.select();
+                }
+            }
+        }
+    }
+
     function attachLineEvents(row) {
         const includeInput = row.querySelector('.inventory-line-include');
         const select = row.querySelector('.inventory-line-product');
@@ -1946,7 +2206,13 @@ function initInventoryEntryDashboard() {
         const rateInput = row.querySelector('input[name="line_unit_price[]"]');
         const gstInput = row.querySelector('input[name="line_gst_rate[]"]');
         const totalInput = row.querySelector('.line-total-amount-input');
+        const pickerInput = row.querySelector('.inventory-line-product-picker');
         initializeLineProductPicker(row);
+
+        row.addEventListener('focusin', function () {
+            showErpItemInsight(row);
+        });
+
         if (includeInput) {
             includeInput.addEventListener('change', function () {
                 recalculateBill();
@@ -1956,6 +2222,7 @@ function initInventoryEntryDashboard() {
             select.addEventListener('change', function () {
                 suggestRateForLine(row);
                 recalculateBill();
+                showErpItemInsight(row);
             });
         }
         [qtyInput, rateInput, gstInput].forEach((input) => {
@@ -1970,6 +2237,68 @@ function initInventoryEntryDashboard() {
                 recalculateBill();
             });
         }
+
+        function handleLineAdvance(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const rows = getAddEntryRows();
+                const currentIndex = rows.indexOf(row);
+                if (currentIndex === rows.length - 1) {
+                    if (hasIncompleteRow()) {
+                        window.alert('Complete the current product row before adding another line.');
+                        return;
+                    }
+                    const newRow = createEditableLineRow();
+                    recalculateBill();
+                    schedulePurchaseDraftSave();
+                    if (newRow) {
+                        const newPicker = newRow.querySelector('.inventory-line-product-picker');
+                        if (newPicker) newPicker.focus();
+                    }
+                } else {
+                    const nextRow = rows[currentIndex + 1];
+                    const nextPicker = nextRow ? nextRow.querySelector('.inventory-line-product-picker') : null;
+                    if (nextPicker) nextPicker.focus();
+                }
+            } else if (event.key === 'Tab' && !event.shiftKey) {
+                const rows = getAddEntryRows();
+                const currentIndex = rows.indexOf(row);
+                if (currentIndex === rows.length - 1 && event.target === (totalInput || rateInput)) {
+                    if (!hasIncompleteRow()) {
+                        event.preventDefault();
+                        const newRow = createEditableLineRow();
+                        recalculateBill();
+                        schedulePurchaseDraftSave();
+                        if (newRow) {
+                            const newPicker = newRow.querySelector('.inventory-line-product-picker');
+                            if (newPicker) newPicker.focus();
+                        }
+                    }
+                }
+            }
+        }
+
+        if (rateInput) {
+            rateInput.addEventListener('keydown', handleLineAdvance);
+        }
+        if (totalInput) {
+            totalInput.addEventListener('keydown', handleLineAdvance);
+        }
+        if (pickerInput) {
+            pickerInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    const rawVal = (pickerInput.value || '').trim();
+                    if (rawVal) {
+                        const matched = findProductByQueryOrBarcode(rawVal);
+                        if (matched) {
+                            e.preventDefault();
+                            applyProductToRowOrIncrement(matched, row, true);
+                        }
+                    }
+                }
+            });
+        }
+
         if (removeBtn) {
             removeBtn.addEventListener('click', function () {
                 const rows = lineBody ? lineBody.querySelectorAll('.inventory-line-row') : [];
@@ -1994,12 +2323,16 @@ function initInventoryEntryDashboard() {
                         row._lineProductPickerController.reset();
                     }
                     recalculateBill();
+                    updateRowIndexes();
+                    showErpItemInsight(null);
                     schedulePurchaseDraftSave();
                     return;
                 }
                 destroyLineProductPicker(row);
                 row.remove();
                 recalculateBill();
+                updateRowIndexes();
+                showErpItemInsight(null);
                 schedulePurchaseDraftSave();
             });
         }
@@ -2014,6 +2347,7 @@ function initInventoryEntryDashboard() {
         const clone = lineTemplate.content.firstElementChild.cloneNode(true);
         lineBody.appendChild(clone);
         attachLineEvents(clone);
+        updateRowIndexes();
         return clone;
     }
 
@@ -2032,6 +2366,7 @@ function initInventoryEntryDashboard() {
             rows[rows.length - 1].remove();
             rows = getAddEntryRows();
         }
+        updateRowIndexes();
         return rows;
     }
 
@@ -2480,6 +2815,9 @@ function initInventoryEntryDashboard() {
                 setErrorMessages(quickProductErrors, payload.errors || [payload.error || 'Unable to save product.']);
                 return;
             }
+            if (payload.product) {
+                productsCatalog[String(payload.product.id)] = payload.product;
+            }
             upsertProductOptions(payload.product);
             resetQuickProductInputs();
             togglePanel(quickProductPanel, false, toggleQuickProductBtn, productToggleCloseLabel, productToggleOpenLabel);
@@ -2583,12 +2921,128 @@ function initInventoryEntryDashboard() {
         addInvoiceDateInput.addEventListener('change', syncPurchaseEntryDateFromInvoiceDate);
         addInvoiceDateInput.addEventListener('input', syncPurchaseEntryDateFromInvoiceDate);
     }
+    function setModalFullscreen(enable) {
+        if (!addEntryModal) return;
+        const dialog = addEntryModal.querySelector('.modal-dialog');
+        if (!dialog) return;
+        dialog.classList.toggle('modal-fullscreen', enable);
+        if (fullscreenToggleIcon) {
+            fullscreenToggleIcon.className = enable ? 'fas fa-compress' : 'fas fa-expand';
+        }
+        if (toggleFullscreenBtn) {
+            toggleFullscreenBtn.setAttribute('title', enable ? 'Exit Fullscreen Canvas (F11)' : 'Fullscreen ERP Canvas (F11)');
+        }
+        try {
+            window.localStorage.setItem(fullscreenStorageKey, enable ? 'true' : 'false');
+        } catch (e) {}
+    }
+
+    if (toggleFullscreenBtn && addEntryModal) {
+        toggleFullscreenBtn.addEventListener('click', function () {
+            const dialog = addEntryModal.querySelector('.modal-dialog');
+            const isFullscreen = dialog ? dialog.classList.contains('modal-fullscreen') : false;
+            setModalFullscreen(!isFullscreen);
+        });
+    }
+
+    let barcodeBuffer = '';
+    let barcodeLastKeyTime = 0;
+    const BARCODE_SCAN_TIMEOUT = 60;
+
     if (addEntryModal) {
+        addEntryModal.addEventListener('keydown', function (event) {
+            if (event.key === 'F11') {
+                event.preventDefault();
+                const dialog = addEntryModal.querySelector('.modal-dialog');
+                const isFullscreen = dialog ? dialog.classList.contains('modal-fullscreen') : false;
+                setModalFullscreen(!isFullscreen);
+                return;
+            }
+
+            if ((event.ctrlKey || event.metaKey) && (event.key === 's' || event.key === 'S')) {
+                event.preventDefault();
+                if (submitEntryBtn && !submitEntryBtn.disabled) {
+                    submitEntryBtn.click();
+                }
+                return;
+            }
+
+            if (event.altKey && (event.key === 'a' || event.key === 'A')) {
+                event.preventDefault();
+                if (addLineBtn) {
+                    addLineBtn.click();
+                }
+                return;
+            }
+
+            if (event.altKey && (event.key === 'p' || event.key === 'P')) {
+                event.preventDefault();
+                if (addPartyPickerInput) {
+                    addPartyPickerInput.focus();
+                    addPartyPickerInput.select();
+                }
+                return;
+            }
+
+            if (event.altKey && (event.key === 'w' || event.key === 'W')) {
+                event.preventDefault();
+                if (selectWalkinCustomerBtn) {
+                    selectWalkinCustomerBtn.click();
+                }
+                return;
+            }
+
+            if (event.altKey && (event.key === 'n' || event.key === 'N')) {
+                event.preventDefault();
+                if (toggleQuickProductBtn) {
+                    toggleQuickProductBtn.click();
+                }
+                return;
+            }
+
+            const now = Date.now();
+            const timeDiff = now - barcodeLastKeyTime;
+            barcodeLastKeyTime = now;
+
+            if (event.key === 'Enter') {
+                if (barcodeBuffer.length >= 3 && timeDiff < 100) {
+                    const scanned = barcodeBuffer.trim();
+                    barcodeBuffer = '';
+                    const matched = findProductByQueryOrBarcode(scanned);
+                    if (matched) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const activeRow = document.activeElement ? document.activeElement.closest('.inventory-line-row') : null;
+                        applyProductToRowOrIncrement(matched, activeRow, false);
+                        return;
+                    }
+                }
+                barcodeBuffer = '';
+                return;
+            }
+
+            if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+                if (timeDiff > BARCODE_SCAN_TIMEOUT) {
+                    barcodeBuffer = event.key;
+                } else {
+                    barcodeBuffer += event.key;
+                }
+            } else {
+                barcodeBuffer = '';
+            }
+        });
+
         addEntryModal.addEventListener('show.bs.modal', function () {
+            let isFs = false;
+            try {
+                isFs = window.localStorage.getItem(fullscreenStorageKey) === 'true';
+            } catch (e) {}
+            setModalFullscreen(isFs);
             addPartyPickerController.reset();
             restorePurchaseDraft();
             refreshSaleInvoicePreview();
             updatePartyBalanceBadge();
+            updateRowIndexes();
         });
         addEntryModal.addEventListener('hidden.bs.modal', function () {
             schedulePurchaseDraftSave();
@@ -2596,6 +3050,7 @@ function initInventoryEntryDashboard() {
     }
     refreshSaleInvoicePreview();
     updatePartyBalanceBadge();
+    updateRowIndexes();
 
     if (postSaleActionModal && typeof bootstrap !== 'undefined') {
         const postSaleModalInstance = bootstrap.Modal.getOrCreateInstance(postSaleActionModal);

@@ -117,4 +117,49 @@
     padding: 0.4rem;
     vertical-align: middle;
   }
+
+  /* ERP Fullscreen Canvas */
+  .quick-pop-modal .modal-fullscreen {
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    margin: 0;
+  }
+
+  .quick-pop-modal .modal-fullscreen .modal-content {
+    height: 100%;
+    max-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  /* Table inputs and spin buttons */
+  .inventory-modal-lines-table input[type="number"]::-webkit-outer-spin-button,
+  .inventory-modal-lines-table input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .inventory-modal-lines-table input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  /* Barcode scanning row flash */
+  @keyframes rowBarcodeFlash {
+    0% { background-color: #d1fae5; }
+    50% { background-color: #a7f3d0; }
+    100% { background-color: transparent; }
+  }
+  .row-barcode-flash {
+    animation: rowBarcodeFlash 1.2s ease-out;
+  }
+
+  /* ERP Item Insight Strip */
+  .erp-item-insight-strip {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+  }
 </style>
