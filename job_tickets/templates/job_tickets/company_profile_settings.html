@@ -69,7 +69,6 @@
 
                         <div class="tab-content" id="settings-category-content">
                                     <div class="tab-pane fade show active" id="company-info" role="tabpanel" aria-labelledby="tab-company-info" tabindex="0">
-                                        <h4 class="mb-3">Company Information</h4>
                                         <div class="row">
                                             <div class="col-md-6 mb-3">
                                                 <label class="form-label">Company Name *</label>
@@ -97,7 +96,6 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="contact-details" role="tabpanel" aria-labelledby="tab-contact-details" tabindex="0">
-                                        <h4 class="mb-3">Contact Information</h4>
                                         <div class="row">
                                             <div class="col-md-12 mb-3">
                                                 <label class="form-label">Address *</label>
@@ -144,7 +142,6 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="legal-tax" role="tabpanel" aria-labelledby="tab-legal-tax" tabindex="0">
-                                        <h4 class="mb-3">Legal & Tax Information</h4>
                                         <div class="alert alert-info">
                                             <i class="fas fa-info-circle"></i> These details will appear on invoices and receipts
                                         </div>
@@ -215,7 +212,6 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="bank-details" role="tabpanel" aria-labelledby="tab-bank-details" tabindex="0">
-                                        <h4 class="mb-3">Bank Account Details</h4>
                                         <div class="alert alert-warning">
                                             <i class="fas fa-exclamation-triangle"></i> Bank details will be shown on invoices for customer payments
                                         </div>
@@ -249,7 +245,6 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="job-settings" role="tabpanel" aria-labelledby="tab-job-settings" tabindex="0">
-                                        <h4 class="mb-3">Bill/Ticket Configuration</h4>
                                         <div class="alert alert-success">
                                             <i class="fas fa-lightbulb"></i> Job codes will be generated as: <strong>{{ profile.job_code_prefix }}-YYMMDD-XXX</strong>
                                         </div>
@@ -287,7 +282,6 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="billing-settings" role="tabpanel" aria-labelledby="tab-billing-settings" tabindex="0">
-                                        <h4 class="mb-3">Billing & GST Settings</h4>
                                         <div class="row">
                                             <div class="col-md-6 mb-3">
                                                 <div class="form-check form-switch">
@@ -367,7 +361,6 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="terms-policies" role="tabpanel" aria-labelledby="tab-terms-policies" tabindex="0">
-                                        <h4 class="mb-3">Terms & Conditions</h4>
                                         <div class="row">
                                             <div class="col-md-12 mb-3">
                                                 <label class="form-label">Terms & Conditions</label>
@@ -380,33 +373,39 @@
                                     </div>
 
                                     <div class="tab-pane fade" id="whatsapp-integration" role="tabpanel" aria-labelledby="tab-whatsapp-integration" tabindex="0">
-                                        <h4 class="mb-3">WhatsApp Integration</h4>
-
-                                        <div class="row">
-                                            <div class="col-md-4 mb-3">
-                                                <div class="form-check form-switch">
+                                        <!-- Engine Master Status Hero Card -->
+                                        <div class="p-3 mb-4 rounded-3 border bg-light d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-xs">
+                                            <div class="d-flex align-items-center gap-3">
+                                                <div class="form-check form-switch fs-4 mb-0">
                                                     {{ whatsapp_form.is_enabled }}
-                                                    <label class="form-check-label" for="{{ whatsapp_form.is_enabled.id_for_label }}">
-                                                        Enable automatic WhatsApp notifications
-                                                    </label>
                                                 </div>
-                                                {% if whatsapp_form.is_enabled.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.is_enabled.errors|striptags }}</div>
-                                                {% endif %}
+                                                <div>
+                                                    <label class="form-check-label fw-bold text-dark d-block mb-0" for="{{ whatsapp_form.is_enabled.id_for_label }}">
+                                                        Automatic WhatsApp Messaging Engine
+                                                    </label>
+                                                    <small class="text-muted">Dispatch automated ticket notifications, repair updates, and billing receipts to clients.</small>
+                                                    {% if whatsapp_form.is_enabled.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.is_enabled.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
                                             </div>
-                                            <div class="col-md-4 mb-3">
-                                                <label class="form-label">Automatic Delivery Method</label>
-                                                {{ whatsapp_form.delivery_method }}
-                                                {% if whatsapp_form.delivery_method.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.delivery_method.errors|striptags }}</div>
-                                                {% endif %}
-                                            </div>
-                                            <div class="col-md-4 mb-3">
-                                                <label class="form-label">Default Country Code</label>
-                                                {{ whatsapp_form.default_country_code }}
-                                                {% if whatsapp_form.default_country_code.errors %}
-                                                    <div class="text-danger small mt-1">{{ whatsapp_form.default_country_code.errors|striptags }}</div>
-                                                {% endif %}
+                                            <div class="d-flex align-items-center gap-3 flex-wrap">
+                                                <div>
+                                                    <label class="form-label small fw-semibold text-muted mb-1 d-block">Delivery Method</label>
+                                                    {{ whatsapp_form.delivery_method }}
+                                                    {% if whatsapp_form.delivery_method.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.delivery_method.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
+                                                <div>
+                                                    <label class="form-label small fw-semibold text-muted mb-1 d-block">Country Code</label>
+                                                    <div style="max-width: 100px;">
+                                                        {{ whatsapp_form.default_country_code }}
+                                                    </div>
+                                                    {% if whatsapp_form.default_country_code.errors %}
+                                                        <div class="text-danger small mt-1">{{ whatsapp_form.default_country_code.errors|striptags }}</div>
+                                                    {% endif %}
+                                                </div>
                                             </div>
                                         </div>
                                         {{ whatsapp_form.public_site_url.as_hidden }}
@@ -468,8 +467,14 @@
 
                                             <div class="row">
                                                 <div class="col-md-12 mb-3">
-                                                    <label class="form-label">Webhook URL</label>
-                                                    <input type="text" class="form-control" value="{{ whatsapp_webhook_url }}" readonly>
+                                                    <label class="form-label fw-semibold">Webhook Callback URL</label>
+                                                    <div class="input-group">
+                                                        <input type="text" id="wa-webhook-url-input" class="form-control font-monospace bg-light" value="{{ whatsapp_webhook_url }}" readonly>
+                                                        <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('wa-webhook-url-input').value); this.innerHTML='<i class=\'fas fa-check text-success\'></i> Copied!'; setTimeout(() => this.innerHTML='<i class=\'fas fa-copy\'></i> Copy', 2000);">
+                                                            <i class="fas fa-copy me-1"></i>Copy
+                                                        </button>
+                                                    </div>
+                                                    <small class="form-text text-muted">Paste this Callback URL in Meta Developer Dashboard &gt; WhatsApp &gt; Configuration &gt; Webhook.</small>
                                                 </div>
                                             </div>
 
@@ -696,13 +701,15 @@
 
                                     <div class="tab-pane fade" id="display-scale" role="tabpanel" aria-labelledby="tab-display-scale" tabindex="0">
                                         <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                            <div>
-                                                <h4 class="mb-1 fw-bold text-dark">Interface Zoom & Density Scale</h4>
-                                                <p class="text-muted small mb-0">Customize text scale and spacing density for this workstation. Saved instantly in your browser.</p>
+                                            <span class="text-muted small">Choose your preferred workspace display density or fine-tune with the slider:</span>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setUiScale('90')">
+                                                    <i class="fa-solid fa-rotate-left me-1"></i>Reset Default (90%)
+                                                </button>
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2.5 py-1">
+                                                    <i class="fa-solid fa-bolt me-1"></i>Applies Instantly
+                                                </span>
                                             </div>
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2.5 py-1">
-                                                <i class="fa-solid fa-bolt me-1"></i>Applies Instantly
-                                            </span>
                                         </div>
 
                                         <div class="row g-3 mb-4" id="settings-scale-grid">
@@ -888,13 +895,28 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function syncCompanySaveBar(target) {
         const isWhatsapp = (target === '#whatsapp-integration');
+        const isDisplayScale = (target === '#display-scale');
         const saveBar = document.getElementById('company-settings-save-bar');
         if (saveBar) {
-            saveBar.classList.toggle('d-none', isWhatsapp);
+            saveBar.classList.toggle('d-none', isWhatsapp || isDisplayScale);
         }
         const topQuickSave = document.getElementById('top-quick-save-btn');
         if (topQuickSave) {
-            topQuickSave.classList.toggle('d-none', isWhatsapp);
+            if (isDisplayScale) {
+                topQuickSave.classList.add('d-none');
+            } else if (isWhatsapp) {
+                topQuickSave.classList.remove('d-none');
+                topQuickSave.className = 'btn btn-success px-3 py-1 fw-semibold shadow-sm';
+                topQuickSave.setAttribute('name', 'whatsapp_settings_submit');
+                topQuickSave.setAttribute('value', '1');
+                topQuickSave.innerHTML = '<i class="fab fa-whatsapp me-1"></i>Save WhatsApp Settings';
+            } else {
+                topQuickSave.classList.remove('d-none');
+                topQuickSave.className = 'btn btn-primary px-3 py-1 fw-semibold shadow-sm';
+                topQuickSave.removeAttribute('name');
+                topQuickSave.removeAttribute('value');
+                topQuickSave.innerHTML = '<i class="fas fa-save me-1"></i>Save Changes';
+            }
         }
     }
 
@@ -1013,8 +1035,23 @@ document.addEventListener('DOMContentLoaded', function () {
     if (form) {
         form.addEventListener('submit', function () {
             const activeLink = document.querySelector('.settings-nav-link.active') || document.querySelector('.settings-mobile-pill.active');
-            if (activeLink && activeTabInput) {
-                activeTabInput.value = activeLink.getAttribute('data-settings-tab');
+            const activeTab = activeLink ? activeLink.getAttribute('data-settings-tab') : '#company-info';
+            if (activeTabInput) {
+                activeTabInput.value = activeTab;
+            }
+            if (activeTab === '#whatsapp-integration') {
+                if (!form.querySelector('input[name="whatsapp_settings_submit"]')) {
+                    const hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.name = 'whatsapp_settings_submit';
+                    hidden.value = '1';
+                    form.appendChild(hidden);
+                }
+            } else {
+                const existingWaSubmit = form.querySelector('input[name="whatsapp_settings_submit"]');
+                if (existingWaSubmit) {
+                    existingWaSubmit.remove();
+                }
             }
         });
     }

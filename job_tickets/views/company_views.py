@@ -349,8 +349,11 @@ def company_profile_settings(request):
         form = CompanyProfileForm(instance=profile)
         whatsapp_form = WhatsAppIntegrationSettingsForm(instance=whatsapp_settings)
     
-    requested_tab = (request.GET.get('tab') or '').strip()
-    initial_tab = f"#{requested_tab}" if requested_tab else '#company-info'
+    if request.method == 'POST':
+        initial_tab = (request.POST.get('active_tab') or '#company-info').strip() or '#company-info'
+    else:
+        requested_tab = (request.GET.get('tab') or '').strip()
+        initial_tab = f"#{requested_tab}" if requested_tab else '#company-info'
 
     context = {
         'form': form,
