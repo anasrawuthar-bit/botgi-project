@@ -17,13 +17,11 @@
                 <div class="inventory-hero-copy">
                     <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
                         <span class="inventory-eyebrow">INVENTORY CONTROL CENTER</span>
+                        {% if reserved_alert_count > 0 %}
                         <div class="inventory-hero-chips d-inline-flex gap-2">
-                            <span class="inventory-chip"><i class="fas fa-users me-1 text-primary"></i>{{ party_count }} Parties</span>
-                            <span class="inventory-chip"><i class="fas fa-boxes-stacked me-1 text-info"></i>{{ product_count }} Products</span>
-                            {% if reserved_alert_count > 0 %}
                             <span class="inventory-chip text-warning border-warning-subtle"><i class="fas fa-triangle-exclamation me-1"></i>{{ reserved_alert_count }} Alerts</span>
-                            {% endif %}
                         </div>
+                        {% endif %}
                     </div>
                     <h1 class="inventory-hero-title mb-1"><i class="fas fa-warehouse me-2 text-primary"></i>Inventory Dashboard</h1>
                     <p class="inventory-hero-subtitle mb-0">Monitor stock movement, value, and risk products from one place.</p>
