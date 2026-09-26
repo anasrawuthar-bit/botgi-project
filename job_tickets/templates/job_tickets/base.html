@@ -132,6 +132,9 @@
             {% endif %}
             <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
         </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto d-flex align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#supportHelpModal" title="Help & Support" aria-label="Help and Support" style="width: 38px; height: 38px; border-radius: 8px;">
+            <i class="fa-solid fa-headset fs-6 text-primary"></i>
+        </button>
     </div>
 
     {# ── Backdrop for mobile drawer ─────────────────────────── #}
@@ -388,6 +391,13 @@
                     </a>
                 </li>
                 {% endif %}
+
+                <li class="sidebar-menu-divider"></li>
+                <li>
+                    <a class="sidebar-link" href="#" data-bs-toggle="modal" data-bs-target="#supportHelpModal" data-tooltip="Help & Support">
+                        <i class="fa-solid fa-headset"></i><span class="sidebar-link-label">Help & Support</span>
+                    </a>
+                </li>
             </ul>
         </nav>
 
@@ -395,7 +405,10 @@
             <div class="sidebar-user-badge" data-tooltip="{{ user.username }}">
                 <span class="sidebar-user-avatar">{{ user.username|make_list|first|upper }}</span>
                 <span class="sidebar-user-name">{{ user.username }}</span>
-                <button type="button" class="sidebar-scale-btn ms-auto" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal" title="Display Zoom / Density Scale" aria-label="Adjust display scale">
+                <button type="button" class="sidebar-scale-btn ms-auto" data-bs-toggle="modal" data-bs-target="#supportHelpModal" title="Help & Support" aria-label="Help and Support">
+                    <i class="fa-solid fa-headset"></i>
+                </button>
+                <button type="button" class="sidebar-scale-btn ms-1" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal" title="Display Zoom / Density Scale" aria-label="Adjust display scale">
                     <i class="fa-solid fa-display"></i>
                 </button>
             </div>
@@ -451,6 +464,7 @@
             </div>
         </main>
 
+        {% if not user.is_authenticated %}
         <footer class="site-footer">
             <div class="container d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
                 <p class="mb-0 fw-semibold">Service Billing by {{ platform.billing_author_name|default:"GI HOSTINGS" }}
@@ -469,6 +483,7 @@
                 </p>
             </div>
         </footer>
+        {% endif %}
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -1037,6 +1052,90 @@
             }, { capture: true, passive: false });
         }());
     </script>
+
+
+    <!-- Help & Support Modal -->
+    <div class="modal fade" id="supportHelpModal" tabindex="-1" aria-labelledby="supportHelpModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-bottom py-3 px-4">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle" style="width: 38px; height: 38px;">
+                            <i class="fa-solid fa-headset fs-5"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold mb-0 text-dark" id="supportHelpModalLabel">Help &amp; Support</h5>
+                            <small class="text-muted">Direct assistance and contact channels</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="d-flex flex-column gap-3">
+                        <!-- Direct Phone Support -->
+                        <div class="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                    <i class="fa-solid fa-phone text-primary"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-semibold text-dark">Phone Support</div>
+                                    <div class="small text-muted">{{ platform.support_phone|default:"+91 9567227005" }}</div>
+                                </div>
+                            </div>
+                            <a href="tel:{{ platform.support_phone_href|default:'+919567227005' }}" class="btn btn-sm btn-outline-primary px-3">
+                                <i class="fa-solid fa-phone me-1"></i> Call
+                            </a>
+                        </div>
+
+                        <!-- WhatsApp Support -->
+                        <div class="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                    <i class="fa-brands fa-whatsapp text-success fs-5"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-semibold text-dark">WhatsApp Assistance</div>
+                                    <div class="small text-muted">Chat with our support desk</div>
+                                </div>
+                            </div>
+                            {% if platform.whatsapp_link %}
+                            <a href="{{ platform.whatsapp_link }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success px-3">
+                                <i class="fa-brands fa-whatsapp me-1"></i> Chat
+                            </a>
+                            {% else %}
+                            <a href="https://wa.me/919567227005" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success px-3">
+                                <i class="fa-brands fa-whatsapp me-1"></i> Chat
+                            </a>
+                            {% endif %}
+                        </div>
+
+                        <!-- Official Website / Documentation -->
+                        <div class="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                    <i class="fa-solid fa-globe text-secondary fs-5"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-semibold text-dark">Official Portal</div>
+                                    <div class="small text-muted">{{ platform.website|default:"https://gihostings.com" }}</div>
+                                </div>
+                            </div>
+                            <a href="{{ platform.website|default:'https://gihostings.com' }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary px-3">
+                                <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Visit
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2.5 px-4 d-flex justify-content-between align-items-center">
+                    <span class="small text-muted">
+                        Service Billing platform by <strong class="text-dark">{{ platform.billing_author_name|default:"GI HOSTINGS" }}</strong>
+                    </span>
+                    <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 
     <!-- UI Scale / Display Customizer Modal -->
