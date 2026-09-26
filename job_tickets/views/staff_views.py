@@ -1911,13 +1911,17 @@ def staff_job_detail(request, job_code):
 
     job_expenses = job.expenses.all().select_related('recorded_by').order_by('-expense_date', '-id')
     job_expenses_total = job_expenses.aggregate(total=Coalesce(Sum('amount'), Decimal('0.00')))['total']
-    parts_cost = Decimal(str(job.part_total or 0))
     vendor_payable = (
         Decimal(str(specialized_service.vendor_net_payable or 0))
         if specialized_service and specialized_service.vendor_cost
         else Decimal('0.00')
     )
-    job_net_profit = grand_total - parts_cost - vendor_payable - job_expenses_total
+    inventory_parts_cost = (
+        ProductSale.objects.filter(job_ticket=job).aggregate(
+            total=Coalesce(Sum('line_cost'), Decimal('0.00'))
+        )['total']
+    )
+    job_net_profit = grand_total - vendor_payable - job_expenses_total - inventory_parts_cost
 
     job_expense_form = ExpenseForm(
         initial={'job_ticket': job.id, 'category': Expense.CATEGORY_JOB_PARTS_OUTSOURCE},
@@ -1956,6 +1960,7 @@ def staff_job_detail(request, job_code):
         'whatsapp_settings': whatsapp_settings,
         'job_expenses': job_expenses,
         'job_expenses_total': job_expenses_total,
+        'inventory_parts_cost': inventory_parts_cost,
         'job_net_profit': job_net_profit,
         'job_expense_form': job_expense_form,
     }

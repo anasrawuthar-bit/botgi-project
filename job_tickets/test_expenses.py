@@ -195,8 +195,8 @@ class ExpenseSystemTests(TestCase):
         # Verify job_expenses in context
         self.assertEqual(len(res.context['job_expenses']), 2)
         self.assertEqual(res.context['job_expenses_total'], Decimal('500.00'))
-        # Net Profit: 2500 - 1000 (parts) - 500 (direct expenses) = 1000
-        self.assertEqual(res.context['job_net_profit'], Decimal('1000.00'))
+        # Net Profit: 2500 (billed) - 500 (direct expenses) = 2000
+        self.assertEqual(res.context['job_net_profit'], Decimal('2000.00'))
 
     def test_monthly_summary_report_overhead_and_net_profit(self):
         # Mark job as closed

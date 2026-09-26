@@ -648,12 +648,6 @@
                         <span class="job-bill-meta-label">Service Total</span>
                         <strong>&#8377;{{ total_service_charges|floatformat:2 }}</strong>
                     </div>
-                    {% if job_expenses_total > 0 %}
-                    <div class="job-bill-meta-item">
-                        <span class="job-bill-meta-label">Direct Expenses</span>
-                        <strong class="text-danger">&#8377;{{ job_expenses_total|floatformat:2 }}</strong>
-                    </div>
-                    {% endif %}
                 </div>
 
                 {% if job_expenses %}
@@ -752,12 +746,6 @@
                         </button>
                         {% endif %}
                     </div>
-                    {% if job_expenses_total > 0 %}
-                    <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top small text-muted">
-                        <span><i class="fa-solid fa-receipt text-warning me-1"></i>Direct Job Expenses: <strong class="text-danger">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></span>
-                        <a href="#job-expenses-section" class="text-decoration-none small fw-medium">View Expenses &darr;</a>
-                    </div>
-                    {% endif %}
                 </div>
 
                 <!-- Payment Installments & Customer Ledger History -->
@@ -868,10 +856,12 @@
                         </span>
                     </div>
                     <div class="row g-2 small text-muted">
-                        <div class="col-6 col-md-3">Billed Grand Total: <strong class="text-dark d-block">&#8377;{{ grand_total|floatformat:2 }}</strong></div>
-                        <div class="col-6 col-md-3">Parts Cost: <strong class="text-danger d-block">- &#8377;{{ total_parts_cost|floatformat:2 }}</strong></div>
-                        <div class="col-6 col-md-3">Vendor Outsourcing: <strong class="text-danger d-block">- &#8377;{{ specialized_service.vendor_net_payable|default:"0.00"|floatformat:2 }}</strong></div>
-                        <div class="col-6 col-md-3">Direct Job Expenses: <strong class="text-danger d-block">- &#8377;{{ job_expenses_total|floatformat:2 }}</strong></div>
+                        <div class="col-6 col-md-4">Billed Grand Total: <strong class="text-dark d-block">&#8377;{{ grand_total|floatformat:2 }}</strong></div>
+                        <div class="col-6 col-md-4">Direct Job Expenses: <strong class="text-danger d-block">- &#8377;{{ job_expenses_total|floatformat:2 }}</strong></div>
+                        <div class="col-6 col-md-4">Vendor Outsourcing: <strong class="text-danger d-block">- &#8377;{{ specialized_service.vendor_net_payable|default:"0.00"|floatformat:2 }}</strong></div>
+                        {% if inventory_parts_cost > 0 %}
+                        <div class="col-6 col-md-4">Inventory Stock Cost: <strong class="text-danger d-block">- &#8377;{{ inventory_parts_cost|floatformat:2 }}</strong></div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
