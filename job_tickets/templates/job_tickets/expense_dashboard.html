@@ -248,7 +248,7 @@
                         </td>
                         <td>
                             {% if exp.job_ticket %}
-                                <a href="{% url 'job_billing_staff' exp.job_ticket.job_code %}" class="job-link-badge" title="View Job Ticket">
+                                <a href="{% url 'staff_job_detail' exp.job_ticket.job_code %}" class="job-link-badge" title="View Job Ticket">
                                     <i class="fa-solid fa-ticket-alt"></i>
                                     <span>{{ exp.job_ticket.job_code }}</span>
                                     {% if exp.job_ticket.customer_name %}

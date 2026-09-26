@@ -400,6 +400,43 @@
     <div id="pending-undo-list" class="pending-undo-list"></div>
 </div>
 
+{% if job_expenses %}
+<div class="card-box mb-3 border-start border-4 border-warning bg-light p-3 shadow-sm">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h6 class="mb-1 text-dark fw-bold d-flex align-items-center gap-2">
+                <i class="fa-solid fa-receipt text-warning"></i> Direct Expenses Linked to this Job Ticket ({{ job_expenses|length }})
+            </h6>
+            <small class="text-muted">Total recorded shop outlays: <strong class="text-danger">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></small>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% for exp in job_expenses %}
+                {% if exp.is_billable_to_customer %}
+                <button type="button" 
+                        class="btn btn-sm btn-outline-warning text-dark border-warning d-inline-flex align-items-center gap-1.5 add-billable-expense-btn shadow-sm"
+                        data-desc="{{ exp.title }}"
+                        data-amount="{{ exp.amount|stringformat:'.2f' }}">
+                    <i class="fa-solid fa-plus-circle text-warning"></i> Add "{{ exp.title }}" (&#8377;{{ exp.amount|floatformat:2 }}) to Bill
+                </button>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    <div class="mt-2 pt-2 border-top d-flex flex-wrap gap-3 small text-muted">
+        {% for exp in job_expenses %}
+        <span>
+            &bull; <strong>{{ exp.title }}</strong>: &#8377;{{ exp.amount|floatformat:2 }} 
+            {% if exp.is_billable_to_customer %}
+                <span class="badge bg-success-subtle text-success border">Billable</span>
+            {% else %}
+                <span class="badge bg-secondary-subtle text-secondary border">Shop Absorbed</span>
+            {% endif %}
+        </span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <div class="billing-breakdown-card mb-4">
 <div class="table-responsive">
     <table class="table table-striped table-hover billing-table mb-0">
@@ -1421,6 +1458,65 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.type === 'number') {
             calculateTotals();
         }
+    });
+
+    document.querySelectorAll('.add-billable-expense-btn').forEach(btn => {
+        const rawDesc = (btn.dataset.desc || '').trim();
+        const descLower = rawDesc.toLowerCase();
+        let alreadyPresent = false;
+        document.querySelectorAll('[name^="description_"]').forEach(inp => {
+            if (inp.value && inp.value.toLowerCase().includes(descLower)) {
+                alreadyPresent = true;
+            }
+        });
+        if (alreadyPresent) {
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-check-double text-success me-1"></i> Added in Bill`;
+            btn.classList.remove('btn-outline-warning', 'text-dark', 'border-warning');
+            btn.classList.add('btn-light', 'text-success', 'border-success-subtle');
+        }
+
+        btn.addEventListener('click', function() {
+            if (!isEditingMode && editMasterBtn) {
+                editMasterBtn.click();
+            }
+            const desc = this.dataset.desc || 'Direct Expense';
+            const amount = parseFloat(this.dataset.amount || '0').toFixed(2);
+
+            const tempRow = document.createElement('tr');
+            tempRow.className = 'appended-new-service-row';
+            tempRow.innerHTML = `
+                <td><input type="text" name="new_description[]" value="${desc} (Direct Expense)" class="form-control form-control-sm" placeholder="Service description" style="background-color: #fffbe6;"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_part_cost[]" value="0.00" class="form-control form-control-sm text-end" placeholder="0.00" style="background-color: #fffbe6;"></td>
+                <td class="text-end"><input type="number" step="0.01" name="new_service_charge[]" value="${amount}" class="form-control form-control-sm text-end" placeholder="0.00" style="background-color: #fffbe6;"></td>
+                <td class="delete-column text-center">
+                    <button type="button" class="btn btn-sm btn-outline-danger remove-new-service-btn">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+
+            tempRow.querySelector('.remove-new-service-btn').addEventListener('click', () => {
+                tempRow.remove();
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fa-solid fa-plus-circle text-warning"></i> Add "${desc}" (&#8377;${amount}) to Bill`;
+                btn.classList.remove('btn-light', 'text-success', 'border-success-subtle');
+                btn.classList.add('btn-outline-warning', 'text-dark', 'border-warning');
+                calculateTotals();
+            });
+
+            const addRowNode = document.getElementById('add-service-row');
+            if (addRowNode && addRowNode.parentNode) {
+                addRowNode.parentNode.insertBefore(tempRow, addRowNode);
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-check text-success me-1"></i> Added to Bill`;
+            btn.classList.remove('btn-outline-warning', 'text-dark', 'border-warning');
+            btn.classList.add('btn-light', 'text-success', 'border-success-subtle');
+
+            calculateTotals();
+        });
     });
 
     setEditingState(false);

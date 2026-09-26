@@ -648,7 +648,34 @@
                         <span class="job-bill-meta-label">Service Total</span>
                         <strong>&#8377;{{ total_service_charges|floatformat:2 }}</strong>
                     </div>
+                    {% if job_expenses_total > 0 %}
+                    <div class="job-bill-meta-item">
+                        <span class="job-bill-meta-label">Direct Expenses</span>
+                        <strong class="text-danger">&#8377;{{ job_expenses_total|floatformat:2 }}</strong>
+                    </div>
+                    {% endif %}
                 </div>
+
+                {% if job_expenses %}
+                <div class="p-2.5 px-3 rounded-3 mb-3 bg-light border d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge bg-warning-subtle text-warning-emphasis border"><i class="fa-solid fa-receipt me-1"></i>Direct Expenses: &#8377;{{ job_expenses_total|floatformat:2 }}</span>
+                        {% for exp in job_expenses %}
+                            <span class="small text-muted">
+                                {{ exp.title }} (&#8377;{{ exp.amount|floatformat:2 }})
+                                {% if exp.is_billable_to_customer %}
+                                    <span class="badge bg-success-subtle text-success border ms-0.5" style="font-size: 0.72rem;">Billable</span>
+                                {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary border ms-0.5" style="font-size: 0.72rem;">Shop Cost</span>
+                                {% endif %}
+                            </span>
+                        {% endfor %}
+                    </div>
+                    <a href="#job-expenses-section" class="btn btn-outline-secondary btn-sm py-0.5 px-2 small">
+                        View Expense Details &darr;
+                    </a>
+                </div>
+                {% endif %}
 
                 <div class="job-bill-lines">
                     <table class="table table-sm table-striped align-middle">
@@ -725,6 +752,12 @@
                         </button>
                         {% endif %}
                     </div>
+                    {% if job_expenses_total > 0 %}
+                    <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top small text-muted">
+                        <span><i class="fa-solid fa-receipt text-warning me-1"></i>Direct Job Expenses: <strong class="text-danger">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></span>
+                        <a href="#job-expenses-section" class="text-decoration-none small fw-medium">View Expenses &darr;</a>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <!-- Payment Installments & Customer Ledger History -->
@@ -764,7 +797,7 @@
             </div>
 
             <!-- Job Expenses & Direct Costs Card -->
-            <div class="card-box mb-4 shadow-sm border-start border-4 border-warning">
+            <div class="card-box mb-4 shadow-sm border-start border-4 border-warning" id="job-expenses-section">
                 <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
                     <div>
                         <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
