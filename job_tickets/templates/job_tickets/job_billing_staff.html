@@ -6,32 +6,87 @@
 {% block extra_css %}
 <style>
     .billing-breakdown-card {
-        border: 1px solid #e8ecf3;
-        border-radius: 14px;
-        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-        box-shadow: 0 4px 16px rgba(17, 24, 39, 0.08);
-        padding: 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        padding: 1.25rem;
     }
 
     .billing-subtext {
-        color: #5f6778;
+        color: #64748b;
     }
 
     .billing-header-row {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: center;
         gap: 0.75rem;
         flex-wrap: wrap;
     }
 
+    .billing-table thead th {
+        background-color: #f8fafc;
+        color: #475569;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 2px solid #e2e8f0;
+        padding: 0.75rem 0.85rem;
+    }
+
     .billing-table tbody td {
         vertical-align: middle;
+        padding: 0.65rem 0.85rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    /* Modern Table Row Styling - View vs Edit */
+    .billing-table:not(.is-editing) .editable-finance-field {
+        background-color: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        padding-left: 0.35rem;
+        padding-right: 0.35rem;
+        color: #0f172a;
+        font-weight: 500;
+        cursor: default;
+    }
+
+    .billing-table:not(.is-editing) input[type="number"].editable-finance-field {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .billing-table.is-editing .editable-finance-field {
+        background-color: #fffbe6 !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px;
+    }
+
+    .billing-table.is-editing .editable-finance-field:focus {
+        border-color: var(--primary) !important;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+    }
+
+    .billing-breakdown-card:not(.is-editing) #discount-input {
+        background-color: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        font-weight: 600;
+        color: #dc2626;
+        cursor: default;
+    }
+
+    .billing-breakdown-card.is-editing #discount-input {
+        background-color: #fffbe6 !important;
+        border: 1px solid #cbd5e1 !important;
     }
 
     .billing-control-cell {
-        background: #fbfdff;
-        border-top: 1px dashed #d6dfef;
+        background: #f8fafc;
+        border-top: 1px dashed #cbd5e1;
     }
 
     .billing-action-row {
@@ -42,11 +97,13 @@
     }
 
     .billing-total-row td {
-        background: #f7faff;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
     }
 
     .billing-grand-total-row td {
-        background: #eef4ff;
+        background: #f0fdf4;
+        border-top: 2px solid #86efac;
     }
 
     .billing-inline-product {
@@ -60,13 +117,13 @@
     }
 
     .inline-product-meta {
-        color: #5f6778;
+        color: #64748b;
         font-size: 0.8rem;
     }
 
     .pending-undo-panel {
-        border: 1px dashed #d6dfef;
-        background: #f7faff;
+        border: 1px dashed #cbd5e1;
+        background: #f8fafc;
         border-radius: 10px;
         padding: 0.75rem;
         margin-bottom: 0.8rem;
@@ -82,7 +139,7 @@
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
-        border: 1px solid #d9e3f5;
+        border: 1px solid #e2e8f0;
         border-radius: 999px;
         background: #fff;
         padding: 0.25rem 0.35rem 0.25rem 0.65rem;
@@ -99,87 +156,211 @@
 
 {% block content %}
 <div class="section-container">
-    <h1 class="mb-4">Invoice - {{ job.job_code }}</h1>
-    <hr>
+    <div class="mb-3">
+        <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fa-solid fa-arrow-left me-1"></i>Back to Dashboard
+        </a>
+    </div>
+
+    <!-- Hero Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4 pb-2 border-bottom">
+        <div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                <span class="text-uppercase tracking-wider fw-bold text-muted small">Billing Workspace</span>
+                {% if job.status == 'Closed' %}
+                    <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle px-2.5 py-1">
+                        <i class="fa-solid fa-circle-check me-1"></i>Closed
+                    </span>
+                {% elif job.status == 'Ready for Pickup' %}
+                    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle px-2.5 py-1">
+                        <i class="fa-solid fa-box-archive me-1"></i>Ready for Pickup
+                    </span>
+                {% else %}
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1">
+                        <i class="fa-solid fa-clock me-1"></i>{{ job.status }}
+                    </span>
+                {% endif %}
+
+                {% if job.payment_status == 'paid' %}
+                    <span class="badge bg-success text-white px-2.5 py-1">
+                        <i class="fa-solid fa-check me-1"></i>Paid Full
+                    </span>
+                {% elif job.payment_status == 'part_paid' %}
+                    <span class="badge bg-warning text-dark px-2.5 py-1">
+                        <i class="fa-solid fa-adjust me-1"></i>Part Paid (Bal: &#8377;{{ job.balance_due|floatformat:2 }})
+                    </span>
+                {% elif job.payment_status == 'unpaid' %}
+                    <span class="badge bg-danger text-white px-2.5 py-1">
+                        <i class="fa-solid fa-clock me-1"></i>Credit (Unpaid)
+                    </span>
+                {% endif %}
+            </div>
+            <h1 class="h3 fw-bold text-dark mb-0">
+                <i class="fa-solid fa-file-invoice text-primary me-2"></i>Invoice &bull; {{ job.job_code }}
+            </h1>
+            <p class="text-muted small mb-0 mt-1">
+                Created on {{ job.created_at|date:"M d, Y" }} &bull; Last updated {{ job.updated_at|date:"M d, Y H:i" }}
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'job_billing_print_view' job_code=job.job_code %}" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+                <i class="fa-solid fa-print me-1"></i>Print Invoice
+            </a>
+            {% if job.status != 'Closed' %}
+            <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#closeJobModal">
+                <i class="fa-solid fa-cash-register me-1"></i>Settle &amp; Close Job
+            </button>
+            {% else %}
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#closeJobModal">
+                <i class="fa-solid fa-receipt me-1"></i>Payment Details
+            </button>
+            {% endif %}
+        </div>
+    </div>
     
     <form method="post" id="job-billing-form">
         {% csrf_token %}
         <input type="hidden" name="update_amounts_submit" value="1">
         
-        <div class="row">
-            <div class="col-md-6">
-                <h3>Customer & Job Details</h3>
-                <p><strong>Customer Name:</strong> {{ job.customer_name }}</p>
-                <p>
-                    <strong>Phone:</strong> {{ job.customer_phone }}
-                    <a href="tel:+91{{ job.customer_phone }}" class="btn btn-success btn-sm ms-2">
-                        <i class="fas fa-phone"></i> Call
-                    </a>
-                </p>
-                <p><strong>Device:</strong> {{ job.device_type }} ({{ job.device_brand }} {{ job.device_model }})</p>
-                <p><strong>Reported Issue:</strong> {{ job.reported_issue }}</p>
-            </div>
-            
-            <div class="col-md-6">
-                <h3>Billing Information</h3>
-                <p><strong>Invoice Date:</strong> {{ job.updated_at|date:"Y-m-d" }}</p>
-                <p><strong>Current Status:</strong> <span class="badge badge-status badge-success">{{ job.status }}</span></p>
-                <p><strong>Created by Staff ID:</strong> {{ job.created_by.id }}</p>
-                <p><strong>Serviced by Technician ID:</strong> {{ technician_id }}</p>
-                <p><strong>Technician Notes:</strong> {{ job.technician_notes|default:"No notes." }}</p>
-            </div>
-            
-            <div class="col-md-6">
-            <div class="row g-1 align-items-center mb-4">
-                
-                <div class="col-4">
-                    <strong class="text-primary">Invoice Number:</strong>
+        <!-- Metadata Cards: Customer & Device and Billing Info -->
+        <div class="row g-3 mb-4">
+            <!-- Customer & Device Card -->
+            <div class="col-lg-6">
+                <div class="card-box h-100 mb-0 shadow-sm border">
+                    <div class="d-flex align-items-center justify-content-between pb-2 mb-3 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                <i class="fa-solid fa-user small"></i>
+                            </div>
+                            <h6 class="fw-bold mb-0 text-dark">Customer &amp; Device Details</h6>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-column gap-2.5">
+                        <div class="d-flex justify-content-between align-items-center pb-2 border-bottom">
+                            <div>
+                                <small class="text-muted d-block">Customer Name</small>
+                                <strong class="text-dark">{{ job.customer_name }}</strong>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="text-dark small fw-medium">{{ job.customer_phone }}</span>
+                                <a href="tel:+91{{ job.customer_phone }}" class="btn btn-sm btn-outline-success py-0.5 px-2">
+                                    <i class="fa-solid fa-phone me-1"></i>Call
+                                </a>
+                            </div>
+                        </div>
+                        <div class="pb-2 border-bottom">
+                            <small class="text-muted d-block">Device &amp; Model</small>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <span class="badge bg-light text-dark border">
+                                    <i class="fa-solid fa-laptop text-primary me-1"></i>{{ job.device_type }}
+                                </span>
+                                <strong class="text-dark">{{ job.device_brand }} {{ job.device_model }}</strong>
+                            </div>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block mb-1">Reported Issue</small>
+                            <div class="p-2.5 bg-light rounded-3 text-secondary small border">
+                                {{ job.reported_issue|default:"No issue description recorded." }}
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                
-                <div class="col-8">
-                    <div class="input-group input-group-sm">
-                        <input type="text" 
-                            name="job_sales_invoice_number" 
-                            value="{{ job.vyapar_invoice_number|default:'' }}"
-                            class="form-control"
-                            placeholder="Leave blank if there is no third-party billing."
-                            id="vyapar-invoice-input" 
-                            readonly> 
-                        
-                        <button type="button" 
-                                id="edit-invoice-btn" 
-                                class="btn btn-outline-secondary"
-                                data-bs-toggle="tooltip" 
-                                title="Click to Edit">
-                            <i class="fas fa-pen"></i>
-                        </button>
+            </div>
+
+            <!-- Billing & Lifecycle Card -->
+            <div class="col-lg-6">
+                <div class="card-box h-100 mb-0 shadow-sm border">
+                    <div class="d-flex align-items-center justify-content-between pb-2 mb-3 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                <i class="fa-solid fa-file-invoice-dollar small"></i>
+                            </div>
+                            <h6 class="fw-bold mb-0 text-dark">Billing &amp; Service Info</h6>
+                        </div>
+                        <span class="badge bg-light text-muted border small">{{ job.updated_at|date:"Y-m-d" }}</span>
                     </div>
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                        <button type="submit"
-                                id="save-invoice-btn"
-                                class="btn btn-success btn-sm"
-                                style="display: none;">
-                            <i class="fas fa-check me-1"></i>Save Invoice
-                        </button>
-                        <button type="button"
-                                id="cancel-invoice-btn"
-                                class="btn btn-outline-secondary btn-sm"
-                                style="display: none;">
-                            <i class="fas fa-xmark me-1"></i>Cancel
-                        </button>
+                    <div class="d-flex flex-column gap-2.5">
+                        <div class="row g-2 pb-2 border-bottom">
+                            <div class="col-6">
+                                <small class="text-muted d-block">Created By</small>
+                                <strong class="text-dark small d-flex align-items-center gap-1.5 mt-0.5">
+                                    {% if job.created_by %}
+                                        {{ job.created_by.get_full_name|default:job.created_by.username }}
+                                    {% else %}
+                                        Staff
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted d-block">Serviced By</small>
+                                <strong class="text-dark small d-flex align-items-center gap-1.5 mt-0.5">
+                                    <i class="fa-solid fa-screwdriver-wrench text-secondary"></i>
+                                    {% if job.assigned_to %}
+                                        {{ job.assigned_to.user.get_full_name|default:job.assigned_to.user.username }}
+                                        <span class="text-muted fw-normal">({{ technician_id }})</span>
+                                    {% else %}
+                                        <span class="text-muted fw-normal fst-italic">Unassigned</span>
+                                    {% endif %}
+                                </strong>
+                            </div>
+                        </div>
+
+                        <!-- External / Sales Invoice Number -->
+                        <div class="pb-2 border-bottom">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <small class="text-muted">Sales Invoice # (Vyapar / External)</small>
+                                <small class="text-muted">Saved: <strong class="text-dark">{{ job.vyapar_invoice_number|default:"Not assigned" }}</strong></small>
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <input type="text" 
+                                    name="job_sales_invoice_number" 
+                                    value="{{ job.vyapar_invoice_number|default:'' }}"
+                                    class="form-control"
+                                    placeholder="Leave blank if there is no third-party billing."
+                                    id="vyapar-invoice-input" 
+                                    readonly> 
+                                
+                                <button type="button" 
+                                        id="edit-invoice-btn" 
+                                        class="btn btn-outline-secondary"
+                                        data-bs-toggle="tooltip" 
+                                        title="Click to Edit">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 mt-1.5">
+                                <button type="submit"
+                                        id="save-invoice-btn"
+                                        class="btn btn-success btn-sm py-0.5 px-2"
+                                        style="display: none;">
+                                    <i class="fas fa-check me-1"></i>Save Invoice
+                                </button>
+                                <button type="button"
+                                        id="cancel-invoice-btn"
+                                        class="btn btn-outline-secondary btn-sm py-0.5 px-2"
+                                        style="display: none;">
+                                    <i class="fas fa-xmark me-1"></i>Cancel
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <small class="text-muted d-block mb-1">Technician Notes</small>
+                            <div class="p-2.5 bg-light rounded-3 text-secondary small border fst-italic">
+                                {{ job.technician_notes|default:"No technician notes recorded." }}
+                            </div>
+                        </div>
                     </div>
-                    <small class="text-muted d-block mt-1">
-                        Current saved invoice: <strong>{{ job.vyapar_invoice_number|default:"Not assigned" }}</strong>.
-                    </small>
                 </div>
             </div>
         </div>
-        <hr class="my-4">
 
         <div class="billing-header-row mb-3">
             <div>
-                <h2 class="mb-1">Service & Billing Breakdown</h2>
-                <p class="billing-subtext mb-0">Add service lines and product lines from one billing workspace.</p>
+                <h2 class="h5 fw-bold mb-1 text-dark d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-list-check text-primary"></i>Service &amp; Billing Breakdown
+                </h2>
+                <p class="billing-subtext mb-0 small">Add service lines and product lines from one unified billing workspace.</p>
             </div>
             <div class="d-flex flex-wrap gap-2">
                 <a href="{% url 'inventory_product_dashboard' %}" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
@@ -187,7 +368,7 @@
                 </a>
                 <button type="button" 
                         id="edit-master-btn" 
-                        class="btn btn-outline-secondary btn-sm">
+                        class="btn btn-outline-primary btn-sm">
                     <i class="fas fa-pen me-1"></i>Edit Amounts / Add product
                 </button>
                 <button type="submit" 
@@ -195,13 +376,13 @@
                         id="save-master-btn" 
                         class="btn btn-success btn-sm" 
                         style="display: none;">
-                    <i class="fas fa-check me-1"></i>Apply & Save
+                    <i class="fas fa-check me-1"></i>Apply &amp; Save
                 </button>
                 <button type="button" 
                         id="redo-master-btn" 
-                        class="btn btn-danger btn-sm" 
+                        class="btn btn-outline-danger btn-sm" 
                         style="display: none;">
-                    <i class="fas fa-undo me-1"></i>Redo
+                    <i class="fas fa-undo me-1"></i>Cancel / Redo
                 </button>
             </div>
         </div>
@@ -285,20 +466,21 @@
                 </td>
             </tr>
             <tr class="billing-total-row">
-                <td colspan="2" class="text-end"><strong>Subtotal:</strong></td>
-                <td><strong id="subtotal-display">&#8377;{{ subtotal|floatformat:2 }}</strong></td>
+                <td colspan="2" class="text-end text-muted fw-semibold">Subtotal:</td>
+                <td class="text-end"><strong id="subtotal-display" class="text-dark">&#8377;{{ subtotal|floatformat:2 }}</strong></td>
             </tr>
             <tr class="billing-total-row">
-                <td colspan="2" class="text-end"><strong>Discount:</strong></td>
+                <td colspan="2" class="text-end text-muted fw-semibold">Discount:</td>
                 <td>
-                    <div class="d-flex justify-content-end">
-                        <span class="me-2">- &#8377;</span>
+                    <div class="d-flex align-items-center justify-content-end gap-1">
+                        <span class="text-danger fw-bold">- &#8377;</span>
                         <input type="number" step="0.01" 
                                name="discount_amount" 
                                value="{{ discount|floatformat:2 }}" 
-                               class="form-control form-control-sm w-auto editable-finance-field"
+                               class="form-control form-control-sm w-auto text-end editable-finance-field"
                                id="discount-input"
-                               readonly> </div>
+                               readonly>
+                    </div>
                 </td>
             </tr>
             {% if job_expenses %}
@@ -306,12 +488,12 @@
                 <td colspan="2" class="text-end text-muted small">
                     <i class="fa-solid fa-receipt text-warning me-1"></i> Direct Job Expenses ({{ job_expenses|length }}):
                 </td>
-                <td><strong class="text-danger small">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></td>
+                <td class="text-end"><strong class="text-danger small">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></td>
             </tr>
             {% endif %}
             <tr class="fw-bold billing-grand-total-row">
-                <td colspan="2" class="text-end"><strong>Grand Total:</strong></td>
-                <td><strong id="grand-total-display">&#8377;{{ grand_total|floatformat:2 }}</strong></td>
+                <td colspan="2" class="text-end"><strong class="fs-6 text-dark">Grand Total:</strong></td>
+                <td class="text-end"><strong id="grand-total-display" class="fs-5 text-success">&#8377;{{ grand_total|floatformat:2 }}</strong></td>
             </tr>
         </tbody>
     </table>
@@ -373,98 +555,146 @@
         </td>
     </tr>
 </template>
-<div class="mb-6 d-flex justify-content-between align-items-center">
-    <div class="row">
-        <div>
-            <h3>Finalize & Print</h3>
-            <p>Mark this job as closed after payment, then print the final invoice.</p>
-            <p class="text-muted small mb-2">Printed invoice includes customer feedback reminder and QR access for rating.</p>
-            <div class="d-flex flex-wrap gap-2 mb-2">
-                <a href="{% url 'job_billing_print_view' job_code=job.job_code %}" class="btn btn-success">
-                    <i class="fas fa-print"></i> Print Bill
-                </a>
-            </div>
-            <hr>
-            <button type="button" class="btn btn-danger w-100 mb-2" data-bs-toggle="modal" data-bs-target="#closeJobModal">
-                <i class="fas fa-check-circle"></i> Mark as Closed
-            </button>
-        </div>
-    </div>  
-</div>
-</form>
 
-<div class="modal fade" id="closeJobModal" tabindex="-1" aria-labelledby="closeJobModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form method="post" action="{% url 'close_job' job_code=job.job_code %}" id="close-job-form">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{% url 'staff_dashboard' %}">
-                <div class="modal-header bg-dark text-white">
-                    <h5 class="modal-title" id="closeJobModalLabel"><i class="fas fa-cash-register me-2"></i>Close & Settle Job {{ job.job_code }}</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body p-4">
-                    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded border">
+        <!-- Bottom Action Card -->
+        <div class="card-box shadow-sm border mt-4">
+            <div class="row align-items-center g-3">
+                {% if job.status == 'Closed' %}
+                <div class="col-lg-8">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle px-2 py-1">
+                            <i class="fa-solid fa-circle-check me-1"></i>Settlement Recorded
+                        </span>
+                        <span class="text-muted small">Closed on {{ job.closed_at|date:"M d, Y H:i"|default:job.updated_at|date:"M d, Y H:i" }}</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-4 mt-2">
                         <div>
-                            <span class="text-muted small text-uppercase fw-bold">Grand Total Amount</span>
-                            <h4 class="mb-0 text-primary fw-bold">&#8377;{{ grand_total|floatformat:2 }}</h4>
+                            <small class="text-muted d-block">Payment Status</small>
+                            <strong class="text-dark">
+                                {% if job.payment_status == 'paid' %}Paid in Full
+                                {% elif job.payment_status == 'part_paid' %}Partially Paid
+                                {% else %}Credit (Unpaid){% endif %}
+                            </strong>
                         </div>
-                        <div class="text-end">
-                            <span class="text-muted small text-uppercase fw-bold">Customer</span>
-                            <div class="fw-semibold">{{ job.customer_name }}</div>
+                        <div>
+                            <small class="text-muted d-block">Amount Collected</small>
+                            <strong class="text-success">&#8377;{{ job.amount_paid|floatformat:2 }}</strong>
                         </div>
-                    </div>
-
-                    <!-- Payment Status Radios -->
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Payment Settlement <span class="text-danger">*</span></label>
-                        <div class="btn-group w-100" role="group" aria-label="Payment Status">
-                            <input type="radio" class="btn-check" name="payment_status" id="pay_paid" value="paid" checked autocomplete="off">
-                            <label class="btn btn-outline-success" for="pay_paid"><i class="fas fa-check-circle me-1"></i> Paid (Full)</label>
-
-                            <input type="radio" class="btn-check" name="payment_status" id="pay_partial" value="part_paid" autocomplete="off">
-                            <label class="btn btn-outline-warning" for="pay_partial"><i class="fas fa-adjust me-1"></i> Partial</label>
-
-                            <input type="radio" class="btn-check" name="payment_status" id="pay_unpaid" value="unpaid" autocomplete="off">
-                            <label class="btn btn-outline-danger" for="pay_unpaid"><i class="fas fa-clock me-1"></i> Credit (Unpaid)</label>
+                        <div>
+                            <small class="text-muted d-block">Balance Due</small>
+                            <strong class="{% if job.balance_due > 0 %}text-danger{% else %}text-muted{% endif %}">&#8377;{{ job.balance_due|floatformat:2 }}</strong>
                         </div>
-                    </div>
-
-                    <!-- Payment Method -->
-                    <div class="mb-3" id="payment-method-container">
-                        <label for="close_payment_method" class="form-label fw-bold">Payment Method</label>
-                        <select class="form-select" id="close_payment_method" name="payment_method">
-                            {% for code, label in payment_methods %}
-                                <option value="{{ code }}" {% if code == 'cash' %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <!-- Partial Amount Paid Input -->
-                    <div class="mb-3 d-none" id="partial-amount-container">
-                        <label for="close_amount_paid" class="form-label fw-bold">Amount Paid Now (&#8377;) <span class="text-danger">*</span></label>
-                        <input type="number" step="0.01" min="0.01" max="{{ grand_total }}" class="form-control" id="close_amount_paid" name="amount_paid" placeholder="Enter amount collected">
-                        <div class="form-text text-danger fw-bold mt-1" id="partial-balance-hint">
-                            Balance Due: &#8377;<span id="modal-balance-due-display">{{ grand_total|floatformat:2 }}</span> (will remain as customer credit due)
+                        <div>
+                            <small class="text-muted d-block">Payment Method</small>
+                            <span class="text-dark fw-medium">{{ job.get_payment_method_display|default:job.payment_method|default:"Cash" }}</span>
+                            {% if job.payment_reference %}<span class="text-muted small">({{ job.payment_reference }})</span>{% endif %}
                         </div>
-                    </div>
-
-                    <!-- Payment Reference -->
-                    <div class="mb-3" id="payment-ref-container">
-                        <label for="close_payment_reference" class="form-label fw-bold">Reference / Transaction ID <small class="text-muted fw-normal">(Optional)</small></label>
-                        <input type="text" class="form-control" id="close_payment_reference" name="payment_reference" placeholder="e.g. UPI Ref, Cheque No., Card Txn ID">
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger px-4">
-                        <i class="fas fa-check-circle me-1"></i> Confirm & Close Job
-                    </button>
+                <div class="col-lg-4 text-lg-end">
+                    <div class="d-flex flex-wrap justify-content-lg-end gap-2">
+                        <a href="{% url 'job_billing_print_view' job_code=job.job_code %}" target="_blank" rel="noopener" class="btn btn-success">
+                            <i class="fas fa-print me-1"></i>Print Final Bill
+                        </a>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#closeJobModal">
+                            <i class="fas fa-pen me-1"></i>Adjust Settlement
+                        </button>
+                    </div>
                 </div>
-            </form>
+                {% else %}
+                <div class="col-lg-8">
+                    <h5 class="fw-bold mb-1 text-dark"><i class="fa-solid fa-cash-register text-primary me-2"></i>Finalize &amp; Settle Job</h5>
+                    <p class="text-muted small mb-0">Record payment settlement (Cash, UPI, Card, or Credit) and mark this repair job as closed.</p>
+                </div>
+                <div class="col-lg-4 text-lg-end">
+                    <div class="d-flex flex-wrap justify-content-lg-end gap-2">
+                        <a href="{% url 'job_billing_print_view' job_code=job.job_code %}" target="_blank" rel="noopener" class="btn btn-outline-secondary">
+                            <i class="fas fa-print me-1"></i>Print Preview
+                        </a>
+                        <button type="button" class="btn btn-danger px-3" data-bs-toggle="modal" data-bs-target="#closeJobModal">
+                            <i class="fas fa-cash-register me-1"></i>Settle &amp; Close Job
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
+    <div class="modal fade" id="closeJobModal" tabindex="-1" aria-labelledby="closeJobModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <form method="post" action="{% url 'close_job' job_code=job.job_code %}" id="close-job-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'staff_dashboard' %}">
+                    <div class="modal-header bg-dark text-white py-3 px-4">
+                        <h5 class="modal-title fs-6 fw-bold mb-0" id="closeJobModalLabel">
+                            <i class="fas fa-cash-register me-2 text-warning"></i>{% if job.status == 'Closed' %}Update Settlement Details{% else %}Close &amp; Settle Job {{ job.job_code }}{% endif %}
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded border">
+                            <div>
+                                <span class="text-muted small text-uppercase fw-bold">Grand Total Amount</span>
+                                <h4 class="mb-0 text-primary fw-bold">&#8377;{{ grand_total|floatformat:2 }}</h4>
+                            </div>
+                            <div class="text-end">
+                                <span class="text-muted small text-uppercase fw-bold">Customer</span>
+                                <div class="fw-semibold text-dark">{{ job.customer_name }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Payment Status Radios -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Payment Settlement <span class="text-danger">*</span></label>
+                            <div class="btn-group w-100" role="group" aria-label="Payment Status">
+                                <input type="radio" class="btn-check" name="payment_status" id="pay_paid" value="paid" {% if job.payment_status != 'part_paid' and job.payment_status != 'unpaid' %}checked{% endif %} autocomplete="off">
+                                <label class="btn btn-outline-success" for="pay_paid"><i class="fas fa-check-circle me-1"></i> Paid (Full)</label>
+
+                                <input type="radio" class="btn-check" name="payment_status" id="pay_partial" value="part_paid" {% if job.payment_status == 'part_paid' %}checked{% endif %} autocomplete="off">
+                                <label class="btn btn-outline-warning" for="pay_partial"><i class="fas fa-adjust me-1"></i> Partial</label>
+
+                                <input type="radio" class="btn-check" name="payment_status" id="pay_unpaid" value="unpaid" {% if job.payment_status == 'unpaid' %}checked{% endif %} autocomplete="off">
+                                <label class="btn btn-outline-danger" for="pay_unpaid"><i class="fas fa-clock me-1"></i> Credit (Unpaid)</label>
+                            </div>
+                        </div>
+
+                        <!-- Payment Method -->
+                        <div class="mb-3" id="payment-method-container">
+                            <label for="close_payment_method" class="form-label fw-bold small text-muted text-uppercase">Payment Method</label>
+                            <select class="form-select form-select-sm" id="close_payment_method" name="payment_method">
+                                {% for code, label in payment_methods %}
+                                    <option value="{{ code }}" {% if job.payment_method == code or not job.payment_method and code == 'cash' %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Partial Amount Paid Input -->
+                        <div class="mb-3 d-none" id="partial-amount-container">
+                            <label for="close_amount_paid" class="form-label fw-bold small text-muted text-uppercase">Amount Paid Now (&#8377;) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" min="0.01" max="{{ grand_total }}" class="form-control form-control-sm" id="close_amount_paid" name="amount_paid" value="{{ job.amount_paid|default:'' }}" placeholder="Enter amount collected">
+                            <div class="form-text text-danger fw-bold mt-1" id="partial-balance-hint">
+                                Balance Due: &#8377;<span id="modal-balance-due-display">{{ grand_total|floatformat:2 }}</span> (will remain as customer credit due)
+                            </div>
+                        </div>
+
+                        <!-- Payment Reference -->
+                        <div class="mb-3" id="payment-ref-container">
+                            <label for="close_payment_reference" class="form-label fw-bold small text-muted text-uppercase">Reference / Transaction ID <small class="text-muted fw-normal">(Optional)</small></label>
+                            <input type="text" class="form-control form-control-sm" id="close_payment_reference" name="payment_reference" value="{{ job.payment_reference|default:'' }}" placeholder="e.g. UPI Ref, Cheque No., Card Txn ID">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2.5 px-4">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm px-3">
+                            <i class="fas fa-check-circle me-1"></i> {% if job.status == 'Closed' %}Save Settlement Changes{% else %}Confirm &amp; Close Job{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
-</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Dynamic settlement modal handler
@@ -775,9 +1005,18 @@ document.addEventListener('DOMContentLoaded', function() {
     function setEditingState(isEditing) {
         isEditingMode = isEditing;
 
-        if (editBtn) editBtn.style.display = isEditing ? 'none' : 'block';
-        if (saveBtn) saveBtn.style.display = isEditing ? 'block' : 'none';
-        if (redoBtn) redoBtn.style.display = isEditing ? 'block' : 'none';
+        const breakdownCard = document.querySelector('.billing-breakdown-card');
+        if (breakdownCard) {
+            breakdownCard.classList.toggle('is-editing', isEditing);
+        }
+        const billingTable = document.querySelector('.billing-table');
+        if (billingTable) {
+            billingTable.classList.toggle('is-editing', isEditing);
+        }
+
+        if (editBtn) editBtn.style.display = isEditing ? 'none' : 'inline-flex';
+        if (saveBtn) saveBtn.style.display = isEditing ? 'inline-flex' : 'none';
+        if (redoBtn) redoBtn.style.display = isEditing ? 'inline-flex' : 'none';
 
         if (addServiceRow) {
             addServiceRow.style.display = isEditing ? 'table-row' : 'none';
