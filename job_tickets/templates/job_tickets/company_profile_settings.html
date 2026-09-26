@@ -340,17 +340,6 @@
                                                     <div class="text-danger small mt-1">{{ form.e_invoice_applicable.errors|striptags }}</div>
                                                 {% endif %}
                                             </div>
-                                            <div class="col-md-6 mb-3">
-                                                <div class="form-check form-switch">
-                                                    {{ form.e_way_bill_enabled }}
-                                                    <label class="form-check-label" for="{{ form.e_way_bill_enabled.id_for_label }}">
-                                                        {{ form.e_way_bill_enabled.label }}
-                                                    </label>
-                                                </div>
-                                                {% if form.e_way_bill_enabled.errors %}
-                                                    <div class="text-danger small mt-1">{{ form.e_way_bill_enabled.errors|striptags }}</div>
-                                                {% endif %}
-                                            </div>
                                         </div>
                                         <div class="alert alert-secondary">
                                             <i class="fas fa-file-invoice"></i> Service billing and inventory sales now share the same invoice sequence.
