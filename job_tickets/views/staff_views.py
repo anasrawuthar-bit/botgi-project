@@ -2648,6 +2648,31 @@ def task_dashboard(request):
     if tech_id:
         qs = qs.filter(assigned_to_id=tech_id)
 
+    # Date filter
+    start_date_str = (request.GET.get('start_date') or '').strip()
+    end_date_str = (request.GET.get('end_date') or '').strip()
+    date_by = (request.GET.get('date_by') or 'created').strip().lower()
+
+    if start_date_str:
+        try:
+            start_date = timezone.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            if date_by == 'due':
+                qs = qs.filter(due_date__date__gte=start_date)
+            else:
+                qs = qs.filter(created_at__date__gte=start_date)
+        except ValueError:
+            start_date_str = ''
+
+    if end_date_str:
+        try:
+            end_date = timezone.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            if date_by == 'due':
+                qs = qs.filter(due_date__date__lte=end_date)
+            else:
+                qs = qs.filter(created_at__date__lte=end_date)
+        except ValueError:
+            end_date_str = ''
+
     tasks = list(qs.select_related('assigned_to__user', 'created_by', 'job_reference').prefetch_related('attachments', 'messages'))
 
     # Metrics on total tasks
@@ -2658,6 +2683,8 @@ def task_dashboard(request):
     open_count = base_qs.filter(status=Task.STATUS_OPEN).count()
     in_progress_count = base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
     done_count = base_qs.filter(status=Task.STATUS_DONE).count()
+    active_count = open_count + in_progress_count
+    all_count = base_qs.count()
 
     create_form = TaskCreateForm(workspace=workspace)
     technicians = get_assignable_technician_queryset(workspace)
@@ -2668,10 +2695,15 @@ def task_dashboard(request):
         'open_count': open_count,
         'in_progress_count': in_progress_count,
         'done_count': done_count,
+        'active_count': active_count,
+        'all_count': all_count,
         'status_filter': status,
         'priority_filter': priority,
         'tech_filter': tech_id,
         'search_query': q,
+        'start_date': start_date_str,
+        'end_date': end_date_str,
+        'date_by': date_by,
         'create_form': create_form,
         'technicians': technicians,
     }
