@@ -976,8 +976,8 @@
                     {% endif %}
                 </div>
 
-                <!-- Additional Items / Accessories -->
-                <div class="col-md-12 mt-3">
+                <!-- Additional Items / Accessories & Rack Location -->
+                <div class="col-md-7 mt-3">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
                             Accessories Left with Device
@@ -999,6 +999,37 @@
                         <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
                     </div>
                     {% endif %}
+                </div>
+
+                <div class="col-md-5 mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
+                            <i class="fa-solid fa-boxes-stacked me-1 text-primary"></i> Rack & Column
+                        </label>
+                        <span class="text-muted small">Optional</span>
+                    </div>
+                    <div class="input-group">
+                        <select name="device_forms[INDEX].rack" class="form-select" id="rack-INDEX" style="flex: 2;">
+                            <option value="">-- No Rack --</option>
+                            {% regroup active_racks by group as grouped_dashboard_racks %}
+                            {% for grp in grouped_dashboard_racks %}
+                                <optgroup label="{{ grp.grouper }}">
+                                    {% for r in grp.list %}
+                                        <option value="{{ r.id }}">{{ r.name }} ({{ r.total_columns }} cols)</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% empty %}
+                                {% for r in active_racks %}
+                                    <option value="{{ r.id }}">{{ r.name }} ({{ r.group }})</option>
+                                {% endfor %}
+                            {% endfor %}
+                        </select>
+                        <span class="input-group-text bg-light text-muted small px-2">Col</span>
+                        <input type="number" name="device_forms[INDEX].rack_column" class="form-control" id="rack-col-INDEX" placeholder="Slot #" min="1" max="100" style="max-width: 85px;">
+                    </div>
+                    <small class="text-muted d-block mt-1" style="font-size: 0.76rem;">
+                        Storage rack & column/slot number
+                    </small>
                 </div>
 
                 <!-- Device Photos & Camera Section -->

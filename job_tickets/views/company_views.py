@@ -4,7 +4,8 @@ from .helpers import (
     _net_amount_after_discount,
     _staff_access_required,
 )
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Prefetch, Q
+from django.views.decorators.http import require_POST
 
 
 @login_required
@@ -311,8 +312,35 @@ def company_profile_settings(request):
     if denied:
         return denied
     
-    profile = CompanyProfile.get_profile()
+    workspace = getattr(request, 'current_workspace', None)
+    profile = CompanyProfile.get_profile(workspace=workspace)
     whatsapp_settings = WhatsAppIntegrationSettings.get_settings()
+
+    # Racks data for #rack-management tab
+    active_jobs_prefetch = Prefetch(
+        'job_tickets',
+        queryset=JobTicket.objects.exclude(status__in=['Closed', 'Returned'])
+            .select_related('assigned_to__user')
+            .order_by('-created_at'),
+        to_attr='prefetched_active_jobs'
+    )
+    racks_qs = DeviceRack.objects.all()
+    if workspace:
+        racks_qs = racks_qs.filter(workspace=workspace)
+    racks = list(racks_qs.prefetch_related(active_jobs_prefetch).order_by('group', 'name'))
+
+    total_racks = len(racks)
+    occupied_racks = sum(1 for r in racks if len(getattr(r, 'prefetched_active_jobs', [])) > 0)
+    empty_racks = total_racks - occupied_racks
+    total_devices_stored = sum(len(getattr(r, 'prefetched_active_jobs', [])) for r in racks)
+    rack_groups = sorted(list({r.group for r in racks if r.group}))
+
+    unassigned_jobs_qs = JobTicket.objects.exclude(status__in=['Closed', 'Returned']).filter(
+        Q(rack__isnull=True) | Q(rack_column__isnull=True)
+    ).order_by('-created_at')
+    if workspace:
+        unassigned_jobs_qs = unassigned_jobs_qs.filter(workspace=workspace)
+    unassigned_jobs = list(unassigned_jobs_qs[:50])
     
     if request.method == 'POST':
         active_tab = (request.POST.get('active_tab') or '#company-info').strip() or '#company-info'
@@ -362,5 +390,133 @@ def company_profile_settings(request):
         'initial_tab': initial_tab,
         'wa_recommended_public_site_url': request.build_absolute_uri('/').rstrip('/'),
         'whatsapp_webhook_url': request.build_absolute_uri(reverse('whatsapp_cloud_webhook_api')),
+        'racks': racks,
+        'total_racks': total_racks,
+        'occupied_racks': occupied_racks,
+        'empty_racks': empty_racks,
+        'total_devices_stored': total_devices_stored,
+        'rack_groups': rack_groups,
+        'unassigned_jobs': unassigned_jobs,
     }
     return render(request, 'job_tickets/company_profile_settings.html', context)
+
+
+@login_required
+@require_POST
+def rack_create(request):
+    """Create a new physical storage rack/shelf."""
+    denied = _staff_access_required(request, "company_settings")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    name = (request.POST.get('name') or '').strip()
+    group = (request.POST.get('group') or 'Shop').strip() or 'Shop'
+    description = (request.POST.get('description') or '').strip()
+    total_columns_raw = (request.POST.get('total_columns') or '10').strip()
+    try:
+        total_columns = max(1, min(100, int(total_columns_raw)))
+    except (ValueError, TypeError):
+        total_columns = 10
+
+    is_active = (request.POST.get('is_active') == 'on' or request.POST.get('is_active') == '1'
+                 or 'is_active' not in request.POST)
+
+    if not name:
+        messages.error(request, "Rack name is required.")
+        return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+    existing = DeviceRack.objects.filter(workspace=workspace, name__iexact=name, group__iexact=group).first()
+    if existing:
+        messages.error(request, f"A rack with name '{name}' already exists in group '{group}'.")
+        return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+    rack = DeviceRack.objects.create(
+        workspace=workspace,
+        name=name,
+        group=group,
+        description=description,
+        total_columns=total_columns,
+        is_active=is_active,
+    )
+    messages.success(request, f"Rack '{rack.name}' ({rack.group}) created successfully with {rack.total_columns} columns.")
+    return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+
+@login_required
+@require_POST
+def rack_edit(request, rack_id):
+    """Edit an existing physical storage rack/shelf."""
+    denied = _staff_access_required(request, "company_settings")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    rack_qs = DeviceRack.objects.all()
+    if workspace:
+        rack_qs = rack_qs.filter(workspace=workspace)
+    rack = get_object_or_404(rack_qs, id=rack_id)
+
+    name = (request.POST.get('name') or '').strip()
+    group = (request.POST.get('group') or 'Shop').strip() or 'Shop'
+    description = (request.POST.get('description') or '').strip()
+    total_columns_raw = (request.POST.get('total_columns') or '').strip()
+    if total_columns_raw:
+        try:
+            rack.total_columns = max(1, min(100, int(total_columns_raw)))
+        except (ValueError, TypeError):
+            pass
+
+    is_active = (request.POST.get('is_active') == 'on' or request.POST.get('is_active') == '1')
+
+    if not name:
+        messages.error(request, "Rack name cannot be empty.")
+        return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+    existing = DeviceRack.objects.filter(
+        workspace=workspace,
+        name__iexact=name,
+        group__iexact=group
+    ).exclude(id=rack.id).first()
+    if existing:
+        messages.error(request, f"Another rack with name '{name}' already exists in group '{group}'.")
+        return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+    rack.name = name
+    rack.group = group
+    rack.description = description
+    rack.is_active = is_active
+    rack.save(update_fields=['name', 'group', 'description', 'total_columns', 'is_active', 'updated_at'])
+
+    messages.success(request, f"Rack '{rack.name}' ({rack.group}) updated successfully.")
+    return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+
+@login_required
+@require_POST
+def rack_delete(request, rack_id):
+    """Delete a rack if it does not have active stored devices."""
+    denied = _staff_access_required(request, "company_settings")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    rack_qs = DeviceRack.objects.all()
+    if workspace:
+        rack_qs = rack_qs.filter(workspace=workspace)
+    rack = get_object_or_404(rack_qs, id=rack_id)
+
+    active_count = rack.active_jobs_count
+    if active_count > 0:
+        messages.error(
+            request,
+            f"Cannot delete rack '{rack.name}' because {active_count} active device(s) are currently stored in it. "
+            "Please move or close the tickets before deleting."
+        )
+        return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+
+    name = rack.name
+    rack.delete()
+    messages.success(request, f"Rack '{name}' deleted successfully.")
+    return redirect(f"{reverse('company_profile_settings')}?tab=rack-management")
+

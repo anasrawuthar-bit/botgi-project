@@ -23,6 +23,7 @@ from ..models import (
     CompanyUserMembership,
     DailyJobCodeSequence,
     DeviceChecklistTemplate,
+    DeviceRack,
     Expense,
     InventoryBill,
     InventoryBillLog,

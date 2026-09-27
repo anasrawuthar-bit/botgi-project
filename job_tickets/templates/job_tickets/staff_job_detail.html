@@ -150,6 +150,15 @@
             </a>
             <h1 class="section-title mb-0 fs-3">Job #{{ job.job_code }}</h1>
             <span class="badge badge-status badge-info">{{ job.get_status_display }}</span>
+            {% if job.rack %}
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1">
+                <i class="fa-solid fa-boxes-stacked me-1"></i>{{ job.rack.name }} ({{ job.rack.group }})
+            </span>
+            {% else %}
+            <span class="badge bg-light text-muted border px-2.5 py-1">
+                <i class="fa-solid fa-boxes-stacked me-1"></i>No Rack Assigned
+            </span>
+            {% endif %}
             {% if balance_due <= 0 and grand_total > 0 %}
             <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fas fa-check-circle me-1"></i>Paid</span>
             {% elif amount_paid > 0 %}
@@ -202,6 +211,27 @@
                                         <i class="fas fa-save"></i> Update
                                     </button>
                                 </form>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Storage Rack Location</th>
+                            <td>
+                                <div class="d-flex flex-wrap gap-2 align-items-center">
+                                    {% if job.rack %}
+                                    <span class="badge {% if job.rack.group == 'Godown' %}bg-warning-subtle text-dark border border-warning-subtle{% elif job.rack.group == 'Bench' %}bg-info-subtle text-info border border-info-subtle{% else %}bg-primary-subtle text-primary border border-primary-subtle{% endif %} px-2.5 py-1.5 fw-semibold">
+                                        <i class="fa-solid fa-boxes-stacked me-1"></i>{{ job.rack.name }}
+                                        {% if job.rack_column %}<span class="badge bg-white text-dark ms-1 border border-secondary-subtle">Col {{ job.rack_column }}</span>{% endif %}
+                                        <span class="fw-normal text-secondary ms-1">({{ job.rack.group }})</span>
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary border px-2 py-1.5">
+                                        <i class="fa-solid fa-boxes-stacked me-1"></i>Not Assigned
+                                    </span>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-outline-primary btn-sm py-0.5 px-2.5" data-bs-toggle="modal" data-bs-target="#staffMoveRackModal">
+                                        <i class="fas fa-arrows-turn-to-dots me-1"></i>Move
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         <tr>
@@ -1424,6 +1454,80 @@
     </div>
 </div>
 
+<!-- Move Device Location Modal -->
+<div class="modal fade" id="staffMoveRackModal" tabindex="-1" aria-labelledby="staffMoveRackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <form method="post" action="{% url 'staff_update_job_rack' job.job_code %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="staffMoveRackModalLabel">
+                        <i class="fa-solid fa-arrows-turn-to-dots text-primary me-2"></i>Move Device Location
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Current Device Info Banner -->
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="badge bg-primary fw-bold px-2 py-1">#{{ job.job_code }}</span>
+                            <span class="text-muted small fw-medium">{{ job.customer_name }}</span>
+                        </div>
+                        <div class="fw-bold text-dark text-truncate">{{ job.device_brand }} {{ job.device_model|default:job.device_type }}</div>
+                        <div class="small text-muted mt-2 pt-2 border-top">
+                            Current Placement: 
+                            <span class="fw-bold text-dark">
+                                {% if job.rack %}{{ job.rack.name }}{% if job.rack_column %} - Col {{ job.rack_column }}{% endif %} ({{ job.rack.group }}){% else %}Not Assigned{% endif %}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Destination Rack select -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Destination Rack / Storage Shelf <span class="text-danger">*</span></label>
+                        <select name="rack_id" id="staff_move_rack_id" class="form-select">
+                            <option value="">-- Remove from Rack (Release to Unassigned) --</option>
+                            {% regroup available_racks by group as grouped_job_racks %}
+                            {% for grp in grouped_job_racks %}
+                                <optgroup label="{{ grp.grouper }}">
+                                    {% for r in grp.list %}
+                                        <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}" {% if job.rack_id == r.id %}selected{% endif %}>
+                                            {{ r.name }} ({{ r.group }}) - {{ r.total_columns|default:10 }} cols
+                                        </option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% empty %}
+                                {% for r in available_racks %}
+                                    <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}" {% if job.rack_id == r.id %}selected{% endif %}>
+                                        {{ r.name }} ({{ r.group }}) - {{ r.total_columns|default:10 }} cols
+                                    </option>
+                                {% endfor %}
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Choose which rack or storage shelf to move this device into.</small>
+                    </div>
+
+                    <!-- Destination Column select -->
+                    <div class="mb-3" id="staff-col-select-group">
+                        <label class="form-label fw-semibold text-dark small">Column / Slot Number</label>
+                        <select name="rack_column" id="staff_move_rack_col" class="form-select">
+                            <option value="">-- General Shelf (No specific col) --</option>
+                        </select>
+                        <small class="text-muted">Numbered slot on the shelf. Can be left unselected if general shelf placement.</small>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm">
+                        <i class="fa-solid fa-arrows-turn-to-dots me-1"></i>Confirm Move
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 function lockVendorDetails() {
     fetch('{% url "lock_vendor_details" job.job_code %}', {
@@ -1781,6 +1885,42 @@ document.addEventListener('visibilitychange', function() {
         waModal.addEventListener('shown.bs.modal', function() {
             waTextarea.focus();
         });
+    }
+
+    // Dynamic column options for Staff Move Rack Modal
+    function updateStaffColOptions(rackId, selectedCol) {
+        const colSelect = document.getElementById('staff_move_rack_col');
+        const colGroup = document.getElementById('staff-col-select-group');
+        if (!colSelect) return;
+
+        colSelect.innerHTML = '<option value="">-- General Shelf (No specific col) --</option>';
+        if (!rackId) {
+            if (colGroup) colGroup.style.display = 'none';
+            return;
+        }
+        if (colGroup) colGroup.style.display = 'block';
+
+        const rackSelect = document.getElementById('staff_move_rack_id');
+        const opt = rackSelect ? rackSelect.querySelector('option[value="' + rackId + '"]') : null;
+        const totalCols = opt ? parseInt(opt.getAttribute('data-total-columns') || '10', 10) : 10;
+
+        for (let i = 1; i <= totalCols; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = 'Col ' + i;
+            if (selectedCol && String(selectedCol) === String(i)) {
+                option.selected = true;
+            }
+            colSelect.appendChild(option);
+        }
+    }
+
+    const staffRackSelect = document.getElementById('staff_move_rack_id');
+    if (staffRackSelect) {
+        staffRackSelect.addEventListener('change', function () {
+            updateStaffColOptions(this.value, '');
+        });
+        updateStaffColOptions(staffRackSelect.value, "{{ job.rack_column|default:'' }}");
     }
 })();
 </script>

@@ -187,6 +187,7 @@
                         <tr>
                             <th>Job Code</th>
                             <th>Device / Model</th>
+                            <th>Rack</th>
                             <th>Serial</th>
                             <th>Reported Issue</th>
                             <th>Items Kept</th>
@@ -197,6 +198,7 @@
                         <tr>
                             <td>{{ device.job_code }}</td>
                             <td><strong>{{ device.device_type }}</strong><br>{{ device.device_brand|default:"" }} {{ device.device_model|default:"" }}</td>
+                            <td>{% if device.rack %}<strong>{{ device.rack.name }}</strong>{% if device.rack_column %} - Col {{ device.rack_column }}{% endif %} ({{ device.rack.group }}){% else %}-{% endif %}</td>
                             <td>{{ device.device_serial|default:"-" }}</td>
                             <td>{{ device.reported_issue }}</td>
                             <td>{{ device.additional_items|default:"None" }}</td>
@@ -211,7 +213,8 @@
                 <div class="details-grid">
                     <p><strong>Device:</strong> {{ job_ticket.device_type }} ({{ job_ticket.device_brand }})</p>
                     <p><strong>Model:</strong> {{ job_ticket.device_model }}</p>
-                    <p><strong>Serial:</strong> {{ job_ticket.device_serial }}</p>
+                    <p><strong>Serial:</strong> {{ job_ticket.device_serial|default:"N/A" }}</p>
+                    <p><strong>Rack Location:</strong> {% if job_ticket.rack %}<strong>{{ job_ticket.rack.name }}</strong>{% if job_ticket.rack_column %} - Col {{ job_ticket.rack_column }}{% endif %} ({{ job_ticket.rack.group }}){% else %}N/A{% endif %}</p>
                     <p><strong>Estimated Amount:</strong> &#8377;{{ estimated_amount|floatformat:2 }}</p>
                 </div>
                 <p style="margin-top:8px;"><strong>Reported Issue:</strong> {{ job_ticket.reported_issue }}</p>

@@ -1,3 +1,5 @@
+import re
+
 from .helpers import *  # noqa: F401,F403
 from .helpers import (
     _build_checklist_schema_for_job,
@@ -13,6 +15,7 @@ from .helpers import (
 
 @login_required
 def technician_dashboard(request):
+
     if not request.user.groups.filter(name='Technicians').exists():
         return redirect('unauthorized')
 
@@ -196,7 +199,11 @@ def job_detail_technician(request, job_code):
         return redirect('unauthorized')
 
     # fetch job assigned to this technician
-    job = get_object_or_404(JobTicket, job_code=job_code, assigned_to=technician)
+    job = get_object_or_404(
+        JobTicket.objects.select_related('rack', 'assigned_to', 'workspace'),
+        job_code=job_code,
+        assigned_to=technician,
+    )
 
     # ----------------------------------------------------
     # CORE CHANGE: Filter Status Choices for Technicians
@@ -383,15 +390,24 @@ def job_detail_technician(request, job_code):
                 if request.headers.get('x-requested-with') == 'XMLHttpRequest':
                     # Re-fetch service logs to include the new one
                     service_logs = job.service_logs.all()
+                    calculate_job_totals([job])
                     html = render_to_string('job_tickets/_service_logs_table.html', {
                         'job': job,
                         'service_logs': service_logs,
+                        'total_parts_cost': job.part_total,
+                        'total_service_charges': job.service_total,
+                        'grand_total': job.total,
                     }, request=request)
                     return JsonResponse({
                         'ok': True,
                         'message': 'Service log added successfully.',
                         'html': html,
+                        'total_parts_cost': f"{job.part_total:.2f}",
+                        'total_service_charges': f"{job.service_total:.2f}",
+                        'grand_total': f"{job.total:.2f}",
+                        'item_count': service_logs.count(),
                     })
+
                 
                 messages.success(request, 'Service log added.')
                 return redirect('job_detail_technician', job_code=job_code)
@@ -467,16 +483,93 @@ def job_detail_technician(request, job_code):
 
             if request.headers.get('x-requested-with') == 'XMLHttpRequest':
                 # Render updated table HTML and return as snapshot
+                calculate_job_totals([job])
+                service_logs = job.service_logs.all()
                 html = render_to_string('job_tickets/_service_logs_table.html', {
                     'job': job,
-                    'service_logs': job.service_logs.all(),
+                    'service_logs': service_logs,
+                    'total_parts_cost': job.part_total,
+                    'total_service_charges': job.service_total,
+                    'grand_total': job.total,
                 }, request=request)
-                return JsonResponse({'ok': True, 'updated': updated_any, 'message': updated_any and 'Service logs updated.' or 'No changes detected.', 'html': html})
+                return JsonResponse({
+                    'ok': True,
+                    'updated': updated_any,
+                    'message': updated_any and 'Service logs updated.' or 'No changes detected.',
+                    'html': html,
+                    'total_parts_cost': f"{job.part_total:.2f}",
+                    'total_service_charges': f"{job.service_total:.2f}",
+                    'grand_total': f"{job.total:.2f}",
+                    'item_count': service_logs.count(),
+                })
+
 
             if updated_any:
                 messages.success(request, 'Service logs updated.')
             else:
                 messages.info(request, 'No changes detected in service logs.')
+            return redirect('job_detail_technician', job_code=job_code)
+
+        elif action == 'update_rack':
+            rack_id_raw = (request.POST.get('rack_id') or '').strip()
+            rack_col_raw = (request.POST.get('rack_column') or '').strip()
+            old_rack = job.rack
+            old_col = job.rack_column
+            new_rack = None
+            new_col = None
+
+            if rack_id_raw:
+                rack_qs = DeviceRack.objects.filter(id=rack_id_raw, is_active=True)
+                if job.workspace_id:
+                    rack_qs = rack_qs.filter(workspace=job.workspace)
+                new_rack = rack_qs.first()
+                if not new_rack:
+                    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                        return JsonResponse({'ok': False, 'message': 'Selected rack not found or is inactive.'}, status=400)
+                    messages.error(request, 'Selected rack not found or is inactive.')
+                    return redirect('job_detail_technician', job_code=job_code)
+                if rack_col_raw:
+                    try:
+                        parsed_col = int(rack_col_raw)
+                        if 1 <= parsed_col <= max(1, new_rack.total_columns or 100):
+                            new_col = parsed_col
+                    except (ValueError, TypeError):
+                        new_col = None
+
+            if old_rack != new_rack or old_col != new_col:
+                job.rack = new_rack
+                job.rack_column = new_col
+                job.save(update_fields=['rack', 'rack_column', 'updated_at'])
+
+                def _fmt_loc(r, c):
+                    if not r:
+                        return "None"
+                    if c:
+                        return f"'{r.name}' - Col {c} ({r.group})"
+                    return f"'{r.name}' ({r.group})"
+
+                old_desc = _fmt_loc(old_rack, old_col)
+                new_desc = _fmt_loc(new_rack, new_col)
+                JobTicketLog.objects.create(
+                    job_ticket=job,
+                    user=request.user,
+                    action='STATUS',
+                    details=f"Rack location changed from {old_desc} to {new_desc}."
+                )
+
+            col_display = f" - Col {new_col}" if new_col else ""
+            msg = f"Device moved to {new_rack.name}{col_display} ({new_rack.group})." if new_rack else "Device unassigned from rack."
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'ok': True,
+                    'message': msg,
+                    'rack_id': new_rack.id if new_rack else '',
+                    'rack_name': new_rack.name if new_rack else '',
+                    'rack_group': new_rack.group if new_rack else '',
+                    'rack_column': new_col or '',
+                    'is_assigned': bool(new_rack),
+                })
+            messages.success(request, msg)
             return redirect('job_detail_technician', job_code=job_code)
 
 
@@ -487,6 +580,37 @@ def job_detail_technician(request, job_code):
     subtotal = job.total
     discount = job.discount_amount or Decimal('0.00')
     grand_total = subtotal - discount
+
+    racks_qs = DeviceRack.objects.filter(is_active=True)
+    if job.workspace_id:
+        racks_qs = racks_qs.filter(workspace=job.workspace)
+    available_racks = list(racks_qs.order_by('group', 'name'))
+    device_photos = list(job.photos.all())
+
+    # WhatsApp phone number formatting
+    clean_digits = re.sub(r'\D', '', job.customer_phone or '')
+    if len(clean_digits) == 10:
+        whatsapp_phone = f"91{clean_digits}"
+    elif len(clean_digits) == 12 and clean_digits.startswith('91'):
+        whatsapp_phone = clean_digits
+    else:
+        whatsapp_phone = clean_digits
+
+    # Delivery deadline calculation
+    delivery_status = None
+    days_left = None
+    if job.estimated_delivery:
+        today = timezone.localdate()
+        diff = (job.estimated_delivery - today).days
+        days_left = diff
+        if diff < 0:
+            delivery_status = 'overdue'
+        elif diff == 0:
+            delivery_status = 'today'
+        elif diff == 1:
+            delivery_status = 'tomorrow'
+        else:
+            delivery_status = 'upcoming'
 
     context = {
         'job': job,
@@ -503,8 +627,14 @@ def job_detail_technician(request, job_code):
         'checklist_title': checklist_title,
         'checklist_notes': checklist_notes,
         'checklist_required_for_completion': checklist_required_for_completion,
+        'available_racks': available_racks,
+        'device_photos': device_photos,
+        'whatsapp_phone': whatsapp_phone,
+        'delivery_status': delivery_status,
+        'days_left': days_left,
     }
     return render(request, 'job_tickets/job_detail_technician.html', context)
+
 
 @login_required
 @require_POST
@@ -670,7 +800,16 @@ def technician_delete_service_log(request, log_id):
     details = f"Service log deleted: '{log.description}' (Part: {log.part_cost}, Service: {log.service_charge})"
     log.delete()
     JobTicketLog.objects.create(job_ticket=job, user=request.user, action='SERVICE', details=details)
-    return JsonResponse({'ok': True, 'message': 'Service log deleted.'})
+    calculate_job_totals([job])
+    return JsonResponse({
+        'ok': True,
+        'message': 'Service log deleted.',
+        'total_parts_cost': f"{job.part_total:.2f}",
+        'total_service_charges': f"{job.service_total:.2f}",
+        'grand_total': f"{job.total:.2f}",
+        'item_count': job.service_logs.count(),
+    })
+
 
 # job_tickets/views.py (Add this function)
 

@@ -431,6 +431,27 @@ def staff_dashboard(request):
                     request.POST.get(f'device_forms[{i}].requires_laptop_inspection_checklist') == 'on'
                 )
 
+                rack_id_val = (request.POST.get(f'device_forms[{i}].rack') or '').strip()
+                rack_col_raw = (request.POST.get(f'device_forms[{i}].rack_column') or '').strip()
+                rack_obj = None
+                rack_col_val = None
+                if rack_id_val:
+                    try:
+                        rack_filter = DeviceRack.objects.filter(id=int(rack_id_val), is_active=True)
+                        if current_workspace:
+                            rack_filter = rack_filter.filter(workspace=current_workspace)
+                        rack_obj = rack_filter.first()
+                        if rack_obj and rack_col_raw:
+                            try:
+                                parsed_col = int(rack_col_raw)
+                                if 1 <= parsed_col <= max(1, rack_obj.total_columns or 100):
+                                    rack_col_val = parsed_col
+                            except (ValueError, TypeError):
+                                rack_col_val = None
+                    except (ValueError, TypeError):
+                        rack_obj = None
+                        rack_col_val = None
+
                 device_submissions.append({
                     'device_type': device_type,
                     'device_brand': device_brand,
@@ -440,6 +461,8 @@ def staff_dashboard(request):
                     'additional_items': additional_items,
                     'is_under_warranty': is_under_warranty,
                     'requires_laptop_inspection_checklist': requires_laptop_inspection_checklist,
+                    'rack': rack_obj,
+                    'rack_column': rack_col_val,
                 })
                 device_photo_payloads.append(photo_files)
             i += 1
@@ -514,7 +537,14 @@ def staff_dashboard(request):
                                 image_data=photo_file.read(),
                             )
                 
-                JobTicketLog.objects.create(job_ticket=new_job, user=request.user, action='CREATED', details=f"Job ticket created for device: {device_data['device_type']}.")
+                created_details = f"Job ticket created for device: {device_data['device_type']}."
+                if device_data.get('rack'):
+                    rack_loc = device_data['rack'].name
+                    if device_data.get('rack_column'):
+                        rack_loc += f" - Col {device_data['rack_column']}"
+                    rack_loc += f" ({device_data['rack'].group})"
+                    created_details += f" Assigned to rack: {rack_loc}."
+                JobTicketLog.objects.create(job_ticket=new_job, user=request.user, action='CREATED', details=created_details)
 
                 if reminder_due_at:
                     reminder = JobReminder.objects.create(
@@ -730,6 +760,12 @@ def staff_dashboard(request):
         .count()
     )
 
+    # Available active racks for ticket creation
+    racks_qs = DeviceRack.objects.filter(is_active=True)
+    if current_workspace:
+        racks_qs = racks_qs.filter(workspace=current_workspace)
+    active_racks = list(racks_qs.order_by('group', 'name'))
+
     # FINAL CONTEXT
     context = {
         'form': JobTicketForm(), # Use an empty form here for any generic field access in the template
@@ -755,6 +791,7 @@ def staff_dashboard(request):
         'reminder_alerts': reminder_alerts,
         'reminder_alert_count': reminder_alert_count,
         'due_reminder_count': due_reminder_count,
+        'active_racks': active_racks,
     }
     return render(request, 'job_tickets/staff_dashboard.html', context)
 
@@ -1928,6 +1965,12 @@ def staff_job_detail(request, job_code):
         workspace=job.workspace,
     )
 
+    # Available active racks for moving/reassigning device storage
+    racks_qs = DeviceRack.objects.filter(is_active=True)
+    if job.workspace_id:
+        racks_qs = racks_qs.filter(workspace=job.workspace)
+    available_racks = list(racks_qs.order_by('group', 'name'))
+
     context = {
         'job': job,
         'service_logs': job.service_logs.all(),
@@ -1963,8 +2006,73 @@ def staff_job_detail(request, job_code):
         'inventory_parts_cost': inventory_parts_cost,
         'job_net_profit': job_net_profit,
         'job_expense_form': job_expense_form,
+        'available_racks': available_racks,
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
+
+
+@login_required
+@require_POST
+def staff_update_job_rack(request, job_code):
+    """Update or move the physical storage rack location for a device."""
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    job = get_object_or_404(JobTicket, job_code=job_code)
+    if not user_has_workspace_access(request.user, job.workspace):
+        return redirect('unauthorized')
+
+    rack_id_raw = (request.POST.get('rack_id') or '').strip()
+    rack_col_raw = (request.POST.get('rack_column') or '').strip()
+    old_rack = job.rack
+    old_col = job.rack_column
+    new_rack = None
+    new_col = None
+
+    if rack_id_raw:
+        rack_qs = DeviceRack.objects.filter(id=rack_id_raw, is_active=True)
+        if job.workspace_id:
+            rack_qs = rack_qs.filter(workspace=job.workspace)
+        new_rack = rack_qs.first()
+        if not new_rack:
+            messages.error(request, "Selected rack was not found or is inactive.")
+            return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+        if rack_col_raw:
+            try:
+                parsed_col = int(rack_col_raw)
+                if 1 <= parsed_col <= max(1, new_rack.total_columns or 100):
+                    new_col = parsed_col
+            except (ValueError, TypeError):
+                new_col = None
+
+    if old_rack == new_rack and old_col == new_col:
+        messages.info(request, "Rack location is already up to date.")
+        return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
+
+    job.rack = new_rack
+    job.rack_column = new_col
+    job.save(update_fields=['rack', 'rack_column', 'updated_at'])
+
+    def _fmt_loc(r, c):
+        if not r:
+            return "None"
+        if c:
+            return f"'{r.name}' - Col {c} ({r.group})"
+        return f"'{r.name}' ({r.group})"
+
+    old_desc = _fmt_loc(old_rack, old_col)
+    new_desc = _fmt_loc(new_rack, new_col)
+    log_detail = f"Rack location changed from {old_desc} to {new_desc}."
+    JobTicketLog.objects.create(job_ticket=job, user=request.user, action='STATUS', details=log_detail)
+
+    if new_rack:
+        col_txt = f" - Col {new_col}" if new_col else ""
+        messages.success(request, f"Device moved to {new_rack.name}{col_txt} ({new_rack.group}).")
+    else:
+        messages.success(request, "Device released from rack storage.")
+
+    return _safe_next_redirect(request, 'staff_job_detail', job_code=job.job_code)
 
 
 @login_required

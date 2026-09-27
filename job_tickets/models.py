@@ -994,6 +994,108 @@ class InventoryVendorCreditApplication(models.Model):
         )
 
 
+class DeviceRack(models.Model):
+    GROUP_SHOP = 'Shop'
+    GROUP_GODOWN = 'Godown'
+    GROUP_BENCH = 'Bench'
+    GROUP_DEFAULT_CHOICES = [
+        (GROUP_SHOP, 'Shop'),
+        (GROUP_GODOWN, 'Godown'),
+        (GROUP_BENCH, 'Bench'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='device_racks',
+        db_index=True,
+    )
+    name = models.CharField(
+        max_length=60,
+        help_text="Rack / Shelf identifier (e.g., Rack A1, Shelf 2, Tray 10).",
+    )
+    group = models.CharField(
+        max_length=60,
+        default=GROUP_SHOP,
+        help_text="Location group (e.g., Shop, Godown, Bench).",
+    )
+    description = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        help_text="Optional description or position note.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive racks are hidden from intake pickers.",
+    )
+    total_columns = models.PositiveIntegerField(
+        default=10,
+        help_text="Total number of numbered columns/slots in this rack.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['group', 'name']
+        unique_together = ('workspace', 'name', 'group')
+
+    def __str__(self):
+        return f"{self.name} ({self.group})"
+
+    @property
+    def active_job_tickets(self):
+        return self.job_tickets.exclude(status__in=['Closed', 'Returned'])
+
+    @property
+    def active_jobs_count(self):
+        return self.active_job_tickets.count()
+
+    def get_columns_data(self):
+        """
+        Returns structured column/slot occupancy data for visualization:
+        {
+            'columns': [{'column_num': int, 'is_occupied': bool, 'jobs': [...], 'primary_job': ...}, ...],
+            'overflow_jobs': [...],
+            'occupied_slots_count': int,
+            'total_slots': int,
+        }
+        """
+        total = max(1, self.total_columns or 1)
+        jobs = getattr(self, 'prefetched_active_jobs', None)
+        if jobs is None:
+            jobs = list(self.active_job_tickets.select_related('assigned_to__user'))
+
+        col_map = {c: [] for c in range(1, total + 1)}
+        overflow = []
+
+        for job in jobs:
+            c = job.rack_column
+            if c and 1 <= c <= total:
+                col_map[c].append(job)
+            else:
+                overflow.append(job)
+
+        cols = []
+        for c in range(1, total + 1):
+            slot_jobs = col_map[c]
+            cols.append({
+                'column_num': c,
+                'is_occupied': len(slot_jobs) > 0,
+                'jobs': slot_jobs,
+                'primary_job': slot_jobs[0] if slot_jobs else None,
+                'extra_count': max(0, len(slot_jobs) - 1),
+            })
+        return {
+            'columns': cols,
+            'overflow_jobs': overflow,
+            'occupied_slots_count': sum(1 for c in cols if c['is_occupied']),
+            'total_slots': total,
+        }
+
+
 class JobTicket(models.Model):
     FEEDBACK_PENDING = 'pending'
     FEEDBACK_MESSAGE_SENT = 'message_sent'
@@ -1056,6 +1158,19 @@ class JobTicket(models.Model):
     device_serial = models.CharField(max_length=100, blank=True)
     reported_issue = models.TextField()
     additional_items = models.TextField(blank=True, help_text="e.g., Laptop bag, Charger, Mouse")
+    rack = models.ForeignKey(
+        DeviceRack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='job_tickets',
+        help_text="Assigned physical storage rack/shelf location for this device.",
+    )
+    rack_column = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Specific column/slot number in the storage rack.",
+    )
 
     # Service & Status
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending')
@@ -1182,7 +1297,23 @@ class JobTicket(models.Model):
 
     def __str__(self):
         return f"Job Code: {self.job_code} - {self.customer_name}"
-    
+
+    @property
+    def rack_location_display(self):
+        if not self.rack:
+            return ""
+        if self.rack_column:
+            return f"{self.rack.name} - Col {self.rack_column} ({self.rack.group})"
+        return f"{self.rack.name} ({self.rack.group})"
+
+    @property
+    def rack_short_display(self):
+        if not self.rack:
+            return ""
+        if self.rack_column:
+            return f"{self.rack.name} - Col {self.rack_column}"
+        return self.rack.name
+
     def get_report_date(self):
         """Returns the date this job should be reported based on vendor concept.
         For vendor jobs: return date when returned from vendor
@@ -1491,8 +1622,15 @@ class ServiceLog(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
 
+    @property
+    def line_total(self):
+        parts = self.part_cost or Decimal('0.00')
+        service = self.service_charge or Decimal('0.00')
+        return parts + service
+
     def __str__(self):
         return f"{self.job_ticket.job_code} - {self.description}"
+
 
 
 class ProductSale(models.Model):

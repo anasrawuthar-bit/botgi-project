@@ -170,4 +170,10 @@ urlpatterns = [
     path('staff/expenses/', views.expense_dashboard, name='expense_dashboard'),
     path('staff/expenses/create/', views.expense_create, name='expense_create'),
     path('staff/expenses/<int:expense_id>/delete/', views.expense_delete, name='expense_delete'),
+
+    # Rack & Storage Management
+    path('staff/racks/create/', views.rack_create, name='rack_create'),
+    path('staff/racks/<int:rack_id>/edit/', views.rack_edit, name='rack_edit'),
+    path('staff/racks/<int:rack_id>/delete/', views.rack_delete, name='rack_delete'),
+    path('staff/job/<str:job_code>/update-rack/', views.staff_update_job_rack, name='staff_update_job_rack'),
 ]

@@ -74,52 +74,198 @@
         background: #f2f7ff;
         display: inline-block;
     }
+    @media (min-width: 768px) {
+        .technician-job-page .border-end-md {
+            border-right: 1px solid #e2e8f0;
+        }
+    }
 </style>
 
+
 <div class="section-container technician-job-page">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
         <div>
-            <h1 class="mb-1">Job Details: {{ job.job_code }}</h1>
-            <div>
-                <span class="stat-pill">Status: <span class="badge badge-status badge-info">{{ job.status }}</span></span>
-                <span class="stat-pill">Warranty: {{ job.is_under_warranty|yesno:"Yes,No" }}</span>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <h1 class="mb-0 fs-3 fw-bold text-dark">Job Details: {{ job.job_code }}</h1>
+                <span id="header-status-badge" class="badge fs-6 {% if job.status == 'Completed' %}bg-success{% elif job.status == 'Repairing' %}bg-primary{% elif job.status == 'Under Inspection' %}bg-info text-dark{% elif job.status == 'Specialized Service' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                    {{ job.get_status_display }}
+                </span>
+                {% if job.is_under_warranty %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">
+                        <i class="fas fa-shield-alt me-1"></i> Under Warranty
+                    </span>
+                {% endif %}
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2 text-muted small">
+                {% if delivery_status == 'overdue' %}
+                    <span class="badge bg-danger text-white">
+                        <i class="fas fa-exclamation-triangle me-1"></i> Overdue ({{ job.estimated_delivery|date:"d M Y" }})
+                    </span>
+                {% elif delivery_status == 'today' %}
+                    <span class="badge bg-warning text-dark">
+                        <i class="fas fa-clock me-1"></i> Promised Delivery: TODAY!
+                    </span>
+                {% elif delivery_status == 'tomorrow' %}
+                    <span class="badge bg-info text-dark">
+                        <i class="fas fa-calendar-day me-1"></i> Due Tomorrow
+                    </span>
+                {% elif job.estimated_delivery %}
+                    <span class="badge bg-light text-dark border">
+                        <i class="fas fa-calendar-alt me-1"></i> Due: {{ job.estimated_delivery|date:"d M Y" }}
+                    </span>
+                {% endif %}
+
+                {% if job.estimated_amount %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                        <i class="fas fa-coins me-1"></i> Quoted Est: &#8377;{{ job.estimated_amount|floatformat:2 }}
+                    </span>
+                {% endif %}
+
+                <span><i class="far fa-clock me-1"></i> Received: {{ job.created_at|date:"d M Y, h:i A" }}</span>
             </div>
         </div>
-        <div class="mt-3 mt-md-0">
-            <a href="{% url 'technician_dashboard' %}" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left"></i> Back to Dashboard
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'technician_dashboard' %}" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center">
+                <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
             </a>
         </div>
     </div>
 
-    <div class="row g-3 mb-3">
-        <div class="col-lg-6">
-            <div class="card h-100">
-                <div class="card-header">Customer & Device</div>
-                <div class="card-body">
-                    <p><strong>Name:</strong> {{ job.customer_name }}</p>
-                    <p><strong>Phone:</strong> {{ job.customer_phone }}</p>
-                    <p><strong>Device:</strong> {{ job.device_type }} ({{ job.device_brand }} {{ job.device_model }})</p>
-                    <p><strong>Serial:</strong> {{ job.device_serial|default:"N/A" }}</p>
-                    <p class="mb-0"><strong>Reported Issue:</strong> {{ job.reported_issue }}</p>
+    <!-- Modern Unified Device & Customer Overview Card -->
+    <div class="card mb-3 shadow-sm border-0" style="background: linear-gradient(180deg, #ffffff 0%, #f9fbfe 100%); border: 1px solid #dbe5f2 !important;">
+        <div class="card-body p-3 p-md-4">
+            <div class="row g-3">
+                <!-- Customer Details -->
+                <div class="col-md-4 border-end-md">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold text-dark fs-6">{{ job.customer_name }}</div>
+                            <div class="text-muted small">Customer Contact</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <a href="tel:{{ job.customer_phone }}" class="btn btn-sm btn-outline-secondary py-1 px-2 d-inline-flex align-items-center gap-1">
+                                <i class="fas fa-phone-alt text-primary"></i>
+                                <span class="fw-bold">{{ job.customer_phone }}</span>
+                            </a>
+                            {% if whatsapp_phone %}
+                            <a href="https://wa.me/{{ whatsapp_phone }}?text=Hello%20{{ job.customer_name|urlencode }},%20I%20am%20calling%20from%20the%20service%20center%20regarding%20your%20{{ job.device_type|urlencode }}%20({{ job.job_code }})." 
+                               target="_blank" 
+                               class="btn btn-sm btn-success py-1 px-2 d-inline-flex align-items-center gap-1"
+                               title="Chat on WhatsApp">
+                                <i class="fab fa-whatsapp"></i> WhatsApp
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if job.estimation_note %}
+                    <div class="mt-2 p-2 rounded bg-warning-subtle text-warning-emphasis small border border-warning-subtle">
+                        <i class="fas fa-info-circle me-1"></i><strong>Note:</strong> {{ job.estimation_note }}
+                    </div>
+                    {% endif %}
                 </div>
-            </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="card h-100">
-                <div class="card-header">Technician Summary</div>
-                <div class="card-body">
-                    <p><strong>Additional Items:</strong> {{ job.additional_items|default:"None" }}</p>
-                    <p class="mb-0"><strong>Technician Notes:</strong> {{ job.technician_notes|default:"No notes yet." }}</p>
+
+                <!-- Device Specs & Reported Problem -->
+                <div class="col-md-4 border-end-md">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <div class="rounded-circle bg-info-subtle text-info-emphasis d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+                            <i class="fas fa-laptop"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold text-dark fs-6">{{ job.device_type }} &bull; {{ job.device_brand }} {{ job.device_model }}</div>
+                            <div class="text-muted small">Serial: <span class="text-dark fw-semibold">{{ job.device_serial|default:"N/A" }}</span></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-2">
+                        <div class="small fw-semibold text-muted mb-1">Reported Issue:</div>
+                        <div class="p-2 rounded bg-light border text-dark small fw-medium" style="max-height: 80px; overflow-y: auto;">
+                            {{ job.reported_issue }}
+                        </div>
+                    </div>
+
+                    <div class="mt-2 d-flex flex-wrap align-items-center gap-1">
+                        <span class="small text-muted fw-semibold">Accessories:</span>
+                        {% if job.additional_items %}
+                            <span class="badge bg-secondary-subtle text-dark border">{{ job.additional_items }}</span>
+                        {% else %}
+                            <span class="text-muted small">None</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Storage Rack & Device Location (Interactive) -->
+                <div class="col-md-4">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="rounded-circle bg-secondary-subtle text-secondary d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+                                <i class="fa-solid fa-boxes-stacked"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-dark fs-6">Storage Rack</div>
+                                <div class="text-muted small">Physical Location</div>
+                            </div>
+                        </div>
+                        <div id="tech-rack-live-badge">
+                            {% if job.rack %}
+                                <span class="badge bg-primary text-white px-2 py-1">
+                                    <i class="fa-solid fa-box-archive me-1"></i> {{ job.rack.name }}{% if job.rack_column %} - Col {{ job.rack_column }}{% endif %} ({{ job.rack.group }})
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary-subtle text-secondary border px-2 py-1">
+                                    <i class="fa-solid fa-box-open me-1"></i> Unassigned
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between pt-2 mt-2 border-top">
+                        <span class="small text-muted" id="tech-rack-col-hint">
+                            {% if job.rack %}
+                                Slot: <strong class="text-dark">{% if job.rack_column %}Col {{ job.rack_column }}{% else %}General Shelf{% endif %}</strong>
+                            {% else %}
+                                No slot assigned
+                            {% endif %}
+                        </span>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2.5 fw-medium" data-bs-toggle="modal" data-bs-target="#techMoveRackModal">
+                            <i class="fas fa-arrows-turn-to-dots me-1"></i>Move
+                        </button>
+                    </div>
+
+                    <!-- Intake Photos Preview (if any) -->
+                    {% if device_photos %}
+                    <div class="mt-2 pt-2 border-top">
+                        <div class="small fw-semibold text-muted mb-1 d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-camera me-1"></i> Intake Photos ({{ device_photos|length }}):</span>
+                        </div>
+                        <div class="d-flex gap-2 overflow-auto py-1">
+                            {% for photo in device_photos %}
+                            <a href="{{ photo.image_url }}" target="_blank" class="border rounded p-1 d-inline-block bg-white shadow-xs" title="Click to view full photo">
+                                <img src="{{ photo.image_url }}" style="height: 44px; width: 44px; object-fit: cover; border-radius: 4px;" alt="Device Photo">
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 
+
     <div class="row g-3 mb-3">
-        <div class="col-xl-8">
-            <div class="card">
-                <div class="card-header">Update Status & Inspection</div>
+        <!-- Left: Status & Inspection Checklist -->
+        <div class="col-xl-5 col-lg-5">
+            <div class="card mb-3 shadow-sm border-0" style="border: 1px solid #dbe5f2 !important;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-tasks text-primary me-1"></i> Update Status & Inspection</span>
+                </div>
                 <div class="card-body">
                     {% if not can_change_status %}
                         <div class="alert alert-warning">
@@ -128,13 +274,37 @@
                             This job is with vendor for specialized service. Status cannot be changed until it is returned.
                         </div>
                     {% endif %}
+                    {% if can_change_status %}
+                    <div class="d-flex flex-wrap gap-2 align-items-center mb-3 p-2 bg-light rounded border">
+                        <span class="small fw-bold text-muted me-1"><i class="fas fa-bolt text-warning me-1"></i>Quick Actions:</span>
+                        {% if job.status == 'Pending' %}
+                            <button type="button" class="btn btn-sm btn-outline-info quick-status-trigger" data-target-status="Under Inspection">
+                                <i class="fas fa-search me-1"></i> Start Inspection
+                            </button>
+                        {% elif job.status == 'Under Inspection' %}
+                            <button type="button" class="btn btn-sm btn-outline-primary quick-status-trigger" data-target-status="Repairing">
+                                <i class="fas fa-tools me-1"></i> Start Repairing
+                            </button>
+                        {% elif job.status == 'Repairing' %}
+                            <button type="button" class="btn btn-sm btn-outline-success quick-status-trigger" data-target-status="Completed">
+                                <i class="fas fa-check-circle me-1"></i> Mark Completed
+                            </button>
+                        {% endif %}
+                        {% if job.status != 'Under Inspection' and job.status != 'Completed' %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary quick-status-trigger" data-target-status="Under Inspection">
+                                <i class="fas fa-undo me-1"></i> Set Under Inspection
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
                     <form method="post" id="update-status-form">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="update_status">
 
                         <div class="mb-3">
-                            <label for="status" class="form-label">Change Status</label>
-                            <select name="status" id="id_status" class="form-select" {% if not can_change_status %}disabled{% endif %}>
+                            <label for="status" class="form-label fw-bold small text-muted">Change Status</label>
+                            <select name="status" id="id_status" class="form-select form-select-sm" {% if not can_change_status %}disabled{% endif %}>
                                 {% for value, label in status_choices %}
                                     <option value="{{ value }}" {% if value == job.status %}selected{% endif %}>{{ label }}</option>
                                 {% endfor %}
@@ -142,34 +312,35 @@
                         </div>
 
                         <div class="mb-3 d-none" id="labor-charge-group">
-                            <label for="labor_charge" class="form-label fw-bold">Labor / Service Charge (&#8377;)</label>
-                            <input type="number" step="0.01" min="0" name="labor_charge" id="labor_charge" class="form-control" placeholder="Optional labor charge to bill">
+                            <label for="labor_charge" class="form-label fw-bold text-success">Labor / Service Charge (&#8377;)</label>
+                            <input type="number" step="0.01" min="0" name="labor_charge" id="labor_charge" class="form-control form-control-sm" placeholder="Optional labor charge to bill">
                             <div class="form-text">If entered, this will be recorded as Technician Labor Charges.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="technician_notes" class="form-label">Technician Notes</label>
-                            <textarea name="technician_notes" id="technician_notes" class="form-control" rows="4">{{ job.technician_notes }}</textarea>
+                            <label for="technician_notes" class="form-label fw-bold small text-muted">Technician Notes</label>
+                            <textarea name="technician_notes" id="technician_notes" class="form-control form-control-sm" rows="3" placeholder="Add internal notes about fault diagnosis or repairs...">{{ job.technician_notes }}</textarea>
                         </div>
 
                         {% if checklist_schema %}
                             <div class="checklist-wrap p-3 mb-3">
-                                <h5 class="mb-2">{{ checklist_title|default:"Device Checklist" }}</h5>
+                                <h6 class="mb-1 fw-bold text-dark">{{ checklist_title|default:"Device Checklist" }}</h6>
                                 {% if checklist_notes %}
-                                    <p class="section-note mb-2">{{ checklist_notes }}</p>
+                                    <p class="section-note mb-2 small">{{ checklist_notes }}</p>
                                 {% endif %}
-                                <p class="section-note mb-3">
+
+                                <p class="section-note mb-2 small text-muted">
                                     {% if checklist_required_for_completion %}
-                                    Fill all required fields before setting status to <strong>Completed</strong>.
+                                    Complete all required fields before marking <strong>Completed</strong>.
                                     {% else %}
-                                    Checklist is optional for this job. Technician can mark the ticket <strong>Completed</strong> even without filling it.
+                                    Checklist is optional for this job.
                                     {% endif %}
                                 </p>
 
-                                <div class="row g-3">
+                                <div class="row g-2">
                                     {% for field in checklist_schema %}
                                         <div class="{% if field.type == 'textarea' %}col-12{% else %}col-md-6{% endif %}">
-                                            <label for="id_checklist_{{ field.key }}" class="form-label">
+                                            <label for="id_checklist_{{ field.key }}" class="form-label small mb-1">
                                                 {{ field.label }}{% if field.required %} <span class="text-danger">*</span>{% endif %}
                                             </label>
 
@@ -177,7 +348,7 @@
                                                 <textarea
                                                     id="id_checklist_{{ field.key }}"
                                                     name="checklist_{{ field.key }}"
-                                                    class="form-control checklist-field"
+                                                    class="form-control form-control-sm checklist-field"
                                                     rows="2"
                                                     placeholder="{{ field.placeholder }}"
                                                     data-check-required="{% if field.required %}1{% else %}0{% endif %}"
@@ -187,7 +358,7 @@
                                                 <select
                                                     id="id_checklist_{{ field.key }}"
                                                     name="checklist_{{ field.key }}"
-                                                    class="form-select checklist-field"
+                                                    class="form-select form-select-sm checklist-field"
                                                     data-check-required="{% if field.required %}1{% else %}0{% endif %}"
                                                     data-check-label="{{ field.label }}"
                                                 >
@@ -209,7 +380,7 @@
                                                         data-check-required="{% if field.required %}1{% else %}0{% endif %}"
                                                         data-check-label="{{ field.label }}"
                                                     >
-                                                    <label class="form-check-label" for="id_checklist_{{ field.key }}">
+                                                    <label class="form-check-label small" for="id_checklist_{{ field.key }}">
                                                         Mark as verified
                                                     </label>
                                                 </div>
@@ -218,7 +389,7 @@
                                                     type="{% if field.type == 'number' %}number{% else %}text{% endif %}"
                                                     id="id_checklist_{{ field.key }}"
                                                     name="checklist_{{ field.key }}"
-                                                    class="form-control checklist-field"
+                                                    class="form-control form-control-sm checklist-field"
                                                     value="{{ field.value }}"
                                                     placeholder="{{ field.placeholder }}"
                                                     {% if field.type == 'number' %}step="0.01"{% endif %}
@@ -228,7 +399,7 @@
                                             {% endif %}
 
                                             {% if field.help_text %}
-                                                <div class="form-text">{{ field.help_text }}</div>
+                                                <div class="form-text small">{{ field.help_text }}</div>
                                             {% endif %}
                                         </div>
                                     {% endfor %}
@@ -236,121 +407,217 @@
                             </div>
                         {% endif %}
 
-                        <button type="submit" class="btn btn-primary" id="update-status-btn" {% if not can_change_status %}disabled{% endif %}>
-                            <i class="fas fa-edit"></i> {% if can_change_status %}Update Job{% else %}Status Locked{% endif %}
-                        </button>
-                        <span id="update-status-message" class="ms-2"></span>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-4">
-            <div class="card mb-3">
-                <div class="card-header">Service Log Actions</div>
-                <div class="card-body">
-                    {% if job.status == 'Specialized Service' %}
-                        <div class="alert alert-warning mb-2">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            Manual service log entry is disabled while this job is in Specialized Service.
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm px-3" id="update-status-btn" {% if not can_change_status %}disabled{% endif %}>
+                                <i class="fas fa-check-circle me-1"></i> {% if can_change_status %}Update Job{% else %}Status Locked{% endif %}
+                            </button>
+                            <span id="update-status-message" class="small"></span>
                         </div>
-                    {% else %}
-                        <form id="quick-add-service-form" class="service-entry-shell">
-                            <input type="hidden" name="action" value="add_service_log">
-                            <div class="mb-2">
-                                <label for="quick_service_description" class="form-label">Description</label>
-                                <input
-                                    type="text"
-                                    class="form-control"
-                                    id="quick_service_description"
-                                    name="description"
-                                    placeholder="Example: Replaced charging IC / Display connector fix"
-                                    maxlength="255"
-                                >
-                            </div>
-                            <div class="row g-2 mb-2">
-                                <div class="col-6">
-                                    <label for="quick_part_cost" class="form-label">Part Cost</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">&#8377;</span>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            class="form-control"
-                                            id="quick_part_cost"
-                                            name="part_cost"
-                                            placeholder="0.00"
-                                            value="0"
-                                        >
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <label for="quick_service_charge" class="form-label">Service Charge</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">&#8377;</span>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            class="form-control"
-                                            id="quick_service_charge"
-                                            name="service_charge"
-                                            placeholder="0.00"
-                                            value="0"
-                                        >
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                                <span class="service-total-preview">Line Total: &#8377;<span id="quick_line_total">0.00</span></span>
-                                <button type="submit" class="btn btn-primary quick-action-btn" id="quick-add-service-btn">
-                                    <i class="fas fa-plus"></i> Add Service
-                                </button>
-                            </div>
-                        </form>
-                        <p class="section-note mt-2 mb-0">Use this quick entry to add parts and labor in one step.</p>
-                    {% endif %}
-                    <span id="add-service-message" class="d-block mt-2"></span>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Specialized Service Request</div>
-                <div class="card-body">
-                    <p class="section-note">
-                        For chip-level repair or external vendor work, send this job to staff.
-                    </p>
-                    <form method="post" action="{% url 'request_specialized_service' job.job_code %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-warning w-100" onclick="return confirm('Send this job for Specialized Service?')">
-                            <i class="fas fa-share-square"></i> Request Specialized Service
-                        </button>
                     </form>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="card">
-        <div class="card-header">Service Logs</div>
-        <div class="card-body">
+        <!-- Right: Specialized Service & Unified Parts/Services Section -->
+        <div class="col-xl-7 col-lg-7">
+            <!-- Specialized Service Delegation Card / Banner -->
             {% if job.status == 'Specialized Service' %}
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i>
-                    Service charges will be automatically added when the job returns from vendor.
+                <div class="alert alert-warning d-flex align-items-center justify-content-between p-3 mb-3 shadow-sm border-0" style="border-left: 4px solid #f59e0b !important;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-truck-loading fa-lg text-warning"></i>
+                        <div>
+                            <div class="fw-bold text-dark">Job is currently in Specialized Service</div>
+                            <div class="small text-muted">Device is with external vendor. Status and parts logging will unlock once returned.</div>
+                        </div>
+                    </div>
+                    <span class="badge bg-warning text-dark px-2 py-1">With Vendor</span>
+                </div>
+            {% else %}
+                <div class="card mb-3 shadow-sm border-0" style="background: linear-gradient(180deg, #fffdf8 0%, #fffbf0 100%); border: 1px solid #fed7aa !important;">
+                    <div class="card-body p-3">
+                        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="rounded-circle bg-warning-subtle text-warning-emphasis d-flex align-items-center justify-content-center" style="width: 34px; height: 34px; min-width: 34px;">
+                                    <i class="fas fa-share-square"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-bold text-dark fs-6">Specialized Service / Vendor Work</div>
+                                    <div class="text-muted small">Need chip-level repair, motherboard rework, or external vendor delegation?</div>
+                                </div>
+                            </div>
+                            <div class="mt-2 mt-sm-0 text-sm-end">
+                                <form method="post" action="{% url 'request_specialized_service' job.job_code %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-warning btn-sm fw-semibold text-dark shadow-xs" onclick="return confirm('Send this job for Specialized Service?')">
+                                        <i class="fas fa-share-square me-1"></i> Request Specialized Service
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             {% endif %}
-            <div id="service-logs-container">
-                {% if service_logs %}
-                    {% include 'job_tickets/_service_logs_table.html' %}
-                {% else %}
-                    <p class="mb-0">No service logs for this job yet.</p>
-                {% endif %}
+
+            <!-- Unified Parts & Service Charges Card -->
+            <div class="card shadow-sm border-0" style="border: 1px solid #dbe5f2 !important;">
+
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-tools text-primary"></i>
+                        <span class="fw-bold">Parts & Service Charges</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="badge-total-items" class="badge bg-secondary-subtle text-dark border">
+                            {{ service_logs|length }} item{{ service_logs|length|pluralize }}
+                        </span>
+                        <span id="badge-grand-total" class="badge bg-primary text-white fs-6">
+                            Total: &#8377;{{ grand_total|floatformat:2 }}
+                        </span>
+                    </div>
+                </div>
+                <div class="card-body p-3">
+                    {% if job.status == 'Specialized Service' %}
+                        <div class="alert alert-warning mb-3">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            <strong>Job with Vendor:</strong> Manual service log entry is disabled while this job is in Specialized Service. Charges will be recorded upon vendor return.
+                        </div>
+                    {% else %}
+                        <!-- Quick Add Service / Part Box -->
+                        <div class="p-3 mb-3 rounded border" style="background: linear-gradient(180deg, #fbfdff 0%, #f4f8fe 100%);">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="fw-bold small text-uppercase text-muted" style="letter-spacing: .04em;">
+                                    <i class="fas fa-plus-circle text-primary me-1"></i> Add Part or Labor Charge
+                                </span>
+                                <span class="service-total-preview py-1 px-2 rounded small fw-bold bg-white border text-primary">
+                                    Line Total: &#8377;<span id="quick_line_total">0.00</span>
+                                </span>
+                            </div>
+
+                            <form id="quick-add-service-form">
+                                <input type="hidden" name="action" value="add_service_log">
+                                <div class="mb-2">
+                                    <input
+                                        type="text"
+                                        class="form-control form-control-sm"
+                                        id="quick_service_description"
+                                        name="description"
+                                        placeholder="Description (e.g. 512GB SSD Upgrade, Screen Replacement, Windows 11 Install)"
+                                        maxlength="255"
+                                        required
+                                    >
+                                </div>
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-sm-4">
+                                        <label for="quick_part_cost" class="form-label small text-muted fw-bold mb-1">Part Cost (&#8377;)</label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">&#8377;</span>
+                                            <input type="number" step="0.01" min="0" class="form-control" id="quick_part_cost" name="part_cost" placeholder="0.00" value="0">
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label for="quick_service_charge" class="form-label small text-muted fw-bold mb-1">Labor / Service (&#8377;)</label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">&#8377;</span>
+                                            <input type="number" step="0.01" min="0" class="form-control" id="quick_service_charge" name="service_charge" placeholder="0.00" value="0">
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold" id="quick-add-service-btn">
+                                            <i class="fas fa-plus me-1"></i> Add Service
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                            <span id="add-service-message" class="d-block mt-2 small"></span>
+                        </div>
+                    {% endif %}
+
+                    <!-- Table of Logged Services -->
+                    <div id="service-logs-container">
+                        {% include 'job_tickets/_service_logs_table.html' %}
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Move Device Location Modal -->
+<div class="modal fade" id="techMoveRackModal" tabindex="-1" aria-labelledby="techMoveRackModalLabel" aria-hidden="true" data-current-rack-id="{{ job.rack_id|default:'' }}" data-current-rack-col="{{ job.rack_column|default:'' }}">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <form id="tech-update-rack-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_rack">
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="techMoveRackModalLabel">
+                        <i class="fa-solid fa-arrows-turn-to-dots text-primary me-2"></i>Move Device Location
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Current Device Info Banner -->
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="badge bg-primary fw-bold px-2 py-1">#{{ job.job_code }}</span>
+                            <span class="text-muted small fw-medium">{{ job.customer_name }}</span>
+                        </div>
+                        <div class="fw-bold text-dark text-truncate">{{ job.device_brand }} {{ job.device_model|default:job.device_type }}</div>
+                        <div class="small text-muted mt-2 pt-2 border-top">
+                            Current Placement: 
+                            <span class="fw-bold text-dark" id="modal-current-loc-text">
+                                {% if job.rack %}{{ job.rack.name }}{% if job.rack_column %} - Col {{ job.rack_column }}{% endif %} ({{ job.rack.group }}){% else %}Unassigned{% endif %}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Destination Rack select -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Destination Rack / Storage Shelf <span class="text-danger">*</span></label>
+                        <select name="rack_id" id="tech_rack_id" class="form-select">
+                            <option value="">-- Remove from Rack (Release to Unassigned) --</option>
+                            {% regroup available_racks by group as racks_by_group %}
+                            {% for group in racks_by_group %}
+                                <optgroup label="{{ group.grouper }}">
+                                    {% for r in group.list %}
+                                        <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}" {% if job.rack_id == r.id %}selected{% endif %}>
+                                            {{ r.name }} ({{ r.group }}) - {{ r.total_columns|default:10 }} cols
+                                        </option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% empty %}
+                                {% for r in available_racks %}
+                                    <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}" {% if job.rack_id == r.id %}selected{% endif %}>
+                                        {{ r.name }} ({{ r.group }}) - {{ r.total_columns|default:10 }} cols
+                                    </option>
+                                {% endfor %}
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Select the destination storage shelf or release the device.</small>
+                    </div>
+
+                    <!-- Destination Column select -->
+                    <div class="mb-3" id="tech-col-select-group">
+                        <label class="form-label fw-semibold text-dark small">Column / Slot Number</label>
+                        <select name="rack_column" id="tech_rack_col" class="form-select">
+                            <option value="">-- General Shelf (No specific col) --</option>
+                        </select>
+                        <small class="text-muted">Numbered slot on the shelf. Can be left unselected if general shelf placement.</small>
+                    </div>
+
+                    <div id="tech-rack-feedback" class="small mt-2" style="min-height: 18px;"></div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm" id="btn-update-tech-rack">
+                        <i class="fa-solid fa-arrows-turn-to-dots me-1"></i>Confirm Move
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -446,17 +713,16 @@
                 if (data.ok) {
                     showMessage('update-status-message', data.message || 'Updated successfully!', 'success');
 
+                    const headerBadge = document.getElementById('header-status-badge');
+                    if (headerBadge && data.status_display) {
+                        headerBadge.textContent = data.status_display;
+                        const s = data.status;
+                        headerBadge.className = 'badge fs-6 ' + (s === 'Completed' ? 'bg-success' : s === 'Repairing' ? 'bg-primary' : s === 'Under Inspection' ? 'bg-info text-dark' : s === 'Specialized Service' ? 'bg-warning text-dark' : 'bg-secondary');
+                    }
+
                     const statusBadge = document.querySelector('.badge-status');
                     if (statusBadge && data.status_display) {
                         statusBadge.textContent = data.status_display;
-                    }
-
-                    const notesParagraph = Array.from(document.querySelectorAll('.card-body p')).find(p =>
-                        p.textContent.includes('Technician Notes')
-                    );
-                    if (notesParagraph && data.technician_notes !== undefined) {
-                        const notesText = data.technician_notes || 'No notes yet.';
-                        notesParagraph.innerHTML = '<strong>Technician Notes:</strong> ' + notesText.replace(/\n/g, '<br>');
                     }
                 } else {
                     if (Array.isArray(data.missing_checklist_fields)) {
@@ -476,6 +742,168 @@
         });
     }
 
+    // 1-Click Quick Workflow Action Triggers
+    document.querySelectorAll('.quick-status-trigger').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const targetStatus = this.dataset.targetStatus;
+            if (statusSelect && updateStatusForm) {
+                statusSelect.value = targetStatus;
+                checkLaborVisibility();
+                if (targetStatus === 'Completed') {
+                    updateStatusForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    showMessage('update-status-message', 'Status set to Completed. Please verify checklist & enter any labor charge, then click Update Job.', 'warning');
+                } else {
+                    updateStatusForm.dispatchEvent(new Event('submit', { cancelable: true }));
+                }
+            }
+        });
+    });
+
+    // Dynamic column options based on selected rack
+    function updateTechColOptions(rackId, selectedCol) {
+        const colSelect = document.getElementById('tech_rack_col');
+        const colGroup = document.getElementById('tech-col-select-group');
+        if (!colSelect) return;
+
+        colSelect.innerHTML = '<option value="">-- General Shelf (No specific col) --</option>';
+        if (!rackId) {
+            if (colGroup) colGroup.style.display = 'none';
+            return;
+        }
+        if (colGroup) colGroup.style.display = 'block';
+
+        const rackSelect = document.getElementById('tech_rack_id');
+        const opt = rackSelect ? rackSelect.querySelector('option[value="' + rackId + '"]') : null;
+        const totalCols = opt ? parseInt(opt.getAttribute('data-total-columns') || '10', 10) : 10;
+
+        for (let i = 1; i <= totalCols; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = 'Col ' + i;
+            if (selectedCol && String(selectedCol) === String(i)) {
+                option.selected = true;
+            }
+            colSelect.appendChild(option);
+        }
+    }
+
+    const techRackSelect = document.getElementById('tech_rack_id');
+    const techModalEl = document.getElementById('techMoveRackModal');
+    if (techRackSelect) {
+        techRackSelect.addEventListener('change', function () {
+            updateTechColOptions(this.value, '');
+        });
+        updateTechColOptions(techRackSelect.value, "{{ job.rack_column|default:'' }}");
+    }
+
+    if (techModalEl) {
+        techModalEl.addEventListener('show.bs.modal', function () {
+            const currentRackId = techModalEl.getAttribute('data-current-rack-id') || '';
+            const currentCol = techModalEl.getAttribute('data-current-rack-col') || '';
+            if (techRackSelect) {
+                techRackSelect.value = currentRackId;
+            }
+            updateTechColOptions(currentRackId, currentCol);
+            const feedback = document.getElementById('tech-rack-feedback');
+            if (feedback) feedback.textContent = '';
+        });
+    }
+
+    // Handle Quick Rack Assignment & Move
+    const techRackForm = document.getElementById('tech-update-rack-form');
+    if (techRackForm) {
+        techRackForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-update-tech-rack');
+            const feedback = document.getElementById('tech-rack-feedback');
+            const liveBadge = document.getElementById('tech-rack-live-badge');
+            const hint = document.getElementById('tech-rack-col-hint');
+            const modalLocText = document.getElementById('modal-current-loc-text');
+            const originalBtnHtml = btn ? btn.innerHTML : '';
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Moving...';
+            }
+            if (feedback) feedback.innerHTML = '';
+
+            const formData = new FormData(techRackForm);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrf(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalBtnHtml;
+                }
+
+                if (data.ok) {
+                    if (liveBadge) {
+                        if (data.is_assigned) {
+                            const colText = data.rack_column ? ` - Col ${data.rack_column}` : '';
+                            liveBadge.innerHTML = `<span class="badge bg-primary text-white px-2 py-1"><i class="fa-solid fa-box-archive me-1"></i> ${data.rack_name}${colText} (${data.rack_group})</span>`;
+                            if (hint) {
+                                hint.innerHTML = `Slot: <strong class="text-dark">${data.rack_column ? 'Col ' + data.rack_column : 'General Shelf'}</strong>`;
+                            }
+                            if (modalLocText) {
+                                modalLocText.textContent = `${data.rack_name}${colText} (${data.rack_group})`;
+                            }
+                        } else {
+                            liveBadge.innerHTML = `<span class="badge bg-secondary-subtle text-secondary border px-2 py-1"><i class="fa-solid fa-box-open me-1"></i> Unassigned</span>`;
+                            if (hint) {
+                                hint.innerHTML = 'No slot assigned';
+                            }
+                            if (modalLocText) {
+                                modalLocText.textContent = 'Unassigned';
+                            }
+                        }
+                    }
+
+                    if (techModalEl) {
+                        techModalEl.setAttribute('data-current-rack-id', data.rack_id || '');
+                        techModalEl.setAttribute('data-current-rack-col', data.rack_column || '');
+                    }
+                    if (techRackSelect) {
+                        techRackSelect.value = data.rack_id || '';
+                    }
+                    updateTechColOptions(data.rack_id || '', data.rack_column || '');
+
+                    showToast(data.message || 'Location updated successfully!', 'Location Updated', 'success');
+
+                    // Close modal
+                    const modalEl = document.getElementById('techMoveRackModal');
+                    if (modalEl && window.bootstrap) {
+                        const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+                        modalInstance.hide();
+                    }
+                } else {
+                    if (feedback) {
+                        feedback.className = 'small mt-1 text-danger';
+                        feedback.textContent = data.message || 'Error updating rack location.';
+                    }
+                }
+            })
+            .catch(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalBtnHtml;
+                }
+                if (feedback) {
+                    feedback.className = 'small mt-1 text-danger';
+                    feedback.textContent = 'Network error while updating rack.';
+                }
+            });
+        });
+    }
+
+
     // Quick Add Service Log via inline form
     const quickAddServiceForm = document.getElementById('quick-add-service-form');
     const quickPartCostInput = document.getElementById('quick_part_cost');
@@ -493,6 +921,46 @@
 
     if (quickPartCostInput) quickPartCostInput.addEventListener('input', updateQuickLineTotal);
     if (quickServiceChargeInput) quickServiceChargeInput.addEventListener('input', updateQuickLineTotal);
+
+    function updateTotalBadges(data) {
+        if (!data) return;
+        const grandTotal = data.grand_total;
+        const partsTotal = data.total_parts_cost;
+        const svcTotal = data.total_service_charges;
+        const itemCount = data.item_count;
+
+        const badgeGrand = document.getElementById('badge-grand-total');
+        if (badgeGrand && grandTotal !== undefined) {
+            badgeGrand.textContent = `Total: ₹${grandTotal}`;
+        }
+        const badgeItems = document.getElementById('badge-total-items');
+        if (badgeItems && itemCount !== undefined) {
+            badgeItems.textContent = `${itemCount} item${itemCount == 1 ? '' : 's'}`;
+        }
+        const tblParts = document.getElementById('table-parts-total');
+        if (tblParts && partsTotal !== undefined) tblParts.textContent = `₹${partsTotal}`;
+        const tblSvc = document.getElementById('table-service-total');
+        if (tblSvc && svcTotal !== undefined) tblSvc.textContent = `₹${svcTotal}`;
+        const tblGrand = document.getElementById('table-grand-total');
+        if (tblGrand && grandTotal !== undefined) tblGrand.textContent = `₹${grandTotal}`;
+    }
+
+    // Dynamic row line total calculator while editing
+    document.addEventListener('input', function(e) {
+        if (e.target.matches('.part-cost-input, .service-charge-input')) {
+            const id = e.target.dataset.logId;
+            if (id) {
+                const partInp = document.querySelector(`input[name="part_cost_${id}"]`);
+                const svcInp = document.querySelector(`input[name="service_charge_${id}"]`);
+                const lineTotalEl = document.getElementById(`line-total-${id}`);
+                const part = parseFloat(partInp ? partInp.value : 0) || 0;
+                const svc = parseFloat(svcInp ? svcInp.value : 0) || 0;
+                if (lineTotalEl) {
+                    lineTotalEl.textContent = (part + svc).toFixed(2);
+                }
+            }
+        }
+    });
 
     if (quickAddServiceForm) {
         quickAddServiceForm.addEventListener('submit', (e) => {
@@ -560,6 +1028,7 @@
                         bindServiceLogsForm();
                     }
                 }
+                updateTotalBadges(data);
             })
             .catch(() => {
                 submitBtn.disabled = false;
@@ -624,6 +1093,7 @@
                         bindServiceLogsForm();
                     }
                 }
+                updateTotalBadges(data);
             })
             .catch(() => showToast('Network error saving service logs', 'Error', 'danger'));
         });
@@ -648,12 +1118,26 @@
                 const row = document.getElementById('service-log-' + id);
                 if (row) row.remove();
                 showToast(data.message || 'Deleted', 'Success', 'success');
+                updateTotalBadges(data);
+                if (data.item_count === 0) {
+                    const container = document.getElementById('service-logs-container');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="p-4 text-center text-muted border rounded bg-light">
+                                <i class="fas fa-tools fa-2x mb-2 text-secondary opacity-50"></i>
+                                <div class="fw-semibold">No services or parts added yet.</div>
+                                <div class="small text-muted">Use the quick entry form above to record parts and labor for this repair.</div>
+                            </div>
+                        `;
+                    }
+                }
             } else {
                 showToast(data.message || 'Could not delete', 'Error', 'danger');
             }
         })
         .catch(() => showToast('Network error deleting log', 'Error', 'danger'));
     });
+
 })();
 </script>
 {% endblock %}

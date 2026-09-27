@@ -48,6 +48,9 @@
                                 <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#whatsapp-integration">
                                     <i class="fa-brands fa-whatsapp me-1"></i>WhatsApp
                                 </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#rack-management">
+                                    <i class="fa-solid fa-boxes-stacked me-1"></i>Racks
+                                </button>
                                 <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#display-scale">
                                     <i class="fa-solid fa-desktop me-1"></i>Display
                                 </button>
@@ -683,6 +686,285 @@
 
                                     </div>
 
+                                    <div class="tab-pane fade" id="rack-management" role="tabpanel" aria-labelledby="tab-rack-management" tabindex="0">
+                                        <!-- Top Action & KPI Summary Row -->
+                                        <div class="row g-3 mb-4">
+                                            <div class="col-sm-6 col-xl-3">
+                                                <div class="card border rounded-3 p-3 bg-light h-100">
+                                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                                        <span class="text-muted small fw-semibold text-uppercase">Total Racks</span>
+                                                        <span class="badge bg-primary-subtle text-primary rounded-pill px-2.5 py-1">
+                                                            <i class="fa-solid fa-boxes-stacked"></i>
+                                                        </span>
+                                                    </div>
+                                                    <div class="fs-4 fw-bold text-dark">{{ total_racks }}</div>
+                                                    <small class="text-muted">{{ rack_groups|length }} Location Group{{ rack_groups|length|pluralize }}</small>
+                                                </div>
+                                            </div>
+
+                                            <div class="col-sm-6 col-xl-3">
+                                                <div class="card border rounded-3 p-3 bg-light h-100">
+                                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                                        <span class="text-muted small fw-semibold text-uppercase">Occupied Racks</span>
+                                                        <span class="badge bg-success-subtle text-success rounded-pill px-2.5 py-1">
+                                                            <i class="fa-solid fa-box-open"></i>
+                                                        </span>
+                                                    </div>
+                                                    <div class="fs-4 fw-bold text-success">{{ occupied_racks }}</div>
+                                                    <small class="text-muted">{{ empty_racks }} Empty / Available</small>
+                                                </div>
+                                            </div>
+
+                                            <div class="col-sm-6 col-xl-3">
+                                                <div class="card border rounded-3 p-3 bg-light h-100">
+                                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                                        <span class="text-muted small fw-semibold text-uppercase">Devices Stored</span>
+                                                        <span class="badge bg-info-subtle text-info rounded-pill px-2.5 py-1">
+                                                            <i class="fa-solid fa-laptop-medical"></i>
+                                                        </span>
+                                                    </div>
+                                                    <div class="fs-4 fw-bold text-dark">{{ total_devices_stored }}</div>
+                                                    <small class="text-muted">In repair storage</small>
+                                                </div>
+                                            </div>
+
+                                            <div class="col-sm-6 col-xl-3">
+                                                <div class="card border rounded-3 p-3 bg-light h-100 d-flex flex-column justify-content-between">
+                                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                                        <span class="text-muted small fw-semibold text-uppercase">New Rack</span>
+                                                        <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2.5 py-1">
+                                                            <i class="fa-solid fa-plus"></i>
+                                                        </span>
+                                                    </div>
+                                                    <button type="button" class="btn btn-primary btn-sm fw-semibold w-100 mt-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#addRackModal">
+                                                        <i class="fa-solid fa-plus me-1"></i> Add Storage Rack
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Filter & Search Toolbar -->
+                                        <div class="card border rounded-3 p-3 mb-4 bg-white shadow-sm">
+                                            <div class="row g-2 align-items-center justify-content-between">
+                                                <div class="col-md-5 col-lg-4">
+                                                    <div class="input-group input-group-sm">
+                                                        <span class="input-group-text bg-light text-muted border-end-0">
+                                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                                        </span>
+                                                        <input type="text" id="rack-search-input" class="form-control form-control-sm border-start-0" placeholder="Search racks, job codes, devices...">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-7 col-lg-8 d-flex flex-wrap gap-2 justify-content-md-end align-items-center">
+                                                    <!-- Group Filters -->
+                                                    <div class="btn-group btn-group-sm" role="group" id="rack-group-filters">
+                                                        <button type="button" class="btn btn-outline-primary active" data-filter-group="all">All Groups</button>
+                                                        {% for grp in rack_groups %}
+                                                        <button type="button" class="btn btn-outline-primary" data-filter-group="{{ grp }}">{{ grp }}</button>
+                                                        {% endfor %}
+                                                    </div>
+
+                                                    <!-- Occupancy Filter -->
+                                                    <div class="btn-group btn-group-sm" role="group" id="rack-occupancy-filters">
+                                                        <button type="button" class="btn btn-outline-secondary active" data-filter-occupancy="all">All</button>
+                                                        <button type="button" class="btn btn-outline-secondary" data-filter-occupancy="occupied">Occupied</button>
+                                                        <button type="button" class="btn btn-outline-secondary" data-filter-occupancy="empty">Empty</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Racks List / Cards -->
+                                        <div class="row g-3" id="racks-container">
+                                            {% for rack in racks %}
+                                            <div class="col-12 rack-card-wrapper" 
+                                                 data-rack-group="{{ rack.group }}" 
+                                                 data-rack-occupied="{% if rack.prefetched_active_jobs|length > 0 %}occupied{% else %}empty{% endif %}"
+                                                 data-rack-search="{{ rack.name|lower }} {{ rack.group|lower }} {{ rack.description|lower }} {% for j in rack.prefetched_active_jobs %}{{ j.job_code|lower }} {{ j.customer_name|lower }} {{ j.device_type|lower }} {{ j.device_brand|lower }} {{ j.device_model|lower }} {% endfor %}">
+                                                <div class="card border rounded-3 shadow-sm h-100 {% if not rack.is_active %}opacity-75 bg-light{% endif %}">
+                                                    <div class="card-header bg-light d-flex flex-wrap justify-content-between align-items-center py-2.5 px-3 border-bottom">
+                                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                            <i class="fa-solid fa-boxes-stacked text-primary fs-5"></i>
+                                                            <span class="fw-bold text-dark fs-6">{{ rack.name }}</span>
+                                                            <span class="badge {% if rack.group == 'Godown' %}bg-warning-subtle text-dark border border-warning-subtle{% elif rack.group == 'Bench' %}bg-info-subtle text-info border border-info-subtle{% else %}bg-primary-subtle text-primary border border-primary-subtle{% endif %} px-2.5 py-1 rounded-pill">
+                                                                <i class="fa-solid {% if rack.group == 'Godown' %}fa-warehouse{% elif rack.group == 'Bench' %}fa-screwdriver-wrench{% else %}fa-shop{% endif %} me-1"></i>{{ rack.group }}
+                                                            </span>
+                                                            <span class="badge bg-secondary-subtle text-dark border px-2 py-0.5 rounded-pill" title="Configured Columns / Slots">
+                                                                <i class="fa-solid fa-table-columns me-1 text-muted"></i>{{ rack.total_columns }} Slot{{ rack.total_columns|pluralize }}
+                                                            </span>
+                                                            {% if not rack.is_active %}
+                                                            <span class="badge bg-secondary-subtle text-secondary px-2 py-0.5">Inactive</span>
+                                                            {% endif %}
+                                                        </div>
+                                                        <div class="d-flex align-items-center gap-2">
+                                                            {% if rack.prefetched_active_jobs|length > 0 %}
+                                                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 rounded-pill fw-semibold">
+                                                                <i class="fa-solid fa-circle-dot me-1"></i>{{ rack.prefetched_active_jobs|length }} Device{{ rack.prefetched_active_jobs|length|pluralize }} Stored
+                                                            </span>
+                                                            {% else %}
+                                                            <span class="badge bg-light text-muted border px-2.5 py-1 rounded-pill">
+                                                                <i class="fa-regular fa-circle me-1"></i>Empty
+                                                            </span>
+                                                            {% endif %}
+
+                                                            <div class="dropdown">
+                                                                <button class="btn btn-sm btn-light border py-1 px-2 text-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                                                </button>
+                                                                <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-1">
+                                                                    <li>
+                                                                        <button type="button" class="dropdown-item py-1.5 edit-rack-trigger"
+                                                                            data-rack-id="{{ rack.id }}"
+                                                                            data-rack-name="{{ rack.name }}"
+                                                                            data-rack-group="{{ rack.group }}"
+                                                                            data-rack-description="{{ rack.description }}"
+                                                                            data-rack-columns="{{ rack.total_columns }}"
+                                                                            data-rack-active="{{ rack.is_active|yesno:'1,0' }}">
+                                                                            <i class="fa-solid fa-pen-to-square me-2 text-primary"></i>Edit Rack
+                                                                        </button>
+                                                                    </li>
+                                                                    {% if rack.prefetched_active_jobs|length == 0 %}
+                                                                    <li><hr class="dropdown-divider my-1"></li>
+                                                                    <li>
+                                                                        <form method="post" action="{% url 'rack_delete' rack.id %}" onsubmit="return confirm('Are you sure you want to delete rack \'{{ rack.name }}\'?');">
+                                                                            {% csrf_token %}
+                                                                            <button type="submit" class="dropdown-item py-1.5 text-danger">
+                                                                                <i class="fa-solid fa-trash-can me-2"></i>Delete Rack
+                                                                            </button>
+                                                                        </form>
+                                                                    </li>
+                                                                    {% endif %}
+                                                                </ul>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="card-body p-3">
+                                                        {% if rack.description %}
+                                                        <p class="text-muted small mb-2"><i class="fa-solid fa-circle-info me-1"></i>{{ rack.description }}</p>
+                                                        {% endif %}
+
+                                                        <!-- Visual Pigeonhole Column Grid -->
+                                                        {% with col_data=rack.get_columns_data %}
+                                                        <div class="mb-3 p-2.5 bg-light rounded-3 border">
+                                                            <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 gap-2">
+                                                                <span class="small fw-bold text-dark text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.4px;">
+                                                                    <i class="fa-solid fa-table-cells me-1 text-primary"></i>Column / Slot Grid ({{ col_data.occupied_slots_count }}/{{ col_data.total_slots }} Occupied)
+                                                                </span>
+                                                                <div class="d-flex align-items-center gap-2">
+                                                                    <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 0.7rem;">
+                                                                        <i class="fa-solid fa-circle me-1" style="font-size: 0.55rem;"></i>Occupied
+                                                                    </span>
+                                                                    <span class="badge bg-white text-muted border border-dashed" style="font-size: 0.7rem;">
+                                                                        <i class="fa-regular fa-circle me-1" style="font-size: 0.55rem;"></i>Available
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="d-flex flex-wrap gap-2">
+                                                                {% for slot in col_data.columns %}
+                                                                    {% if slot.is_occupied %}
+                                                                        <div class="border rounded-2 p-2 bg-white shadow-xs position-relative" style="min-width: 115px; max-width: 155px; flex: 1 1 120px; border-left: 3.5px solid #198754 !important;">
+                                                                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                                                                <span class="badge bg-success text-white px-1.5 py-0.5 fw-bold" style="font-size: 0.68rem;">Col {{ slot.column_num }}</span>
+                                                                                <i class="fa-solid fa-lock text-success" style="font-size: 0.65rem;" title="Occupied"></i>
+                                                                            </div>
+                                                                            {% with job=slot.primary_job %}
+                                                                            <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-decoration-none text-primary d-block text-truncate mt-1" style="font-size: 0.78rem;" title="{{ job.job_code }}">
+                                                                                <i class="fa-solid fa-ticket me-0.5"></i>{{ job.job_code }}
+                                                                            </a>
+                                                                            <div class="text-truncate text-dark fw-medium" style="font-size: 0.73rem;" title="{{ job.customer_name }}">
+                                                                                {{ job.customer_name }}
+                                                                            </div>
+                                                                            <div class="text-truncate text-muted" style="font-size: 0.68rem;" title="{{ job.device_brand }} {{ job.device_model }}">
+                                                                                {{ job.device_model|default:job.device_type }}
+                                                                            </div>
+                                                                            <div class="mt-2 pt-1 border-top">
+                                                                                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1.5 w-100 quick-move-slot-btn"
+                                                                                    data-job-code="{{ job.job_code }}"
+                                                                                    data-job-customer="{{ job.customer_name }}"
+                                                                                    data-job-device="{{ job.device_brand }} {{ job.device_model|default:job.device_type }}"
+                                                                                    data-current-rack-id="{{ rack.id }}"
+                                                                                    data-current-rack-name="{{ rack.name }} ({{ rack.group }})"
+                                                                                    data-current-col="{{ slot.column_num }}"
+                                                                                    style="font-size: 0.68rem;"
+                                                                                    title="Move Device to Another Rack/Slot">
+                                                                                    <i class="fas fa-arrows-turn-to-dots me-0.5"></i>Move
+                                                                                </button>
+                                                                            </div>
+                                                                            {% if slot.extra_count > 0 %}
+                                                                            <span class="badge bg-warning-subtle text-dark border border-warning-subtle mt-1 py-0 px-1" style="font-size: 0.62rem;">+{{ slot.extra_count }} device{{ slot.extra_count|pluralize }}</span>
+                                                                            {% endif %}
+                                                                            {% endwith %}
+                                                                        </div>
+                                                                    {% else %}
+                                                                        <div class="border border-dashed rounded-2 p-2 bg-white text-center position-relative" style="min-width: 95px; max-width: 135px; flex: 1 1 95px;">
+                                                                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                                                                <span class="badge bg-light text-secondary border px-1.5 py-0.5" style="font-size: 0.65rem;">Col {{ slot.column_num }}</span>
+                                                                                <i class="fa-regular fa-circle text-muted" style="font-size: 0.6rem;"></i>
+                                                                            </div>
+                                                                            <div class="text-muted py-1 fw-light" style="font-size: 0.72rem;">
+                                                                                Available
+                                                                            </div>
+                                                                            <button type="button" class="btn btn-xs btn-light border py-0 px-1 w-100 quick-assign-slot-btn text-secondary mt-1"
+                                                                                data-rack-id="{{ rack.id }}"
+                                                                                data-rack-name="{{ rack.name }} ({{ rack.group }})"
+                                                                                data-col="{{ slot.column_num }}"
+                                                                                style="font-size: 0.66rem;"
+                                                                                title="Assign device to Col {{ slot.column_num }}">
+                                                                                <i class="fa-solid fa-plus me-0.5"></i>Assign
+                                                                            </button>
+                                                                        </div>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </div>
+
+                                                            {% if col_data.overflow_jobs %}
+                                                            <div class="mt-2 pt-2 border-top">
+                                                                <span class="badge bg-warning-subtle text-dark border border-warning-subtle me-1">
+                                                                    <i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i>{{ col_data.overflow_jobs|length }} Device{{ col_data.overflow_jobs|length|pluralize }} without Column:
+                                                                </span>
+                                                                <span class="small text-muted d-inline-flex flex-wrap gap-1 align-items-center mt-1">
+                                                                    {% for oj in col_data.overflow_jobs %}
+                                                                        <span class="badge bg-light text-dark border py-0.5 px-2 d-inline-flex align-items-center gap-1">
+                                                                            <a href="{% url 'staff_job_detail' oj.job_code %}" class="fw-semibold text-decoration-none text-dark">
+                                                                                {{ oj.job_code }} ({{ oj.customer_name }})
+                                                                            </a>
+                                                                            <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1 quick-move-slot-btn"
+                                                                                data-job-code="{{ oj.job_code }}"
+                                                                                data-job-customer="{{ oj.customer_name }}"
+                                                                                data-job-device="{{ oj.device_brand }} {{ oj.device_model|default:oj.device_type }}"
+                                                                                data-current-rack-id="{{ rack.id }}"
+                                                                                data-current-rack-name="{{ rack.name }} ({{ rack.group }})"
+                                                                                data-current-col=""
+                                                                                style="font-size: 0.65rem;"
+                                                                                title="Assign to specific column">
+                                                                                <i class="fas fa-arrows-turn-to-dots"></i>
+                                                                            </button>
+                                                                        </span>
+                                                                    {% endfor %}
+                                                                </span>
+                                                            </div>
+                                                            {% endif %}
+                                                        </div>
+                                                        {% endwith %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% empty %}
+                                            <div class="col-12">
+                                                <div class="text-center py-5 border rounded-3 bg-light">
+                                                    <i class="fa-solid fa-boxes-stacked fa-3x text-muted mb-3 d-block"></i>
+                                                    <h5 class="fw-bold text-dark mb-1">No Racks Created Yet</h5>
+                                                    <p class="text-muted small mb-3">Create your first rack or shelf location to organize repair devices in your shop or godown.</p>
+                                                    <button type="button" class="btn btn-primary px-3.5 py-1.5 shadow-sm" data-bs-toggle="modal" data-bs-target="#addRackModal">
+                                                        <i class="fa-solid fa-plus me-1"></i> Create First Rack
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+
                                     <div class="tab-pane fade" id="display-scale" role="tabpanel" aria-labelledby="tab-display-scale" tabindex="0">
                                         <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
                                             <span class="text-muted small">Choose your preferred workspace display density or fine-tune with the slider:</span>
@@ -765,6 +1047,251 @@
                     </form>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Rack Modal -->
+<div class="modal fade" id="addRackModal" tabindex="-1" aria-labelledby="addRackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <form method="post" action="{% url 'rack_create' %}">
+                {% csrf_token %}
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="addRackModalLabel">
+                        <i class="fa-solid fa-boxes-stacked text-primary me-2"></i>Add Storage Rack / Shelf
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Rack / Shelf Identifier <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="e.g. Rack A1, Shelf 2, Tray 10" required autofocus>
+                        <small class="text-muted">Unique identifier label on the physical rack or shelf.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Location Group <span class="text-danger">*</span></label>
+                        <div class="input-group mb-2">
+                            <input type="text" name="group" id="add-rack-group-input" class="form-control" list="rack-group-presets" value="Shop" required>
+                            <datalist id="rack-group-presets">
+                                <option value="Shop">
+                                <option value="Godown">
+                                <option value="Bench">
+                                <option value="Counter">
+                            </datalist>
+                        </div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 quick-group-btn" data-target="#add-rack-group-input" data-value="Shop">Shop</button>
+                            <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 quick-group-btn" data-target="#add-rack-group-input" data-value="Godown">Godown</button>
+                            <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 quick-group-btn" data-target="#add-rack-group-input" data-value="Bench">Bench</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Total Columns / Slots <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="number" name="total_columns" id="add-rack-total-columns" class="form-control" value="10" min="1" max="100" required>
+                            <span class="input-group-text bg-light text-muted small">columns/slots</span>
+                        </div>
+                        <small class="text-muted">Total number of numbered physical slots (e.g. 6, 10, 20) in this rack.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Description / Notes</label>
+                        <textarea name="description" class="form-control" rows="2" placeholder="e.g. Top shelf near billing counter, aisle 2"></textarea>
+                    </div>
+
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="add-rack-is-active" checked>
+                        <label class="form-check-label fw-semibold text-dark small" for="add-rack-is-active">Active (available for intake assignment)</label>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm">
+                        <i class="fa-solid fa-check me-1"></i>Create Rack
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Rack Modal -->
+<div class="modal fade" id="editRackModal" tabindex="-1" aria-labelledby="editRackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <form method="post" id="edit-rack-form" action="">
+                {% csrf_token %}
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="editRackModalLabel">
+                        <i class="fa-solid fa-pen-to-square text-primary me-2"></i>Edit Storage Rack
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Rack / Shelf Identifier <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="edit-rack-name" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Location Group <span class="text-danger">*</span></label>
+                        <div class="input-group mb-2">
+                            <input type="text" name="group" id="edit-rack-group" class="form-control" list="rack-group-presets" required>
+                        </div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 quick-group-btn" data-target="#edit-rack-group" data-value="Shop">Shop</button>
+                            <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 quick-group-btn" data-target="#edit-rack-group" data-value="Godown">Godown</button>
+                            <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 quick-group-btn" data-target="#edit-rack-group" data-value="Bench">Bench</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Total Columns / Slots <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="number" name="total_columns" id="edit-rack-total-columns" class="form-control" value="10" min="1" max="100" required>
+                            <span class="input-group-text bg-light text-muted small">columns/slots</span>
+                        </div>
+                        <small class="text-muted">Total number of numbered physical slots in this rack.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Description / Notes</label>
+                        <textarea name="description" id="edit-rack-description" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="edit-rack-is-active">
+                        <label class="form-check-label fw-semibold text-dark small" for="edit-rack-is-active">Active (available for intake assignment)</label>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm">
+                        <i class="fa-solid fa-save me-1"></i>Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Move Device Location Modal -->
+<div class="modal fade" id="moveSlotModal" tabindex="-1" aria-labelledby="moveSlotModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <form method="post" id="move-slot-form" action="">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'company_profile_settings' %}?tab=rack-management#rack-management">
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="moveSlotModalLabel">
+                        <i class="fa-solid fa-arrows-turn-to-dots text-primary me-2"></i>Move Device Location
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Target Job summary card -->
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="badge bg-primary fw-bold px-2 py-1" id="move-slot-job-badge">#JOB</span>
+                            <span class="text-muted small fw-medium" id="move-slot-customer-name">Customer</span>
+                        </div>
+                        <div class="fw-bold text-dark text-truncate" id="move-slot-device-desc">Device Model</div>
+                        <div class="small text-muted mt-2 pt-2 border-top">
+                            Current Placement: <span class="fw-bold text-dark" id="move-slot-current-loc">Rack - Col X</span>
+                        </div>
+                    </div>
+
+                    <!-- Destination Rack select -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Destination Rack / Storage Shelf <span class="text-danger">*</span></label>
+                        <select name="rack_id" id="move-slot-rack-select" class="form-select">
+                            <option value="">-- Remove from Rack (Release to Unassigned) --</option>
+                            {% for r in racks %}
+                            <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}">
+                                {{ r.name }} ({{ r.group }}) - {{ r.total_columns|default:10 }} cols
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Choose which rack or storage shelf to move this device into.</small>
+                    </div>
+
+                    <!-- Destination Column select -->
+                    <div class="mb-3" id="move-slot-col-group">
+                        <label class="form-label fw-semibold text-dark small">Column / Slot Number</label>
+                        <select name="rack_column" id="move-slot-col-select" class="form-select">
+                            <option value="">-- General Shelf (No specific col) --</option>
+                        </select>
+                        <small class="text-muted">Numbered slot on the shelf. Can be left unselected if general shelf placement.</small>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm">
+                        <i class="fa-solid fa-arrows-turn-to-dots me-1"></i>Confirm Move
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Device to Empty Slot Modal -->
+<div class="modal fade" id="assignSlotModal" tabindex="-1" aria-labelledby="assignSlotModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <form method="post" id="assign-slot-form" action="">
+                {% csrf_token %}
+                <input type="hidden" name="rack_id" id="assign-slot-rack-id" value="">
+                <input type="hidden" name="rack_column" id="assign-slot-column" value="">
+                <input type="hidden" name="next" value="{% url 'company_profile_settings' %}?tab=rack-management#rack-management">
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="assignSlotModalLabel">
+                        <i class="fa-solid fa-box-archive text-primary me-2"></i>Assign Device to Slot
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Slot target preview -->
+                    <div class="p-3 bg-light rounded-3 border mb-3 d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="text-muted small d-block">Target Slot</span>
+                            <span class="fw-bold text-dark fs-6" id="assign-slot-loc-display">Rack A1 - Col 1</span>
+                        </div>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1">
+                            <i class="fa-solid fa-check me-1"></i>Available
+                        </span>
+                    </div>
+
+                    <!-- Select unassigned job ticket -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Select Active Repair Device <span class="text-danger">*</span></label>
+                        {% if unassigned_jobs %}
+                        <select name="job_code_select" id="assign-slot-job-select" class="form-select" required>
+                            <option value="" disabled selected>-- Choose an unassigned repair device --</option>
+                            {% for uj in unassigned_jobs %}
+                            <option value="{{ uj.job_code }}" data-action-url="{% url 'staff_update_job_rack' uj.job_code %}">
+                                {{ uj.job_code }} &bull; {{ uj.customer_name }} &bull; {{ uj.device_brand }} {{ uj.device_model|default:uj.device_type }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Showing active repair devices currently not placed in any slot.</small>
+                        {% else %}
+                        <div class="alert alert-info py-2 px-3 small mb-0">
+                            <i class="fa-solid fa-circle-info me-1"></i>All active repair tickets currently have a rack and slot assigned.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm" id="assign-slot-submit-btn" {% if not unassigned_jobs %}disabled{% endif %}>
+                        <i class="fa-solid fa-check me-1"></i>Assign to This Slot
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -862,6 +1389,10 @@ document.addEventListener('DOMContentLoaded', function () {
             title: 'WhatsApp Automated Messaging Engine',
             subtitle: 'Cloud API credentials, QR Web Bridge session, and diagnostics.'
         },
+        '#rack-management': {
+            title: 'Rack & Device Storage Management',
+            subtitle: 'Organize device storage racks by group (Shop, Godown) and view stored devices.'
+        },
         '#display-scale': {
             title: 'Display & Zoom Scale',
             subtitle: 'Workspace density, typography scaling, and high-DPI monitor settings.'
@@ -871,9 +1402,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function syncCompanySaveBar(target) {
         const isWhatsapp = (target === '#whatsapp-integration');
         const isDisplayScale = (target === '#display-scale');
+        const isRackManagement = (target === '#rack-management');
         const topQuickSave = document.getElementById('top-quick-save-btn');
         if (topQuickSave) {
-            if (isDisplayScale) {
+            if (isDisplayScale || isRackManagement) {
                 topQuickSave.classList.add('d-none');
             } else if (isWhatsapp) {
                 topQuickSave.classList.remove('d-none');
@@ -1384,6 +1916,219 @@ document.addEventListener('DOMContentLoaded', function () {
             fetchBridgeStatus();
         }
     }, 5000);
+
+    // ── Rack Management Interactions ──
+    document.addEventListener('click', function (e) {
+        const groupBtn = e.target.closest('.quick-group-btn');
+        if (groupBtn) {
+            const targetSelector = groupBtn.getAttribute('data-target');
+            const targetVal = groupBtn.getAttribute('data-value');
+            const input = document.querySelector(targetSelector);
+            if (input && targetVal) {
+                input.value = targetVal;
+                input.focus();
+            }
+        }
+
+        const editTrigger = e.target.closest('.edit-rack-trigger');
+        if (editTrigger) {
+            const rackId = editTrigger.getAttribute('data-rack-id');
+            const rackName = editTrigger.getAttribute('data-rack-name') || '';
+            const rackGroup = editTrigger.getAttribute('data-rack-group') || 'Shop';
+            const rackDesc = editTrigger.getAttribute('data-rack-description') || '';
+            const rackColumns = editTrigger.getAttribute('data-rack-columns') || '10';
+            const rackActive = editTrigger.getAttribute('data-rack-active') === '1';
+
+            const form = document.getElementById('edit-rack-form');
+            if (form) {
+                form.action = "{% url 'rack_edit' 0 %}".replace('/0/', '/' + rackId + '/');
+            }
+            const nameInput = document.getElementById('edit-rack-name');
+            const groupInput = document.getElementById('edit-rack-group');
+            const descInput = document.getElementById('edit-rack-description');
+            const colsInput = document.getElementById('edit-rack-total-columns');
+            const activeInput = document.getElementById('edit-rack-is-active');
+
+            if (nameInput) nameInput.value = rackName;
+            if (groupInput) groupInput.value = rackGroup;
+            if (descInput) descInput.value = rackDesc;
+            if (colsInput) colsInput.value = rackColumns;
+            if (activeInput) activeInput.checked = rackActive;
+
+            const editModalEl = document.getElementById('editRackModal');
+            if (editModalEl && window.bootstrap) {
+                const modal = window.bootstrap.Modal.getOrCreateInstance(editModalEl);
+                modal.show();
+            }
+        }
+
+        const moveBtn = e.target.closest('.quick-move-slot-btn');
+        if (moveBtn) {
+            const jobCode = moveBtn.getAttribute('data-job-code');
+            const customer = moveBtn.getAttribute('data-job-customer') || '';
+            const device = moveBtn.getAttribute('data-job-device') || '';
+            const rackId = moveBtn.getAttribute('data-current-rack-id') || '';
+            const rackName = moveBtn.getAttribute('data-current-rack-name') || '';
+            const currentCol = moveBtn.getAttribute('data-current-col') || '';
+
+            const badge = document.getElementById('move-slot-job-badge');
+            const custEl = document.getElementById('move-slot-customer-name');
+            const devEl = document.getElementById('move-slot-device-desc');
+            const locEl = document.getElementById('move-slot-current-loc');
+            if (badge) badge.textContent = '#' + jobCode;
+            if (custEl) custEl.textContent = customer;
+            if (devEl) devEl.textContent = device;
+            if (locEl) locEl.textContent = rackName + (currentCol ? ' - Col ' + currentCol : ' (General / No Slot)');
+
+            const moveForm = document.getElementById('move-slot-form');
+            if (moveForm) {
+                moveForm.action = "{% url 'staff_update_job_rack' 'JOB_CODE_PLACEHOLDER' %}".replace('JOB_CODE_PLACEHOLDER', jobCode);
+            }
+
+            const rackSelect = document.getElementById('move-slot-rack-select');
+            if (rackSelect) {
+                rackSelect.value = rackId;
+                updateMoveColOptions(rackId, currentCol);
+            }
+
+            const moveModalEl = document.getElementById('moveSlotModal');
+            if (moveModalEl && window.bootstrap) {
+                const modal = window.bootstrap.Modal.getOrCreateInstance(moveModalEl);
+                modal.show();
+            }
+        }
+
+        const assignBtn = e.target.closest('.quick-assign-slot-btn');
+        if (assignBtn) {
+            const rackId = assignBtn.getAttribute('data-rack-id') || '';
+            const rackName = assignBtn.getAttribute('data-rack-name') || '';
+            const col = assignBtn.getAttribute('data-col') || '';
+
+            const rackIdInput = document.getElementById('assign-slot-rack-id');
+            const colInput = document.getElementById('assign-slot-column');
+            const locDisplay = document.getElementById('assign-slot-loc-display');
+            if (rackIdInput) rackIdInput.value = rackId;
+            if (colInput) colInput.value = col;
+            if (locDisplay) locDisplay.textContent = rackName + ' - Col ' + col;
+
+            const jobSelect = document.getElementById('assign-slot-job-select');
+            if (jobSelect) {
+                jobSelect.selectedIndex = 0;
+            }
+
+            const assignModalEl = document.getElementById('assignSlotModal');
+            if (assignModalEl && window.bootstrap) {
+                const modal = window.bootstrap.Modal.getOrCreateInstance(assignModalEl);
+                modal.show();
+            }
+        }
+    });
+
+    function updateMoveColOptions(rackId, selectedCol) {
+        const colSelect = document.getElementById('move-slot-col-select');
+        const colGroup = document.getElementById('move-slot-col-group');
+        if (!colSelect) return;
+
+        colSelect.innerHTML = '<option value="">-- General Shelf (No specific slot) --</option>';
+        if (!rackId) {
+            if (colGroup) colGroup.style.display = 'none';
+            return;
+        }
+        if (colGroup) colGroup.style.display = 'block';
+
+        const rackSelect = document.getElementById('move-slot-rack-select');
+        const opt = rackSelect ? rackSelect.querySelector('option[value="' + rackId + '"]') : null;
+        const totalCols = opt ? parseInt(opt.getAttribute('data-total-columns') || '10', 10) : 10;
+
+        for (let i = 1; i <= totalCols; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = 'Col ' + i;
+            if (selectedCol && String(selectedCol) === String(i)) {
+                option.selected = true;
+            }
+            colSelect.appendChild(option);
+        }
+    }
+
+    const moveRackSelect = document.getElementById('move-slot-rack-select');
+    if (moveRackSelect) {
+        moveRackSelect.addEventListener('change', function () {
+            updateMoveColOptions(this.value, '');
+        });
+    }
+
+    const assignForm = document.getElementById('assign-slot-form');
+    if (assignForm) {
+        assignForm.addEventListener('submit', function (e) {
+            const jobSelect = document.getElementById('assign-slot-job-select');
+            if (!jobSelect || !jobSelect.value) {
+                e.preventDefault();
+                alert('Please select an active repair device to assign to this slot.');
+                return;
+            }
+            const selectedOpt = jobSelect.options[jobSelect.selectedIndex];
+            const actionUrl = selectedOpt ? selectedOpt.getAttribute('data-action-url') : '';
+            if (actionUrl) {
+                assignForm.action = actionUrl;
+            } else {
+                e.preventDefault();
+            }
+        });
+    }
+
+    function applyRackFilters() {
+        const searchInput = document.getElementById('rack-search-input');
+        const query = (searchInput?.value || '').trim().toLowerCase();
+        const activeGroupBtn = document.querySelector('#rack-group-filters .btn.active');
+        const groupFilter = activeGroupBtn ? activeGroupBtn.getAttribute('data-filter-group') : 'all';
+        const activeOccBtn = document.querySelector('#rack-occupancy-filters .btn.active');
+        const occFilter = activeOccBtn ? activeOccBtn.getAttribute('data-filter-occupancy') : 'all';
+
+        const rackCards = document.querySelectorAll('.rack-card-wrapper');
+        rackCards.forEach(function (card) {
+            const cardGroup = card.getAttribute('data-rack-group') || '';
+            const cardOcc = card.getAttribute('data-rack-occupied') || '';
+            const cardSearch = card.getAttribute('data-rack-search') || '';
+
+            const matchesGroup = (groupFilter === 'all' || cardGroup.toLowerCase() === groupFilter.toLowerCase());
+            const matchesOcc = (occFilter === 'all' || cardOcc === occFilter);
+            const matchesSearch = (!query || cardSearch.includes(query));
+
+            if (matchesGroup && matchesOcc && matchesSearch) {
+                card.classList.remove('d-none');
+            } else {
+                card.classList.add('d-none');
+            }
+        });
+    }
+
+    const rackSearchInput = document.getElementById('rack-search-input');
+    if (rackSearchInput) {
+        rackSearchInput.addEventListener('input', applyRackFilters);
+    }
+
+    const rackGroupFilters = document.getElementById('rack-group-filters');
+    if (rackGroupFilters) {
+        rackGroupFilters.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-filter-group]');
+            if (!btn) return;
+            rackGroupFilters.querySelectorAll('.btn').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            applyRackFilters();
+        });
+    }
+
+    const rackOccupancyFilters = document.getElementById('rack-occupancy-filters');
+    if (rackOccupancyFilters) {
+        rackOccupancyFilters.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-filter-occupancy]');
+            if (!btn) return;
+            rackOccupancyFilters.querySelectorAll('.btn').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            applyRackFilters();
+        });
+    }
 });
 </script>
 {% endblock %}

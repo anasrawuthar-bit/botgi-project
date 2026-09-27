@@ -236,13 +236,13 @@ def job_creation_receipt_print_view(request, job_code):
     denied = _staff_access_required(request, "staff_dashboard")
     if denied:
         return denied
-    job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    job_ticket = get_object_or_404(JobTicket.objects.select_related('rack'), job_code=job_code)
 
     if job_ticket.customer_group_id:
         grouped_jobs = list(JobTicket.objects.filter(
             workspace_id=job_ticket.workspace_id,
             customer_group_id=job_ticket.customer_group_id,
-        ).order_by('created_at'))
+        ).select_related('rack').order_by('created_at'))
     else:
         grouped_jobs = [job_ticket]
 
@@ -261,7 +261,7 @@ def job_creation_receipt_print_view(request, job_code):
     return render(request, 'job_tickets/job_creation_receipt_print.html', context)
 
 def job_creation_receipt_public_view(request, job_code):
-    job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    job_ticket = get_object_or_404(JobTicket.objects.select_related('rack'), job_code=job_code)
     token = (request.GET.get('token') or '').strip()
     if not verify_receipt_access_token(job_ticket, token):
         return HttpResponseForbidden("Invalid or expired receipt link.")
@@ -270,7 +270,7 @@ def job_creation_receipt_public_view(request, job_code):
         grouped_jobs = list(JobTicket.objects.filter(
             workspace_id=job_ticket.workspace_id,
             customer_group_id=job_ticket.customer_group_id,
-        ).order_by('created_at'))
+        ).select_related('rack').order_by('created_at'))
     else:
         grouped_jobs = [job_ticket]
 
