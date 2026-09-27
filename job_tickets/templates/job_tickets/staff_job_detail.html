@@ -613,7 +613,16 @@
             <div class="card-box job-bill-card mb-4">
                 <div class="job-bill-header">
                     <div>
-                        <h4 class="job-bill-title"><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Bill / Invoice</h4>
+                        <h4 class="job-bill-title d-flex align-items-center gap-2">
+                            <i class="fas fa-file-invoice-dollar text-primary"></i>Bill / Invoice
+                            {% if job.payment_status == 'paid' %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold" style="font-size: 0.75rem;"><i class="fas fa-check-circle me-1"></i>Paid in Full</span>
+                            {% elif job.payment_status == 'part_paid' %}
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-semibold" style="font-size: 0.75rem;"><i class="fas fa-clock me-1"></i>Partially Paid</span>
+                            {% else %}
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold" style="font-size: 0.75rem;"><i class="fas fa-exclamation-circle me-1"></i>Unpaid</span>
+                            {% endif %}
+                        </h4>
                         <div class="text-muted small">Included inside this job card for quick billing review.</div>
                     </div>
                     <div class="d-flex flex-wrap gap-2">
@@ -626,11 +635,6 @@
                     </div>
                 </div>
 
-                <div class="job-bill-total">
-                    <span class="text-muted small d-block">Net Bill Amount</span>
-                    <div class="amount">&#8377;{{ grand_total|floatformat:2 }}</div>
-                </div>
-
                 <div class="job-bill-meta">
                     <div class="job-bill-meta-item">
                         <span class="job-bill-meta-label">Sales Invoice No</span>
@@ -639,14 +643,6 @@
                     <div class="job-bill-meta-item">
                         <span class="job-bill-meta-label">Bill Status</span>
                         <strong>{{ job.get_status_display }}</strong>
-                    </div>
-                    <div class="job-bill-meta-item">
-                        <span class="job-bill-meta-label">Part Total</span>
-                        <strong>&#8377;{{ total_parts_cost|floatformat:2 }}</strong>
-                    </div>
-                    <div class="job-bill-meta-item">
-                        <span class="job-bill-meta-label">Service Total</span>
-                        <strong>&#8377;{{ total_service_charges|floatformat:2 }}</strong>
                     </div>
                 </div>
 
@@ -678,15 +674,8 @@
                 </div>
 
                 <div class="job-bill-footer">
-                    <div class="job-bill-row">
-                        <span>Total Part Cost</span>
-                        <strong>&#8377;{{ total_parts_cost|floatformat:2 }}</strong>
-                    </div>
-                    <div class="job-bill-row">
-                        <span>Total Service Charge</span>
-                        <strong>&#8377;{{ total_service_charges|floatformat:2 }}</strong>
-                    </div>
-                    <div class="job-bill-row">
+                    {% if discount_amount > 0 %}
+                    <div class="job-bill-row text-muted">
                         <span>Subtotal</span>
                         <strong>&#8377;{{ subtotal|floatformat:2 }}</strong>
                     </div>
@@ -694,13 +683,14 @@
                         <span>Discount</span>
                         <strong>- &#8377;{{ discount_amount|floatformat:2 }}</strong>
                     </div>
-                    <div class="job-bill-row fs-5 text-primary border-top pt-2">
+                    {% endif %}
+                    <div class="job-bill-row fs-5 text-dark border-top pt-2">
                         <span class="fw-bold">Grand Total</span>
-                        <strong>&#8377;{{ grand_total|floatformat:2 }}</strong>
+                        <strong class="text-primary">&#8377;{{ grand_total|floatformat:2 }}</strong>
                     </div>
 
                     <!-- Payment Overview Breakdown -->
-                    <div class="job-bill-row text-success pt-2">
+                    <div class="job-bill-row text-success pt-1">
                         <span>Amount Paid</span>
                         <strong>&#8377;{{ amount_paid|floatformat:2 }}</strong>
                     </div>
@@ -708,23 +698,13 @@
                         <span>Balance Due</span>
                         <strong>&#8377;{{ balance_due|floatformat:2 }}</strong>
                     </div>
-                    <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
-                        <div>
-                            <span class="text-muted small d-block">Payment Status</span>
-                            {% if job.payment_status == 'paid' %}
-                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Paid in Full</span>
-                            {% elif job.payment_status == 'part_paid' %}
-                            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Partially Paid</span>
-                            {% else %}
-                            <span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i>Unpaid</span>
-                            {% endif %}
-                        </div>
-                        {% if balance_due > 0 %}
+                    {% if balance_due > 0 %}
+                    <div class="d-flex justify-content-end align-items-center mt-3 pt-2 border-top">
                         <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#collectPaymentModal">
                             <i class="fas fa-hand-holding-dollar me-1"></i> Collect Payment
                         </button>
-                        {% endif %}
                     </div>
+                    {% endif %}
                 </div>
 
                 <!-- Payment Installments & Customer Ledger History -->
