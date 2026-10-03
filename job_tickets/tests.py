@@ -522,6 +522,98 @@ class ClientLoginPhoneNormalizationTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse('client_login'))
 
+    def test_customer_bill_view_renders_when_authorized_and_ready(self):
+        from .views.helpers import build_job_billing_context
+        from .models import ServiceLog, CompanyProfile
+
+        self.job.status = 'Ready for Pickup'
+        self.job.save(update_fields=['status'])
+
+        ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Screen replacement',
+            part_cost=Decimal('1500.00'),
+            service_charge=Decimal('300.00'),
+        )
+
+        token = create_receipt_access_token(self.job)
+        response = self.client.get(
+            reverse('client_bill_view', args=[self.job.job_code]),
+            {'token': token},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.job.job_code)
+        self.assertContains(response, 'Screen replacement')
+        self.assertIn('company', response.context)
+        self.assertEqual(response.context['grand_total'], Decimal('1800.00'))
+
+    def test_build_job_billing_context_with_gst_and_product_sale(self):
+        from .views.helpers import build_job_billing_context
+        from .models import ServiceLog, CompanyProfile, Product, ProductSale
+
+        company = CompanyProfile.get_profile(self.job.workspace)
+        company.enable_gst = True
+        company.gstin = '32AAACG1234A1Z5'
+        company.gst_rate = Decimal('18.00')
+        company.upi_id = 'business@upi'
+        company.save()
+
+        # Add regular service log
+        ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Motherboard Repair',
+            part_cost=Decimal('500.00'),
+            service_charge=Decimal('500.00'),
+        )
+
+        # Add product sale log
+        product = Product.objects.create(
+            workspace=self.job.workspace,
+            name='SSD 512GB NVMe',
+            category='Storage',
+            unit_price=Decimal('2000.00'),
+            cost_price=Decimal('1500.00'),
+            stock_quantity=10,
+        )
+        sale_log = ServiceLog.objects.create(
+            job_ticket=self.job,
+            description='Product Sale - SSD 512GB NVMe (Qty: 1)',
+            part_cost=Decimal('2000.00'),
+            service_charge=Decimal('0.00'),
+        )
+        ProductSale.objects.create(
+            workspace=self.job.workspace,
+            job_ticket=self.job,
+            product=product,
+            service_log=sale_log,
+            quantity=1,
+            unit_price=Decimal('2000.00'),
+            cost_price=Decimal('1500.00'),
+            line_total=Decimal('2000.00'),
+            line_cost=Decimal('1500.00'),
+            line_profit=Decimal('500.00'),
+        )
+
+        self.job.amount_paid = Decimal('1000.00')
+        self.job.save(update_fields=['amount_paid'])
+
+        context = build_job_billing_context(self.job)
+
+        self.assertEqual(context['subtotal'], Decimal('3000.00'))
+        self.assertEqual(context['grand_total'], Decimal('3000.00'))
+        self.assertEqual(context['amount_paid'], Decimal('1000.00'))
+        self.assertEqual(context['balance_due'], Decimal('2000.00'))
+        self.assertTrue(context['enable_gst'])
+        self.assertEqual(context['taxable_amount'] + context['total_gst'], Decimal('3000.00'))
+        self.assertEqual(context['cgst_amount'] + context['sgst_amount'], context['total_gst'])
+        self.assertIn('business@upi', context['upi_payment_url'])
+        self.assertEqual(len(context['service_logs']), 2)
+        # Check product sale enrichment
+        prod_log = [l for l in context['service_logs'] if l['is_product_sale']][0]
+        self.assertEqual(prod_log['product_name'], 'SSD 512GB NVMe')
+        self.assertEqual(prod_log['quantity'], 1)
+
+
 
 class PhoneLookupSnapshotTests(TestCase):
     def test_snapshot_matches_existing_plus_91_client_record(self):
@@ -1058,6 +1150,61 @@ class TechnicianAssignmentAndChecklistTests(TestCase):
         self.assertGreaterEqual(reminder.due_at, before + timedelta(hours=1, minutes=30))
         self.assertLessEqual(reminder.due_at, timezone.now() + timedelta(hours=1, minutes=31))
 
+    def test_staff_dashboard_job_create_with_custom_job_date(self):
+        self.client.force_login(self.staff_user)
+        past_date = (timezone.localdate() - timedelta(days=5)).strftime('%Y-%m-%d')
+        response = self.client.post(
+            reverse('staff_dashboard'),
+            {
+                'job_ticket_form_submit': '1',
+                'customer_name': 'Custom Date Customer',
+                'customer_phone': '9876543299',
+                'job_date': past_date,
+                'device_forms[0].device_type': 'Laptop',
+                'device_forms[0].device_brand': 'Dell',
+                'device_forms[0].device_model': 'Inspiron',
+                'device_forms[0].reported_issue': 'Keyboard issue',
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        job = JobTicket.objects.get(customer_name='Custom Date Customer')
+        self.assertEqual(job.intake_date.strftime('%Y-%m-%d'), past_date)
+        self.assertEqual(job.display_intake_date.strftime('%Y-%m-%d'), past_date)
+        self.assertEqual(timezone.localtime(job.created_at).date(), timezone.localdate())
+
+    def test_staff_job_detail_edit_intake_date(self):
+        job = JobTicket.objects.create(
+            job_code='GI-260407-099',
+            customer_name='Edit Intake Customer',
+            customer_phone='9876543298',
+            device_type='Laptop',
+            reported_issue='Screen flicker',
+            intake_date=timezone.localdate(),
+        )
+        self.client.force_login(self.staff_user)
+        past_date = (timezone.localdate() - timedelta(days=7)).strftime('%Y-%m-%d')
+        response = self.client.post(
+            reverse('staff_job_detail', args=[job.job_code]),
+            {
+                'action': 'edit_customer_device_details',
+                'customer_name': 'Edit Intake Customer',
+                'customer_phone': '9876543298',
+                'device_type': 'Laptop',
+                'reported_issue': 'Screen flicker',
+                'intake_date': past_date,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.intake_date.strftime('%Y-%m-%d'), past_date)
+        self.assertTrue(
+            JobTicketLog.objects.filter(
+                job_ticket=job,
+                action='DETAILS',
+                details__icontains='Intake Date:',
+            ).exists()
+        )
+
     def test_staff_job_detail_can_schedule_reminder_for_selected_datetime(self):
         job = JobTicket.objects.create(
             job_code='GI-260407-017',
@@ -1258,6 +1405,8 @@ class TechnicianAssignmentAndChecklistTests(TestCase):
             {
                 'vendor_cost': '2500.00',
                 'client_charge': '3500.00',
+                'vendor_bill_number': 'INV-2024-TEST',
+                'return_date': '2026-10-02',
             },
         )
 
@@ -1265,6 +1414,7 @@ class TechnicianAssignmentAndChecklistTests(TestCase):
         service.refresh_from_db()
         job.refresh_from_db()
         self.assertEqual(service.status, 'Returned from Vendor')
+        self.assertEqual(service.vendor_bill_number, 'INV-2024-TEST')
         self.assertEqual(service.vendor_cost, Decimal('2500.00'))
         self.assertEqual(service.vendor_discount_amount, Decimal('0.00'))
         self.assertEqual(service.vendor_paid_amount, Decimal('0.00'))
@@ -5436,6 +5586,48 @@ class TechnicianAssignmentAndCompletionTests(TestCase):
         self.assertIsNotNone(labor_log)
         self.assertEqual(labor_log.service_charge, Decimal('450.00'))
 
+    def test_technician_detail_status_update_completed_redirects_to_technician_dashboard(self):
+        self.job.assigned_to = self.tech_profile
+        self.job.status = 'Repairing'
+        self.job.save()
+
+        self.client_obj.force_login(self.tech_user)
+        url = reverse('job_detail_technician', args=[self.job.job_code])
+        response = self.client_obj.post(url, {
+            'action': 'update_status',
+            'status': 'Completed',
+            'labor_charge': '300.00',
+            'technician_notes': 'Repaired successfully',
+        })
+        self.assertRedirects(response, reverse('technician_dashboard'))
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Completed')
+
+    def test_technician_detail_status_update_completed_ajax_returns_redirect_url(self):
+        self.job.assigned_to = self.tech_profile
+        self.job.status = 'Repairing'
+        self.job.save()
+
+        self.client_obj.force_login(self.tech_user)
+        url = reverse('job_detail_technician', args=[self.job.job_code])
+        response = self.client_obj.post(
+            url,
+            {
+                'action': 'update_status',
+                'status': 'Completed',
+                'labor_charge': '300.00',
+                'technician_notes': 'Repaired successfully',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get('ok'))
+        self.assertEqual(data.get('redirect_url'), reverse('technician_dashboard'))
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'Completed')
+
+
 
 class StandaloneTaskSystemTests(TestCase):
     def setUp(self):
@@ -5667,6 +5859,63 @@ class StandaloneTaskSystemTests(TestCase):
         self.assertEqual(task.messages.count(), 1)
         self.assertEqual(task.messages.first().body, 'Arrived at site, beginning configuration.')
 
+    def test_mobile_task_creation_and_lookups_workflow(self):
+        auth_headers = {'HTTP_AUTHORIZATION': f'Bearer {self.mobile_token}'}
+
+        # 1. Technicians lookup
+        tech_resp = self.client.get(reverse('mobile_api_technicians'), **auth_headers)
+        self.assertEqual(tech_resp.status_code, 200)
+        tech_data = tech_resp.json()
+        self.assertIn('technicians', tech_data)
+
+        # 2. Jobs quick-list lookup
+        jobs_resp = self.client.get(reverse('mobile_api_jobs_quicklist'), **auth_headers)
+        self.assertEqual(jobs_resp.status_code, 200)
+        jobs_data = jobs_resp.json()
+        self.assertIn('jobs', jobs_data)
+
+        # 3. Create task from mobile
+        create_payload = {
+            'title': 'Bench Diagnostic for Acer Nitro',
+            'description': 'Check GPU thermal throttling',
+            'priority': 'high',
+            'assign_to_me': True,
+            'initial_message': 'Started logging temperatures',
+        }
+        create_resp = self.client.post(
+            reverse('mobile_api_tasks'),
+            data=json.dumps(create_payload),
+            content_type='application/json',
+            **auth_headers,
+        )
+        self.assertEqual(create_resp.status_code, 201)
+        res_data = create_resp.json()
+        self.assertTrue(res_data['ok'])
+        created_task_id = res_data['task']['id']
+        self.assertEqual(res_data['task']['title'], 'Bench Diagnostic for Acer Nitro')
+        self.assertEqual(res_data['task']['priority'], 'high')
+
+        # 4. Update task details from mobile
+        upd_payload = {
+            'priority': 'urgent',
+            'description': 'GPU thermal paste dried out, fan replacement needed',
+        }
+        detail_upd_resp = self.client.post(
+            reverse('mobile_api_task_detail', args=[created_task_id]),
+            data=json.dumps(upd_payload),
+            content_type='application/json',
+            **auth_headers,
+        )
+        self.assertEqual(detail_upd_resp.status_code, 200)
+        self.assertEqual(detail_upd_resp.json()['task']['priority'], 'urgent')
+
+        # 5. Fetch tasks with metrics
+        list_resp = self.client.get(reverse('mobile_api_tasks'), **auth_headers)
+        self.assertEqual(list_resp.status_code, 200)
+        list_data = list_resp.json()
+        self.assertIn('metrics', list_data)
+        self.assertGreaterEqual(list_data['metrics']['total'], 1)
+
 
 class TaskRealtimeWebSocketTests(TransactionTestCase):
     def setUp(self):
@@ -5815,6 +6064,29 @@ class TaskRealtimeWebSocketTests(TransactionTestCase):
         broadcast_task_status(self.task, 'open', 'in_progress', self.staff_user)
         broadcast_task_created(self.task)
         broadcast_task_deleted(self.workspace.id, self.task.id, self.task.title)
+
+    def test_task_chat_consumer_legacy_workspace_assigned_tech(self):
+        legacy_task = Task.objects.create(
+            workspace=None,
+            title='Legacy Task Without Workspace',
+            description='Should allow assigned tech even without workspace or membership',
+            priority='high',
+            assigned_to=self.tech_profile,
+            created_by=self.staff_user,
+        )
+
+        async def exercise():
+            application = URLRouter(websocket_urlpatterns)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/tasks/{legacy_task.id}/',
+            )
+            communicator.scope['user'] = self.tech_user
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.disconnect()
+
+        asyncio.run(exercise())
 
 
 class ClientManagementLifecycleTests(TestCase):

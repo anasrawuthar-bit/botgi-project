@@ -314,8 +314,68 @@ document.addEventListener('DOMContentLoaded', function() {
             // Check if this is a new job assignment (job might not exist in active jobs yet)
             // Fetch updated active jobs list via AJAX
             fetchActiveJobs();
+        } else if (data.type === 'task_feed_event') {
+            if (data.action === 'task_created' || data.action === 'task_assigned') {
+                showTaskAssignedAlert(data);
+            }
         }
     };
+
+    function playChime() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+            osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.4);
+        } catch (_) {}
+    }
+
+    function showTaskAssignedAlert(data) {
+        playChime();
+        if (window.Notification && Notification.permission === 'granted') {
+            new Notification('New Task Assigned: ' + data.title, {
+                body: (data.priority_display ? 'Priority: ' + data.priority_display : '') + (data.description ? '\n' + data.description : ''),
+                icon: '/static/img/logo.png'
+            });
+        } else if (window.Notification && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'toast align-items-center text-white bg-dark border-0 show shadow-lg position-fixed top-0 end-0 m-3';
+        toast.style.zIndex = '9999';
+        toast.style.minWidth = '320px';
+        const taskUrl = `/technician-tasks/${data.task_id}/`;
+        toast.innerHTML = `
+            <div class="d-flex p-3">
+                <div class="me-3 fs-3 text-warning">
+                    <i class="fas fa-bell"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold fs-6">New Task Assigned!</div>
+                    <div class="text-light small mt-1">${data.title}</div>
+                    <div class="mt-2 d-flex gap-2">
+                        <a href="${taskUrl}" class="btn btn-sm btn-primary py-0 px-2 fw-semibold">View Task</a>
+                        <button type="button" class="btn btn-sm btn-outline-light py-0 px-2 close-btn">Dismiss</button>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Close"></button>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        const dismiss = () => toast.remove();
+        toast.querySelector('.close-btn').onclick = dismiss;
+        toast.querySelector('.btn-close').onclick = dismiss;
+        setTimeout(dismiss, 12000);
+    }
     
     // Function to fetch and update active jobs list
     function fetchActiveJobs() {

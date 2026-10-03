@@ -162,23 +162,25 @@ WSGI_APPLICATION = 'botgi_crm.wsgi.application'
 ASGI_APPLICATION = 'botgi_crm.asgi.application'  # For Django Channels
 
 # Channel layers configuration
-# Using in-memory channel layer for development (no Redis required)
-# For production, use Redis: pip install channels-redis
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
-}
+# In production with Redis: channels_redis.core.RedisChannelLayer
+# In development/tests: channels.layers.InMemoryChannelLayer
+USE_REDIS_CHANNELS = env.bool('USE_REDIS_CHANNELS', default=False)
+if USE_REDIS_CHANNELS and not RUNNING_TESTS:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [REDIS_URL],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
-# For production with Redis, uncomment this instead:
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {
-#             "hosts": [('127.0.0.1', 6379)],
-#         },
-#     },
-# }
 
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default=REDIS_URL)
 CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default=REDIS_URL)
@@ -197,7 +199,7 @@ if database_url:
     DATABASES = {
         'default': {
             **env.db('DATABASE_URL'),
-            'CONN_MAX_AGE': 600,
+            'CONN_MAX_AGE': 0 if (DEBUG or RUNNING_TESTS) else 600,
             'OPTIONS': {
                 'connect_timeout': 10,
                 'options': '-c default_transaction_isolation=read\\ committed -c statement_timeout=30000',

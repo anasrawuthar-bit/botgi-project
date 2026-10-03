@@ -23,8 +23,11 @@ from ..models import (
     CompanyUserMembership,
     DailyJobCodeSequence,
     DeviceChecklistTemplate,
+    DeviceChecklistField,
     DeviceRack,
     Expense,
+    FinancialAccount,
+    AccountTransaction,
     InventoryBill,
     InventoryBillLog,
     InventoryCreditPayment,
@@ -53,7 +56,7 @@ from ..models import (
     VendorPayment,
     WhatsAppIntegrationSettings,
 )
-from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, TaskCreateForm, TaskMessageForm, ExpenseForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset
+from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, TaskCreateForm, TaskMessageForm, ExpenseForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset, FinancialAccountForm, AccountTransferForm
 from ..gst_utils import effective_tax_rate
 from ..phone_utils import normalize_indian_phone, phone_lookup_variants
 from ..whatsapp_service import verify_receipt_access_token
@@ -295,9 +298,6 @@ def _get_job_checklist_answers(job):
 
 def _apply_job_checklist_rules(job, normalized_type, checklist_schema, checklist_notes):
     if not checklist_schema:
-        return checklist_schema, checklist_notes
-
-    if 'laptop' not in normalized_type:
         return checklist_schema, checklist_notes
 
     requires_checklist = bool(getattr(job, 'requires_laptop_inspection_checklist', False))
@@ -595,7 +595,7 @@ def get_mobile_job_available_actions(user, job):
     if job.status in ['Under Inspection', 'Repairing', 'Specialized Service']:
         actions.append({'key': 'complete', 'label': 'Mark Completed'})
 
-    if permissions['is_staff'] and job.status == 'Completed':
+    if permissions['is_staff'] and job.status == 'Completed' and user_has_staff_access(user, 'job_status_change'):
         actions.append({'key': 'ready_for_pickup', 'label': 'Ready for Pickup'})
 
     if permissions['is_staff'] and job.status in ['Completed', 'Ready for Pickup']:
@@ -667,6 +667,22 @@ def get_job_field_presets():
 
     cache.set(cache_key, grouped, 300)
     return grouped
+
+def get_active_checklist_templates(workspace=None):
+    """Return dictionary of active checklist templates keyed by lowercase device_type."""
+    qs = DeviceChecklistTemplate.objects.filter(is_active=True)
+    if workspace:
+        qs = qs.filter(Q(workspace=workspace) | Q(workspace__isnull=True))
+    result = {}
+    for t in qs:
+        key = t.device_type.strip().lower()
+        result[key] = {
+            'id': t.id,
+            'device_type': t.device_type,
+            'name': t.name or f"{t.device_type} Inspection Checklist",
+            'notes': t.notes or '',
+        }
+    return result
 
 def sync_job_field_presets(device_submissions):
     if not device_submissions:
@@ -1201,8 +1217,8 @@ def get_monthly_summary_context(
             'is_discount': False,
         },
         {
-            'label': 'Discount Applied Once',
-            'note': 'Job-level discount deducted from total revenue',
+            'label': 'Customer Discounts',
+            'note': 'Job-level discounts deducted from total revenue',
             'revenue': -total_discounts,
             'revenue_abs': total_discounts,
             'expense': Decimal('0.00'),
@@ -1315,6 +1331,27 @@ def get_monthly_summary_context(
         'period_overhead_expenses': period_overhead_expenses,
         'period_total_expenses': period_total_expenses,
         'period_net_profit': period_net_profit,
+
+        # Liquidity & Financial Accounts Summary
+        'financial_accounts': list(
+            FinancialAccount.objects.filter(workspace=workspace, is_active=True).order_by('-is_default_cash', '-is_default_bank', 'name')
+            if workspace else FinancialAccount.objects.filter(is_active=True).order_by('-is_default_cash', '-is_default_bank', 'name')
+        ),
+        'total_liquid_balance': sum(
+            (a.current_balance for a in FinancialAccount.objects.filter(workspace=workspace, is_active=True) if workspace)
+            if workspace else (a.current_balance for a in FinancialAccount.objects.filter(is_active=True)),
+            Decimal('0.00')
+        ),
+        'total_cash_balance': sum(
+            (a.current_balance for a in FinancialAccount.objects.filter(workspace=workspace, is_active=True, account_type=FinancialAccount.ACCOUNT_TYPE_CASH) if workspace)
+            if workspace else (a.current_balance for a in FinancialAccount.objects.filter(is_active=True, account_type=FinancialAccount.ACCOUNT_TYPE_CASH)),
+            Decimal('0.00')
+        ),
+        'total_bank_balance': sum(
+            (a.current_balance for a in FinancialAccount.objects.filter(workspace=workspace, is_active=True).exclude(account_type=FinancialAccount.ACCOUNT_TYPE_CASH) if workspace)
+            if workspace else (a.current_balance for a in FinancialAccount.objects.filter(is_active=True).exclude(account_type=FinancialAccount.ACCOUNT_TYPE_CASH)),
+            Decimal('0.00')
+        ),
     }
 
 def validate_sales_invoice_number_uniqueness(
@@ -1564,7 +1601,7 @@ def broadcast_task_message(task, msg):
             'sender': msg.sender.username if msg.sender else 'System',
             'sender_id': msg.sender_id,
             'body': msg.body,
-            'sent_at': timezone.localtime(msg.sent_at).strftime('%Y-%m-%d %H:%M'),
+            'sent_at': timezone.localtime(msg.sent_at).strftime('%d %b %Y, %H:%M'),
             'attachments': attachments,
         }
 
@@ -1799,6 +1836,35 @@ def get_jobs_for_report_period(start_of_period, end_of_period, status_filter=Non
     combined_ids = set(regular_jobs.values_list('id', flat=True)) | set(vendor_jobs.values_list('id', flat=True))
     return list(scoped_jobs.filter(id__in=combined_ids).select_related('specialized_service'))
 
+def get_technician_jobs_for_period(start_of_period, end_of_period, workspace=None):
+    """Get jobs completed in the given period for technician performance reporting.
+
+    - For in-house regular jobs: counts jobs that reached 'Completed', 'Ready for Pickup',
+      or 'Closed' status whose completion timestamp (report_completed_at) falls within [start_of_period, end_of_period).
+    - For specialized service (vendor) jobs: counts jobs whose returned_date falls within [start_of_period, end_of_period).
+    """
+    from django.db.models import Q
+    scoped_jobs = with_report_dates(scope_to_workspace(JobTicket.objects, workspace))
+    finished_filter = Q(status__in=['Completed', 'Ready for Pickup', 'Closed'])
+
+    regular_jobs = scoped_jobs.filter(
+        finished_filter,
+        report_completed_at__gte=start_of_period,
+        report_completed_at__lt=end_of_period,
+    ).filter(
+        Q(specialized_service__isnull=True) |
+        Q(specialized_service__status='Awaiting Assignment')
+    )
+
+    vendor_jobs = scoped_jobs.filter(
+        finished_filter,
+        specialized_service__returned_date__gte=start_of_period,
+        specialized_service__returned_date__lt=end_of_period,
+    )
+
+    combined_ids = set(regular_jobs.values_list('id', flat=True)) | set(vendor_jobs.values_list('id', flat=True))
+    return scoped_jobs.filter(id__in=combined_ids)
+
 def calculate_job_totals(jobs, exclude_vendor_charges=False):
     """Calculates part_total, service_total, and total for a list of JobTicket objects."""
     from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -1834,11 +1900,193 @@ def calculate_job_totals(jobs, exclude_vendor_charges=False):
             job.total = Decimal('0')
             job.grand_total = Decimal('0')
 
-# --- CHANNELS HELPER FUNCTION (Removed - Django Channels no longer used) ---
-# def send_job_update_message(job_code, new_status_display):
-#     """Utility to send a real-time status update to all clients watching a job."""
-#     pass
-# ----------------------------------------------------------------------------------
+
+def build_job_billing_context(job, request=None):
+    """
+    Construct a unified, enriched context dict for invoice / billing print views.
+    Includes workspace-aware CompanyProfile, itemized service and spare parts lines,
+    consumed hardware serial numbers, and reverse tax-inclusive GST breakdown.
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+    from urllib.parse import quote
+
+    job_tickets = [job]
+    calculate_job_totals(job_tickets)
+
+    subtotal = job.total
+    discount = job.discount_amount or Decimal('0.00')
+    grand_total = max(Decimal('0.00'), subtotal - discount)
+    amount_paid = job.amount_paid or Decimal('0.00')
+    balance_due = max(Decimal('0.00'), grand_total - amount_paid)
+
+    # Workspace-aware company profile
+    workspace = job.workspace
+    if not workspace and request:
+        workspace = getattr(request, 'current_workspace', None)
+    company = CompanyProfile.get_profile(workspace)
+
+    technician_id = ''
+    technician_name = ''
+    if job.assigned_to:
+        technician_id = job.assigned_to.unique_id or str(job.assigned_to.id)
+        if job.assigned_to.user:
+            technician_name = (
+                job.assigned_to.user.get_full_name()
+                or job.assigned_to.user.username
+            )
+
+    if getattr(company, 'technician_display_format', 'id') == 'name':
+        serviced_by = technician_name or technician_id or 'Workshop Staff'
+    else:
+        serviced_by = technician_id or technician_name or 'Workshop Staff'
+
+    created_by_id = job.created_by.id if job.created_by else 'N/A'
+    created_by_name = ''
+    if job.created_by:
+        created_by_name = (
+            job.created_by.get_full_name()
+            or job.created_by.username
+        )
+
+    # Clean and enrich service logs
+    service_logs = job.service_logs.all().select_related('product_sale__product')
+    cleaned_service_logs = []
+    total_parts = Decimal('0.00')
+    total_service = Decimal('0.00')
+
+    for idx, log in enumerate(service_logs, start=1):
+        if 'Specialized Service' in log.description:
+            description = 'Specialized Service'
+        else:
+            description = log.description
+
+        part_cost = log.part_cost or Decimal('0.00')
+        service_charge = log.service_charge or Decimal('0.00')
+        line_total = part_cost + service_charge
+        total_parts += part_cost
+        total_service += service_charge
+
+        product_sale = getattr(log, 'product_sale', None)
+        if product_sale:
+            is_product_sale = True
+            product_name = product_sale.product.name if product_sale.product else description
+            quantity = product_sale.quantity or 1
+            unit_price = product_sale.unit_price or (line_total / Decimal(quantity))
+        else:
+            is_product_sale = False
+            product_name = ''
+            quantity = 1
+            unit_price = line_total
+
+        cleaned_service_logs.append({
+            'item_number': idx,
+            'description': description,
+            'part_cost': part_cost,
+            'service_charge': service_charge,
+            'is_product_sale': is_product_sale,
+            'product_name': product_name,
+            'quantity': quantity,
+            'unit_price': unit_price,
+            'line_total': line_total,
+        })
+
+    # Serialized parts consumed for this ticket
+    consumed_serials = list(job.consumed_serials.select_related('product').all())
+
+    # GST Breakdown (Tax-inclusive reverse computation)
+    enable_gst = bool(company.enable_gst and (company.gstin or company.gst_rate))
+    gst_rate = company.gst_rate or Decimal('18.00')
+    if enable_gst and gst_rate > Decimal('0.00') and grand_total > Decimal('0.00'):
+        tax_divisor = Decimal('1.00') + (gst_rate / Decimal('100.00'))
+        taxable_amount = (grand_total / tax_divisor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        total_gst = (grand_total - taxable_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        cgst_rate = (gst_rate / Decimal('2')).quantize(Decimal('0.01'))
+        sgst_rate = cgst_rate
+        cgst_amount = (total_gst / Decimal('2')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        sgst_amount = total_gst - cgst_amount
+    else:
+        enable_gst = False
+        taxable_amount = grand_total
+        total_gst = Decimal('0.00')
+        cgst_rate = Decimal('0.00')
+        sgst_rate = Decimal('0.00')
+        cgst_amount = Decimal('0.00')
+        sgst_amount = Decimal('0.00')
+
+    # Resolve default bank / financial account for payment settlement
+    default_bank = None
+    if workspace:
+        default_bank = FinancialAccount.get_default_bank_account(workspace)
+    if not default_bank:
+        default_bank = FinancialAccount.objects.filter(is_active=True, is_default_bank=True).first()
+
+    bank_name = ''
+    account_number = ''
+    ifsc_code = ''
+    branch = ''
+    upi_id = ''
+
+    if default_bank:
+        bank_name = (default_bank.bank_name or default_bank.name or '').strip()
+        account_number = (default_bank.account_number or '').strip()
+        ifsc_code = (default_bank.ifsc_code or '').strip()
+        branch = (default_bank.branch or '').strip()
+        upi_id = (default_bank.upi_id or '').strip()
+
+    # Fallback to company profile if empty
+    bank_name = bank_name or (company.bank_name or '').strip()
+    account_number = account_number or (company.account_number or '').strip()
+    ifsc_code = ifsc_code or (company.ifsc_code or '').strip()
+    branch = branch or (company.branch or '').strip()
+    upi_id = upi_id or (company.upi_id or '').strip()
+
+    # UPI Dynamic Payment URL
+    upi_payment_url = ""
+    effective_upi_id = upi_id or (company.upi_id or '').strip()
+    if effective_upi_id and balance_due > Decimal('0.00'):
+        pa = quote(effective_upi_id, safe='@')
+        pn = quote(company.company_name.strip())
+        am = f"{balance_due:.2f}"
+        tn = quote(f"Job-{job.job_code}")
+        upi_payment_url = f"upi://pay?pa={pa}&pn={pn}&am={am}&cu=INR&tn={tn}"
+
+    autoprint = _parse_autoprint_flag(request, default=True) if request else True
+
+    return {
+        'job': job,
+        'service_logs': cleaned_service_logs,
+        'consumed_serials': consumed_serials,
+        'total_parts': total_parts,
+        'total_service': total_service,
+        'subtotal': subtotal,
+        'discount': discount,
+        'grand_total': grand_total,
+        'amount_paid': amount_paid,
+        'balance_due': balance_due,
+        'taxable_amount': taxable_amount,
+        'enable_gst': enable_gst,
+        'gst_rate': gst_rate,
+        'cgst_rate': cgst_rate,
+        'sgst_rate': sgst_rate,
+        'cgst_amount': cgst_amount,
+        'sgst_amount': sgst_amount,
+        'total_gst': total_gst,
+        'technician_id': technician_id,
+        'technician_name': technician_name,
+        'serviced_by': serviced_by,
+        'created_by_id': created_by_id,
+        'created_by_name': created_by_name,
+        'company': company,
+        'default_bank_account': default_bank,
+        'bank_name': bank_name,
+        'account_number': account_number,
+        'ifsc_code': ifsc_code,
+        'branch': branch,
+        'upi_id': upi_id,
+        'upi_payment_url': upi_payment_url,
+        'autoprint': autoprint,
+    }
+
 
 def _get_post_login_redirect(user):
     if user.is_staff:
@@ -1974,6 +2222,7 @@ def get_report_period(request):
                 'name': period_name,
                 'start_date_str': start_date_str, # Use string from GET for input field
                 'end_date_str': end_date_str,     # Use string from GET for input field
+                'preset': '',
             }
             
         except ValueError:
@@ -2001,9 +2250,31 @@ def get_report_period(request):
             'name': period_name,
             'start_date_str': start_date.strftime('%Y-%m-%d'),
             'end_date_str': end_date_for_input.strftime('%Y-%m-%d'),
+            'preset': 'this_month',
+        }
+
+    # 3. Preset: Previous / Last Month
+    elif preset in ('last_month', 'previous_month'):
+        first_day_current_month = today.replace(day=1)
+        last_day_prev_month = first_day_current_month - timedelta(days=1)
+        start_date = last_day_prev_month.replace(day=1)
+        end_date_boundary = first_day_current_month
+        end_date_for_input = last_day_prev_month
+
+        start_of_period = timezone.make_aware(datetime(start_date.year, start_date.month, start_date.day))
+        end_of_period = timezone.make_aware(datetime(end_date_boundary.year, end_date_boundary.month, end_date_boundary.day))
+        period_name = f"Monthly: {start_date.strftime('%B %Y')}"
+
+        return {
+            'start': start_of_period,
+            'end': end_of_period,
+            'name': period_name,
+            'start_date_str': start_date.strftime('%Y-%m-%d'),
+            'end_date_str': end_date_for_input.strftime('%Y-%m-%d'),
+            'preset': preset,
         }
         
-    # 3. Preset: Last 7 Days (Weekly Meetup)
+    # 4. Preset: Last 7 Days (Weekly Meetup)
     elif preset == 'last_7_days':
         start_date = today - timedelta(days=6)
         end_date = today # Today is the end
@@ -2017,9 +2288,10 @@ def get_report_period(request):
             'name': period_name,
             'start_date_str': start_date.strftime('%Y-%m-%d'),
             'end_date_str': end_date.strftime('%Y-%m-%d'),
+            'preset': 'last_7_days',
         }
 
-    # 4. Fallback/Default: If no parameters are passed, use the default helper.
+    # 5. Fallback/Default: If no parameters are passed, use the default helper.
     return get_report_period_default()
 
 def get_report_period_default():
@@ -2050,6 +2322,7 @@ def get_report_period_default():
         'name': f"Monthly: {start_date.strftime('%B %Y')}",
         'start_date_str': start_date.strftime('%Y-%m-%d'),
         'end_date_str': end_date_for_input.strftime('%Y-%m-%d'), # for input fields
+        'preset': '',
     }
 
 def _parse_autoprint_flag(request, default=True):
@@ -2082,7 +2355,7 @@ def resolve_monthly_summary_period(request):
             end_date_str = ''
 
     if start_date is None or end_date is None:
-        if preset == 'last_month':
+        if preset in ('last_month', 'previous_month'):
             first_day_this_month = today.replace(day=1)
             end_date = first_day_this_month - timedelta(days=1)
             start_date = end_date.replace(day=1)
@@ -2712,9 +2985,31 @@ def _build_inventory_initial_payment(request, entry_type, entry_date):
     if payment_status == 'unpaid':
         return {'status': 'unpaid'}
 
-    payment_method = (request.POST.get('bill_payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
-    if payment_method not in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
-        raise ValueError('Select a valid payment method.')
+    workspace = getattr(request, 'current_workspace', None)
+    financial_account_id = (request.POST.get('financial_account') or '').strip()
+    target_account = None
+    if financial_account_id.isdigit():
+        target_account = scope_to_workspace(
+            FinancialAccount.objects.filter(is_active=True),
+            workspace,
+        ).filter(pk=int(financial_account_id)).first()
+
+    raw_method = (request.POST.get('bill_payment_method') or '').strip()
+    if target_account:
+        if target_account.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            payment_method = InventoryCreditPayment.METHOD_CASH
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_UPI:
+            payment_method = InventoryCreditPayment.METHOD_UPI
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_BANK:
+            payment_method = InventoryCreditPayment.METHOD_TRANSFER
+        else:
+            payment_method = InventoryCreditPayment.METHOD_TRANSFER
+    elif raw_method and raw_method in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
+        payment_method = raw_method
+        target_account = FinancialAccount.get_default_for_payment_method(workspace, payment_method)
+    else:
+        target_account = FinancialAccount.get_default_for_payment_method(workspace, 'cash')
+        payment_method = InventoryCreditPayment.METHOD_CASH
 
     payment_date = entry_date
     payment_date_raw = (request.POST.get('bill_payment_date') or '').strip()
@@ -2736,6 +3031,7 @@ def _build_inventory_initial_payment(request, entry_type, entry_date):
 
     return {
         'status': payment_status,
+        'financial_account': target_account,
         'payment_method': payment_method,
         'payment_date': payment_date,
         'amount_paid': amount_paid,
@@ -2991,13 +3287,15 @@ def _record_inventory_entries(
                         bal_after = (bill_total - pay_amount).quantize(Decimal('0.01'))
                         pay_notes = 'Initial partial payment settlement'
 
-                InventoryCreditPayment.objects.create(
+                target_account = initial_payment.get('financial_account')
+                credit_payment = InventoryCreditPayment.objects.create(
                     workspace=workspace,
                     party=party,
                     bill=bill,
                     direction=direction,
                     payment_date=initial_payment['payment_date'],
                     payment_method=initial_payment['payment_method'],
+                    financial_account=target_account,
                     amount=pay_amount,
                     balance_before=bill_total,
                     balance_after=bal_after,
@@ -3005,6 +3303,30 @@ def _record_inventory_entries(
                     notes=pay_notes,
                     created_by=request.user if request.user.is_authenticated else None,
                 )
+
+                if target_account and pay_amount > Decimal('0.00'):
+                    party_name = party.name if party else 'Direct'
+                    ref_text = f" [Ref: {initial_payment.get('reference_no')}]" if initial_payment.get('reference_no') else ""
+                    if direction in {'in', InventoryCreditPayment.DIRECTION_RECEIVABLE}:
+                        target_account.deposit(
+                            amount=pay_amount,
+                            description=f"Sales Bill {bill.invoice_number or bill.bill_number}: {party_name}{ref_text}",
+                            reference_no=initial_payment.get('reference_no', '') or (bill.invoice_number or bill.bill_number),
+                            transaction_date=initial_payment['payment_date'],
+                            inventory_credit_payment=credit_payment,
+                            job_ticket=job_ticket,
+                            user=request.user if request.user.is_authenticated else None,
+                        )
+                    elif direction in {'out', InventoryCreditPayment.DIRECTION_PAYABLE}:
+                        target_account.withdraw(
+                            amount=pay_amount,
+                            description=f"Purchase Bill {bill.invoice_number or bill.bill_number}: {party_name}{ref_text}",
+                            reference_no=initial_payment.get('reference_no', '') or (bill.invoice_number or bill.bill_number),
+                            transaction_date=initial_payment['payment_date'],
+                            inventory_credit_payment=credit_payment,
+                            job_ticket=job_ticket,
+                            user=request.user if request.user.is_authenticated else None,
+                        )
 
     return created_entries
 
@@ -3946,7 +4268,6 @@ def _record_inventory_credit_payment(request):
     bill_id_raw = (request.POST.get('bill_id') or '').strip()
     amount_raw = (request.POST.get('amount') or '').strip()
     payment_date_raw = (request.POST.get('payment_date') or '').strip()
-    payment_method = (request.POST.get('payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
     reference_no = (request.POST.get('reference_no') or '').strip()
     notes = (request.POST.get('notes') or '').strip()
 
@@ -3957,8 +4278,31 @@ def _record_inventory_credit_payment(request):
     if amount <= Decimal('0.00'):
         raise ValueError('Payment amount must be greater than zero.')
 
-    if payment_method not in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
-        raise ValueError('Select a valid payment method.')
+    workspace = getattr(request, 'current_workspace', None)
+    financial_account_id = (request.POST.get('financial_account') or '').strip()
+    target_account = None
+    if financial_account_id.isdigit():
+        target_account = scope_to_workspace(
+            FinancialAccount.objects.filter(is_active=True),
+            workspace,
+        ).filter(pk=int(financial_account_id)).first()
+
+    raw_method = (request.POST.get('payment_method') or '').strip()
+    if target_account:
+        if target_account.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            payment_method = InventoryCreditPayment.METHOD_CASH
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_UPI:
+            payment_method = InventoryCreditPayment.METHOD_UPI
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_BANK:
+            payment_method = InventoryCreditPayment.METHOD_TRANSFER
+        else:
+            payment_method = InventoryCreditPayment.METHOD_TRANSFER
+    elif raw_method and raw_method in {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}:
+        payment_method = raw_method
+        target_account = FinancialAccount.get_default_for_payment_method(workspace, payment_method)
+    else:
+        target_account = FinancialAccount.get_default_for_payment_method(workspace, 'cash')
+        payment_method = InventoryCreditPayment.METHOD_CASH
 
     payment_date = timezone.localdate()
     if payment_date_raw:
@@ -3969,7 +4313,7 @@ def _record_inventory_credit_payment(request):
 
     with transaction.atomic():
         bill = (
-            scope_to_workspace(InventoryBill.objects.select_for_update(), getattr(request, 'current_workspace', None))
+            scope_to_workspace(InventoryBill.objects.select_for_update(), workspace)
             .select_related('party')
             .filter(pk=int(bill_id_raw))
             .first()
@@ -4002,12 +4346,13 @@ def _record_inventory_credit_payment(request):
 
         balance_after = (balance_before - amount).quantize(Decimal('0.01'))
         payment = InventoryCreditPayment.objects.create(
-            workspace=bill.workspace or getattr(request, 'current_workspace', None),
+            workspace=bill.workspace or workspace,
             party=bill.party,
             bill=bill,
             direction=direction,
             payment_date=payment_date,
             payment_method=payment_method,
+            financial_account=target_account,
             amount=amount.quantize(Decimal('0.01')),
             balance_before=balance_before.quantize(Decimal('0.01')),
             balance_after=balance_after,
@@ -4016,6 +4361,31 @@ def _record_inventory_credit_payment(request):
             created_by=request.user if request.user.is_authenticated else None,
         )
 
+        # Deposit or withdraw into financial account
+        if target_account and amount > Decimal('0.00'):
+            party_name = bill.party.name if bill.party else 'Direct'
+            ref_text = f" [Ref: {reference_no}]" if reference_no else ""
+            if direction in {'in', InventoryCreditPayment.DIRECTION_RECEIVABLE}:
+                target_account.deposit(
+                    amount=amount.quantize(Decimal('0.01')),
+                    description=f"Sales Bill {bill.invoice_number or bill.bill_number}: {party_name}{ref_text}",
+                    reference_no=reference_no or (bill.invoice_number or bill.bill_number),
+                    transaction_date=payment_date,
+                    inventory_credit_payment=payment,
+                    job_ticket=bill.job_ticket if getattr(bill, 'job_ticket_id', None) else None,
+                    user=request.user if request.user.is_authenticated else None,
+                )
+            elif direction in {'out', InventoryCreditPayment.DIRECTION_PAYABLE}:
+                target_account.withdraw(
+                    amount=amount.quantize(Decimal('0.01')),
+                    description=f"Purchase Bill {bill.invoice_number or bill.bill_number}: {party_name}{ref_text}",
+                    reference_no=reference_no or (bill.invoice_number or bill.bill_number),
+                    transaction_date=payment_date,
+                    inventory_credit_payment=payment,
+                    job_ticket=bill.job_ticket if getattr(bill, 'job_ticket_id', None) else None,
+                    user=request.user if request.user.is_authenticated else None,
+                )
+
         # Synchronize JobTicket if this bill is linked to a repair job
         if getattr(bill, 'job_ticket_id', None) and bill.job_ticket:
             job = bill.job_ticket
@@ -4023,10 +4393,12 @@ def _record_inventory_credit_payment(request):
             job.amount_paid = new_amount_paid
             job.payment_status = 'paid' if balance_after <= Decimal('0.00') else 'part_paid'
             job.payment_method = dict(InventoryCreditPayment.METHOD_CHOICES).get(payment_method, payment_method)
+            if target_account:
+                job.financial_account = target_account
             if reference_no:
                 job.payment_reference = reference_no
             job.payment_date = timezone.now()
-            job.save(update_fields=['amount_paid', 'payment_status', 'payment_method', 'payment_reference', 'payment_date', 'updated_at'])
+            job.save(update_fields=['amount_paid', 'payment_status', 'payment_method', 'financial_account', 'payment_reference', 'payment_date', 'updated_at'])
 
             JobTicketLog.objects.create(
                 job_ticket=job,
@@ -4034,8 +4406,8 @@ def _record_inventory_credit_payment(request):
                 action='PAYMENT_RECEIVED',
                 details=(
                     f"Payment of Rs.{_money_text(amount)} recorded via Inventory Dashboard "
-                    f"({job.payment_method}). New balance: Rs.{_money_text(balance_after)} "
-                    f"({job.get_payment_status_display()})."
+                    f"({job.payment_method}{' to ' + target_account.name if target_account else ''}). "
+                    f"New balance: Rs.{_money_text(balance_after)} ({job.get_payment_status_display()})."
                 ),
             )
 
@@ -4043,7 +4415,7 @@ def _record_inventory_credit_payment(request):
         'payment': payment,
         'message': (
             f"{_inventory_credit_action_label(direction)} recorded for "
-            f"{bill.party.name}: Rs.{_money_text(payment.amount)}."
+            f"{bill.party.name if bill.party else 'party'}: Rs.{_money_text(payment.amount)}."
         ),
     }
 
@@ -5713,8 +6085,207 @@ def _inventory_entry_dashboard(request, entry_type):
         'products_catalog_json': products_catalog_json,
         'available_serials_json': available_serials_json,
         'just_recorded_bill_data': just_recorded_bill_data,
+        'financial_accounts': scope_to_workspace(
+            FinancialAccount.objects.filter(is_active=True),
+            current_workspace,
+        ).order_by('-is_default_cash', '-is_default_bank', 'name'),
     }
     return render(request, 'job_tickets/inventory_entry_dashboard.html', context)
+
+def get_daily_daybook_context(target_date, workspace=None):
+    """
+    Computes daily Daybook and Cash Drawer reconciliation for a specific date.
+    Calculates:
+      - Opening Cash in Drawer (at start of day)
+      - Cash Inflows (Jobs paid/part-paid in cash, retail sales)
+      - Cash Outflows (Expenses paid in cash)
+      - Contra Transfers (Cash to Bank deposits, Bank to Cash withdrawals)
+      - Physical Expected Cash in Drawer
+      - Bank / UPI Inflows, Outflows, and Net Movement
+      - Account-by-Account live and closing balances
+      - Itemized chronological audit ledger for the date
+    """
+    from datetime import datetime
+    from decimal import Decimal
+    from django.db.models import Sum
+    from django.db.models.functions import Coalesce
+
+    if not isinstance(target_date, date):
+        if isinstance(target_date, str):
+            try:
+                target_date = datetime.strptime(target_date.strip(), '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                target_date = timezone.localdate()
+        elif hasattr(target_date, 'date'):
+            target_date = target_date.date()
+        else:
+            target_date = timezone.localdate()
+
+    today = timezone.localdate()
+    is_today = (target_date == today)
+
+    # 1. Accounts
+    accounts_qs = FinancialAccount.objects.filter(is_active=True)
+    if workspace:
+        accounts_qs = accounts_qs.filter(workspace=workspace)
+    accounts = list(accounts_qs.order_by('-is_default_cash', '-is_default_bank', 'name'))
+
+    default_cash = next((a for a in accounts if a.is_default_cash), None)
+    if not default_cash:
+        default_cash = next((a for a in accounts if a.account_type == FinancialAccount.ACCOUNT_TYPE_CASH), None)
+
+    default_bank = next((a for a in accounts if a.is_default_bank), None)
+    if not default_bank:
+        default_bank = next((a for a in accounts if a.account_type in [FinancialAccount.ACCOUNT_TYPE_BANK, FinancialAccount.ACCOUNT_TYPE_UPI]), None)
+
+    # 2. Transactions for target_date
+    txns_qs = AccountTransaction.objects.filter(transaction_date=target_date)
+    if workspace:
+        txns_qs = txns_qs.filter(account__workspace=workspace)
+    txns = list(
+        txns_qs.select_related(
+            'account',
+            'job_ticket',
+            'expense',
+            'created_by',
+            'transfer_counterpart__account',
+        ).order_by('created_at', 'id')
+    )
+
+    # 3. Aggregations by Account Type
+    cash_inflows = Decimal('0.00')
+    cash_outflows = Decimal('0.00')
+    cash_to_bank = Decimal('0.00')
+    bank_to_cash = Decimal('0.00')
+
+    bank_inflows = Decimal('0.00')
+    bank_outflows = Decimal('0.00')
+
+    for t in txns:
+        acc_type = t.account.account_type
+        amt = t.amount or Decimal('0.00')
+        if acc_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            if t.transaction_type == AccountTransaction.TYPE_INFLOW:
+                cash_inflows += amt
+            elif t.transaction_type == AccountTransaction.TYPE_OUTFLOW:
+                cash_outflows += amt
+            elif t.transaction_type == AccountTransaction.TYPE_TRANSFER_OUT:
+                cash_to_bank += amt
+            elif t.transaction_type == AccountTransaction.TYPE_TRANSFER_IN:
+                bank_to_cash += amt
+        else:
+            if t.transaction_type == AccountTransaction.TYPE_INFLOW:
+                bank_inflows += amt
+            elif t.transaction_type == AccountTransaction.TYPE_OUTFLOW:
+                bank_outflows += amt
+
+    net_cash_flow = cash_inflows - cash_outflows - cash_to_bank + bank_to_cash
+    net_bank_flow = bank_inflows - bank_outflows + cash_to_bank - bank_to_cash
+    total_receipts = cash_inflows + bank_inflows
+    total_payments = cash_outflows + bank_outflows
+    total_contra = cash_to_bank + bank_to_cash
+    net_liquidity_change = total_receipts - total_payments
+
+    # 4. Cash Drawer Reconciliation (Primary Cash Account)
+    if default_cash:
+        prior_txns = AccountTransaction.objects.filter(
+            account=default_cash,
+            transaction_date__lt=target_date,
+        )
+        prior_in = prior_txns.filter(
+            transaction_type__in=[AccountTransaction.TYPE_INFLOW, AccountTransaction.TYPE_TRANSFER_IN]
+        ).aggregate(total=Coalesce(Sum('amount'), Decimal('0.00')))['total']
+        prior_out = prior_txns.filter(
+            transaction_type__in=[AccountTransaction.TYPE_OUTFLOW, AccountTransaction.TYPE_TRANSFER_OUT]
+        ).aggregate(total=Coalesce(Sum('amount'), Decimal('0.00')))['total']
+        opening_cash = (default_cash.opening_balance or Decimal('0.00')) + prior_in - prior_out
+
+        dc_txns = [t for t in txns if t.account_id == default_cash.id]
+        dc_in = sum((t.amount for t in dc_txns if t.transaction_type == AccountTransaction.TYPE_INFLOW), Decimal('0.00'))
+        dc_out = sum((t.amount for t in dc_txns if t.transaction_type == AccountTransaction.TYPE_OUTFLOW), Decimal('0.00'))
+        dc_dep = sum((t.amount for t in dc_txns if t.transaction_type == AccountTransaction.TYPE_TRANSFER_OUT), Decimal('0.00'))
+        dc_wth = sum((t.amount for t in dc_txns if t.transaction_type == AccountTransaction.TYPE_TRANSFER_IN), Decimal('0.00'))
+        closing_cash = opening_cash + dc_in - dc_out - dc_dep + dc_wth
+    else:
+        opening_cash = Decimal('0.00')
+        closing_cash = Decimal('0.00')
+        dc_in = dc_out = dc_dep = dc_wth = Decimal('0.00')
+
+    # 5. Account-by-Account Breakdown for target_date
+    account_rows = []
+    total_liquid_balance = Decimal('0.00')
+    total_cash_balance = Decimal('0.00')
+    total_bank_balance = Decimal('0.00')
+
+    for acc in accounts:
+        acc_txns = [t for t in txns if t.account_id == acc.id]
+        in_amt = sum((t.amount for t in acc_txns if t.transaction_type == AccountTransaction.TYPE_INFLOW), Decimal('0.00'))
+        out_amt = sum((t.amount for t in acc_txns if t.transaction_type == AccountTransaction.TYPE_OUTFLOW), Decimal('0.00'))
+        tin_amt = sum((t.amount for t in acc_txns if t.transaction_type == AccountTransaction.TYPE_TRANSFER_IN), Decimal('0.00'))
+        tout_amt = sum((t.amount for t in acc_txns if t.transaction_type == AccountTransaction.TYPE_TRANSFER_OUT), Decimal('0.00'))
+        acc_net = (in_amt + tin_amt) - (out_amt + tout_amt)
+
+        curr_bal = acc.current_balance or Decimal('0.00')
+        total_liquid_balance += curr_bal
+        if acc.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            total_cash_balance += curr_bal
+        else:
+            total_bank_balance += curr_bal
+
+        account_rows.append({
+            'account': acc,
+            'name': acc.name,
+            'type': acc.account_type,
+            'type_display': acc.get_account_type_display(),
+            'is_default_cash': acc.is_default_cash,
+            'is_default_bank': acc.is_default_bank,
+            'inflows': in_amt,
+            'outflows': out_amt,
+            'transfers_in': tin_amt,
+            'transfers_out': tout_amt,
+            'net_movement': acc_net,
+            'current_balance': curr_bal,
+            'txns_count': len(acc_txns),
+        })
+
+    return {
+        'target_date': target_date,
+        'target_date_str': target_date.strftime('%Y-%m-%d'),
+        'is_today': is_today,
+        'default_cash': default_cash,
+        'default_bank': default_bank,
+        # Primary Drawer Reconciliation
+        'opening_cash': opening_cash,
+        'dc_in': dc_in,
+        'dc_out': dc_out,
+        'dc_dep': dc_dep,
+        'dc_wth': dc_wth,
+        'closing_cash': closing_cash,
+        'expected_drawer_cash': closing_cash,
+        # Cash Type Totals
+        'cash_inflows': cash_inflows,
+        'cash_outflows': cash_outflows,
+        'cash_to_bank': cash_to_bank,
+        'bank_to_cash': bank_to_cash,
+        'net_cash_flow': net_cash_flow,
+        # Bank / UPI
+        'bank_inflows': bank_inflows,
+        'bank_outflows': bank_outflows,
+        'net_bank_flow': net_bank_flow,
+        # Firm-wide
+        'total_receipts': total_receipts,
+        'total_payments': total_payments,
+        'total_contra': total_contra,
+        'net_liquidity_change': net_liquidity_change,
+        'total_liquid_balance': total_liquid_balance,
+        'total_cash_balance': total_cash_balance,
+        'total_bank_balance': total_bank_balance,
+        # Details
+        'accounts': accounts,
+        'account_rows': account_rows,
+        'transactions': txns,
+        'transactions_count': len(txns),
+    }
 
 def get_company_start_date():
     """Finds the creation date of the very first job ticket."""
@@ -5722,3 +6293,4 @@ def get_company_start_date():
     return first_job.created_at.date() if first_job else timezone.localdate()
 
 __all__ = [name for name in globals() if not name.startswith("__") and name != "__all__"]
+

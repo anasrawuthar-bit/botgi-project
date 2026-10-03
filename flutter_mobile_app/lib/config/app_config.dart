@@ -23,11 +23,8 @@ class AppConfig {
   static String get customBaseUrl => _customBaseUrl;
 
   static String get baseUrl {
-    if (_mode == customMode && _customBaseUrl.isNotEmpty) {
+    if (_customBaseUrl.isNotEmpty) {
       return _customBaseUrl;
-    }
-    if (_mode == prodMode) {
-      return prodBaseUrl;
     }
     return devBaseUrl;
   }
@@ -42,7 +39,7 @@ class AppConfig {
 
   static Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
-    _mode = prefs.getString(_modeKey) ?? devMode;
+    _mode = prefs.getString(_modeKey) ?? customMode;
     _customBaseUrl = prefs.getString(_customUrlKey) ?? '';
   }
 
@@ -59,9 +56,12 @@ class AppConfig {
   }
 
   static String normalizeBaseUrl(String rawUrl) {
-    final trimmed = rawUrl.trim();
+    var trimmed = rawUrl.trim();
     if (trimmed.isEmpty) {
       return '';
+    }
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      trimmed = 'http://$trimmed';
     }
     if (trimmed.endsWith('/')) {
       return trimmed.substring(0, trimmed.length - 1);

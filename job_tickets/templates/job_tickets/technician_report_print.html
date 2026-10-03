@@ -68,15 +68,19 @@
     text-transform: uppercase;
   }
 
-  .filter-field input {
+  .filter-field input,
+  .filter-field select {
     min-width: 160px;
     border: 1px solid #c8d2e0;
     border-radius: 7px;
     padding: 0.48rem 0.6rem;
+    font-size: 0.9rem;
+    background-color: #fff;
+    color: #344054;
   }
 
   .report-brand-line {
-    display: flex;
+    display: none;
     align-items: center;
     gap: 0.85rem;
     padding: 1rem 0;
@@ -103,9 +107,17 @@
 
   .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.75rem;
     margin-bottom: 1rem;
+  }
+
+  .benchmark-banner {
+    background: linear-gradient(180deg, #ffffff 0%, #f8faff 100%);
+    border: 1px solid #c9d8ee;
+    border-radius: 8px;
+    padding: 0.85rem 1.15rem;
+    margin-bottom: 1.25rem;
   }
 
   .kpi-card {
@@ -226,29 +238,57 @@
     color: #175cd3;
   }
 
-  .open-job-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border: 1px solid #c8d2e0;
-    border-radius: 7px;
-    padding: 0.42rem 0.58rem;
-    color: var(--report-ink);
-    background: #fff;
-    text-decoration: none;
-    font-weight: 700;
-    white-space: nowrap;
+  .status-pill.status-ready-for-pickup {
+    background: #fef0c7;
+    color: #b54708;
   }
 
-  .open-job-btn:hover {
-    border-color: #071833;
-    color: #071833;
+  .status-pill.status-closed {
+    background: #eaf7ef;
+    color: #067647;
   }
 
   .empty-row {
     text-align: center;
     color: var(--report-muted);
     padding: 2rem !important;
+  }
+
+  .tech-report-tabs {
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--report-line);
+    padding-bottom: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .tech-report-tabs .nav-link {
+    color: var(--report-muted);
+    background: #f8faff;
+    border: 1px solid var(--report-line);
+    border-radius: 8px;
+    padding: 0.55rem 1.15rem;
+    font-size: 0.92rem;
+    font-weight: 700;
+    transition: all 0.15s ease-in-out;
+  }
+
+  .tech-report-tabs .nav-link:hover {
+    background: #eef4fc;
+    color: var(--report-ink);
+    border-color: #b9cee8;
+  }
+
+  .tech-report-tabs .nav-link.active {
+    background: #071833;
+    color: #ffffff;
+    border-color: #071833;
+    box-shadow: 0 2px 4px rgba(7, 24, 51, 0.15);
+  }
+
+  .tech-report-tabs .nav-link.active .badge {
+    background: rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
   }
 
   @media (max-width: 900px) {
@@ -260,6 +300,12 @@
       justify-content: flex-start;
     }
 
+    .kpi-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
     .kpi-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -288,9 +334,24 @@
     .sidebar-desktop-toggle,
     .tech-report-filter,
     .tech-report-actions,
+    .tech-report-tabs,
     .screen-only,
     footer {
       display: none !important;
+    }
+
+    .report-brand-line {
+      display: flex !important;
+    }
+
+    /* Print only active tab */
+    .tab-content > .tab-pane {
+      display: none !important;
+    }
+
+    .tab-content > .tab-pane.active {
+      display: block !important;
+      opacity: 1 !important;
     }
 
     body,
@@ -373,6 +434,9 @@
         {% else %}
           Reporting Period: All Time Completed/Closed Jobs
         {% endif %}
+        {% if selected_status and selected_status != 'all' %}
+          &middot; Status: <span class="badge bg-secondary">{{ selected_status }}</span>
+        {% endif %}
       </p>
     </div>
     <div class="tech-report-actions d-print-none">
@@ -388,24 +452,7 @@
     </div>
   </div>
 
-  <form class="tech-report-filter d-print-none" method="get">
-    <div class="filter-field">
-      <label for="tech-report-start">Start Date</label>
-      <input id="tech-report-start" type="date" name="start_date" value="{{ report_start_date|default:'' }}">
-    </div>
-    <div class="filter-field">
-      <label for="tech-report-end">End Date</label>
-      <input id="tech-report-end" type="date" name="end_date" value="{{ report_end_date|default:'' }}">
-    </div>
-    <button type="submit" class="btn btn-primary">
-      <i class="fa-solid fa-filter me-1"></i>Filter
-    </button>
-    <a class="btn btn-outline-secondary" href="{% url 'technician_report_print' technician.id %}">
-      <i class="fa-solid fa-rotate-left me-1"></i>All Time
-    </a>
-  </form>
-
-  <div class="report-brand-line">
+  <div class="report-brand-line d-none d-print-flex">
     {% if company.logo %}
       <img src="{{ company.logo.url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="report-logo">
     {% elif company.logo_url %}
@@ -417,101 +464,272 @@
     </div>
   </div>
 
-  <div class="kpi-grid">
-    <div class="kpi-card">
-      <p class="kpi-label">Jobs Counted</p>
-      <p class="kpi-value">{{ jobs_count }}</p>
-      <p class="kpi-note">{{ completed_count }} completed | {{ closed_count }} closed</p>
-    </div>
-    <div class="kpi-card">
-      <p class="kpi-label">Parts Sales</p>
-      <p class="kpi-value">&#8377;{{ total_parts|floatformat:2 }}</p>
-      <p class="kpi-note">Technician service jobs</p>
-    </div>
-    <div class="kpi-card">
-      <p class="kpi-label">Service Sales</p>
-      <p class="kpi-value">&#8377;{{ total_services|floatformat:2 }}</p>
-      <p class="kpi-note">Vendor service charges excluded</p>
-    </div>
-    <div class="kpi-card good">
-      <p class="kpi-label">Net Income</p>
-      <p class="kpi-value">&#8377;{{ total_income|floatformat:2 }}</p>
-      <p class="kpi-note">Avg &#8377;{{ average_income|floatformat:2 }} per job</p>
-    </div>
-  </div>
+  {% with active_tab=request.GET.tab|default:'jobs' %}
+  <!-- Tab navigation pills (hidden in print) -->
+  <ul class="nav nav-pills tech-report-tabs d-print-none mb-3" id="techReportTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link {% if active_tab != 'monthly' %}active{% endif %}" id="jobs-tab" data-bs-toggle="pill" data-bs-target="#tab-jobs" type="button" role="tab" aria-controls="tab-jobs" aria-selected="{% if active_tab != 'monthly' %}true{% else %}false{% endif %}">
+        <i class="fa-solid fa-list-check me-1"></i> Job Records
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link {% if active_tab == 'monthly' %}active{% endif %}" id="monthly-tab" data-bs-toggle="pill" data-bs-target="#tab-monthly" type="button" role="tab" aria-controls="tab-monthly" aria-selected="{% if active_tab == 'monthly' %}true{% else %}false{% endif %}">
+        <i class="fa-solid fa-calendar-days me-1"></i> Monthly Breakdown
+      </button>
+    </li>
+  </ul>
 
-  <div class="report-table-wrap">
-    <table class="report-table" aria-label="Technician report jobs">
-      <thead>
-        <tr>
-          <th>Job</th>
-          <th>Customer</th>
-          <th>Device</th>
-          <th>Status</th>
-          <th>Date</th>
-          <th class="money-cell">Part Cost</th>
-          <th class="money-cell">Service Charge</th>
-          <th class="money-cell">Discount</th>
-          <th class="money-cell">Net Total</th>
-          <th class="screen-only">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for job in jobs %}
-        <tr>
-          <td>
-            <a class="job-code-link" href="{% url 'staff_job_detail' job.job_code %}" target="_blank" rel="noopener">
-              <i class="fa-solid fa-arrow-up-right-from-square screen-only"></i>{{ job.job_code }}
-            </a>
-            <span class="cell-sub">{{ job.customer_phone }}</span>
-          </td>
-          <td>
-            <span class="cell-main">{{ job.customer_name }}</span>
-          </td>
-          <td>
-            <span class="cell-main">{{ job.device_label|default:"-" }}</span>
-            {% if job.device_serial %}
-              <span class="cell-sub">S/N: {{ job.device_serial }}</span>
-            {% endif %}
-          </td>
-          <td>
-            <span class="status-pill status-{{ job.status|slugify }}">{{ job.status }}</span>
-          </td>
-          <td>
-            {{ job.report_date|date:"d M Y" }}
-            <span class="cell-sub">{{ job.report_date|time:"H:i" }}</span>
-          </td>
-          <td class="money-cell">&#8377;{{ job.part_total|default_if_none:0|floatformat:2 }}</td>
-          <td class="money-cell">&#8377;{{ job.service_total|default_if_none:0|floatformat:2 }}</td>
-          <td class="money-cell">&#8377;{{ job.discount_total|default_if_none:0|floatformat:2 }}</td>
-          <td class="money-cell"><strong>&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</strong></td>
-          <td class="screen-only">
-            <a class="open-job-btn" href="{% url 'staff_job_detail' job.job_code %}" target="_blank" rel="noopener">
-              <i class="fa-solid fa-up-right-from-square"></i>Open
-            </a>
-          </td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="10" class="empty-row">No completed/closed jobs found for this technician in the selected period.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot>
-        <tr>
-          <th colspan="5">Totals</th>
-          <td class="money-cell">&#8377;{{ total_parts|floatformat:2 }}</td>
-          <td class="money-cell">&#8377;{{ total_services|floatformat:2 }}</td>
-          <td class="money-cell">&#8377;{{ total_discounts|floatformat:2 }}</td>
-          <td class="money-cell">&#8377;{{ total_income|floatformat:2 }}</td>
-          <td class="screen-only"></td>
-        </tr>
-      </tfoot>
-    </table>
+  <div class="tab-content" id="techReportTabContent">
+    <!-- Tab 1: Job Records -->
+    <div class="tab-pane fade {% if active_tab != 'monthly' %}show active{% endif %}" id="tab-jobs" role="tabpanel" aria-labelledby="jobs-tab">
+      <form class="tech-report-filter d-print-none" method="get">
+        <div class="filter-field">
+          <label for="tech-report-start">Start Date</label>
+          <input id="tech-report-start" type="date" name="start_date" value="{{ report_start_date|default:'' }}">
+        </div>
+        <div class="filter-field">
+          <label for="tech-report-end">End Date</label>
+          <input id="tech-report-end" type="date" name="end_date" value="{{ report_end_date|default:'' }}">
+        </div>
+        <div class="filter-field">
+          <label for="tech-report-status">Status</label>
+          <select id="tech-report-status" name="status" onchange="this.form.submit()">
+            <option value="all" {% if not selected_status or selected_status == 'all' %}selected{% endif %}>All Finished</option>
+            <option value="Ready for Pickup" {% if selected_status == 'Ready for Pickup' %}selected{% endif %}>Ready for Pickup</option>
+            <option value="Closed" {% if selected_status == 'Closed' %}selected{% endif %}>Closed</option>
+            <option value="Completed" {% if selected_status == 'Completed' %}selected{% endif %}>Completed</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">
+          <i class="fa-solid fa-filter me-1"></i>Filter
+        </button>
+        <a class="btn btn-outline-secondary" href="{% url 'technician_report_print' technician.id %}">
+          <i class="fa-solid fa-rotate-left me-1"></i>All Time
+        </a>
+        <div class="d-flex align-items-center gap-1 ms-auto flex-wrap">
+          <span class="text-muted small fw-bold me-1">Status:</span>
+          <a href="?{% if report_start_date and report_end_date %}start_date={{ report_start_date }}&end_date={{ report_end_date }}&{% endif %}status=all" class="btn btn-sm {% if not selected_status or selected_status == 'all' %}btn-dark{% else %}btn-outline-secondary{% endif %}">All</a>
+          <a href="?{% if report_start_date and report_end_date %}start_date={{ report_start_date }}&end_date={{ report_end_date }}&{% endif %}status=Ready+for+Pickup" class="btn btn-sm {% if selected_status == 'Ready for Pickup' %}btn-warning text-dark fw-bold{% else %}btn-outline-warning text-dark{% endif %}">Ready for Pickup</a>
+          <a href="?{% if report_start_date and report_end_date %}start_date={{ report_start_date }}&end_date={{ report_end_date }}&{% endif %}status=Closed" class="btn btn-sm {% if selected_status == 'Closed' %}btn-success text-white fw-bold{% else %}btn-outline-success{% endif %}">Closed</a>
+        </div>
+      </form>
+
+      <!-- Peer Benchmark & Performance Summary Card -->
+      <div class="benchmark-banner">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1.5 fw-bold" style="font-size: 0.85rem;">
+              <i class="fa-solid fa-trophy text-warning me-1"></i> Shop Rank: #{{ rank_vol }} of {{ total_active_techs }}
+            </span>
+            <span class="fw-bold text-dark">{{ benchmark_headline }}</span>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-4 text-secondary small">
+            <div>
+              <i class="fa-solid fa-stopwatch me-1 text-primary"></i> Avg Speed: <strong class="text-dark">{{ avg_tat_display }}</strong> 
+              <span class="badge bg-success-subtle text-success border border-success-subtle ms-1">{{ tat_benchmark_text }}</span>
+            </div>
+            <div>
+              <i class="fa-solid fa-chart-line me-1 text-success"></i> Ticket Avg: <strong class="text-dark">&#8377;{{ average_income|floatformat:2 }}</strong> 
+              <span class="text-muted">({{ ticket_benchmark_text }})</span>
+            </div>
+            <div>
+              <i class="fa-solid fa-calendar-check me-1 text-info"></i> On-Time SLA: 
+              <strong class="text-dark">{% if on_time_rate is not None %}{{ on_time_rate }}%{% else %}100%{% endif %}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-table-wrap">
+        <table class="report-table" aria-label="Technician report jobs">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Customer</th>
+              <th>Device</th>
+              <th>Status</th>
+              <th>Completed</th>
+              <th>Turnaround (TAT)</th>
+              <th class="money-cell">Part Cost</th>
+              <th class="money-cell">Service (Labor)</th>
+              <th class="money-cell">Discount</th>
+              <th class="money-cell">Net Total</th>
+              <th class="money-cell">Est Profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in jobs %}
+            <tr>
+              <td>
+                <a class="job-code-link" href="{% url 'staff_job_detail' job.job_code %}" target="_blank" rel="noopener">
+                  <i class="fa-solid fa-arrow-up-right-from-square screen-only"></i>{{ job.job_code }}
+                </a>
+                <span class="cell-sub">{{ job.customer_phone }}</span>
+              </td>
+              <td>
+                <span class="cell-main">{{ job.customer_name }}</span>
+              </td>
+              <td>
+                <span class="cell-main">{{ job.device_label|default:"-" }}</span>
+                {% if job.device_serial %}
+                  <span class="cell-sub">S/N: {{ job.device_serial }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="status-pill status-{{ job.status|slugify }}">{{ job.status }}</span>
+              </td>
+              <td>
+                {{ job.report_date|date:"d M Y" }}
+                <span class="cell-sub">{{ job.report_date|time:"H:i" }}</span>
+              </td>
+              <td>
+                <span class="cell-main">{{ job.tat_display }}</span>
+                {% if job.is_fast_track %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:0.72rem;">⚡ Fast</span>
+                {% endif %}
+                {% if job.delivery_status %}
+                  <span class="cell-sub {% if job.is_on_time %}text-success{% else %}text-danger{% endif %} fw-semibold">
+                    {{ job.delivery_status }}
+                  </span>
+                {% endif %}
+              </td>
+              <td class="money-cell">&#8377;{{ job.part_total|default_if_none:0|floatformat:2 }}</td>
+              <td class="money-cell">&#8377;{{ job.service_total|default_if_none:0|floatformat:2 }}</td>
+              <td class="money-cell">&#8377;{{ job.discount_total|default_if_none:0|floatformat:2 }}</td>
+              <td class="money-cell"><strong>&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</strong></td>
+              <td class="money-cell text-success"><strong>&#8377;{{ job.profit|default_if_none:0|floatformat:2 }}</strong></td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="11" class="empty-row">
+                {% if selected_status and selected_status != 'all' %}
+                  No '{{ selected_status }}' jobs found for this technician in the selected period.
+                {% else %}
+                  No completed/closed jobs found for this technician in the selected period.
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="6">
+                Totals &nbsp;&middot;&nbsp; <strong>{{ jobs_count }} {% if jobs_count == 1 %}Job{% else %}Jobs{% endif %}</strong>
+                <span class="cell-sub fw-normal text-muted" style="font-size: 0.82rem; margin-top: 0.15rem;">
+                  {% if selected_status == 'Ready for Pickup' %}
+                    ({{ ready_count }} ready for pickup)
+                  {% elif selected_status == 'Closed' %}
+                    ({{ closed_count }} closed)
+                  {% elif selected_status == 'Completed' %}
+                    ({{ completed_count }} completed)
+                  {% else %}
+                    ({{ ready_count }} ready for pickup &middot; {{ closed_count }} closed{% if completed_count %} &middot; {{ completed_count }} completed{% endif %})
+                  {% endif %}
+                </span>
+              </th>
+              <td class="money-cell">&#8377;{{ total_parts|floatformat:2 }}</td>
+              <td class="money-cell">&#8377;{{ total_services|floatformat:2 }}</td>
+              <td class="money-cell">&#8377;{{ total_discounts|floatformat:2 }}</td>
+              <td class="money-cell">&#8377;{{ total_income|floatformat:2 }}</td>
+              <td class="money-cell text-success">&#8377;{{ total_profit|floatformat:2 }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 2: Monthly Breakdown -->
+    <div class="tab-pane fade {% if active_tab == 'monthly' %}show active{% endif %}" id="tab-monthly" role="tabpanel" aria-labelledby="monthly-tab">
+      <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+        <div>
+          <h2 class="h5 fw-bold mb-1 text-dark">
+            <i class="fa-solid fa-calendar-check text-primary me-2"></i>Monthly Closed &amp; Ready for Pickup Breakdown
+          </h2>
+          <p class="small text-muted mb-0">
+            Historical month-by-month values for realized closed jobs and ready-for-pickup jobs handled by {{ technician_name }} (months with zero values hidden).
+          </p>
+        </div>
+      </div>
+
+      <div class="report-table-wrap">
+        <table class="report-table" aria-label="Technician monthly closed and ready for pickup breakdown">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th class="money-cell">Closed Jobs</th>
+              <th class="money-cell">Closed Value</th>
+              <th class="money-cell">Ready for Pickup Jobs</th>
+              <th class="money-cell">Ready for Pickup Value</th>
+              <th class="money-cell">Combined Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in monthly_breakdown %}
+            <tr>
+              <td>
+                <span class="cell-main">{{ row.month_label }}</span>
+                <span class="cell-sub">{{ row.month_key }}</span>
+              </td>
+              <td class="money-cell">{{ row.closed_count }}</td>
+              <td class="money-cell fw-bold text-dark">&#8377;{{ row.closed_value|floatformat:2 }}</td>
+              <td class="money-cell">{{ row.ready_count }}</td>
+              <td class="money-cell fw-bold text-primary">&#8377;{{ row.ready_value|floatformat:2 }}</td>
+              <td class="money-cell fw-bold text-success">&#8377;{{ row.combined_value|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6" class="empty-row">No closed or ready for pickup jobs recorded for this technician yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          {% if monthly_breakdown %}
+          <tfoot>
+            <tr>
+              <th>
+                Totals &nbsp;&middot;&nbsp; <strong>{{ monthly_breakdown|length }} {% if monthly_breakdown|length == 1 %}Month{% else %}Months{% endif %}</strong>
+              </th>
+              <td class="money-cell">{{ monthly_breakdown_totals.closed_count }}</td>
+              <td class="money-cell text-dark">&#8377;{{ monthly_breakdown_totals.closed_value|floatformat:2 }}</td>
+              <td class="money-cell">{{ monthly_breakdown_totals.ready_count }}</td>
+              <td class="money-cell text-primary">&#8377;{{ monthly_breakdown_totals.ready_value|floatformat:2 }}</td>
+              <td class="money-cell text-success">&#8377;{{ monthly_breakdown_totals.combined_value|floatformat:2 }}</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
   </div>
+  {% endwith %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 {% include "job_tickets/includes/print_flow_script.html" %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var hash = window.location.hash;
+    if (hash === '#tab-monthly') {
+      var monthlyTabEl = document.getElementById('monthly-tab');
+      if (monthlyTabEl && window.bootstrap && window.bootstrap.Tab) {
+        window.bootstrap.Tab.getOrCreateInstance(monthlyTabEl).show();
+      }
+    }
+
+    var tabButtons = document.querySelectorAll('#techReportTabs button[data-bs-toggle="pill"]');
+    tabButtons.forEach(function (btn) {
+      btn.addEventListener('shown.bs.tab', function (e) {
+        var targetId = e.target.getAttribute('data-bs-target');
+        if (targetId) {
+          history.replaceState(null, null, targetId);
+          if (targetId === '#tab-monthly') {
+            document.title = 'Monthly Breakdown - {{ technician_name|escapejs }} | Service Billing';
+          } else {
+            document.title = 'Technician Report - {{ technician_name|escapejs }} | Service Billing';
+          }
+        }
+      });
+    });
+  });
+</script>
 {% endblock %}

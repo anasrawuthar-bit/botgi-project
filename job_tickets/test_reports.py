@@ -138,8 +138,35 @@ class ReportConsistencyTests(TestCase):
         self.assertEqual(row.jobs_done, 1)
         self.assertEqual(row.monthly_parts_sales, detail['total_parts'])
         self.assertEqual(row.monthly_service_sales, detail['total_services'])
+        self.assertEqual(row.monthly_total_sales, Decimal('150.00'))
+        self.assertEqual(dashboard['tech_total_jobs'], 1)
+        self.assertEqual(dashboard['tech_total_parts_sales'], Decimal('100.00'))
+        self.assertEqual(dashboard['tech_total_service_sales'], Decimal('50.00'))
+        self.assertEqual(dashboard['tech_total_combined_sales'], Decimal('150.00'))
         response = report_views.technician_report_export_csv(self.request(**params), self.technician.pk)
         self.assertIn(job.job_code, response.content.decode())
+
+    def test_technician_performance_counts_completed_in_month_and_links_full_report(self):
+        # Job 1: completed today -> should count today
+        job1 = self.job('REPORT-TECH-COMP-TODAY', 'Completed')
+        self.transition(job1, 'Completed', self.start + timedelta(hours=2))
+        ServiceLog.objects.create(job_ticket=job1, description='Screen', part_cost=200, service_charge=100)
+
+        # Job 2: completed 10 days ago (prior period), closed today -> should NOT count in today's performance
+        job2 = self.job('REPORT-TECH-PREV-COMP', 'Closed')
+        self.transition(job2, 'Completed', self.start - timedelta(days=10))
+        self.transition(job2, 'Closed', self.start + timedelta(hours=4))
+        ServiceLog.objects.create(job_ticket=job2, description='Battery', part_cost=50, service_charge=50)
+
+        params = {'start_date': self.today.isoformat(), 'end_date': self.today.isoformat(), 'tab': 'technician'}
+        dashboard = self.context(report_views.reports_dashboard, self.request(**params))
+        row = dashboard['monthly_tech_performance'][0]
+
+        # Only job1 was completed in this period
+        self.assertEqual(row.jobs_done, 1)
+        self.assertEqual(row.monthly_parts_sales, Decimal('200.00'))
+        self.assertEqual(row.monthly_service_sales, Decimal('100.00'))
+        self.assertEqual(dashboard['tech_total_jobs'], 1)
 
     def test_foreign_technician_report_returns_404(self):
         user = User.objects.create_user('foreign-report-tech')
@@ -162,6 +189,10 @@ class ReportConsistencyTests(TestCase):
         self.assertEqual(row.total_jobs_given, detail['total_jobs'])
         self.assertEqual(row.total_vendor_cost, detail['total_vendor_cost'])
         self.assertEqual(row.total_client_charge, detail['total_client_charge'])
+        self.assertEqual(dashboard['vendor_total_jobs'], 1)
+        self.assertEqual(dashboard['vendor_total_cost'], Decimal('100.00'))
+        self.assertEqual(dashboard['vendor_total_client_charge'], Decimal('150.00'))
+        self.assertEqual(dashboard['vendor_total_profit'], Decimal('50.00'))
 
     def test_period_includes_last_fractional_second_but_not_next_day(self):
         first = self.job('REPORT-LAST-SECOND')
@@ -191,7 +222,7 @@ class ReportConsistencyTests(TestCase):
 
     def test_dashboard_tabs_render_with_shared_period_and_financial_exports(self):
         self.client.force_login(self.admin)
-        for tab, heading in [('overview', "Today's activity"), ('financial', 'Financial summary'),
+        for tab, heading in [('overview', "Today's activity"), ('financial', 'Financial Summary'),
                              ('technician', 'Technician performance'), ('vendor', 'Vendor performance')]:
             response = self.client.get(reverse('reports_dashboard'), {
                 'tab': tab, 'start_date': self.today.isoformat(), 'end_date': self.today.isoformat(),
@@ -230,6 +261,190 @@ class ReportConsistencyTests(TestCase):
         self.assertContains(response, "Today's activity")
         self.assertNotContains(response, 'Revenue after discounts')
         self.assertNotContains(response, 'Export CSV')
+
+    def test_monthly_closed_and_ready_breakdown(self):
+        closed_job = self.job('REPORT-MONTHLY-CLOSED', status='Closed')
+        self.transition(closed_job, 'Closed', self.start + timedelta(hours=5))
+        ServiceLog.objects.create(job_ticket=closed_job, description='Screen', part_cost=1000, service_charge=500)
+
+        ready_job = self.job('REPORT-MONTHLY-READY', status='Ready for Pickup')
+        self.transition(ready_job, 'Ready for Pickup', self.start + timedelta(hours=6))
+        ServiceLog.objects.create(job_ticket=ready_job, description='Battery', part_cost=500, service_charge=200)
+
+        breakdown, totals = report_views.get_monthly_closed_and_ready_breakdown(self.workspace)
+        self.assertGreaterEqual(len(breakdown), 1)
+        current_m = self.today.strftime('%Y-%m')
+        match = next((b for b in breakdown if b['month_key'] == current_m), None)
+        self.assertIsNotNone(match)
+        self.assertGreaterEqual(match['closed_count'], 1)
+        self.assertGreaterEqual(match['closed_value'], Decimal('1500.00'))
+        self.assertGreaterEqual(match['ready_count'], 1)
+        self.assertGreaterEqual(match['ready_value'], Decimal('700.00'))
+        self.assertEqual(match['combined_value'], match['closed_value'] + match['ready_value'])
+        self.assertEqual(totals['combined_value'], totals['closed_value'] + totals['ready_value'])
+
+    def test_technician_report_monthly_breakdown(self):
+        tech_user2 = User.objects.create_user('report-other-tech')
+        other_technician = TechnicianProfile.objects.create(
+            workspace=self.workspace, user=tech_user2, unique_id='RPT002',
+        )
+
+        my_job = self.job('TECH1-JOB-CLOSED', status='Closed')
+        self.transition(my_job, 'Closed', self.start + timedelta(hours=2))
+        ServiceLog.objects.create(job_ticket=my_job, description='Speaker', part_cost=200, service_charge=300)
+
+        other_job = JobTicket.objects.create(
+            job_code='TECH2-JOB-CLOSED', workspace=self.workspace,
+            customer_name='Other Customer', customer_phone='9876543211',
+            status='Closed', assigned_to=other_technician,
+        )
+        self.transition(other_job, 'Closed', self.start + timedelta(hours=3))
+        ServiceLog.objects.create(job_ticket=other_job, description='Battery', part_cost=800, service_charge=400)
+
+        my_breakdown, my_totals = report_views.get_monthly_closed_and_ready_breakdown(
+            self.workspace, technician=self.technician,
+        )
+        current_m = self.today.strftime('%Y-%m')
+        my_row = next((b for b in my_breakdown if b['month_key'] == current_m), None)
+        self.assertIsNotNone(my_row)
+        self.assertEqual(my_row['closed_value'], Decimal('500.00'))
+        self.assertEqual(my_row['closed_count'], 1)
+
+        req = self.request()
+        ctx = report_views._build_technician_report_context(req, self.technician.id)
+        self.assertIn('monthly_breakdown', ctx)
+        self.assertIn('monthly_breakdown_totals', ctx)
+
+        from django.template.loader import render_to_string
+        rendered = render_to_string(
+            'job_tickets/technician_report_print.html',
+            ctx,
+            request=req,
+        )
+        self.assertIn('id="jobs-tab"', rendered)
+        self.assertIn('id="monthly-tab"', rendered)
+        self.assertIn('id="tab-jobs"', rendered)
+        self.assertIn('id="tab-monthly"', rendered)
+        self.assertIn('Monthly Closed &amp; Ready for Pickup Breakdown', rendered)
+
+    def test_technician_report_status_filtering_and_counts(self):
+        from django.template.loader import render_to_string
+
+        ready_job = self.job('TECH-READY-001', status='Ready for Pickup')
+        self.transition(ready_job, 'Ready for Pickup', self.start + timedelta(hours=2))
+        ServiceLog.objects.create(job_ticket=ready_job, description='Screen replacement', part_cost=500, service_charge=300)
+
+        closed_job = self.job('TECH-CLOSED-001', status='Closed')
+        self.transition(closed_job, 'Closed', self.start + timedelta(hours=3))
+        ServiceLog.objects.create(job_ticket=closed_job, description='Battery replacement', part_cost=200, service_charge=150)
+
+        # 1. All (default)
+        req_all = self.request(start_date=self.today.isoformat(), end_date=self.today.isoformat(), status='all')
+        ctx_all = report_views._build_technician_report_context(req_all, self.technician.id)
+        job_codes_all = [j.job_code for j in ctx_all['jobs']]
+        self.assertIn('TECH-READY-001', job_codes_all)
+        self.assertIn('TECH-CLOSED-001', job_codes_all)
+        self.assertEqual(ctx_all['ready_count'], 1)
+        self.assertEqual(ctx_all['closed_count'], 1)
+        self.assertEqual(ctx_all['jobs_count'], 2)
+        rendered_all = render_to_string('job_tickets/technician_report_print.html', ctx_all, request=req_all)
+        self.assertIn('name="status"', rendered_all)
+        self.assertIn('status=Ready+for+Pickup', rendered_all)
+        self.assertIn('status=Closed', rendered_all)
+
+        # 2. Filter: Ready for Pickup
+        req_ready = self.request(start_date=self.today.isoformat(), end_date=self.today.isoformat(), status='Ready for Pickup')
+        ctx_ready = report_views._build_technician_report_context(req_ready, self.technician.id)
+        job_codes_ready = [j.job_code for j in ctx_ready['jobs']]
+        self.assertEqual(job_codes_ready, ['TECH-READY-001'])
+        self.assertEqual(ctx_ready['ready_count'], 1)
+        self.assertEqual(ctx_ready['closed_count'], 0)
+        self.assertEqual(ctx_ready['selected_status'], 'Ready for Pickup')
+        rendered_ready = render_to_string('job_tickets/technician_report_print.html', ctx_ready, request=req_ready)
+        self.assertIn('(1 ready for pickup)', rendered_ready)
+        self.assertIn('Status: <span class="badge bg-secondary">Ready for Pickup</span>', rendered_ready)
+
+        # 3. Filter: Closed
+        req_closed = self.request(start_date=self.today.isoformat(), end_date=self.today.isoformat(), status='Closed')
+        ctx_closed = report_views._build_technician_report_context(req_closed, self.technician.id)
+        job_codes_closed = [j.job_code for j in ctx_closed['jobs']]
+        self.assertEqual(job_codes_closed, ['TECH-CLOSED-001'])
+        self.assertEqual(ctx_closed['ready_count'], 0)
+        self.assertEqual(ctx_closed['closed_count'], 1)
+        self.assertEqual(ctx_closed['selected_status'], 'Closed')
+        rendered_closed = render_to_string('job_tickets/technician_report_print.html', ctx_closed, request=req_closed)
+        self.assertIn('(1 closed)', rendered_closed)
+
+        # 4. CSV Export with Status Filter
+        res_csv = report_views.technician_report_export_csv(req_ready, self.technician.id)
+        content = res_csv.content.decode('utf-8')
+        self.assertIn('Ready for Pickup', content)
+        self.assertIn('TECH-READY-001', content)
+        self.assertNotIn('TECH-CLOSED-001', content)
+
+    def test_financial_summary_monthly_breakdown_with_credit_bills(self):
+        from .models import InventoryParty, InventoryBill, InventoryCreditPayment
+
+        closed_job = self.job('REPORT-FIN-BREAKDOWN-CLOSED', status='Closed')
+        self.transition(closed_job, 'Closed', self.start + timedelta(hours=1))
+        ServiceLog.objects.create(job_ticket=closed_job, description='Motherboard', part_cost=2000, service_charge=1000)
+
+        party = InventoryParty.objects.create(workspace=self.workspace, name='Fin Cust', party_type='customer')
+        bill = InventoryBill.objects.create(
+            workspace=self.workspace,
+            bill_number='SB-FIN-001',
+            entry_type='sale',
+            entry_date=self.today,
+            party=party,
+            job_ticket=closed_job,
+        )
+        InventoryCreditPayment.objects.create(
+            workspace=self.workspace,
+            party=party,
+            bill=bill,
+            amount=Decimal('1000.00'),
+            direction=InventoryCreditPayment.DIRECTION_RECEIVABLE,
+            payment_date=self.today,
+        )
+
+        ready_job = self.job('REPORT-FIN-BREAKDOWN-READY', status='Ready for Pickup')
+        self.transition(ready_job, 'Ready for Pickup', self.start + timedelta(hours=2))
+        ServiceLog.objects.create(job_ticket=ready_job, description='Screen', part_cost=500, service_charge=300)
+
+        breakdown, totals = report_views.get_monthly_closed_and_ready_breakdown(self.workspace)
+        current_m = self.today.strftime('%Y-%m')
+        row = next((b for b in breakdown if b['month_key'] == current_m), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['closed_count'], 1)
+        self.assertEqual(row['credit_bills'], Decimal('3000.00'))
+        self.assertEqual(row['outstanding_balance'], Decimal('2000.00'))
+        self.assertEqual(row['ready_count'], 1)
+        self.assertEqual(row['ready_value'], Decimal('800.00'))
+
+        # Check printable monthly summary report context and rendering
+        req = self.request(start_date=self.today.isoformat(), end_date=self.today.isoformat())
+        req.user = self.admin
+        req.current_workspace = self.workspace
+        resp = report_views.print_monthly_summary_report(req)
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('Monthly Closed &amp; Ready for Pickup Breakdown', content)
+        self.assertIn('Closed Jobs', content)
+        self.assertIn('Credit Bills', content)
+        self.assertIn('Outstanding Balance', content)
+        self.assertIn('Ready for Pickup Jobs', content)
+        self.assertIn('Ready for Pickup Value', content)
+        self.assertNotIn('Closed Value', content)
+        self.assertNotIn('Ready for Pickup Receivables', content)
+
+    def test_reports_dashboard_no_longer_renders_monthly_breakdown(self):
+        req = self.request(tab='financial', start_date=self.today.isoformat(), end_date=self.today.isoformat())
+        req.user = self.admin
+        req.current_workspace = self.workspace
+        resp = report_views.reports_dashboard(req)
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertNotIn('Monthly Closed &amp; Ready for Pickup Breakdown', content)
 
 
 class InventoryDashboardAndCreditTests(TestCase):

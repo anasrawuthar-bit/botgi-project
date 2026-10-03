@@ -1,10 +1,134 @@
 from .helpers import *  # noqa: F401,F403
 from .helpers import (
+    _inventory_bill_total,
+    _inventory_credit_payment_totals,
     _money_or_zero,
     _net_amount_after_discount,
     _staff_access_required,
     _sum_job_discounts,
 )
+
+
+def get_monthly_closed_and_ready_breakdown(workspace=None, technician=None):
+    """Computes a historical month-by-month breakdown of:
+    1. Closed jobs count & closed total value (realized revenue)
+    2. Ready for pickup jobs count & ready total value (every job that ever transitioned to Ready for Pickup in that month)
+    3. Linked credit bills total & outstanding balance for closed jobs
+    4. Hides months where both values/counts are zero.
+    Optionally scoped to a specific technician.
+    """
+    from collections import defaultdict
+    from datetime import datetime
+
+    qs = scope_to_workspace(JobTicket.objects, workspace)
+    if technician is not None:
+        qs = qs.filter(assigned_to=technician)
+
+    scoped_jobs = list(with_report_dates(qs).prefetch_related('service_logs'))
+    calculate_job_totals(scoped_jobs)
+    job_map = {j.id: j for j in scoped_jobs}
+
+    closed_jobs_map = {}
+    closed_by_month = defaultdict(lambda: {'count': 0, 'value': Decimal('0.00')})
+    for j in scoped_jobs:
+        if j.status == 'Closed':
+            dt = getattr(j, 'report_closed_at', None) or j.closed_at or j.updated_at
+            if dt:
+                loc_dt = timezone.localtime(dt) if timezone.is_aware(dt) else dt
+                m_key = loc_dt.strftime('%Y-%m')
+                closed_by_month[m_key]['count'] += 1
+                closed_by_month[m_key]['value'] += j.grand_total
+                closed_jobs_map[j.id] = m_key
+
+    credit_by_month = defaultdict(lambda: {'bill_total': Decimal('0.00'), 'balance_total': Decimal('0.00'), 'paid_total': Decimal('0.00')})
+    if closed_jobs_map:
+        bills = list(
+            InventoryBill.objects
+            .filter(entry_type='sale', job_ticket_id__in=closed_jobs_map.keys())
+            .annotate(bill_total=Coalesce(Sum('lines__total_amount', output_field=DecimalField()), Decimal('0.00')))
+            .order_by('entry_date', 'id')
+        )
+        direction = InventoryCreditPayment.DIRECTION_RECEIVABLE
+        payment_totals = _inventory_credit_payment_totals([bill.id for bill in bills])
+
+        for bill in bills:
+            m_key = closed_jobs_map.get(bill.job_ticket_id)
+            if m_key:
+                job = job_map.get(bill.job_ticket_id)
+                total_amount = _money_or_zero(getattr(bill, 'bill_total', Decimal('0.00')))
+                if total_amount <= Decimal('0.00') and job:
+                    total_amount = _inventory_bill_total(bill)
+                paid_amount = _money_or_zero(payment_totals.get((bill.id, direction), Decimal('0.00')))
+                if job:
+                    paid_amount = max(paid_amount, _money_or_zero(job.amount_paid))
+                    if job.payment_status == 'paid' and (total_amount - paid_amount) > Decimal('0.00'):
+                        paid_amount = total_amount
+                balance_amount = max(Decimal('0.00'), total_amount - paid_amount)
+
+                credit_by_month[m_key]['bill_total'] += total_amount
+                credit_by_month[m_key]['paid_total'] += paid_amount
+                credit_by_month[m_key]['balance_total'] += balance_amount
+
+    ready_by_month = defaultdict(lambda: {'jobs': set(), 'value': Decimal('0.00')})
+    for j in scoped_jobs:
+        if j.status in ['Ready for Pickup', 'Completed']:
+            dt = getattr(j, 'report_completed_at', None) or getattr(j, 'report_date', None) or j.updated_at
+            if dt:
+                loc_dt = timezone.localtime(dt) if timezone.is_aware(dt) else dt
+                m_key = loc_dt.strftime('%Y-%m')
+                if j.id not in ready_by_month[m_key]['jobs']:
+                    ready_by_month[m_key]['jobs'].add(j.id)
+                    ready_by_month[m_key]['value'] += j.grand_total
+
+    all_months = sorted(set(list(closed_by_month.keys()) + list(ready_by_month.keys())), reverse=True)
+    monthly_breakdown = []
+    for m in all_months:
+        c_info = closed_by_month.get(m, {'count': 0, 'value': Decimal('0.00')})
+        r_info = ready_by_month.get(m, {'jobs': set(), 'value': Decimal('0.00')})
+        cr_info = credit_by_month.get(m, {'bill_total': Decimal('0.00'), 'balance_total': Decimal('0.00')})
+        c_val = c_info['value']
+        r_val = r_info['value']
+        c_cnt = c_info['count']
+        r_cnt = len(r_info['jobs'])
+        cr_total = cr_info['bill_total']
+        cr_bal = cr_info['balance_total']
+
+        # Hide zero months
+        if c_cnt == 0 and r_cnt == 0 and c_val == Decimal('0.00') and r_val == Decimal('0.00') and cr_total == Decimal('0.00') and cr_bal == Decimal('0.00'):
+            continue
+        try:
+            m_dt = datetime.strptime(m, '%Y-%m')
+            month_label = m_dt.strftime('%B %Y')
+        except ValueError:
+            month_label = m
+
+        monthly_breakdown.append({
+            'month_key': m,
+            'month_label': month_label,
+            'closed_count': c_cnt,
+            'closed_value': c_val,
+            'credit_bills': cr_total,
+            'credit_bill_total': cr_total,
+            'credit_balance': cr_bal,
+            'outstanding_balance': cr_bal,
+            'ready_count': r_cnt,
+            'ready_value': r_val,
+            'combined_value': c_val + r_val,
+        })
+
+    totals = {
+        'closed_count': sum(r['closed_count'] for r in monthly_breakdown),
+        'closed_value': sum(r['closed_value'] for r in monthly_breakdown),
+        'credit_bills': sum(r['credit_bills'] for r in monthly_breakdown),
+        'credit_bill_total': sum(r['credit_bill_total'] for r in monthly_breakdown),
+        'credit_balance': sum(r['credit_balance'] for r in monthly_breakdown),
+        'outstanding_balance': sum(r['outstanding_balance'] for r in monthly_breakdown),
+        'ready_count': sum(r['ready_count'] for r in monthly_breakdown),
+        'ready_value': sum(r['ready_value'] for r in monthly_breakdown),
+        'combined_value': sum(r['combined_value'] for r in monthly_breakdown),
+    }
+
+    return monthly_breakdown, totals
 
 
 @login_required
@@ -17,7 +141,10 @@ def reports_dashboard(request):
         return redirect('unauthorized')
 
     access = get_staff_access(request.user)
-    period_tabs = [key for key in ['financial', 'technician', 'vendor'] if access.get('reports_' + key)]
+    period_tabs = [
+        key for key in ['financial', 'daybook', 'technician', 'vendor']
+        if (access.get('reports_financial') if key in ['financial', 'daybook'] else access.get('reports_' + key))
+    ]
     allowed_tabs = ['overview'] + period_tabs if access.get('reports_overview') else period_tabs
     active_tab = request.GET.get('tab')
     if not active_tab or active_tab not in allowed_tabs:
@@ -46,6 +173,11 @@ def reports_dashboard(request):
     company_start_date = get_company_start_date()
     today = timezone.localdate()
     today_date_str = today.strftime('%Y-%m-%d')
+
+    # Daybook Data (Live for Today and selected Daybook date)
+    daybook_today = get_daily_daybook_context(today, workspace=current_workspace)
+    daybook_date_str = (request.GET.get('daybook_date') or today_date_str).strip()
+    daybook_data = get_daily_daybook_context(daybook_date_str, workspace=current_workspace) if active_tab == 'daybook' else daybook_today
 
     # Shared event selection keeps the cards and their detail pages aligned.
     todays_jobs_in = get_daily_report_jobs(today, 'in', current_workspace).count()
@@ -96,15 +228,15 @@ def reports_dashboard(request):
         start_of_period, end_of_period, period['start_date_str'], period['end_date_str'],
         workspace=current_workspace,
     ) if active_tab == 'financial' and access.get('reports_financial') else {}
+    monthly_breakdown, monthly_breakdown_totals = ([], {})
 
-    # Technician performance
-    tech_finished_ids = [
-        job.id for job in get_jobs_for_report_period(
-            tech_start,
-            tech_end,
-            workspace=current_workspace,
-        )
-    ]
+    # Technician performance: count jobs completed in the period
+    tech_finished_jobs = get_technician_jobs_for_period(
+        tech_start,
+        tech_end,
+        workspace=current_workspace,
+    )
+    tech_finished_ids = list(tech_finished_jobs.values_list('id', flat=True))
     tech_log_agg = (
         ServiceLog.objects.filter(job_ticket__in=tech_finished_ids)
         .exclude(description__icontains='Specialized Service')
@@ -118,7 +250,7 @@ def reports_dashboard(request):
     tech_count_map = {
         row['assigned_to']: row['cnt']
         for row in (
-            report_jobs.filter(id__in=tech_finished_ids, assigned_to__isnull=False)
+            tech_finished_jobs.filter(assigned_to__isnull=False)
             .values('assigned_to')
             .annotate(cnt=Count('id'))
         )
@@ -132,7 +264,12 @@ def reports_dashboard(request):
         tp.jobs_done = tech_count_map.get(tp.id, 0)
         tp.monthly_parts_sales = agg.get('parts', Decimal('0.00'))
         tp.monthly_service_sales = agg.get('service', Decimal('0.00'))
+        tp.monthly_total_sales = tp.monthly_parts_sales + tp.monthly_service_sales
     monthly_tech_performance = sorted(tech_profiles, key=lambda x: x.jobs_done, reverse=True)
+    tech_total_jobs = sum(tp.jobs_done for tp in monthly_tech_performance)
+    tech_total_parts_sales = sum((tp.monthly_parts_sales for tp in monthly_tech_performance), Decimal('0.00'))
+    tech_total_service_sales = sum((tp.monthly_service_sales for tp in monthly_tech_performance), Decimal('0.00'))
+    tech_total_combined_sales = tech_total_parts_sales + tech_total_service_sales
 
     # Vendor performance
     # Vendor detail reports count services returned in the selected period,
@@ -158,6 +295,10 @@ def reports_dashboard(request):
     ).annotate(
         profit=F('total_client_charge') - F('total_vendor_cost')
     ).order_by('-total_jobs_given')
+    vendor_total_jobs = sum(v.total_jobs_given for v in vendor_performance)
+    vendor_total_cost = sum((v.total_vendor_cost for v in vendor_performance), Decimal('0.00'))
+    vendor_total_client_charge = sum((v.total_client_charge for v in vendor_performance), Decimal('0.00'))
+    vendor_total_profit = sum((v.profit for v in vendor_performance), Decimal('0.00'))
 
     context = {
         'active_tab': active_tab,
@@ -174,6 +315,7 @@ def reports_dashboard(request):
         'todays_closed_service': todays_closed_service,
         'todays_closed_total': todays_closed_total,
         # Date/period metadata
+        'preset': period.get('preset') or request.GET.get('preset', ''),
         'company_start_date': company_start_date.strftime('%Y-%m-%d'),
         'today_date_str': today_date_str,
         'current_report_start': period['start_date_str'],
@@ -185,6 +327,11 @@ def reports_dashboard(request):
         'status_filter': status_filter or 'ALL',
         'current_report_date': start_of_period,
         'financial_summary': financial_summary,
+        'daybook_today': daybook_today,
+        'daybook_data': daybook_data,
+        'daybook_date_str': daybook_date_str,
+        'monthly_breakdown': monthly_breakdown,
+        'monthly_breakdown_totals': monthly_breakdown_totals,
         # All-Time Stats
         'all_jobs_count': status_counts['all_jobs_count'],
         'completed_count': status_counts['completed_count'],
@@ -198,7 +345,15 @@ def reports_dashboard(request):
         'closed_jobs': (),
         # Performance
         'monthly_tech_performance': monthly_tech_performance,
+        'tech_total_jobs': tech_total_jobs,
+        'tech_total_parts_sales': tech_total_parts_sales,
+        'tech_total_service_sales': tech_total_service_sales,
+        'tech_total_combined_sales': tech_total_combined_sales,
         'vendor_performance': vendor_performance,
+        'vendor_total_jobs': vendor_total_jobs,
+        'vendor_total_cost': vendor_total_cost,
+        'vendor_total_client_charge': vendor_total_client_charge,
+        'vendor_total_profit': vendor_total_profit,
     }
     return render(request, 'job_tickets/reports_dashboard.html', context)
 
@@ -323,18 +478,27 @@ def reports_chart_data(request):
 # job_tickets/views.py
 
 def _build_technician_report_context(request, tech_id):
-    finished_statuses = ['Completed', 'Closed']
+    finished_statuses = ['Completed', 'Ready for Pickup', 'Closed']
     technician = get_object_or_404(
         scope_to_workspace(TechnicianProfile.objects, getattr(request, 'current_workspace', None)),
         id=tech_id,
     )
 
-    # 1. GET DATE FILTERS from URL (These are passed from the Reports Dashboard)
+    # 1. GET DATE & STATUS FILTERS from URL (These are passed from the Reports Dashboard or filter bar)
     start_date_str = request.GET.get('start_date')
     end_date_str = request.GET.get('end_date')
+    status_filter = (request.GET.get('status') or '').strip()
 
-    # Start with base filters: assigned technician and finished statuses
-    jobs_filter = Q(assigned_to=technician, status__in=finished_statuses)
+    if status_filter in ['Ready for Pickup', 'Closed', 'Completed']:
+        selected_statuses = [status_filter]
+    elif status_filter in ['ready_and_closed', 'ready_closed']:
+        selected_statuses = ['Ready for Pickup', 'Closed']
+    else:
+        status_filter = 'all'
+        selected_statuses = finished_statuses
+
+    # Start with base filters: assigned technician and selected statuses
+    jobs_filter = Q(assigned_to=technician, status__in=selected_statuses)
 
     # 2. APPLY DATE FILTERING
     if start_date_str and end_date_str:
@@ -347,7 +511,7 @@ def _build_technician_report_context(request, tech_id):
                 end_date_str = end_date.isoformat()
 
             start_of_period, end_of_period = report_date_bounds(start_date, end_date)
-            period_jobs = get_jobs_for_report_period(
+            period_jobs = get_technician_jobs_for_period(
                 start_of_period, end_of_period,
                 workspace=getattr(request, 'current_workspace', None),
             )
@@ -392,12 +556,180 @@ def _build_technician_report_context(request, tech_id):
 
     jobs_count = len(jobs)
     completed_count = sum(1 for job in jobs if job.status == 'Completed')
+    ready_count = sum(1 for job in jobs if job.status == 'Ready for Pickup')
     closed_count = sum(1 for job in jobs if job.status == 'Closed')
     average_income = total_income / jobs_count if jobs_count else Decimal('0.00')
     technician_name = technician.user.get_full_name() or technician.user.username
-    period_query = ''
+    query_params = {}
     if start_date_str and end_date_str:
-        period_query = urlencode({'start_date': start_date_str, 'end_date': end_date_str})
+        query_params['start_date'] = start_date_str
+        query_params['end_date'] = end_date_str
+    if status_filter and status_filter != 'all':
+        query_params['status'] = status_filter
+    period_query = urlencode(query_params)
+
+    def _format_tat_duration(seconds):
+        if seconds is None:
+            return "-"
+        if seconds <= 0:
+            return "< 1m"
+        seconds = int(seconds)
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        minutes = (seconds % 3600) // 60
+        if days > 0:
+            if hours > 0:
+                return f"{days}d {hours}h"
+            return f"{days}d"
+        if hours > 0:
+            if minutes > 0:
+                return f"{hours}h {minutes}m"
+            return f"{hours}h"
+        return f"{max(1, minutes)}m"
+
+    # 5. Turnaround Time (TAT), Delivery SLA & Profit Calculations per Job
+    job_ids = [job.id for job in jobs]
+    expense_agg = {
+        row['job_ticket']: row['total']
+        for row in Expense.objects.filter(job_ticket__in=job_ids).values('job_ticket').annotate(total=Sum('amount'))
+    }
+    inventory_agg = {
+        row['job_ticket']: row['total']
+        for row in ProductSale.objects.filter(job_ticket__in=job_ids).values('job_ticket').annotate(total=Sum('line_cost'))
+    }
+
+    total_profit_all = Decimal('0.00')
+    total_expenses_all = Decimal('0.00')
+    total_tat_seconds = 0
+    fast_track_count = 0
+    sla_tracked_count = 0
+    sla_on_time_count = 0
+
+    for job in jobs:
+        # Turnaround Time
+        completed_time = getattr(job, 'report_completed_at', None) or getattr(job, 'report_date', None) or job.updated_at
+        created_time = job.created_at
+        if completed_time and created_time:
+            tat_sec = max(0, int((completed_time - created_time).total_seconds()))
+        else:
+            tat_sec = 0
+        job.tat_seconds = tat_sec
+        job.tat_display = _format_tat_duration(tat_sec)
+        job.is_fast_track = (tat_sec <= 86400)
+        if job.is_fast_track:
+            fast_track_count += 1
+        total_tat_seconds += tat_sec
+
+        # On-Time Delivery Tracking
+        if job.estimated_delivery and completed_time:
+            sla_tracked_count += 1
+            completed_date = timezone.localtime(completed_time).date()
+            job.is_on_time = (completed_date <= job.estimated_delivery)
+            if job.is_on_time:
+                sla_on_time_count += 1
+            job.delivery_status = 'On Time' if job.is_on_time else 'Overdue'
+        else:
+            job.is_on_time = None
+            job.delivery_status = None
+
+        # Profit & Margin
+        job.expenses_total = expense_agg.get(job.id, Decimal('0.00'))
+        job.inventory_cost = inventory_agg.get(job.id, Decimal('0.00'))
+        job.direct_cost = job.expenses_total + job.inventory_cost
+        job.profit = job.net_total - job.direct_cost
+        job.profit_margin_pct = (job.profit / job.net_total * 100) if job.net_total > Decimal('0.00') else Decimal('0.00')
+
+        total_expenses_all += job.direct_cost
+        total_profit_all += job.profit
+
+    avg_tat_seconds = (total_tat_seconds / jobs_count) if jobs_count else 0
+    avg_tat_display = _format_tat_duration(avg_tat_seconds)
+    fast_track_pct = int(round(fast_track_count / jobs_count * 100)) if jobs_count else 0
+    on_time_rate = int(round(sla_on_time_count / sla_tracked_count * 100)) if sla_tracked_count else None
+    average_profit = (total_profit_all / jobs_count) if jobs_count else Decimal('0.00')
+    overall_margin_pct = (total_profit_all / total_income * 100) if total_income > Decimal('0.00') else Decimal('0.00')
+    labor_pct = int(round(total_services_all / total_income * 100)) if total_income > Decimal('0.00') else 0
+
+    # 6. Peer Benchmark & Shop Comparison ("Any Better Than Me")
+    workspace = getattr(request, 'current_workspace', None)
+    shop_filter = Q(status__in=finished_statuses)
+    if start_date_str and end_date_str:
+        try:
+            shop_filter &= Q(pk__in=[j.pk for j in period_jobs])
+        except (NameError, UnboundLocalError):
+            pass
+    shop_jobs = list(
+        with_report_dates(scope_to_workspace(JobTicket.objects, workspace))
+        .filter(shop_filter)
+        .prefetch_related('service_logs')
+    )
+    calculate_job_totals(shop_jobs, exclude_vendor_charges=True)
+
+    shop_total_jobs = len(shop_jobs)
+    workload_share_pct = int(round(jobs_count / shop_total_jobs * 100)) if shop_total_jobs else 100
+
+    tech_vol_map = {}
+    tech_rev_map = {}
+    shop_tat_list = []
+    shop_income_total = Decimal('0.00')
+
+    for sj in shop_jobs:
+        tid = sj.assigned_to_id
+        tech_vol_map[tid] = tech_vol_map.get(tid, 0) + 1
+        sj_net = _net_amount_after_discount(sj.total, _money_or_zero(sj.discount_amount))
+        tech_rev_map[tid] = tech_rev_map.get(tid, Decimal('0.00')) + sj_net
+        shop_income_total += sj_net
+        s_done = getattr(sj, 'report_completed_at', None) or getattr(sj, 'report_date', None) or sj.updated_at
+        start_time = sj.created_at
+        if getattr(sj, 'intake_date', None) and sj.created_at:
+            intake_dt = timezone.make_aware(datetime.combine(sj.intake_date, datetime.min.time()))
+            if intake_dt < sj.created_at:
+                start_time = intake_dt
+        if s_done and start_time:
+            shop_tat_list.append(max(0, int((s_done - start_time).total_seconds())))
+
+    sorted_vol = sorted(tech_vol_map.keys(), key=lambda t: tech_vol_map[t], reverse=True)
+    sorted_rev = sorted(tech_rev_map.keys(), key=lambda t: tech_rev_map[t], reverse=True)
+    rank_vol = (sorted_vol.index(technician.id) + 1) if technician.id in sorted_vol else 1
+    rank_rev = (sorted_rev.index(technician.id) + 1) if technician.id in sorted_rev else 1
+    total_active_techs = max(len(sorted_vol), 1)
+
+    shop_avg_tat_sec = (sum(shop_tat_list) / len(shop_tat_list)) if shop_tat_list else avg_tat_seconds
+    shop_avg_tat_display = _format_tat_duration(shop_avg_tat_sec)
+    shop_avg_income = (shop_income_total / shop_total_jobs) if shop_total_jobs else average_income
+
+    if total_active_techs == 1 or shop_total_jobs <= jobs_count:
+        tat_benchmark_text = "Leading shop pace"
+        ticket_benchmark_text = "Shop standard"
+        benchmark_headline = f"Primary Technician • Handled {workload_share_pct}% of total shop volume"
+    else:
+        if avg_tat_seconds < shop_avg_tat_sec and shop_avg_tat_sec > 0:
+            diff = int(round((shop_avg_tat_sec - avg_tat_seconds) / shop_avg_tat_sec * 100))
+            tat_benchmark_text = f"{diff}% faster than shop avg ⚡"
+        elif avg_tat_seconds > shop_avg_tat_sec and shop_avg_tat_sec > 0:
+            diff = int(round((avg_tat_seconds - shop_avg_tat_sec) / shop_avg_tat_sec * 100))
+            tat_benchmark_text = f"{diff}% slower than shop avg"
+        else:
+            tat_benchmark_text = "On par with shop avg"
+
+        if average_income > shop_avg_income and shop_avg_income > 0:
+            rev_diff = int(round((average_income - shop_avg_income) / shop_avg_income * 100))
+            ticket_benchmark_text = f"+{rev_diff}% above shop avg"
+        elif average_income < shop_avg_income and shop_avg_income > 0:
+            rev_diff = int(round((shop_avg_income - average_income) / shop_avg_income * 100))
+            ticket_benchmark_text = f"-{rev_diff}% below shop avg"
+        else:
+            ticket_benchmark_text = "Equal to shop avg"
+
+        if rank_vol == 1:
+            benchmark_headline = f"#1 Top Performer in Volume ({workload_share_pct}% of shop output)"
+        else:
+            benchmark_headline = f"Rank #{rank_vol} of {total_active_techs} Active Technicians ({workload_share_pct}% of shop output)"
+
+    monthly_breakdown, monthly_breakdown_totals = get_monthly_closed_and_ready_breakdown(
+        workspace=workspace,
+        technician=technician,
+    )
 
     return {
         'company': CompanyProfile.get_profile(getattr(request, 'current_workspace', None)),
@@ -405,13 +737,40 @@ def _build_technician_report_context(request, tech_id):
         'technician_name': technician_name,
         'jobs': jobs,
         'jobs_count': jobs_count,
+        'ready_count': ready_count,
         'completed_count': completed_count,
         'closed_count': closed_count,
+        'selected_status': status_filter,
         'total_parts': total_parts_all,
         'total_services': total_services_all,
         'total_discounts': total_discounts_all,
         'total_income': total_income,
         'average_income': average_income,
+        # Performance Analytics & Profit
+        'total_profit': total_profit_all,
+        'average_profit': average_profit,
+        'profit_margin_pct': overall_margin_pct,
+        'total_expenses': total_expenses_all,
+        'labor_pct': labor_pct,
+        'avg_tat_display': avg_tat_display,
+        'fast_track_count': fast_track_count,
+        'fast_track_pct': fast_track_pct,
+        'sla_tracked_count': sla_tracked_count,
+        'sla_on_time_count': sla_on_time_count,
+        'on_time_rate': on_time_rate,
+        # Benchmarking
+        'workload_share_pct': workload_share_pct,
+        'rank_vol': rank_vol,
+        'rank_rev': rank_rev,
+        'total_active_techs': total_active_techs,
+        'shop_avg_tat_display': shop_avg_tat_display,
+        'shop_avg_income': shop_avg_income,
+        'benchmark_headline': benchmark_headline,
+        'tat_benchmark_text': tat_benchmark_text,
+        'ticket_benchmark_text': ticket_benchmark_text,
+        # Monthly Closed & Ready for Pickup Breakdown
+        'monthly_breakdown': monthly_breakdown,
+        'monthly_breakdown_totals': monthly_breakdown_totals,
         # Pass dates for display in the report header
         'report_start_date': start_date_str,
         'report_end_date': end_date_str,
@@ -442,11 +801,12 @@ def technician_report_export_csv(request, tech_id):
 
     context = _build_technician_report_context(request, tech_id)
     safe_name = re.sub(r'[^A-Za-z0-9_-]+', '-', context['technician_name']).strip('-') or 'technician'
+    status_suffix = f"_{context['selected_status'].lower().replace(' ', '_')}" if context.get('selected_status') and context['selected_status'] != 'all' else ''
     if context['report_start_date'] and context['report_end_date']:
         period_text = f"{context['report_start_date']}_to_{context['report_end_date']}"
     else:
         period_text = 'all_time'
-    filename = f"technician_report_{safe_name}_{period_text}.csv"
+    filename = f"technician_report_{safe_name}_{period_text}{status_suffix}.csv"
 
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -463,17 +823,28 @@ def technician_report_export_csv(request, tech_id):
         if context['report_start_date'] and context['report_end_date']
         else 'All Time Completed/Closed Jobs',
     ])
+    if context.get('selected_status') and context['selected_status'] != 'all':
+        writer.writerow(['Status Filter', context['selected_status']])
     writer.writerow(['Generated At', timezone.localtime(context['generated_at']).strftime('%Y-%m-%d %H:%M')])
     writer.writerow([])
-    writer.writerow(['Summary'])
+    writer.writerow(['Summary & Performance KPIs'])
     writer.writerow(['Jobs Counted', context['jobs_count']])
+    writer.writerow(['Ready for Pickup Jobs', context['ready_count']])
     writer.writerow(['Completed Jobs', context['completed_count']])
     writer.writerow(['Closed Jobs', context['closed_count']])
+    writer.writerow(['Shop Workload Share', f"{context['workload_share_pct']}%"])
+    writer.writerow(['Shop Rank (Volume)', f"#{context['rank_vol']} of {context['total_active_techs']}"])
+    writer.writerow(['Avg Turnaround Time (TAT)', context['avg_tat_display']])
+    writer.writerow(['Fast-Track Rate (<= 24h)', f"{context['fast_track_pct']}%"])
+    writer.writerow(['On-Time Delivery Rate', f"{context['on_time_rate']}%" if context['on_time_rate'] is not None else 'N/A'])
     writer.writerow(['Total Parts Sales', money(context['total_parts'])])
-    writer.writerow(['Total Service Sales', money(context['total_services'])])
+    writer.writerow(['Total Service Sales (Labor Margin)', money(context['total_services'])])
     writer.writerow(['Total Discounts', money(context['total_discounts'])])
-    writer.writerow(['Net Income', money(context['total_income'])])
+    writer.writerow(['Net Revenue', money(context['total_income'])])
     writer.writerow(['Average Net Per Job', money(context['average_income'])])
+    writer.writerow(['Direct Costs / Expenses', money(context['total_expenses'])])
+    writer.writerow(['Estimated Net Profit', money(context['total_profit'])])
+    writer.writerow(['Profit Margin', f"{context['profit_margin_pct']:.1f}%"])
     writer.writerow([])
     writer.writerow([
         'Job Code',
@@ -482,10 +853,14 @@ def technician_report_export_csv(request, tech_id):
         'Device',
         'Status',
         'Report Date',
+        'Turnaround (TAT)',
+        'Delivery SLA',
         'Part Cost',
-        'Service Charge',
+        'Service Charge (Labor)',
         'Discount',
         'Net Total',
+        'Direct Cost',
+        'Est Profit',
         'Job URL',
     ])
     for job in context['jobs']:
@@ -496,10 +871,14 @@ def technician_report_export_csv(request, tech_id):
             job.device_label,
             job.status,
             timezone.localtime(job.report_date).strftime('%Y-%m-%d %H:%M') if job.report_date else '',
+            job.tat_display,
+            job.delivery_status or 'N/A',
             money(job.part_total),
             money(job.service_total),
             money(job.discount_total),
             money(job.net_total),
+            money(job.direct_cost),
+            money(job.profit),
             request.build_absolute_uri(reverse('staff_job_detail', args=[job.job_code])),
         ])
 
@@ -540,6 +919,7 @@ def print_monthly_summary_report(request):
         return redirect('unauthorized')
 
     period = resolve_monthly_summary_period(request)
+    current_workspace = getattr(request, 'current_workspace', None)
     context = get_monthly_summary_context(
         period['start_of_period'],
         period['end_of_period'],
@@ -547,9 +927,100 @@ def print_monthly_summary_report(request):
         period['end_date_str'],
         preset=period['preset'],
         show_jobs=period['show_jobs'],
-        workspace=getattr(request, 'current_workspace', None),
+        workspace=current_workspace,
     )
+    monthly_breakdown, monthly_breakdown_totals = get_monthly_closed_and_ready_breakdown(
+        workspace=current_workspace,
+    )
+    context['monthly_breakdown'] = monthly_breakdown
+    context['monthly_breakdown_totals'] = monthly_breakdown_totals
     return render(request, 'job_tickets/print_monthly_summary_report.html', context)
+
+@login_required
+def print_daily_daybook_report(request):
+    denied = _staff_access_required(request, "reports_financial")
+    if denied:
+        return denied
+    if not user_can_view_financial_reports(request.user):
+        return redirect('unauthorized')
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    target_date_str = request.GET.get('date') or timezone.localdate().strftime('%Y-%m-%d')
+    daybook = get_daily_daybook_context(target_date_str, workspace=current_workspace)
+    profile = CompanyProfile.objects.filter(workspace=current_workspace).first() if current_workspace else CompanyProfile.objects.first()
+
+    context = {
+        'daybook': daybook,
+        'profile': profile,
+        'target_date_str': target_date_str,
+        'printed_at': timezone.now(),
+        'printed_by': request.user,
+    }
+    return render(request, 'job_tickets/print_daily_daybook_report.html', context)
+
+@login_required
+def export_daily_daybook_csv(request):
+    denied = _staff_access_required(request, "reports_financial")
+    if denied:
+        return denied
+    if not user_can_view_financial_reports(request.user):
+        return redirect('unauthorized')
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    target_date_str = request.GET.get('date') or timezone.localdate().strftime('%Y-%m-%d')
+    daybook = get_daily_daybook_context(target_date_str, workspace=current_workspace)
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="daybook_{target_date_str}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([f"Daily Daybook & Cash Reconciliation - {target_date_str}"])
+    writer.writerow([])
+    writer.writerow(["CASH DRAWER RECONCILIATION"])
+    writer.writerow(["Opening Cash in Drawer", f"{daybook['opening_cash']:.2f}"])
+    writer.writerow(["(+) Cash Receipts (Jobs & Sales)", f"{daybook['cash_inflows']:.2f}"])
+    writer.writerow(["(-) Cash Outflows (Expenses)", f"{daybook['cash_outflows']:.2f}"])
+    writer.writerow(["(-) Cash Deposited to Bank (Contra)", f"{daybook['cash_to_bank']:.2f}"])
+    writer.writerow(["(+) Cash Withdrawn from Bank (Contra)", f"{daybook['bank_to_cash']:.2f}"])
+    writer.writerow(["(=) Physical Expected Cash in Drawer", f"{daybook['closing_cash']:.2f}"])
+    writer.writerow([])
+    writer.writerow(["BANK & DIGITAL RECONCILIATION"])
+    writer.writerow(["(+) Bank & UPI Receipts", f"{daybook['bank_inflows']:.2f}"])
+    writer.writerow(["(-) Bank Expenses & Outflows", f"{daybook['bank_outflows']:.2f}"])
+    writer.writerow(["Net Bank Flow", f"{daybook['net_bank_flow']:.2f}"])
+    writer.writerow([])
+    writer.writerow(["ACCOUNT BALANCES"])
+    writer.writerow(["Account Name", "Type", "Receipts Today", "Payments Today", "Transfers In", "Transfers Out", "Current Balance"])
+    for row in daybook['account_rows']:
+        writer.writerow([
+            row['name'],
+            row['type_display'],
+            f"{row['inflows']:.2f}",
+            f"{row['outflows']:.2f}",
+            f"{row['transfers_in']:.2f}",
+            f"{row['transfers_out']:.2f}",
+            f"{row['current_balance']:.2f}",
+        ])
+    writer.writerow([])
+    writer.writerow(["ITEMIZED AUDIT TRANSACTIONS"])
+    writer.writerow(["Time", "Account", "Type", "Amount", "Balance After", "Description", "Ref No", "Source Link", "Staff"])
+    for txn in daybook['transactions']:
+        job_code = txn.job_ticket.job_code if txn.job_ticket else ""
+        exp_desc = f"Exp #{txn.expense_id}" if txn.expense else ""
+        link_str = job_code or exp_desc or (f"Transfer to/from {txn.transfer_counterpart.account.name}" if txn.transfer_counterpart else "")
+        writer.writerow([
+            timezone.localtime(txn.created_at).strftime('%H:%M:%S') if txn.created_at else "",
+            txn.account.name,
+            txn.get_transaction_type_display(),
+            f"{txn.amount:.2f}",
+            f"{txn.balance_after:.2f}",
+            txn.description,
+            txn.reference_no,
+            link_str,
+            txn.created_by.username if txn.created_by else "",
+        ])
+
+    return response
 
 @login_required
 def export_monthly_summary_csv(request):
@@ -618,7 +1089,7 @@ def export_monthly_summary_csv(request):
     writer.writerow(['Closed Profit', money(context['overall_profit'])])
     writer.writerow(['Overall Margin %', f"{(context['overall_margin'] or Decimal('0.00')):.2f}"])
     writer.writerow(['Gross Revenue Before Discount', money(context['closed_gross_revenue'])])
-    writer.writerow(['Total Discount Applied Once', money(context['total_discounts'])])
+    writer.writerow(['Total Customer Discounts', money(context['total_discounts'])])
     writer.writerow(['Closed Bill Total', money(context['closed_receivable_bill_total'])])
     writer.writerow(['Closed Bill Paid', money(context['closed_receivable_paid'])])
     writer.writerow(['Closed Bill Balance', money(context['closed_receivable_balance'])])

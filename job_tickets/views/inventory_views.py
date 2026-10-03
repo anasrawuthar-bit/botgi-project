@@ -24,7 +24,12 @@ def inventory_dashboard(request):
     denied = _staff_access_required(request, "inventory")
     if denied:
         return denied
-    context = _build_inventory_dashboard_metrics(getattr(request, 'current_workspace', None))
+    current_workspace = getattr(request, 'current_workspace', None)
+    context = _build_inventory_dashboard_metrics(current_workspace)
+    context['financial_accounts'] = scope_to_workspace(
+        FinancialAccount.objects.filter(is_active=True),
+        current_workspace,
+    ).order_by('-is_default_cash', '-is_default_bank', 'name')
     return render(request, 'job_tickets/inventory_dashboard.html', context)
 
 @login_required

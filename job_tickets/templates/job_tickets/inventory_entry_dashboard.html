@@ -333,10 +333,24 @@
                                         <input type="date" name="payment_date" class="form-control" value="{% now 'Y-m-d' %}" required>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label">Method</label>
-                                        <select name="payment_method" class="form-select">
-                                            <option value="cash">Cash</option>
-                                            <option value="transfer">Transfer</option>
+                                        <label class="form-label" id="entry-credit-payment-account-label">
+                                            {% if entry_type == 'purchase' %}
+                                                <i class="fa-solid fa-building-columns text-primary me-1"></i>Paid From Account
+                                            {% else %}
+                                                <i class="fa-solid fa-building-columns text-primary me-1"></i>Deposit To Account
+                                            {% endif %}
+                                        </label>
+                                        <select name="financial_account" class="form-select" required>
+                                            {% for acc in financial_accounts %}
+                                            <option value="{{ acc.id }}" {% if forloop.first %}selected{% endif %}>
+                                                {% if acc.account_type == 'cash' %}💵{% elif acc.account_type == 'bank' %}🏦{% else %}📱{% endif %}
+                                                {{ acc.name }} ({{ acc.get_account_type_display }})
+                                                {% if acc.is_default_cash %}★ [Default Cash]{% elif acc.is_default_bank %}★ [Default Bank]{% endif %}
+                                                — ₹{{ acc.current_balance|floatformat:2 }}
+                                            </option>
+                                            {% empty %}
+                                            <option value="" disabled selected>No accounts available</option>
+                                            {% endfor %}
                                         </select>
                                     </div>
                                     <div class="col-md-6">
@@ -906,10 +920,24 @@
                                                     </div>
                                                 </div>
                                                 <div class="col-md-6">
-                                                    <label class="form-label small mb-1">Payment Method</label>
-                                                    <select name="bill_payment_method" class="form-select form-select-sm">
-                                                        <option value="cash" {% if bill_payment_method_value == 'cash' %}selected{% endif %}>Cash</option>
-                                                        <option value="transfer" {% if bill_payment_method_value == 'transfer' %}selected{% endif %}>Bank / Online / UPI</option>
+                                                    <label class="form-label small mb-1">
+                                                        {% if entry_type == 'purchase' %}
+                                                            <i class="fa-solid fa-building-columns text-primary me-1"></i>Paid From Account
+                                                        {% else %}
+                                                            <i class="fa-solid fa-building-columns text-primary me-1"></i>Deposit To Account
+                                                        {% endif %}
+                                                    </label>
+                                                    <select name="financial_account" class="form-select form-select-sm" required>
+                                                        {% for acc in financial_accounts %}
+                                                        <option value="{{ acc.id }}" {% if forloop.first %}selected{% endif %}>
+                                                            {% if acc.account_type == 'cash' %}💵{% elif acc.account_type == 'bank' %}🏦{% else %}📱{% endif %}
+                                                            {{ acc.name }} ({{ acc.get_account_type_display }})
+                                                            {% if acc.is_default_cash %}★ [Default Cash]{% elif acc.is_default_bank %}★ [Default Bank]{% endif %}
+                                                            — ₹{{ acc.current_balance|floatformat:2 }}
+                                                        </option>
+                                                        {% empty %}
+                                                        <option value="" disabled selected>No accounts available</option>
+                                                        {% endfor %}
                                                     </select>
                                                 </div>
                                                 <div class="col-md-6">
@@ -1504,6 +1532,7 @@ function initInventoryEntryDashboard() {
     const billPartPaidAmountCol = document.getElementById('bill-part-paid-amount-col');
     const billAmountPaidInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_amount_paid"]') : null;
     const billPaymentMethodInput = addEntryModal ? addEntryModal.querySelector('select[name="bill_payment_method"]') : null;
+    const billFinancialAccountInput = addEntryModal ? addEntryModal.querySelector('select[name="financial_account"]') : null;
     const billPaymentDateInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_payment_date"]') : null;
     const billPaymentReferenceInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_payment_reference"]') : null;
     const addPartyPickerInput = document.getElementById('add-party-picker');
@@ -1636,6 +1665,15 @@ function initInventoryEntryDashboard() {
                 amountInput.max = balance;
             }
             if (submitBtn) submitBtn.textContent = trigger.getAttribute('data-action-label') || 'Save Payment';
+            const accountLabel = creditPaymentModal.querySelector('#entry-credit-payment-account-label');
+            const actionLabel = trigger.getAttribute('data-action-label') || '';
+            if (accountLabel && actionLabel) {
+                if (actionLabel.toLowerCase().includes('pay')) {
+                    accountLabel.innerHTML = '<i class="fa-solid fa-building-columns text-primary me-1"></i>Paid From Account';
+                } else {
+                    accountLabel.innerHTML = '<i class="fa-solid fa-building-columns text-primary me-1"></i>Deposit To Account';
+                }
+            }
         });
     }
 
@@ -2787,6 +2825,7 @@ function initInventoryEntryDashboard() {
             bill_payment_status: selectedBillPaymentStatus(),
             bill_amount_paid: billAmountPaidInput ? billAmountPaidInput.value : '',
             bill_payment_method: billPaymentMethodInput ? billPaymentMethodInput.value : 'cash',
+            financial_account: billFinancialAccountInput ? billFinancialAccountInput.value : '',
             bill_payment_date: billPaymentDateInput ? billPaymentDateInput.value : '',
             bill_payment_reference: billPaymentReferenceInput ? billPaymentReferenceInput.value.trim() : '',
             lines: getAddEntryRows().map((row) => ({
@@ -2922,6 +2961,9 @@ function initInventoryEntryDashboard() {
         }
         if (billPaymentMethodInput) {
             billPaymentMethodInput.value = draft.bill_payment_method || 'cash';
+        }
+        if (billFinancialAccountInput && draft.financial_account) {
+            billFinancialAccountInput.value = draft.financial_account;
         }
         if (billPaymentDateInput) {
             billPaymentDateInput.value = draft.bill_payment_date || billPaymentDateInput.value;

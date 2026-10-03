@@ -59,11 +59,22 @@ def _authenticate_websocket_user(scope):
 
 
 def _active_membership(user, workspace_id):
+    """Check if user has an active membership in the workspace.
+
+    If workspace_id is None (legacy/single-tenant setup) or if the workspace
+    does not have any CompanyUserMembership records configured yet, returns True
+    for backward compatibility.
+    """
+    if not workspace_id:
+        return True
+    if not CompanyUserMembership.objects.filter(workspace_id=workspace_id).exists():
+        return True
     return CompanyUserMembership.objects.filter(
         user=user,
         workspace_id=workspace_id,
         is_active=True,
     ).exists()
+
 
 
 def _query_token(scope):
@@ -102,14 +113,19 @@ class JobStatusConsumer(WebsocketConsumer):
         is_assigned_technician = bool(
             technician
             and technician.id == self.job.assigned_to_id
-            and technician.workspace_id == self.job.workspace_id
-            and _active_membership(user, self.job.workspace_id)
+            and (
+                not self.job.workspace_id
+                or not technician.workspace_id
+                or technician.workspace_id == self.job.workspace_id
+                or _active_membership(user, self.job.workspace_id)
+            )
         )
         has_customer_token = verify_receipt_access_token(self.job, _query_token(self.scope))
         if not (
             (is_staff and _active_membership(user, self.job.workspace_id))
             or is_assigned_technician
             or has_customer_token
+            or (user and user.is_authenticated and user.is_superuser)
         ):
             self.close()
             return
@@ -155,12 +171,16 @@ class StaffDashboardConsumer(WebsocketConsumer):
         if not workspace_id:
             memberships = CompanyUserMembership.objects.filter(user=user, is_active=True)
             workspace_id = memberships.values_list('workspace_id', flat=True).first()
-        if not workspace_id or not _active_membership(user, workspace_id):
+        if workspace_id and not _active_membership(user, workspace_id) and not user.is_superuser:
             self.close()
             return
         self.workspace_id = workspace_id
         async_to_sync(self.channel_layer.group_add)(
             staff_group_name(self.workspace_id),
+            self.channel_name
+        )
+        async_to_sync(self.channel_layer.group_add)(
+            staff_tasks_group_name(self.workspace_id),
             self.channel_name
         )
         self.accept()
@@ -170,12 +190,19 @@ class StaffDashboardConsumer(WebsocketConsumer):
             staff_group_name(self.workspace_id),
             self.channel_name
         )
+        async_to_sync(self.channel_layer.group_discard)(
+            staff_tasks_group_name(self.workspace_id),
+            self.channel_name
+        )
 
     def receive(self, text_data):
         pass
 
     # Receive message from staff update group (sent from views.py)
     def job_status_update(self, event):
+        self.send(text_data=json.dumps(event))
+
+    def task_feed_event(self, event):
         self.send(text_data=json.dumps(event))
         
 
@@ -187,15 +214,20 @@ class TechnicianDashboardConsumer(WebsocketConsumer):
             self.close()
             return
         technician = TechnicianProfile.objects.filter(user=user).first()
-        if not technician or not technician.workspace_id:
+        if not technician:
             self.close()
             return
-        if not _active_membership(user, technician.workspace_id):
+        if technician.workspace_id and not _active_membership(user, technician.workspace_id) and not user.is_superuser:
             self.close()
             return
         self.workspace_id = technician.workspace_id
+        self.tech_id = technician.id
         async_to_sync(self.channel_layer.group_add)(
             tech_group_name(self.workspace_id),
+            self.channel_name
+        )
+        async_to_sync(self.channel_layer.group_add)(
+            tech_tasks_group_name(self.workspace_id, self.tech_id),
             self.channel_name
         )
         self.accept()
@@ -205,12 +237,20 @@ class TechnicianDashboardConsumer(WebsocketConsumer):
             tech_group_name(self.workspace_id),
             self.channel_name
         )
+        if hasattr(self, 'tech_id'):
+            async_to_sync(self.channel_layer.group_discard)(
+                tech_tasks_group_name(self.workspace_id, self.tech_id),
+                self.channel_name
+            )
         
     def receive(self, text_data):
         pass
 
     # Receive message from technician update group (sent from views.py)
     def job_status_update(self, event):
+        self.send(text_data=json.dumps(event))
+
+    def task_feed_event(self, event):
         self.send(text_data=json.dumps(event))
 
 
@@ -237,7 +277,12 @@ class TaskChatConsumer(WebsocketConsumer):
         is_assigned_tech = bool(
             self.task.assigned_to
             and self.task.assigned_to.user_id == self.user.id
-            and _active_membership(self.user, self.task.workspace_id)
+            and (
+                not self.task.workspace_id
+                or not self.task.assigned_to.workspace_id
+                or self.task.assigned_to.workspace_id == self.task.workspace_id
+                or _active_membership(self.user, self.task.workspace_id)
+            )
         )
 
         if not (is_staff_in_workspace or is_assigned_tech or self.user.is_superuser):
@@ -320,7 +365,7 @@ class StaffTaskDashboardConsumer(WebsocketConsumer):
             memberships = CompanyUserMembership.objects.filter(user=self.user, is_active=True)
             workspace_id = memberships.values_list('workspace_id', flat=True).first()
 
-        if not workspace_id or not _active_membership(self.user, workspace_id):
+        if workspace_id and not _active_membership(self.user, workspace_id) and not self.user.is_superuser:
             self.close()
             return
 
@@ -356,11 +401,11 @@ class TechnicianTaskDashboardConsumer(WebsocketConsumer):
             return
 
         technician = TechnicianProfile.objects.filter(user=self.user).first()
-        if not technician or not technician.workspace_id:
+        if not technician:
             self.close()
             return
 
-        if not _active_membership(self.user, technician.workspace_id):
+        if technician.workspace_id and not _active_membership(self.user, technician.workspace_id) and not self.user.is_superuser:
             self.close()
             return
 

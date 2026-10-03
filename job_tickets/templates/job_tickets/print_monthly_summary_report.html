@@ -308,6 +308,63 @@
         </div>
     </div>
 
+    <!-- ACCOUNTS LIQUIDITY & CURRENT BALANCES -->
+    <div class="card-box mb-4">
+        <div class="section-title-line">
+            <i class="fas fa-wallet text-success"></i>
+            <h2>Liquid Accounts &amp; Real-time Balances</h2>
+        </div>
+        <p class="text-muted small mb-3">
+            Real-time liquid capital held across shop cash drawer, bank accounts, and digital wallets.
+        </p>
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="p-3 rounded border bg-light">
+                    <span class="small text-muted text-uppercase fw-bold d-block">Total Liquid Funds</span>
+                    <h3 class="h4 mb-0 text-success fw-bold">&#8377;{{ total_liquid_balance|default:"0.00"|floatformat:2 }}</h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 rounded border bg-light">
+                    <span class="small text-muted text-uppercase fw-bold d-block">Cash in Hand (Physical Drawer)</span>
+                    <h3 class="h4 mb-0 text-dark fw-bold">&#8377;{{ total_cash_balance|default:"0.00"|floatformat:2 }}</h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 rounded border bg-light">
+                    <span class="small text-muted text-uppercase fw-bold d-block">Bank &amp; Digital Accounts</span>
+                    <h3 class="h4 mb-0 text-primary fw-bold">&#8377;{{ total_bank_balance|default:"0.00"|floatformat:2 }}</h3>
+                </div>
+            </div>
+        </div>
+        {% if financial_accounts %}
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Account Name</th>
+                        <th>Type</th>
+                        <th class="text-end">Current Live Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for acc in financial_accounts %}
+                    <tr>
+                        <td>
+                            <strong>{{ acc.name }}</strong>
+                            {% if acc.is_default_cash %}<span class="badge bg-success small ms-1">Default Cash</span>{% endif %}
+                            {% if acc.is_default_bank %}<span class="badge bg-primary small ms-1">Default Bank</span>{% endif %}
+                        </td>
+                        <td>{{ acc.get_account_type_display }}</td>
+                        <td class="text-end fw-bold text-dark">&#8377;{{ acc.current_balance|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- 2. CLOSED JOBS BREAKDOWN BY INTAKE PERIOD (SAME-MONTH VS PREVIOUS BACKLOG) -->
     <div class="card-box mb-4">
         <div class="section-title-line">
@@ -586,12 +643,30 @@
                     <tr>
                         <td><strong>{{ block.label }}</strong></td>
                         <td class="text-muted small">{{ block.note }}</td>
-                        <td class="text-end {% if block.is_discount %}text-danger{% endif %}">
-                            {% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.revenue_abs|floatformat:2 }}{% else %}{{ block.revenue|floatformat:2 }}{% endif %}
+                        <td class="text-end {% if block.is_discount %}text-danger{% elif not block.revenue %}text-muted{% endif %}">
+                            {% if block.is_discount and block.revenue_abs %}
+                                - &#8377;{{ block.revenue_abs|floatformat:2 }}
+                            {% elif block.revenue %}
+                                &#8377;{{ block.revenue|floatformat:2 }}
+                            {% else %}
+                                &mdash;
+                            {% endif %}
                         </td>
-                        <td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td>
-                        <td class="text-end {% if block.is_discount %}text-danger{% endif %}">
-                            {% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.profit_abs|floatformat:2 }}{% else %}{{ block.profit|floatformat:2 }}{% endif %}
+                        <td class="text-end text-muted">
+                            {% if block.is_discount or not block.expense %}
+                                &mdash;
+                            {% else %}
+                                &#8377;{{ block.expense|floatformat:2 }}
+                            {% endif %}
+                        </td>
+                        <td class="text-end {% if block.is_discount %}text-danger{% elif not block.profit %}text-muted{% endif %}">
+                            {% if block.is_discount and block.profit_abs %}
+                                - &#8377;{{ block.profit_abs|floatformat:2 }}
+                            {% elif block.profit %}
+                                &#8377;{{ block.profit|floatformat:2 }}
+                            {% else %}
+                                &mdash;
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -600,7 +675,7 @@
                     <tr class="fw-bold table-primary">
                         <td colspan="2">Total Direct Performance ({{ jobs_closed_count }} Closed Jobs{% if direct_stock_sales_count %} + {{ direct_stock_sales_count }} Retail Sales{% endif %})</td>
                         <td class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</td>
-                        <td class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</td>
+                        <td class="text-end text-muted">{% if overall_expense %}&#8377;{{ overall_expense|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
                         <td class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</td>
                     </tr>
                     {% if period_overhead_expenses %}
@@ -619,30 +694,57 @@
         </div>
     </div>
 
-    <!-- 6. READY FOR PICKUP RECEIVABLES (ALL-TIME UNCLAIMED) -->
+    <!-- 6. MONTHLY CLOSED & READY FOR PICKUP BREAKDOWN -->
     <div class="card-box mb-4">
         <div class="section-title-line">
-            <i class="fas fa-hourglass-half text-warning"></i>
-            <h2>Ready for Pickup Receivables</h2>
+            <i class="fas fa-calendar-check text-primary"></i>
+            <h2>Monthly Closed &amp; Ready for Pickup Breakdown</h2>
         </div>
-        <p class="text-muted small mb-3">All-time jobs ready for pickup, but not closed/claimed yet by the customer.</p>
-        <div class="row g-3">
-            <div class="col-md-6">
-                <a class="text-decoration-none" href="?start_date={{ start_date }}&end_date={{ end_date }}{% if preset %}&preset={{ preset }}{% endif %}&show_jobs=pending_completed">
-                    <div class="metric-card metric-amber">
-                        <p class="label">Ready for Pickup Jobs</p>
-                        <p class="value">{{ ready_for_pickup_count }}</p>
-                        <p class="note">All time, customer not claimed yet</p>
-                    </div>
-                </a>
-            </div>
-            <div class="col-md-6">
-                <div class="metric-card">
-                    <p class="label">Pending Receivable Value</p>
-                    <p class="value text-dark">&#8377;{{ ready_for_pickup_value|floatformat:2 }}</p>
-                    <p class="note">Parts: &#8377;{{ ready_for_pickup_parts|floatformat:2 }} + Service: &#8377;{{ ready_for_pickup_service|floatformat:2 }}</p>
-                </div>
-            </div>
+        <p class="text-muted small mb-3">
+            All-time month-by-month breakdown of closed jobs, linked credit bills, outstanding balance, and ready for pickup jobs (months with zero values hidden).
+        </p>
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Month</th>
+                        <th scope="col" class="text-end">Closed Jobs</th>
+                        <th scope="col" class="text-end">Credit Bills</th>
+                        <th scope="col" class="text-end">Outstanding Balance</th>
+                        <th scope="col" class="text-end">Ready for Pickup Jobs</th>
+                        <th scope="col" class="text-end">Ready for Pickup Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in monthly_breakdown %}
+                    <tr>
+                        <th scope="row" class="fw-semibold text-dark">{{ row.month_label }}</th>
+                        <td class="text-end">{{ row.closed_count }}</td>
+                        <td class="text-end text-dark">&#8377;{{ row.credit_bills|floatformat:2 }}</td>
+                        <td class="text-end {% if row.outstanding_balance > 0 %}text-danger fw-semibold{% else %}text-muted{% endif %}">&#8377;{{ row.outstanding_balance|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.ready_count }}</td>
+                        <td class="text-end text-primary fw-semibold">&#8377;{{ row.ready_value|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">No closed or ready for pickup jobs recorded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if monthly_breakdown %}
+                <tfoot class="table-group-divider fw-bold">
+                    <tr class="table-light">
+                        <th scope="row">Total</th>
+                        <td class="text-end">{{ monthly_breakdown_totals.closed_count }}</td>
+                        <td class="text-end text-dark">&#8377;{{ monthly_breakdown_totals.credit_bills|floatformat:2 }}</td>
+                        <td class="text-end {% if monthly_breakdown_totals.outstanding_balance > 0 %}text-danger{% else %}text-muted{% endif %}">&#8377;{{ monthly_breakdown_totals.outstanding_balance|floatformat:2 }}</td>
+                        <td class="text-end">{{ monthly_breakdown_totals.ready_count }}</td>
+                        <td class="text-end text-primary">&#8377;{{ monthly_breakdown_totals.ready_value|floatformat:2 }}</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
         </div>
     </div>
 

@@ -192,7 +192,7 @@
                                                                 {% for option in staff_access_options %}
                                                                 {% with option_key=option.key %}
                                                                 <div class="form-check">
-                                                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}" data-report-root
+                                                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}"
                                                                         {% if member.staff_access_keys and option_key in member.staff_access_keys %}checked{% endif %}>
                                                                     <label class="form-check-label" for="access_{{ option_key }}_{{ member.id }}">{{ option.label }}</label>
                                                                 </div>
@@ -205,7 +205,7 @@
                                                                 {% if option.key == 'reports_dashboard' %}
                                                                 {% with option_key=option.key %}
                                                                 <div class="form-check">
-                                                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}"
+                                                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}_{{ member.id }}" data-report-root
                                                                         {% if member.staff_access_keys and option_key in member.staff_access_keys %}checked{% endif %}>
                                                                     <label class="form-check-label" for="access_{{ option_key }}_{{ member.id }}">{{ option.label }}</label>
                                                                 </div>
@@ -319,7 +319,7 @@
                                 {% for option in staff_access_options %}
                                 {% with option_key=option.key %}
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}" data-report-root
+                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}"
                                         {% if selected_access_keys and option_key in selected_access_keys %}checked{% endif %}>
                                     <label class="form-check-label" for="access_{{ option_key }}">{{ option.label }}</label>
                                 </div>
@@ -332,7 +332,7 @@
                                 {% if option.key == 'reports_dashboard' %}
                                 {% with option_key=option.key %}
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}"
+                                    <input class="form-check-input" type="checkbox" name="access_{{ option_key }}" id="access_{{ option_key }}" data-report-root
                                         {% if selected_access_keys and option_key in selected_access_keys %}checked{% endif %}>
                                     <label class="form-check-label" for="access_{{ option_key }}">{{ option.label }}</label>
                                 </div>

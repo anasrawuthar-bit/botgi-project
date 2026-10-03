@@ -150,7 +150,10 @@ def client_phone_lookup(request):
     return JsonResponse({'ok': True, **snapshot})
 
 def client_bill_view(request, job_code):
-    job_ticket = get_object_or_404(JobTicket, job_code=job_code)
+    job_ticket = get_object_or_404(
+        JobTicket.objects.select_related('workspace', 'assigned_to__user', 'created_by', 'rack'),
+        job_code=job_code,
+    )
     access_token = (request.GET.get('token') or '').strip()
     session_job_code = request.session.get('customer_job_code')
     if not (
@@ -165,39 +168,7 @@ def client_bill_view(request, job_code):
             'error': 'Bill is not yet available. Please check back when your device is ready for pickup.'
         })
     
-    job_tickets = [job_ticket]
-    calculate_job_totals(job_tickets)
-    
-    subtotal = job_ticket.total
-    discount = job_ticket.discount_amount
-    grand_total = subtotal - discount
-    
-    # Clean service logs to remove vendor names
-    service_logs = job_ticket.service_logs.all()
-    cleaned_service_logs = []
-    for log in service_logs:
-        # Replace specialized service descriptions with generic terms
-        if 'Specialized Service' in log.description:
-            description = 'Specialized Service'
-        else:
-            description = log.description
-            
-        cleaned_log = {
-            'description': description,
-            'part_cost': log.part_cost,
-            'service_charge': log.service_charge,
-        }
-        cleaned_service_logs.append(cleaned_log)
-    
-    context = {
-        'job': job_ticket,
-        'service_logs': cleaned_service_logs,
-        'subtotal': subtotal,
-        'discount': discount,
-        'grand_total': grand_total,
-        'technician_id': job_ticket.assigned_to.unique_id if job_ticket.assigned_to else 'N/A',
-        'created_by_id': job_ticket.created_by.id if job_ticket.created_by else 'N/A',
-    }
+    context = build_job_billing_context(job_ticket, request=request)
     return render(request, 'job_tickets/job_billing_print.html', context)
 
 
@@ -236,13 +207,16 @@ def job_creation_receipt_print_view(request, job_code):
     denied = _staff_access_required(request, "staff_dashboard")
     if denied:
         return denied
-    job_ticket = get_object_or_404(JobTicket.objects.select_related('rack'), job_code=job_code)
+    job_ticket = get_object_or_404(
+        JobTicket.objects.select_related('rack', 'assigned_to__user', 'created_by'),
+        job_code=job_code,
+    )
 
     if job_ticket.customer_group_id:
         grouped_jobs = list(JobTicket.objects.filter(
             workspace_id=job_ticket.workspace_id,
             customer_group_id=job_ticket.customer_group_id,
-        ).select_related('rack').order_by('created_at'))
+        ).select_related('rack', 'assigned_to__user').order_by('created_at'))
     else:
         grouped_jobs = [job_ticket]
 
@@ -250,18 +224,31 @@ def job_creation_receipt_print_view(request, job_code):
     estimated_delivery = job_ticket.estimated_delivery or (job_ticket.created_at + timedelta(days=3))
     autoprint = _parse_autoprint_flag(request, default=True)
 
+    checklist_schema, _, _ = _build_checklist_schema_for_job(job_ticket)
+    checklist_summary = []
+    for item in checklist_schema:
+        val = item.get('value')
+        if val is True or val == 'true' or val == 1:
+            checklist_summary.append({'label': item.get('label', ''), 'value': 'Passed / OK'})
+        elif val and str(val).strip() and val is not False:
+            checklist_summary.append({'label': item.get('label', ''), 'value': str(val).strip()})
+
     context = {
         'job_ticket': job_ticket,
         'grouped_jobs': grouped_jobs,
         'estimated_amount': estimated_amount,
         'estimated_delivery': estimated_delivery,
+        'checklist_summary': checklist_summary,
         'company': CompanyProfile.get_profile(getattr(request, 'current_workspace', None)),
         'autoprint': autoprint,
     }
     return render(request, 'job_tickets/job_creation_receipt_print.html', context)
 
 def job_creation_receipt_public_view(request, job_code):
-    job_ticket = get_object_or_404(JobTicket.objects.select_related('rack'), job_code=job_code)
+    job_ticket = get_object_or_404(
+        JobTicket.objects.select_related('rack', 'assigned_to__user', 'created_by'),
+        job_code=job_code,
+    )
     token = (request.GET.get('token') or '').strip()
     if not verify_receipt_access_token(job_ticket, token):
         return HttpResponseForbidden("Invalid or expired receipt link.")
@@ -270,7 +257,7 @@ def job_creation_receipt_public_view(request, job_code):
         grouped_jobs = list(JobTicket.objects.filter(
             workspace_id=job_ticket.workspace_id,
             customer_group_id=job_ticket.customer_group_id,
-        ).select_related('rack').order_by('created_at'))
+        ).select_related('rack', 'assigned_to__user').order_by('created_at'))
     else:
         grouped_jobs = [job_ticket]
 
@@ -278,11 +265,21 @@ def job_creation_receipt_public_view(request, job_code):
     estimated_delivery = job_ticket.estimated_delivery or (job_ticket.created_at + timedelta(days=3))
     autoprint = _parse_autoprint_flag(request, default=False)
 
+    checklist_schema, _, _ = _build_checklist_schema_for_job(job_ticket)
+    checklist_summary = []
+    for item in checklist_schema:
+        val = item.get('value')
+        if val is True or val == 'true' or val == 1:
+            checklist_summary.append({'label': item.get('label', ''), 'value': 'Passed / OK'})
+        elif val and str(val).strip() and val is not False:
+            checklist_summary.append({'label': item.get('label', ''), 'value': str(val).strip()})
+
     context = {
         'job_ticket': job_ticket,
         'grouped_jobs': grouped_jobs,
         'estimated_amount': estimated_amount,
         'estimated_delivery': estimated_delivery,
+        'checklist_summary': checklist_summary,
         'company': CompanyProfile.get_profile(getattr(request, 'current_workspace', None)),
         'autoprint': autoprint,
     }

@@ -2,19 +2,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/task_model.dart';
+import '../services/jobs_service.dart';
 import '../services/tasks_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/priority_badge.dart';
+import 'job_detail_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   const TaskDetailScreen({
     super.key,
     required this.taskId,
     required this.tasksService,
+    this.jobsService,
   });
 
   final int taskId;
   final TasksService tasksService;
+  final JobsService? jobsService;
 
   @override
   State<TaskDetailScreen> createState() => _TaskDetailScreenState();
@@ -51,9 +55,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _chatSubscription?.cancel();
     _chatSubscription = widget.tasksService.connectToTaskChat(widget.taskId).listen(
       _handleSocketEvent,
-      onError: (_) {
-        // Socket closed or reconnect pending
-      },
+      onError: (_) {},
     );
   }
 
@@ -69,7 +71,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         if (existingIdx != -1) {
           _messages[existingIdx] = msg;
         } else {
-          // If there is an optimistic pending message with matching body & sender, replace it
           final pendingIdx = _messages.indexWhere(
             (m) => m.isPending && m.body.trim() == msg.body.trim() && m.senderIsSelf,
           );
@@ -192,8 +193,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
-  Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
+  Future<void> _sendMessage([String? quickText]) async {
+    final text = (quickText ?? _messageController.text).trim();
     if (text.isEmpty || _isSending) return;
 
     final currentUsername = widget.tasksService.authService.currentUser?['username'] ?? 'Me';
@@ -218,7 +219,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       _isSending = true;
     });
 
-    _messageController.clear();
+    if (quickText == null) {
+      _messageController.clear();
+    }
     _scrollToBottom();
 
     try {
@@ -269,12 +272,62 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
+  void _openEditTaskSheet() {
+    if (_task == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditTaskSheet(
+        task: _task!,
+        tasksService: widget.tasksService,
+        onUpdated: (updatedTask) {
+          setState(() {
+            _task = updatedTask;
+          });
+        },
+      ),
+    );
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'in_progress':
+        return 'In Progress';
+      case 'done':
+        return 'Done';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return 'Open';
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'in_progress':
+        return const Color(0xFFD97706);
+      case 'done':
+        return const Color(0xFF16A34A);
+      case 'cancelled':
+        return const Color(0xFF64748B);
+      default:
+        return const Color(0xFF2563EB);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Task Details'),
+        title: const Text('Task & Directives', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
+          if (_task != null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit Task',
+              onPressed: _openEditTaskSheet,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -325,6 +378,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               children: [
                                 _buildHeaderCard(_task!),
                                 const SizedBox(height: 12),
+                                if (_task!.jobReference != null) ...[
+                                  _buildLinkedJobBanner(_task!),
+                                  const SizedBox(height: 12),
+                                ],
                                 _buildDirectivesCard(_task!),
                                 const SizedBox(height: 12),
                                 if (_task!.attachments.isNotEmpty) ...[
@@ -335,6 +392,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               ],
                             ),
                           ),
+                          _buildQuickResponseChips(),
                           _buildMessageComposer(),
                         ],
                       ),
@@ -346,10 +404,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final isUrgent = task.priority == 'urgent';
 
     return Card(
-      elevation: 1,
+      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: isUrgent ? BorderSide(color: Colors.red.shade400, width: 1.5) : BorderSide.none,
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: isUrgent ? const Color(0xFFDC2626) : Colors.grey.shade300,
+          width: isUrgent ? 1.8 : 1,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -359,9 +420,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                PriorityBadge(
-                  priority: task.priority,
-                  label: task.priorityDisplay,
+                Row(
+                  children: [
+                    PriorityBadge(
+                      priority: task.priority,
+                      label: task.priorityDisplay,
+                    ),
+                    if (task.isOverdue) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFFDC2626)),
+                        ),
+                        child: const Text(
+                          'OVERDUE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -386,74 +470,96 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
+
+            // Due Date & Assigned Info
             if (task.dueDate.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.schedule, size: 16, color: Colors.blueGrey),
+                  Icon(
+                    Icons.schedule_rounded,
+                    size: 16,
+                    color: task.isOverdue ? const Color(0xFFDC2626) : Colors.blueGrey,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Due: ${task.dueDate}',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isUrgent ? Colors.red.shade700 : Colors.blueGrey.shade800,
+                      color: task.isOverdue ? const Color(0xFFDC2626) : Colors.blueGrey.shade800,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
             ],
-            if (task.jobReference != null) ...[
-              Row(
-                children: [
-                  const Icon(Icons.build_circle, size: 16, color: Colors.indigo),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Linked Job: ${task.jobReference!.jobCode} (${task.jobReference!.device})',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.indigo),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-            ],
+
             Row(
               children: [
-                const Icon(Icons.person, size: 16, color: Colors.grey),
+                Icon(Icons.person_pin_rounded, size: 16, color: Colors.blue.shade700),
                 const SizedBox(width: 6),
                 Text(
-                  'Created by: ${task.createdBy} • ${task.createdAt}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  task.assignedTo.isNotEmpty
+                      ? 'Assigned to: ${task.assignedToName.isNotEmpty ? task.assignedToName : task.assignedTo}'
+                      : 'Assigned to: Unassigned (Pool)',
+                  style: TextStyle(fontSize: 12.5, color: Colors.grey.shade800, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+
+            Row(
+              children: [
+                const Icon(Icons.account_circle_outlined, size: 15, color: Colors.grey),
+                const SizedBox(width: 6),
+                Text(
+                  'Created by: ${task.createdBy} • ${task.createdAt}',
+                  style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                ),
+              ],
+            ),
+
             const SizedBox(height: 16),
-            // Action Buttons
+
+            // Status Progression Stepper / Action Buttons
             Row(
               children: [
                 if (task.status == 'open')
                   Expanded(
                     child: FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF57F17)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFD97706),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                       onPressed: _isUpdatingStatus ? null : () => _updateStatus('in_progress'),
                       icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('Start Task'),
+                      label: const Text('Start Work (In Progress)', style: TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   )
-                else if (task.status == 'in_progress')
+                else if (task.status == 'in_progress') ...[
                   Expanded(
                     child: FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF16A34A),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                       onPressed: _isUpdatingStatus ? null : () => _updateStatus('done'),
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('Mark Complete'),
+                      icon: const Icon(Icons.check_circle_rounded),
+                      label: const Text('Mark Completed', style: TextStyle(fontWeight: FontWeight.w700)),
                     ),
-                  )
-                else if (task.status == 'done')
+                  ),
+                ] else if (task.status == 'done')
                   Expanded(
                     child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                       onPressed: _isUpdatingStatus ? null : () => _updateStatus('in_progress'),
                       icon: const Icon(Icons.replay_rounded),
-                      label: const Text('Reopen Task'),
+                      label: const Text('Reopen Task', style: TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   ),
               ],
@@ -464,10 +570,90 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
+  Widget _buildLinkedJobBanner(TaskModel task) {
+    final job = task.jobReference!;
+    return Card(
+      elevation: 0,
+      color: const Color(0xFFEEF2FF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFC7D2FE)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          if (widget.jobsService != null) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => JobDetailScreen(
+                  jobCode: job.jobCode,
+                  jobsService: widget.jobsService!,
+                ),
+              ),
+            );
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4338CA).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.build_circle_rounded, color: Color(0xFF4338CA), size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Job Ticket: ${job.jobCode}',
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF312E81)),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFA5B4FC)),
+                          ),
+                          child: Text(
+                            job.status,
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${job.customerName} • ${job.device}',
+                      style: TextStyle(fontSize: 12.5, color: Colors.indigo.shade900),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF6366F1)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDirectivesCard(TaskModel task) {
     return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -475,7 +661,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           children: [
             const Row(
               children: [
-                Icon(Icons.notes, size: 18, color: Colors.blueGrey),
+                Icon(Icons.notes_rounded, size: 18, color: Colors.blueGrey),
                 SizedBox(width: 6),
                 Text(
                   'Work Directives & Instructions',
@@ -493,10 +679,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 border: Border.all(color: Colors.grey.shade200),
               ),
               child: Text(
-                task.description.isEmpty ? 'No detailed description provided.' : task.description,
+                task.description.isEmpty ? 'No detailed technical directives provided.' : task.description,
                 style: TextStyle(
-                  fontSize: 14,
-                  height: 1.4,
+                  fontSize: 13.5,
+                  height: 1.45,
                   color: task.description.isEmpty ? Colors.grey : Colors.black87,
                 ),
               ),
@@ -509,8 +695,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   Widget _buildAttachmentsCard(TaskModel task) {
     return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -518,27 +707,46 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.attach_file, size: 18, color: Colors.blueGrey),
+                const Icon(Icons.attach_file_rounded, size: 18, color: Colors.blueGrey),
                 const SizedBox(width: 6),
                 Text(
-                  'Reference Files (${task.attachments.length})',
+                  'Attachments (${task.attachments.length})',
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            ...task.attachments.map((att) {
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.insert_drive_file, color: Colors.indigo),
-                title: Text(att.fileName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text(
-                  '${att.fileSize > 0 ? '${(att.fileSize / 1024).toStringAsFixed(1)} KB • ' : ''}Uploaded ${att.uploadedAt}',
-                  style: const TextStyle(fontSize: 11),
-                ),
-              );
-            }),
+            const SizedBox(height: 10),
+            ...task.attachments.map((att) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.insert_drive_file_outlined, size: 20, color: Colors.indigo),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              att.fileName,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              'Uploaded by ${att.uploadedBy} • ${att.uploadedAt}',
+                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
           ],
         ),
       ),
@@ -549,170 +757,423 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Icon(Icons.chat_bubble_outline, size: 18, color: Colors.blueGrey),
-            const SizedBox(width: 6),
-            Text(
-              'Discussion (${_messages.length})',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-          ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(Icons.forum_outlined, size: 18, color: Colors.blueGrey),
+              const SizedBox(width: 6),
+              Text(
+                'Task Discussion & Thread (${_messages.length})',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
         if (_messages.isEmpty)
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: const Center(
-              child: Text(
-                'No messages yet. Send a query or update below.',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-              ),
+            padding: const EdgeInsets.all(24),
+            alignment: Alignment.center,
+            child: Text(
+              'No messages on this task yet.\nSend directives or technical updates below.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
             ),
           )
         else
-          ..._messages.map((msg) {
-            final isSelf = msg.senderIsSelf;
-            return Align(
-              alignment: isSelf ? Alignment.centerRight : Alignment.centerLeft,
-              child: Opacity(
-                opacity: msg.isPending ? 0.65 : 1.0,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.75,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSelf
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(12).copyWith(
-                      bottomRight: isSelf ? const Radius.circular(0) : const Radius.circular(12),
-                      bottomLeft: !isSelf ? const Radius.circular(0) : const Radius.circular(12),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: isSelf ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        msg.body,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isSelf ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${msg.sender} • ${msg.sentAt}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: isSelf ? Colors.white70 : Colors.black54,
-                            ),
-                          ),
-                          if (msg.isPending) ...[
-                            const SizedBox(width: 4),
-                            const SizedBox(
-                              width: 10,
-                              height: 10,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
+          ..._messages.map(_buildMessageBubble),
+      ],
+    );
+  }
+
+  Widget _buildMessageBubble(TaskMessageModel msg) {
+    final isSelf = msg.senderIsSelf;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Align(
+        alignment: isSelf ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelf ? const Color(0xFF2563EB) : Colors.grey.shade100,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(14),
+              topRight: const Radius.circular(14),
+              bottomLeft: isSelf ? const Radius.circular(14) : const Radius.circular(2),
+              bottomRight: isSelf ? const Radius.circular(2) : const Radius.circular(14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: isSelf ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              if (!isSelf)
+                Text(
+                  msg.sender,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.blue.shade900,
                   ),
                 ),
+              Text(
+                msg.body,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: isSelf ? Colors.white : Colors.black87,
+                ),
               ),
-            );
-          }),
-      ],
+              const SizedBox(height: 3),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    msg.sentAt,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isSelf ? Colors.white70 : Colors.grey.shade500,
+                    ),
+                  ),
+                  if (msg.isPending) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.access_time_rounded, size: 10, color: Colors.white70),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickResponseChips() {
+    final quickResponses = [
+      'Started work on bench',
+      'Waiting for parts approval',
+      'Inspection complete, testing now',
+      'Completed and ready for review',
+    ];
+
+    return Container(
+      height: 34,
+      margin: const EdgeInsets.only(bottom: 6),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: quickResponses.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 6),
+        itemBuilder: (context, index) {
+          final reply = quickResponses[index];
+          return ActionChip(
+            label: Text(reply, style: const TextStyle(fontSize: 11)),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            onPressed: () => _sendMessage(reply),
+          );
+        },
+      ),
     );
   }
 
   Widget _buildMessageComposer() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Row(
         children: [
           Expanded(
             child: TextField(
               controller: _messageController,
+              minLines: 1,
+              maxLines: 4,
               decoration: InputDecoration(
-                hintText: 'Type a message to staff...',
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
+                hintText: 'Type a message or directive update...',
                 filled: true,
                 fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
               ),
-              textCapitalization: TextCapitalization.sentences,
-              maxLines: null,
+              onSubmitted: (_) => _sendMessage(),
             ),
           ),
           const SizedBox(width: 8),
           IconButton.filled(
-            onPressed: _isSending ? null : _sendMessage,
+            onPressed: _isSending ? null : () => _sendMessage(),
             icon: _isSending
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
-                : const Icon(Icons.send_rounded, size: 20),
+                : const Icon(Icons.send_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditTaskSheet extends StatefulWidget {
+  const _EditTaskSheet({
+    required this.task,
+    required this.tasksService,
+    required this.onUpdated,
+  });
+
+  final TaskModel task;
+  final TasksService tasksService;
+  final ValueChanged<TaskModel> onUpdated;
+
+  @override
+  State<_EditTaskSheet> createState() => _EditTaskSheetState();
+}
+
+class _EditTaskSheetState extends State<_EditTaskSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _titleController;
+  late final TextEditingController _descController;
+  late String _priority;
+  int? _assignedToId;
+  List<TechnicianItem> _technicians = [];
+  bool _isLoadingTechs = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.task.title);
+    _descController = TextEditingController(text: widget.task.description);
+    _priority = widget.task.priority;
+    _assignedToId = widget.task.assignedToId;
+    _loadTechs();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadTechs() async {
+    try {
+      final list = await widget.tasksService.fetchTechnicians();
+      if (!mounted) return;
+      setState(() {
+        _technicians = list;
+        _isLoadingTechs = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingTechs = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updated = await widget.tasksService.updateTask(
+        taskId: widget.task.id,
+        title: _titleController.text.trim(),
+        description: _descController.text.trim(),
+        priority: _priority,
+        assignedToId: _assignedToId,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onUpdated(updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task updated successfully!')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.warningFg,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Edit Directive / Task', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Title *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _titleController,
+                      validator: (val) => val == null || val.trim().isEmpty ? 'Title is required' : null,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Priority Level', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _priorityChip('urgent', '⚡ Urgent', const Color(0xFFDC2626)),
+                        const SizedBox(width: 8),
+                        _priorityChip('high', '↑ High', const Color(0xFFEA580C)),
+                        const SizedBox(width: 8),
+                        _priorityChip('medium', '● Medium', const Color(0xFF2563EB)),
+                        const SizedBox(width: 8),
+                        _priorityChip('low', '↓ Low', Colors.grey.shade600),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Assignee', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      initialValue: _assignedToId,
+                      decoration: InputDecoration(
+                        hintText: _isLoadingTechs ? 'Loading technicians...' : 'Select Technician (or unassigned)',
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int>(
+                          value: null,
+                          child: Text('Unassigned'),
+                        ),
+                        ..._technicians.map((t) => DropdownMenuItem<int>(
+                              value: t.id,
+                              child: Text('${t.name} (${t.username})'),
+                            )),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _assignedToId = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Directives & Instructions', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _descController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: FilledButton(
+                        onPressed: _isSaving ? null : _save,
+                        child: _isSaving
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('Save Changes'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'in_progress':
-        return const Color(0xFFF57F17);
-      case 'done':
-        return const Color(0xFF2E7D32);
-      case 'cancelled':
-        return const Color(0xFF546E7A);
-      default:
-        return const Color(0xFF1565C0);
-    }
-  }
-
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'in_progress':
-        return 'In Progress';
-      case 'done':
-        return 'Done';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return 'Open';
-    }
+  Widget _priorityChip(String key, String label, Color color) {
+    final isSelected = _priority == key;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() {
+            _priority = key;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.15) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? color : Colors.grey.shade300,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+              color: isSelected ? color : Colors.grey.shade800,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

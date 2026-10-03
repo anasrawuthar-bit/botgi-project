@@ -357,6 +357,15 @@ def staff_dashboard(request):
             # Client directory sync should not block ticket creation.
             pass
 
+        job_date_raw = (request.POST.get('job_date') or '').strip()
+        parsed_job_date = None
+        if job_date_raw:
+            try:
+                parsed_job_date = datetime.strptime(job_date_raw, '%Y-%m-%d').date()
+            except Exception:
+                pass
+        intake_date_val = parsed_job_date or timezone.localdate()
+
         try:
             estimated_amount = Decimal(estimated_amount_raw) if estimated_amount_raw else None
         except InvalidOperation:
@@ -403,6 +412,7 @@ def staff_dashboard(request):
             device_brand = (request.POST.get(f'device_forms[{i}].device_brand') or '').strip()
             device_model = (request.POST.get(f'device_forms[{i}].device_model') or '').strip()
             device_serial = (request.POST.get(f'device_forms[{i}].device_serial') or '').strip()
+            device_password = (request.POST.get(f'device_forms[{i}].device_password') or '').strip()
             reported_issue = (request.POST.get(f'device_forms[{i}].reported_issue') or '').strip()
             additional_items = (request.POST.get(f'device_forms[{i}].additional_items') or '').strip()
             photo_files = request.FILES.getlist(f'device_forms[{i}].device_photos')
@@ -457,6 +467,7 @@ def staff_dashboard(request):
                     'device_brand': device_brand,
                     'device_model': device_model,
                     'device_serial': device_serial,
+                    'device_password': device_password,
                     'reported_issue': reported_issue,
                     'additional_items': additional_items,
                     'is_under_warranty': is_under_warranty,
@@ -521,7 +532,8 @@ def staff_dashboard(request):
                     created_by=request.user,
                     estimated_amount=estimated_amount,
                     estimated_delivery=estimated_delivery,
-                    customer_group_id=submission_group_id, 
+                    customer_group_id=submission_group_id,
+                    intake_date=intake_date_val,
                     **device_data 
                 )
 
@@ -538,6 +550,8 @@ def staff_dashboard(request):
                             )
                 
                 created_details = f"Job ticket created for device: {device_data['device_type']}."
+                if parsed_job_date and parsed_job_date != timezone.localdate():
+                    created_details += f" Intake date: {parsed_job_date.strftime('%d-%m-%Y')}."
                 if device_data.get('rack'):
                     rack_loc = device_data['rack'].name
                     if device_data.get('rack_column'):
@@ -766,11 +780,15 @@ def staff_dashboard(request):
         racks_qs = racks_qs.filter(workspace=current_workspace)
     active_racks = list(racks_qs.order_by('group', 'name'))
 
+    active_checklists = get_active_checklist_templates(workspace=current_workspace)
+
     # FINAL CONTEXT
     context = {
         'form': JobTicketForm(), # Use an empty form here for any generic field access in the template
         'assign_form': assign_form,
         'job_field_presets': get_job_field_presets(),
+        'active_checklist_templates': active_checklists,
+        'active_checklist_templates_json': json.dumps(active_checklists),
         'show_create_job_modal': request.session.pop('show_create_job_modal', False),
         'pending_jobs': pending_jobs,
         'grouped_in_progress_jobs': grouped_in_progress_jobs,
@@ -907,27 +925,38 @@ def job_billing_staff(request, job_code):
                                 JobTicketLog.objects.create(job_ticket=job, user=request.user, action='BILLING', details=details)
 
                         if product_sale_entry:
-                            if new_part_cost < 0:
+                            quantity = product_sale_entry.quantity or 1
+                            if quantity <= 0:
                                 raise ValueError(
-                                    f"Product amount cannot be negative for '{product_sale_entry.product.name}'."
+                                    f"Product sale quantity is invalid for '{product_sale_entry.product.name}'."
                                 )
 
-                            if old_part_cost != new_part_cost:
-                                quantity = product_sale_entry.quantity or 0
-                                if quantity <= 0:
+                            unit_price_field = f'product_unit_price_{log_id}'
+                            if unit_price_field in request.POST:
+                                try:
+                                    submitted_unit_price = Decimal(request.POST.get(unit_price_field, 0) or 0).quantize(Decimal('0.01'))
+                                except InvalidOperation:
+                                    raise ValueError(f"Invalid unit price entered for '{product_sale_entry.product.name}'.")
+                                if submitted_unit_price < 0:
+                                    raise ValueError(f"Product price cannot be negative for '{product_sale_entry.product.name}'.")
+                                quantized_part_cost = (submitted_unit_price * Decimal(quantity)).quantize(Decimal('0.01'))
+                                new_unit_price = submitted_unit_price
+                            else:
+                                if new_part_cost < 0:
                                     raise ValueError(
-                                        f"Product sale quantity is invalid for '{product_sale_entry.product.name}'."
+                                        f"Product amount cannot be negative for '{product_sale_entry.product.name}'."
                                     )
-
                                 quantized_part_cost = new_part_cost.quantize(Decimal('0.01'))
                                 new_unit_price = (
                                     quantized_part_cost / Decimal(quantity)
                                 ).quantize(Decimal('0.01'))
-                                line_cost = (
-                                    (product_sale_entry.cost_price or Decimal('0.00')) * Decimal(quantity)
-                                ).quantize(Decimal('0.01'))
-                                line_profit = (quantized_part_cost - line_cost).quantize(Decimal('0.01'))
 
+                            line_cost = (
+                                (product_sale_entry.cost_price or Decimal('0.00')) * Decimal(quantity)
+                            ).quantize(Decimal('0.01'))
+                            line_profit = (quantized_part_cost - line_cost).quantize(Decimal('0.01'))
+
+                            if old_part_cost != quantized_part_cost or product_sale_entry.unit_price != new_unit_price:
                                 log.part_cost = quantized_part_cost
                                 product_sale_entry.unit_price = new_unit_price
                                 product_sale_entry.line_total = quantized_part_cost
@@ -945,8 +974,8 @@ def job_billing_staff(request, job_code):
                                 is_updated = True
 
                                 details = (
-                                    f"Updated product sale '{product_sale_entry.product.name}' amount "
-                                    f"from Rs {old_part_cost} to Rs {quantized_part_cost}."
+                                    f"Updated product sale '{product_sale_entry.product.name}' unit price "
+                                    f"to Rs {new_unit_price} (Total: Rs {quantized_part_cost})."
                                 )
                                 JobTicketLog.objects.create(
                                     job_ticket=job,
@@ -1061,6 +1090,7 @@ def job_billing_staff(request, job_code):
                     # Keep this after deletions so stock released by deleted lines is immediately reusable.
                     product_ids = request.POST.getlist('product_id[]')
                     product_quantities = request.POST.getlist('product_qty[]')
+                    product_unit_prices = request.POST.getlist('product_unit_price[]')
                     product_service_charges = request.POST.getlist('product_service_charge[]')
                     customer_party = _get_or_create_inventory_customer_party_for_job(job)
                     inventory_sale_bill = (
@@ -1104,6 +1134,9 @@ def job_billing_staff(request, job_code):
                     for index, raw_product_id in enumerate(product_ids):
                         product_id = (raw_product_id or '').strip()
                         raw_qty = (product_quantities[index] if index < len(product_quantities) else '').strip()
+                        raw_unit_price = (
+                            product_unit_prices[index] if index < len(product_unit_prices) else ''
+                        ).strip()
                         raw_service_charge = (
                             product_service_charges[index] if index < len(product_service_charges) else ''
                         ).strip()
@@ -1135,7 +1168,15 @@ def job_billing_staff(request, job_code):
                         stock_before = product.stock_quantity
                         stock_after = stock_before - quantity
 
-                        line_total = (product.unit_price or Decimal('0')) * Decimal(quantity)
+                        if raw_unit_price:
+                            try:
+                                unit_price = Decimal(raw_unit_price).quantize(Decimal('0.01'))
+                            except InvalidOperation:
+                                unit_price = product.unit_price or Decimal('0.00')
+                        else:
+                            unit_price = product.unit_price or Decimal('0.00')
+
+                        line_total = (unit_price * Decimal(quantity)).quantize(Decimal('0.01'))
                         line_description = f"Product Sale - {product.name} (Qty: {quantity})"
 
                         created_sale_log = ServiceLog.objects.create(
@@ -1158,7 +1199,7 @@ def job_billing_staff(request, job_code):
                             party=customer_party,
                             product=product,
                             quantity=quantity,
-                            unit_price=product.unit_price or Decimal('0.00'),
+                            unit_price=unit_price,
                             discount_amount=Decimal('0.00'),
                             gst_rate=Decimal('0.00'),
                             taxable_amount=line_total.quantize(Decimal('0.01')),
@@ -1177,7 +1218,7 @@ def job_billing_staff(request, job_code):
                             service_log=created_sale_log,
                             inventory_entry=inventory_sale_entry,
                             quantity=quantity,
-                            unit_price=product.unit_price or Decimal('0.00'),
+                            unit_price=unit_price,
                             cost_price=product.cost_price or Decimal('0.00'),
                             line_total=line_total,
                             line_cost=line_cost,
@@ -1268,6 +1309,15 @@ def job_billing_staff(request, job_code):
     product_sale_log_ids = list(
         ProductSale.objects.filter(job_ticket=job, service_log__isnull=False).values_list('service_log_id', flat=True)
     )
+    pure_service_logs = [log for log in job.service_logs.all() if log.id not in product_sale_log_ids]
+    existing_product_sales = list(
+        job.product_sales.select_related('product', 'service_log', 'inventory_entry').order_by('id')
+    )
+
+    products_qs = Product.objects.all()
+    if job.workspace:
+        products_qs = products_qs.filter(workspace=job.workspace)
+    products_for_sale = products_qs.order_by('name')
 
     job_expenses = job.expenses.all().select_related('recorded_by').order_by('-expense_date', '-id')
     job_expenses_total = job_expenses.aggregate(total=Coalesce(Sum('amount'), Decimal('0.00')))['total']
@@ -1275,6 +1325,9 @@ def job_billing_staff(request, job_code):
     context = {
         'job': job,
         'service_logs': job.service_logs.all(),
+        'pure_service_logs': pure_service_logs,
+        'existing_product_sales': existing_product_sales,
+        'products_for_sale': products_for_sale,
         'total_parts_cost': job.part_total,
         'total_service_charges': job.service_total,
         'subtotal': subtotal,
@@ -1284,10 +1337,15 @@ def job_billing_staff(request, job_code):
         'discount_form': discount_form,
         'technician_id': technician_id,
         'product_sale_log_ids': product_sale_log_ids,
-        'products_for_sale': Product.objects.all().order_by('name'),
         'payment_methods': InventoryCreditPayment.METHOD_CHOICES,
         'job_expenses': job_expenses,
         'job_expenses_total': job_expenses_total,
+        'financial_accounts': list(
+            FinancialAccount.objects.filter(
+                Q(workspace=getattr(request, 'current_workspace', None) or job.workspace) | Q(workspace__isnull=True),
+                is_active=True
+            ).order_by('-is_default_cash', '-is_default_bank', 'name')
+        ),
     }
     return render(request, 'job_tickets/job_billing_staff.html', context)
 
@@ -1296,6 +1354,9 @@ def mark_ready_for_pickup(request, job_code):
     denied = _staff_access_required(request, "staff_dashboard")
     if denied:
         return denied
+    if not user_has_staff_access(request.user, "job_status_change"):
+        messages.error(request, "You do not have permission to change job status.")
+        return redirect("staff_dashboard")
     
     job = get_object_or_404(JobTicket, job_code=job_code)
     old_status = job.get_status_display()
@@ -1327,9 +1388,33 @@ def close_job(request, job_code):
     if payment_status not in {'paid', 'part_paid', 'unpaid'}:
         payment_status = 'paid'
 
-    payment_method = (request.POST.get('payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
-    valid_methods = {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}
-    if payment_method not in valid_methods:
+    account_id = (request.POST.get('financial_account') or '').strip()
+    target_account = None
+    if account_id:
+        target_account = FinancialAccount.objects.filter(
+            Q(workspace=job.workspace) | Q(workspace__isnull=True),
+            id=account_id,
+            is_active=True,
+        ).first()
+
+    posted_payment_method = (request.POST.get('payment_method') or '').strip()
+    if target_account:
+        if target_account.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            payment_method = InventoryCreditPayment.METHOD_CASH
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_UPI:
+            payment_method = InventoryCreditPayment.METHOD_UPI
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_BANK:
+            if posted_payment_method in [InventoryCreditPayment.METHOD_BANK, InventoryCreditPayment.METHOD_CARD]:
+                payment_method = posted_payment_method
+            else:
+                payment_method = InventoryCreditPayment.METHOD_BANK
+        else:
+            payment_method = posted_payment_method or InventoryCreditPayment.METHOD_CASH
+    elif posted_payment_method:
+        payment_method = posted_payment_method
+        target_account = FinancialAccount.get_default_for_payment_method(job.workspace, payment_method)
+    else:
+        target_account = FinancialAccount.get_default_for_payment_method(job.workspace, 'cash')
         payment_method = InventoryCreditPayment.METHOD_CASH
 
     payment_reference = (request.POST.get('payment_reference') or '').strip()
@@ -1353,6 +1438,7 @@ def close_job(request, job_code):
     else:  # unpaid (credit)
         amount_paid = Decimal('0.00')
         payment_method = ''
+        target_account = None
         payment_date = None
 
     old_status = job.get_status_display()
@@ -1365,6 +1451,7 @@ def close_job(request, job_code):
     )
     job.payment_status = payment_status
     job.payment_method = payment_method or None
+    job.financial_account = target_account
     job.amount_paid = amount_paid
     job.payment_reference = payment_reference
     job.payment_date = payment_date
@@ -1376,11 +1463,19 @@ def close_job(request, job_code):
         'feedback_followup_status',
         'payment_status',
         'payment_method',
+        'financial_account',
         'amount_paid',
         'payment_reference',
         'payment_date',
         'updated_at',
     ])
+
+    # Reverse previous inflow account transactions for this job if adjusting settlement
+    for old_txn in job.account_transactions.filter(transaction_type=AccountTransaction.TYPE_INFLOW):
+        old_acc = old_txn.account
+        old_acc.current_balance -= old_txn.amount
+        old_acc.save(update_fields=['current_balance', 'updated_at'])
+        old_txn.delete()
 
     # Record inventory credit/payment ledger if applicable
     party = _get_or_create_inventory_customer_party_for_job(job)
@@ -1398,21 +1493,35 @@ def close_job(request, job_code):
             created_by=request.user,
         )
 
+    inv_credit_payment = None
     if bill and amount_paid > Decimal('0.00'):
         balance_after = max(Decimal('0.00'), grand_total - amount_paid)
-        InventoryCreditPayment.objects.create(
+        inv_credit_payment = InventoryCreditPayment.objects.create(
             workspace=job.workspace,
             party=party,
             bill=bill,
             direction=InventoryCreditPayment.DIRECTION_RECEIVABLE,
             payment_date=timezone.localdate(),
             payment_method=payment_method or InventoryCreditPayment.METHOD_CASH,
+            financial_account=target_account,
             amount=amount_paid,
             balance_before=grand_total,
             balance_after=balance_after,
             reference_no=payment_reference,
             notes=f"Settlement for Job {job.job_code} ({payment_status})",
             created_by=request.user,
+        )
+
+    # Deposit into financial account if payment collected
+    if target_account and amount_paid > Decimal('0.00'):
+        target_account.deposit(
+            amount=amount_paid,
+            description=f"Job Settlement: {job.job_code} ({job.customer_name})",
+            reference_no=payment_reference,
+            transaction_date=timezone.localdate(),
+            inventory_credit_payment=inv_credit_payment,
+            job_ticket=job,
+            user=request.user,
         )
 
     method_display = dict(InventoryCreditPayment.METHOD_CHOICES).get(payment_method, payment_method) or 'N/A'
@@ -1587,46 +1696,14 @@ def job_billing_print_view(request, job_code):
     if denied:
         return denied
     
-    job = get_object_or_404(JobTicket, job_code=job_code)
-    job_tickets = [job]
-    calculate_job_totals(job_tickets)
-    
-    subtotal = job.total
-    discount = job.discount_amount
-    grand_total = subtotal - discount
-    
-    technician_id = job.assigned_to.unique_id if job.assigned_to else 'N/A'
-    
-    # Corrected: Use a fallback value if created_by is None
-    created_by_id = job.created_by.id if job.created_by else 'N/A'
-    
-    # Clean service logs to remove vendor names
-    service_logs = job.service_logs.all()
-    cleaned_service_logs = []
-    for log in service_logs:
-        # Replace specialized service descriptions with generic terms
-        if 'Specialized Service' in log.description:
-            description = 'Specialized Service'
-        else:
-            description = log.description
-            
-        cleaned_log = {
-            'description': description,
-            'part_cost': log.part_cost,
-            'service_charge': log.service_charge,
-        }
-        cleaned_service_logs.append(cleaned_log)
-    
-    context = {
-        'job': job,
-        'service_logs': cleaned_service_logs,
-        'subtotal': subtotal,
-        'discount': discount,
-        'grand_total': grand_total,
-        'technician_id': technician_id,
-        'created_by_id': created_by_id,
-        'company': CompanyProfile.get_profile(),
-    }
+    job = get_object_or_404(
+        JobTicket.objects.select_related('workspace', 'assigned_to__user', 'created_by', 'rack'),
+        job_code=job_code,
+    )
+    if not user_has_workspace_access(request.user, job.workspace):
+        return redirect('unauthorized')
+
+    context = build_job_billing_context(job, request=request)
     return render(request, 'job_tickets/job_billing_print.html', context)
 
 @login_required
@@ -1648,6 +1725,10 @@ def staff_job_detail(request, job_code):
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'update_status':
+            if not user_has_staff_access(request.user, 'job_status_change'):
+                messages.error(request, 'You do not have permission to change job status.')
+                return redirect('staff_job_detail', job_code=job_code)
+
             new_status = (request.POST.get('status') or '').strip()
             valid_statuses = {value for value, _label in JobTicket.STATUS_CHOICES}
 
@@ -1907,6 +1988,126 @@ def staff_job_detail(request, job_code):
                 messages.error(request, result.get('error') or 'Failed to queue WhatsApp message.')
             return redirect('staff_job_detail', job_code=job_code)
 
+        if action == 'edit_customer_device_details':
+            new_customer_name = (request.POST.get('customer_name') or '').strip()
+            new_customer_phone_raw = (request.POST.get('customer_phone') or '').strip()
+            new_device_type = (request.POST.get('device_type') or '').strip()
+            new_device_brand = (request.POST.get('device_brand') or '').strip()
+            new_device_model = (request.POST.get('device_model') or '').strip()
+            new_device_serial = (request.POST.get('device_serial') or '').strip()
+            new_device_password = (request.POST.get('device_password') or '').strip()
+            new_reported_issue = (request.POST.get('reported_issue') or '').strip()
+            new_additional_items = (request.POST.get('additional_items') or '').strip()
+            new_intake_date_raw = (request.POST.get('intake_date') or '').strip()
+            edit_reason = (request.POST.get('edit_reason') or '').strip()
+
+            parsed_new_intake_date = None
+            if new_intake_date_raw:
+                try:
+                    parsed_new_intake_date = datetime.strptime(new_intake_date_raw, '%Y-%m-%d').date()
+                except Exception:
+                    pass
+
+            if not new_customer_name:
+                messages.error(request, 'Customer name is required.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            new_customer_phone, phone_error = normalize_indian_phone(new_customer_phone_raw, required=True, field_label='Customer Phone')
+            if phone_error:
+                messages.error(request, phone_error)
+                return redirect('staff_job_detail', job_code=job_code)
+
+            if not new_device_type:
+                messages.error(request, 'Device type is required.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            if not new_reported_issue:
+                messages.error(request, 'Reported issue is required.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            changes = []
+            if job.customer_name != new_customer_name:
+                changes.append(f"Customer Name: '{job.customer_name}' -> '{new_customer_name}'")
+            if job.customer_phone != new_customer_phone:
+                changes.append(f"Customer Phone: '{job.customer_phone}' -> '{new_customer_phone}'")
+            if parsed_new_intake_date and job.intake_date != parsed_new_intake_date:
+                old_intake_display = job.intake_date.strftime('%d-%m-%Y') if job.intake_date else 'N/A'
+                changes.append(f"Intake Date: '{old_intake_display}' -> '{parsed_new_intake_date.strftime('%d-%m-%Y')}'")
+            if job.device_type != new_device_type:
+                changes.append(f"Device Type: '{job.device_type}' -> '{new_device_type}'")
+            if (job.device_brand or '') != new_device_brand:
+                changes.append(f"Device Brand: '{job.device_brand or 'N/A'}' -> '{new_device_brand or 'N/A'}'")
+            if (job.device_model or '') != new_device_model:
+                changes.append(f"Device Model: '{job.device_model or 'N/A'}' -> '{new_device_model or 'N/A'}'")
+            if (job.device_serial or '') != new_device_serial:
+                changes.append(f"Serial: '{job.device_serial or 'N/A'}' -> '{new_device_serial or 'N/A'}'")
+            if (job.device_password or '') != new_device_password:
+                changes.append(f"Device Password: '{job.device_password or 'None'}' -> '{new_device_password or 'None'}'")
+            if (job.reported_issue or '') != new_reported_issue:
+                changes.append("Reported Issue updated")
+            if (job.additional_items or '') != new_additional_items:
+                changes.append(f"Additional Items: '{job.additional_items or 'None'}' -> '{new_additional_items or 'None'}'")
+
+            if not changes:
+                messages.info(request, 'No changes were detected.')
+                return redirect('staff_job_detail', job_code=job_code)
+
+            target_ws = getattr(request, 'current_workspace', None) or job.workspace
+            with transaction.atomic():
+                old_phone = job.customer_phone
+                job.customer_name = new_customer_name
+                job.customer_phone = new_customer_phone
+                if parsed_new_intake_date:
+                    job.intake_date = parsed_new_intake_date
+                job.device_type = new_device_type
+                job.device_brand = new_device_brand
+                job.device_model = new_device_model
+                job.device_serial = new_device_serial
+                job.device_password = new_device_password
+                job.reported_issue = new_reported_issue
+                job.additional_items = new_additional_items
+                job.save(update_fields=[
+                    'customer_name', 'customer_phone', 'intake_date', 'device_type',
+                    'device_brand', 'device_model', 'device_serial', 'device_password',
+                    'reported_issue', 'additional_items', 'updated_at'
+                ])
+
+                # Sync Client model if needed
+                if target_ws:
+                    client = Client.objects.filter(
+                        workspace=target_ws,
+                        phone__in=phone_lookup_variants(old_phone)
+                    ).first()
+                    if client:
+                        client_updates = []
+                        if client.phone != new_customer_phone:
+                            existing_with_new_phone = Client.objects.filter(
+                                workspace=target_ws,
+                                phone=new_customer_phone
+                            ).exclude(id=client.id).first()
+                            if not existing_with_new_phone:
+                                client.phone = new_customer_phone
+                                client_updates.append('phone')
+                        if client.name != new_customer_name:
+                            client.name = new_customer_name
+                            client_updates.append('name')
+                        if client_updates:
+                            client_updates.append('updated_at')
+                            client.save(update_fields=client_updates)
+
+                log_details = '; '.join(changes)
+                if edit_reason:
+                    log_details += f" (Reason: {edit_reason})"
+                JobTicketLog.objects.create(
+                    job_ticket=job,
+                    user=request.user,
+                    action='DETAILS',
+                    details=log_details
+                )
+
+            messages.success(request, 'Customer and device details updated successfully.')
+            return redirect('staff_job_detail', job_code=job_code)
+
     job_tickets = [job]
     calculate_job_totals(job_tickets)
     
@@ -2007,6 +2208,12 @@ def staff_job_detail(request, job_code):
         'job_net_profit': job_net_profit,
         'job_expense_form': job_expense_form,
         'available_racks': available_racks,
+        'financial_accounts': list(
+            FinancialAccount.objects.filter(
+                Q(workspace=getattr(request, 'current_workspace', None) or job.workspace) | Q(workspace__isnull=True),
+                is_active=True
+            ).order_by('-is_default_cash', '-is_default_bank', 'name')
+        ),
     }
     return render(request, 'job_tickets/staff_job_detail.html', context)
 
@@ -2110,15 +2317,39 @@ def staff_job_collect_payment(request, job_code):
         messages.error(request, f"Payment amount (Rs.{amount}) cannot exceed current balance due of Rs.{balance_due}.")
         return redirect('staff_job_detail', job_code=job_code)
 
-    method_key = (request.POST.get('payment_method') or InventoryCreditPayment.METHOD_CASH).strip()
+    financial_account_id = request.POST.get('financial_account')
+    target_account = None
+    if financial_account_id:
+        target_account = FinancialAccount.objects.filter(
+            Q(workspace=getattr(request, 'current_workspace', None) or job.workspace) | Q(workspace__isnull=True),
+            id=financial_account_id,
+            is_active=True,
+        ).first()
+
+    raw_method = (request.POST.get('payment_method') or '').strip()
     custom_method = (request.POST.get('custom_payment_method') or '').strip()
-    if method_key in {'custom', 'other'} and custom_method:
+    if raw_method in {'custom', 'other'} and custom_method:
         payment_method_display = custom_method
         inv_method = InventoryCreditPayment.METHOD_CASH
-    else:
-        valid_methods = {choice[0] for choice in InventoryCreditPayment.METHOD_CHOICES}
-        inv_method = method_key if method_key in valid_methods else InventoryCreditPayment.METHOD_CASH
+    elif raw_method and raw_method in dict(InventoryCreditPayment.METHOD_CHOICES):
+        inv_method = raw_method
         payment_method_display = dict(InventoryCreditPayment.METHOD_CHOICES).get(inv_method, inv_method)
+    elif target_account:
+        if target_account.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            inv_method = InventoryCreditPayment.METHOD_CASH
+            payment_method_display = 'Cash'
+        elif target_account.account_type == FinancialAccount.ACCOUNT_TYPE_UPI:
+            inv_method = InventoryCreditPayment.METHOD_UPI
+            payment_method_display = 'UPI / QR'
+        else:
+            inv_method = InventoryCreditPayment.METHOD_TRANSFER
+            payment_method_display = 'Bank Transfer'
+    else:
+        inv_method = InventoryCreditPayment.METHOD_CASH
+        payment_method_display = 'Cash'
+
+    if not target_account:
+        target_account = FinancialAccount.get_default_for_payment_method(job.workspace, inv_method)
 
     payment_reference = (request.POST.get('payment_reference') or '').strip()
     notes = (request.POST.get('notes') or '').strip()
@@ -2150,10 +2381,11 @@ def staff_job_collect_payment(request, job_code):
         job.amount_paid = new_paid
         job.payment_status = 'paid' if new_balance <= Decimal('0.00') else 'part_paid'
         job.payment_method = payment_method_display
+        job.financial_account = target_account
         if payment_reference:
             job.payment_reference = payment_reference
         job.payment_date = timezone.now()
-        job.save(update_fields=['amount_paid', 'payment_status', 'payment_method', 'payment_reference', 'payment_date', 'updated_at'])
+        job.save(update_fields=['amount_paid', 'payment_status', 'payment_method', 'payment_reference', 'financial_account', 'payment_date', 'updated_at'])
 
         # Sync with Inventory Party & Bill
         party = _get_or_create_inventory_customer_party_for_job(job)
@@ -2172,13 +2404,14 @@ def staff_job_collect_payment(request, job_code):
             )
 
         pay_note = f"Collected for Job {job.job_code} via {payment_method_display}.{custom_fields_str} {notes}".strip()
-        InventoryCreditPayment.objects.create(
+        inv_payment = InventoryCreditPayment.objects.create(
             workspace=job.workspace,
             party=party,
             bill=bill,
             direction=InventoryCreditPayment.DIRECTION_RECEIVABLE,
             payment_date=payment_date,
             payment_method=inv_method,
+            financial_account=target_account,
             amount=amount,
             balance_before=balance_due,
             balance_after=new_balance,
@@ -2187,7 +2420,19 @@ def staff_job_collect_payment(request, job_code):
             created_by=request.user,
         )
 
-        log_details = f"Collected installment payment of Rs.{amount} via {payment_method_display}."
+        if target_account and amount > Decimal('0.00'):
+            target_account.deposit(
+                amount=amount,
+                description=f"Job Balance Payment: {job.job_code} ({job.customer_name})",
+                reference_no=payment_reference,
+                transaction_date=payment_date,
+                job_ticket=job,
+                inventory_credit_payment=inv_payment,
+                user=request.user,
+            )
+
+        acc_text = f" into {target_account.name}" if target_account else f" via {payment_method_display}"
+        log_details = f"Collected installment payment of Rs.{amount}{acc_text}."
         if payment_reference:
             log_details += f" Ref: {payment_reference}."
         if custom_pairs:
@@ -2223,14 +2468,29 @@ def staff_delete_job_photo(request, job_code, photo_id):
 
 @login_required
 def staff_job_photo_file(request, job_code, photo_id):
-    denied = _staff_access_required(request, "staff_dashboard")
-    if denied:
-        return denied
-
     job = get_object_or_404(JobTicket, job_code=job_code)
-    if not user_has_workspace_access(request.user, job.workspace):
-        return redirect('unauthorized')
     photo = get_object_or_404(JobTicketPhoto, id=photo_id, job_ticket=job)
+
+    # Permission check: allow superusers, assigned technicians, technicians in workspace, and authorized staff/workspace users
+    can_view = False
+    if request.user.is_superuser:
+        can_view = True
+    elif job.assigned_to and job.assigned_to.user_id == request.user.id:
+        can_view = True
+    elif request.user.groups.filter(name='Technicians').exists():
+        tech_profile = getattr(request.user, 'technician_profile', None)
+        if not tech_profile:
+            tech_profile = TechnicianProfile.objects.filter(user=request.user).first()
+        if tech_profile and (not job.workspace or not tech_profile.workspace or tech_profile.workspace_id == job.workspace_id):
+            can_view = True
+    elif request.user.is_staff and user_has_staff_access(request.user, "staff_dashboard"):
+        if user_has_workspace_access(request.user, job.workspace):
+            can_view = True
+    elif user_has_workspace_access(request.user, job.workspace):
+        can_view = True
+
+    if not can_view:
+        return redirect('unauthorized')
 
     if photo.image_data:
         response = HttpResponse(photo.image_data, content_type=photo.image_content_type or 'application/octet-stream')
@@ -2987,6 +3247,8 @@ def task_update_status(request, task_id):
             task.assigned_to_id = tech_id if tech_id else None
             task.save(update_fields=['assigned_to', 'updated_at'])
             broadcast_task_status(task, task.status, task.status, request.user)
+            if task.assigned_to_id:
+                broadcast_task_created(task)
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
         return JsonResponse({

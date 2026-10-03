@@ -187,6 +187,8 @@
         </div>
     </div>
 
+
+
     {% if query %}
     <!-- Search Results Section -->
     <div class="card border-0 shadow-sm rounded-3 mb-4" style="border: 1px solid var(--border-color) !important;">
@@ -633,9 +635,11 @@
                                             <a href="{% url 'job_billing_staff' job.job_code %}" class="btn btn-outline-primary btn-sm py-1 px-2.5">
                                                 <i class="fa-solid fa-file-invoice me-1"></i> Bill
                                             </a>
+                                            {% if staff_access.job_status_change %}
                                             <a href="{% url 'mark_ready_for_pickup' job_code=job.job_code %}" class="btn btn-success btn-sm py-1 px-2.5">
                                                 <i class="fa-solid fa-hand-point-right me-1"></i> Mark Ready
                                             </a>
+                                            {% endif %}
                                         </div>
                                     </td>
                                 </tr>
@@ -722,6 +726,7 @@
 </div>
 
 
+
     <!-- Assign Job Modal (Simple Technician Assignment) -->
     <div class="modal fade" id="assignJobModal" tabindex="-1" aria-labelledby="assignJobModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -764,6 +769,7 @@
     </div>
 
     <div class="modal fade quick-pop-modal" id="createJobTicketModal" tabindex="-1"
+        data-bs-backdrop="static" data-bs-keyboard="false"
         aria-labelledby="createJobTicketModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
@@ -802,24 +808,32 @@
                                     <span class="badge bg-primary-subtle text-primary fw-medium px-2 py-1">Required</span>
                                 </div>
                                 <div class="row g-3">
-                                    <div class="col-md-6">
+                                    <div class="col-md-3">
+                                        <label for="id_job_date" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                            <i class="far fa-calendar-alt text-primary me-1"></i> Job / Intake Date <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="date" name="job_date" id="id_job_date" class="form-control"
+                                            value="{% now 'Y-m-d' %}" required
+                                            style="font-size: 1.05rem; font-weight: 500;">
+                                    </div>
+                                    <div class="col-md-4">
                                         <label for="id_customer_phone" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
                                             Customer Phone <span class="text-danger">*</span>
                                         </label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-light border-end-0 fw-bold text-muted">+91</span>
                                             <input type="text" name="customer_phone" id="id_customer_phone" class="form-control border-start-0 ps-1"
-                                                placeholder="98765 43210" autocomplete="off" inputmode="numeric" required
+                                                autocomplete="off" inputmode="numeric" required
                                                 style="font-size: 1.05rem; font-weight: 500; letter-spacing: 0.5px;">
                                         </div>
                                         <div id="customer-phone-error" class="small text-danger mt-1"></div>
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-md-5">
                                         <label for="id_customer_name" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
                                             Customer Name <span class="text-danger">*</span>
                                         </label>
                                         <input type="text" name="customer_name" id="id_customer_name" class="form-control"
-                                            placeholder="Enter customer full name" autocomplete="off" autocapitalize="words" required
+                                            placeholder="Enter customer full name with address" autocomplete="off" autocapitalize="words" required
                                             style="font-size: 1.05rem; font-weight: 500;">
                                         <div id="customer-name-error" class="small text-danger mt-1"></div>
                                     </div>
@@ -935,19 +949,26 @@
                     <input type="text" name="device_forms[INDEX].device_brand" class="form-control"
                         placeholder="e.g. Dell, HP, Apple" list="preset-device-brand" data-device-field="device_brand" required>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
                         Model <span class="text-danger">*</span>
                     </label>
                     <input type="text" name="device_forms[INDEX].device_model" class="form-control"
-                        placeholder="e.g. Inspiron 15 3511" required>
+                        placeholder="e.g. Inspiron 15" required>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
                         Serial / IMEI
                     </label>
                     <input type="text" name="device_forms[INDEX].device_serial" class="form-control"
-                        placeholder="Serial or IMEI (optional)">
+                        placeholder="Serial / IMEI">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                        <i class="fas fa-lock text-muted me-1"></i>Password / PIN
+                    </label>
+                    <input type="text" name="device_forms[INDEX].device_password" class="form-control"
+                        placeholder="PIN, pass, pattern">
                 </div>
 
                 <!-- Reported Issue -->
@@ -1009,23 +1030,25 @@
                         <span class="text-muted small">Optional</span>
                     </div>
                     <div class="input-group">
-                        <select name="device_forms[INDEX].rack" class="form-select" id="rack-INDEX" style="flex: 2;">
+                        <select name="device_forms[INDEX].rack" class="form-select device-rack-select" id="rack-INDEX" style="flex: 2;">
                             <option value="">-- No Rack --</option>
                             {% regroup active_racks by group as grouped_dashboard_racks %}
                             {% for grp in grouped_dashboard_racks %}
                                 <optgroup label="{{ grp.grouper }}">
                                     {% for r in grp.list %}
-                                        <option value="{{ r.id }}">{{ r.name }} ({{ r.total_columns }} cols)</option>
+                                        <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}">{{ r.name }} ({{ r.total_columns }} cols)</option>
                                     {% endfor %}
                                 </optgroup>
                             {% empty %}
                                 {% for r in active_racks %}
-                                    <option value="{{ r.id }}">{{ r.name }} ({{ r.group }})</option>
+                                    <option value="{{ r.id }}" data-total-columns="{{ r.total_columns|default:10 }}">{{ r.name }} ({{ r.group }})</option>
                                 {% endfor %}
                             {% endfor %}
                         </select>
                         <span class="input-group-text bg-light text-muted small px-2">Col</span>
-                        <input type="number" name="device_forms[INDEX].rack_column" class="form-control" id="rack-col-INDEX" placeholder="Slot #" min="1" max="100" style="max-width: 85px;">
+                        <select name="device_forms[INDEX].rack_column" class="form-select device-rack-col-select" id="rack-col-INDEX" style="min-width: 95px; max-width: 110px;" disabled>
+                            <option value="">--</option>
+                        </select>
                     </div>
                     <small class="text-muted d-block mt-1" style="font-size: 0.76rem;">
                         Storage rack & column/slot number
@@ -1089,17 +1112,17 @@
                         </small>
                     </div>
                 </div>
-                <div class="col-md-6 mt-3">
-                    <div class="p-3 border rounded-3 bg-light h-100">
+                <div class="col-md-6 mt-3 device-checklist-container">
+                    <div class="p-3 border rounded-3 bg-light h-100 device-checklist-card">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch"
+                            <input class="form-check-input device-checklist-switch" type="checkbox" role="switch"
                                 name="device_forms[INDEX].requires_laptop_inspection_checklist" id="laptop-checklist-INDEX">
-                            <label class="form-check-label fw-semibold text-dark small" for="laptop-checklist-INDEX">
-                                Require Laptop Inspection Checklist
+                            <label class="form-check-label fw-semibold text-dark small device-checklist-label" for="laptop-checklist-INDEX">
+                                Require Inspection Checklist
                             </label>
                         </div>
-                        <small class="text-muted d-block ps-4" style="font-size: 0.78rem;">
-                            Technician must verify screen, keyboard, battery checklist before closing.
+                        <small class="text-muted d-block ps-4 device-checklist-hint" style="font-size: 0.78rem;">
+                            Technician must verify inspection checklist before closing.
                         </small>
                     </div>
                 </div>
@@ -1283,6 +1306,56 @@
     let activeCameraBlock = null;
     const cameraStreams = new WeakMap();
     const capturedPhotoFiles = new WeakMap();
+    const activeChecklists = {{ active_checklist_templates_json|safe|default:"{}" }};
+
+    function syncDeviceChecklistToggle(formBlock) {
+        if (!formBlock) return;
+        const typeInput = formBlock.querySelector('.device-type-input');
+        const checklistCard = formBlock.querySelector('.device-checklist-card');
+        const checklistSwitch = formBlock.querySelector('.device-checklist-switch');
+        const checklistLabel = formBlock.querySelector('.device-checklist-label');
+        const checklistHint = formBlock.querySelector('.device-checklist-hint');
+
+        if (!typeInput || !checklistLabel) return;
+        const rawType = (typeInput.value || '').trim();
+        const normalized = rawType.toLowerCase();
+
+        // Check if there is an exact match or fallback
+        let template = activeChecklists[normalized];
+        if (!template && normalized.includes('laptop')) {
+            template = activeChecklists['laptop'] || { device_type: 'Laptop', name: 'Laptop Inspection Checklist' };
+        }
+
+        if (template) {
+            const deviceName = template.device_type || rawType;
+            checklistLabel.textContent = `Require ${deviceName} Inspection Checklist`;
+            if (checklistHint) {
+                checklistHint.textContent = `Technician must verify ${deviceName.toLowerCase()} inspection checklist before closing.`;
+            }
+            if (checklistCard) {
+                checklistCard.classList.remove('opacity-50');
+            }
+            if (checklistSwitch) {
+                checklistSwitch.disabled = false;
+            }
+        } else if (rawType) {
+            checklistLabel.textContent = `Require ${rawType} Inspection Checklist`;
+            if (checklistHint) {
+                checklistHint.textContent = `No checklist template configured for ${rawType}.`;
+            }
+            if (checklistCard) {
+                checklistCard.classList.remove('opacity-50');
+            }
+            if (checklistSwitch) {
+                checklistSwitch.disabled = false;
+            }
+        } else {
+            checklistLabel.textContent = `Require Inspection Checklist`;
+            if (checklistHint) {
+                checklistHint.textContent = `Type or select a device type to attach inspection checklist.`;
+            }
+        }
+    }
 
     function parseIndianPhoneInput(rawValue) {
         const trimmedValue = String(rawValue || '').trim();
@@ -1596,6 +1669,9 @@
 
         presetSelect.selectedIndex = 0;
         targetInput.focus();
+        if (targetField === 'device_type') {
+            syncDeviceChecklistToggle(formBlock);
+        }
     }
 
     function getCameraInput(formBlock) {
@@ -1867,29 +1943,67 @@
     }
 
     function appendPendingJobs(jobs) {
-        if (!pendingJobsBody || !jobs || !jobs.length) return;
+        if (!jobs || !jobs.length) return;
+        let body = document.getElementById('pending-jobs-body');
+        const tabPending = document.getElementById('tab-pending');
+        if (!body && tabPending) {
+            const emptyState = tabPending.querySelector('.dashboard-empty-state');
+            if (emptyState) {
+                const tableWrapper = document.createElement('div');
+                tableWrapper.className = 'table-responsive';
+                tableWrapper.innerHTML = `
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Job Code</th>
+                                <th>Customer</th>
+                                <th>Phone</th>
+                                <th>Device</th>
+                                <th class="text-end">Estimate</th>
+                                <th class="text-center">Assign</th>
+                                <th class="text-center">Receipt</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pending-jobs-body"></tbody>
+                    </table>
+                `;
+                emptyState.replaceWith(tableWrapper);
+                body = document.getElementById('pending-jobs-body');
+            }
+        }
+        if (!body) return;
+
         jobs.forEach(job => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${job.customer_phone || '-'}</td>
                 <td>
-                    <a href="${job.detail_url}">${job.job_code}</a>
+                    <a href="${job.detail_url}" class="fw-bold text-primary text-decoration-none">
+                        ${job.job_code}
+                    </a>
+                    <span class="badge bg-danger ms-1">NEW</span>
                 </td>
-                <td>${job.customer_name}</td>
-                <td>${job.device_type}</td>
-                <td class="text-end fw-semibold">&#8377;${job.net_total || '0.00'}</td>
-                <td colspan="2">
-                    <div class="d-flex gap-2 flex-wrap">
-                        <a href="${job.detail_url}" class="btn btn-sm btn-outline-primary">
-                            <i class="fas fa-eye"></i> View
-                        </a>
-                        <a href="${job.receipt_url}" class="btn btn-sm btn-primary">
-                            <i class="fas fa-print"></i> Print Receipt
-                        </a>
-                    </div>
+                <td><span class="fw-semibold text-dark">${job.customer_name}</span></td>
+                <td><span class="text-secondary small">${job.customer_phone || '-'}</span></td>
+                <td><span class="badge bg-light text-dark border">${job.device_type}</span></td>
+                <td class="text-end fw-semibold text-dark">&#8377;${job.net_total || '0.00'}</td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-primary btn-sm open-assign-modal d-inline-flex align-items-center gap-1"
+                        data-bs-toggle="modal" data-bs-target="#assignJobModal"
+                        data-job-code="${job.job_code}"
+                        data-customer="${job.customer_name}"
+                        data-device="${job.device_type}">
+                        <i class="fa-solid fa-user-check"></i> Assign
+                    </button>
+                </td>
+                <td class="text-center">
+                    <a href="${job.receipt_url}"
+                        class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+                        title="Print intake receipt">
+                        <i class="fa-solid fa-print"></i> Print
+                    </a>
                 </td>
             `;
-            pendingJobsBody.prepend(row);
+            body.prepend(row);
         });
     }
 
@@ -1920,6 +2034,14 @@
             return;
         }
 
+        // Open print receipt tab synchronously during click event to bypass browser popup blockers
+        let receiptWindow = null;
+        try {
+            receiptWindow = window.open('about:blank', '_blank');
+        } catch (e) {
+            console.warn('Could not pre-open receipt window:', e);
+        }
+
         // Only show loading after all client-side validation passes
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
@@ -1943,6 +2065,9 @@
             const data = await response.json();
 
             if (!response.ok || !data.success) {
+                if (receiptWindow && !receiptWindow.closed) {
+                    receiptWindow.close();
+                }
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-save"></i> Create Job Ticket(s)';
                 if (data.field_errors) {
@@ -1965,40 +2090,47 @@
                 return;
             }
 
-            showMessage('success', data.message || 'Job ticket created successfully.');
+            // Determine receipt URL
+            const primaryReceiptUrl = (data.jobs && data.jobs.length && data.jobs[0].receipt_url)
+                ? data.jobs[0].receipt_url
+                : (data.job_codes && data.job_codes.length ? `/jobs/${data.job_codes[0]}/receipt/print/` : null);
 
-            if (data.job_codes && data.job_codes.length) {
-                const list = document.createElement('ul');
-                list.className = 'list-unstyled mb-0';
-                data.job_codes.forEach((code, index) => {
-                    const item = document.createElement('li');
-                    const receiptUrl = data.jobs && data.jobs[index] ? data.jobs[index].receipt_url : null;
-                    item.innerHTML = receiptUrl
-                        ? `<a href="${receiptUrl}">${code}</a>`
-                        : code;
-                    list.appendChild(item);
-                });
-                messagesContainer.appendChild(list);
+            // Navigate the pre-opened tab to the receipt URL
+            if (receiptWindow && !receiptWindow.closed && primaryReceiptUrl) {
+                receiptWindow.location.href = primaryReceiptUrl;
+            } else if (primaryReceiptUrl) {
+                try {
+                    window.open(primaryReceiptUrl, '_blank');
+                } catch (e) {
+                    console.warn('Popup blocked:', e);
+                }
             }
 
-            if (data.redirect_url) {
-                const link = document.createElement('a');
-                link.href = data.redirect_url;
-                link.target = '_blank';
-                link.className = 'btn btn-sm btn-outline-secondary mt-2';
-                link.innerHTML = '<i class="fas fa-external-link-alt"></i> Open Success Page';
-                messagesContainer.appendChild(link);
-            }
+            // Store notification and target tab for post-reload display
+            try {
+                sessionStorage.setItem('botgi_job_created_notice', JSON.stringify({
+                    message: data.message || 'Job ticket created successfully.',
+                    job_codes: data.job_codes || [],
+                    receipt_url: primaryReceiptUrl
+                }));
+                localStorage.setItem('botgi_active_dashboard_tab', 'pending-tab');
+            } catch (e) {}
 
+            // Append newly created jobs to DOM immediately
             appendPendingJobs(data.jobs);
-            jobForm.reset();
-            resetDeviceForms();
-            if (customerPhoneInput) {
-                customerPhoneInput.value = '';
+
+            // Close the intake modal and stop camera streams
+            if (createJobModal) {
+                createJobModal.hide();
             }
-            renderPhonePriorityInfo(null);
-            resetCustomerNameFlags();
+            stopAllCameras();
+
+            // Refresh the dashboard page so the pending queue, badges, and metrics are completely up-to-date
+            window.location.reload();
         } catch (error) {
+            if (receiptWindow && !receiptWindow.closed) {
+                receiptWindow.close();
+            }
             console.error('Job creation failed:', error);
             showMessage('error', 'Something went wrong while creating the job ticket. Please try again.');
         } finally {
@@ -2023,6 +2155,37 @@
                 }
             }
         });
+    }
+
+    function updateDeviceColOptions(rackSelect, selectedCol = '') {
+        const formBlock = rackSelect.closest('.device-form-block');
+        if (!formBlock) return;
+        const colSelect = formBlock.querySelector('.device-rack-col-select');
+        if (!colSelect) return;
+
+        const rackId = (rackSelect.value || '').trim();
+        if (!rackId) {
+            colSelect.innerHTML = '<option value="">--</option>';
+            colSelect.disabled = true;
+            colSelect.value = '';
+            return;
+        }
+
+        const keepCol = selectedCol || colSelect.value || '';
+        const selectedOpt = rackSelect.options[rackSelect.selectedIndex];
+        const totalCols = selectedOpt ? parseInt(selectedOpt.getAttribute('data-total-columns') || '10', 10) : 10;
+
+        colSelect.innerHTML = '<option value="">-- Any --</option>';
+        for (let i = 1; i <= totalCols; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = `Col ${i}`;
+            if (keepCol && String(keepCol) === String(i)) {
+                opt.selected = true;
+            }
+            colSelect.appendChild(opt);
+        }
+        colSelect.disabled = false;
     }
 
     function addDeviceForm(initial = false) {
@@ -2057,6 +2220,12 @@
         });
 
         container.appendChild(clone);
+        const rackSelect = formBlock.querySelector('.device-rack-select');
+        if (rackSelect) {
+            updateDeviceColOptions(rackSelect);
+        }
+        syncDeviceChecklistToggle(formBlock);
+
         formIndex++;
         refreshRemoveButtonsVisibility();
     }
@@ -2128,10 +2297,25 @@
             }
         });
 
+        container.addEventListener('input', function (event) {
+            if (event.target && event.target.classList.contains('device-type-input')) {
+                syncDeviceChecklistToggle(event.target.closest('.device-form-block'));
+            }
+        });
+
         container.addEventListener('change', function (event) {
             const photoInput = event.target.closest('.photo-input');
             if (photoInput) {
                 updatePhotoStatus(photoInput);
+            }
+
+            const rackSelect = event.target.closest('.device-rack-select');
+            if (rackSelect) {
+                updateDeviceColOptions(rackSelect);
+            }
+
+            if (event.target && event.target.classList.contains('device-type-input')) {
+                syncDeviceChecklistToggle(event.target.closest('.device-form-block'));
             }
         });
     }
@@ -2148,7 +2332,10 @@
                 const typeInput = firstBlock.querySelector('[data-device-field="device_type"]');
                 const brandInput = firstBlock.querySelector('[data-device-field="device_brand"]');
                 const modelInput = firstBlock.querySelector('[name*="device_model"]');
-                if (typeInput) typeInput.value = type;
+                if (typeInput) {
+                    typeInput.value = type;
+                    syncDeviceChecklistToggle(firstBlock);
+                }
                 if (brandInput) brandInput.value = brand;
                 if (modelInput) modelInput.value = model;
 
@@ -2285,23 +2472,23 @@ document.addEventListener('DOMContentLoaded', function () {
     window.setTimeout(pollDueReminders, 3000);
     window.setInterval(pollDueReminders, 60000);
 
-    // Assign Job Modal population
-    document.querySelectorAll('.open-assign-modal').forEach(function(button) {
-        button.addEventListener('click', function() {
-            const jobCode = this.getAttribute('data-job-code') || '';
-            const customer = this.getAttribute('data-customer') || '';
-            const device = this.getAttribute('data-device') || '';
+    // Assign Job Modal population (delegated so dynamically added rows work seamlessly)
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('.open-assign-modal');
+        if (!button) return;
+        const jobCode = button.getAttribute('data-job-code') || '';
+        const customer = button.getAttribute('data-customer') || '';
+        const device = button.getAttribute('data-device') || '';
 
-            const codeInput = document.getElementById('assign_job_code_input');
-            const codeTitle = document.getElementById('assign_job_code_title');
-            const custInfo = document.getElementById('assign_job_customer_info');
-            const devInfo = document.getElementById('assign_job_device_info');
+        const codeInput = document.getElementById('assign_job_code_input');
+        const codeTitle = document.getElementById('assign_job_code_title');
+        const custInfo = document.getElementById('assign_job_customer_info');
+        const devInfo = document.getElementById('assign_job_device_info');
 
-            if (codeInput) codeInput.value = jobCode;
-            if (codeTitle) codeTitle.textContent = jobCode;
-            if (custInfo) custInfo.textContent = customer;
-            if (devInfo) devInfo.textContent = device;
-        });
+        if (codeInput) codeInput.value = jobCode;
+        if (codeTitle) codeTitle.textContent = jobCode;
+        if (custInfo) custInfo.textContent = customer;
+        if (devInfo) devInfo.textContent = device;
     });
 });
 
@@ -2318,6 +2505,20 @@ function switchDashboardTab(tabId) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Check for post-intake notification
+    try {
+        const noticeRaw = sessionStorage.getItem('botgi_job_created_notice');
+        if (noticeRaw) {
+            sessionStorage.removeItem('botgi_job_created_notice');
+            const notice = JSON.parse(noticeRaw);
+            if (notice && notice.message) {
+                if (typeof showToast === 'function') {
+                    showToast(notice.message, 'Intake Complete', 'success', 3500);
+                }
+            }
+        }
+    } catch (e) {}
+
     const hash = window.location.hash.replace('#', '');
     let targetTabId = null;
     if (hash && document.getElementById(hash + '-tab')) {

@@ -293,6 +293,11 @@
                         </td>
                         <td>
                             <span class="small text-muted">{{ exp.get_payment_mode_display }}</span>
+                            {% if exp.financial_account %}
+                                <small class="d-block text-muted" style="font-size:0.75rem;">
+                                    <i class="fa-solid {% if exp.financial_account.account_type == 'cash' %}fa-money-bill-wave text-success{% else %}fa-building-columns text-primary{% endif %} me-1"></i>{{ exp.financial_account.name }}
+                                </small>
+                            {% endif %}
                         </td>
                         <td class="text-end fw-bold text-dark text-nowrap">
                             &#8377;{{ exp.amount|floatformat:2 }}
@@ -424,21 +429,27 @@
                         </div>
 
                         <!-- Category -->
-                        <div class="col-12 col-md-4">
+                        <div class="col-12 col-md-6">
                             <label class="form-label fw-semibold">Category</label>
                             {{ create_form.category }}
                         </div>
 
-                        <!-- Payment Mode -->
-                        <div class="col-12 col-md-4">
-                            <label class="form-label fw-semibold">Payment Mode</label>
-                            {{ create_form.payment_mode }}
-                        </div>
-
                         <!-- Expense Date -->
-                        <div class="col-12 col-md-4">
+                        <div class="col-12 col-md-6">
                             <label class="form-label fw-semibold">Expense Date</label>
                             {{ create_form.expense_date }}
+                        </div>
+
+                        <!-- Paid From Account -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold d-flex justify-content-between align-items-center">
+                                <span><i class="fa-solid fa-building-columns text-primary me-1"></i>Paid From Account <span class="text-danger">*</span></span>
+                                <a href="{% url 'company_profile_settings' %}#bank-details" target="_blank" class="text-decoration-none small text-primary fw-normal">
+                                    <i class="fa-solid fa-gear me-1"></i>Manage Accounts
+                                </a>
+                            </label>
+                            {{ create_form.financial_account }}
+                            <small class="text-muted d-block" style="font-size:0.75rem;">Disburses funds and updates the selected drawer or bank balance in real time.</small>
                         </div>
 
                         <!-- Receipt Upload -->

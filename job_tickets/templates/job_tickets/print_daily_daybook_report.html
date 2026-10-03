@@ -1,0 +1,401 @@
+{% extends "job_tickets/base.html" %}
+{% load static job_tickets_extras %}
+
+{% block title %}Daily Daybook - {{ target_date_str }}{% endblock %}
+
+{% block extra_css %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+.daybook-report {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    color: #1e293b;
+}
+
+.daybook-report h1,
+.daybook-report h2,
+.daybook-report h3,
+.daybook-report h4 {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    letter-spacing: -0.02em;
+}
+
+.reconciliation-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.recon-table td, .recon-table th {
+    padding: 0.65rem 0.85rem;
+    vertical-align: middle;
+}
+
+.recon-highlight {
+    background-color: #f0fdf4 !important;
+    font-weight: 700;
+}
+
+@media print {
+    body {
+        background: #ffffff !important;
+        font-size: 9.5pt;
+        color: #000000 !important;
+    }
+    .no-print,
+    header,
+    nav,
+    footer,
+    .navbar,
+    .sidebar,
+    .btn,
+    .daybook-toolbar {
+        display: none !important;
+    }
+    .container, .container-fluid {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    .reconciliation-card, .card-box {
+        border: 1px solid #94a3b8 !important;
+        box-shadow: none !important;
+        page-break-inside: avoid;
+    }
+    .table-responsive {
+        overflow: visible !important;
+    }
+    table {
+        page-break-inside: auto;
+    }
+    tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+    }
+    @page {
+        margin: 1.2cm 1cm;
+        size: A4 portrait;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 px-md-4 daybook-report">
+
+    <!-- Top Action Toolbar (hidden during print) -->
+    <div class="daybook-toolbar no-print d-flex flex-wrap justify-content-between align-items-center gap-3 p-3 bg-white border rounded shadow-sm mb-4">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <a href="{% url 'reports_dashboard' %}?tab=daybook&daybook_date={{ target_date_str }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left me-1"></i>Back to Reports
+            </a>
+            <span class="vr mx-2 text-muted"></span>
+            <form method="get" class="d-flex align-items-center gap-2">
+                <label for="filter-date" class="small fw-bold text-muted text-nowrap mb-0">Date:</label>
+                <input type="date" id="filter-date" name="date" value="{{ target_date_str }}" class="form-control form-control-sm" required>
+                <button type="submit" class="btn btn-sm btn-primary">Go</button>
+            </form>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="{% url 'export_daily_daybook_csv' %}?date={{ target_date_str }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-file-csv me-1"></i>Export CSV
+            </a>
+            <button onclick="window.print()" class="btn btn-success btn-sm px-3">
+                <i class="fas fa-print me-1"></i>Print Daybook
+            </button>
+        </div>
+    </div>
+
+    <!-- Printable Header / Letterhead -->
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-4">
+        <div>
+            <h1 class="h3 fw-bold text-dark mb-1">
+                {{ profile.company_name|default:"Botgi Service Management" }}
+            </h1>
+            <p class="small text-muted mb-0">
+                {% if profile.address %}{{ profile.address }} &middot; {% endif %}
+                Phone: {{ profile.phone1|default:"N/A" }}{% if profile.phone2 %}, {{ profile.phone2 }}{% endif %}
+                {% if profile.gstin %} &middot; GSTIN: <strong>{{ profile.gstin }}</strong>{% endif %}
+            </p>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-primary text-uppercase px-2 py-1 fs-6 mb-1">Daily Daybook</span>
+            <div class="h5 fw-bold text-dark mb-0">{{ daybook.target_date|date:"l, F d, Y" }}</div>
+            <span class="small text-muted d-block">Printed: {{ printed_at|date:"d M Y, H:i" }} by {{ printed_by.get_full_name|default:printed_by.username }}</span>
+        </div>
+    </div>
+
+    <!-- Summary KPI Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-3">
+            <div class="reconciliation-card">
+                <span class="small text-muted text-uppercase fw-bold d-block">Expected Cash Drawer</span>
+                <div class="h4 fw-bold text-success mb-0">&#8377;{{ daybook.expected_drawer_cash|floatformat:2 }}</div>
+                <small class="text-muted">Opening: &#8377;{{ daybook.opening_cash|floatformat:2 }}</small>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="reconciliation-card">
+                <span class="small text-muted text-uppercase fw-bold d-block">Total Cash Inflows</span>
+                <div class="h4 fw-bold text-primary mb-0">+&#8377;{{ daybook.cash_inflows|floatformat:2 }}</div>
+                <small class="text-muted">Customer receipts</small>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="reconciliation-card">
+                <span class="small text-muted text-uppercase fw-bold d-block">Cash Expenses Paid</span>
+                <div class="h4 fw-bold text-danger mb-0">-&#8377;{{ daybook.cash_outflows|floatformat:2 }}</div>
+                <small class="text-muted">Shop expenses paid</small>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="reconciliation-card">
+                <span class="small text-muted text-uppercase fw-bold d-block">Total Liquid Funds</span>
+                <div class="h4 fw-bold text-dark mb-0">&#8377;{{ daybook.total_liquid_balance|floatformat:2 }}</div>
+                <small class="text-muted">Cash + Bank accounts</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1. CASH DRAWER & BANK RECONCILIATION STATEMENTS -->
+    <div class="row g-4 mb-4">
+        <!-- Cash Drawer Reconciliation -->
+        <div class="col-md-6">
+            <div class="reconciliation-card h-100">
+                <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+                    <h2 class="h6 fw-bold text-dark mb-0">
+                        <i class="fas fa-money-bill-wave text-success me-2"></i>Physical Cash Drawer Statement
+                    </h2>
+                    <span class="small text-muted">{{ daybook.default_cash.name|default:"Cash Drawer" }}</span>
+                </div>
+                <table class="table table-sm recon-table mb-0">
+                    <tbody>
+                        <tr>
+                            <td>Opening Cash (Beginning of Day)</td>
+                            <td class="text-end fw-semibold text-dark">&#8377;{{ daybook.opening_cash|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-success">(+) Cash Collections from Customer Jobs &amp; Sales</td>
+                            <td class="text-end fw-semibold text-success">+&#8377;{{ daybook.cash_inflows|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-danger">(-) Cash Expenses / Shop Payouts</td>
+                            <td class="text-end fw-semibold text-danger">-&#8377;{{ daybook.cash_outflows|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-info">(-) Contra: Cash Deposited into Bank Account</td>
+                            <td class="text-end fw-semibold text-info">-&#8377;{{ daybook.cash_to_bank|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-primary">(+) Contra: Cash Withdrawn from Bank Account</td>
+                            <td class="text-end fw-semibold text-primary">+&#8377;{{ daybook.bank_to_cash|floatformat:2 }}</td>
+                        </tr>
+                        <tr class="recon-highlight border-top border-2">
+                            <td class="fw-bold fs-6">(=) Expected Physical Cash in Drawer</td>
+                            <td class="text-end fw-bold fs-6 text-success">&#8377;{{ daybook.expected_drawer_cash|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted small">Actual Physical Cash Counted at Close</td>
+                            <td class="text-end text-muted">____________________</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted small">Drawer Variance (Difference, if any)</td>
+                            <td class="text-end text-muted">____________________</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bank & Digital Wallet Statement -->
+        <div class="col-md-6">
+            <div class="reconciliation-card h-100">
+                <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+                    <h2 class="h6 fw-bold text-dark mb-0">
+                        <i class="fas fa-university text-primary me-2"></i>Bank &amp; Digital Accounts Movement
+                    </h2>
+                    <span class="small text-muted">{{ daybook.default_bank.name|default:"Federal Bank / UPI" }}</span>
+                </div>
+                <table class="table table-sm recon-table mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-success">(+) UPI QR &amp; Bank Job Collections</td>
+                            <td class="text-end fw-semibold text-success">+&#8377;{{ daybook.bank_inflows|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-danger">(-) Bank Transfers &amp; Online Expenses Paid</td>
+                            <td class="text-end fw-semibold text-danger">-&#8377;{{ daybook.bank_outflows|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-info">(+) Contra: Cash Drawer Deposits Received</td>
+                            <td class="text-end fw-semibold text-info">+&#8377;{{ daybook.cash_to_bank|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-warning">(-) Contra: Cash Drawer Withdrawals Handed Out</td>
+                            <td class="text-end fw-semibold text-warning">-&#8377;{{ daybook.bank_to_cash|floatformat:2 }}</td>
+                        </tr>
+                        <tr class="recon-highlight border-top border-2">
+                            <td class="fw-bold fs-6">(=) Today's Net Bank Change</td>
+                            <td class="text-end fw-bold fs-6 {% if daybook.net_bank_flow >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                                {% if daybook.net_bank_flow >= 0 %}+{% endif %}&#8377;{{ daybook.net_bank_flow|floatformat:2 }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted small">Firm Total Receipts (Cash + Bank)</td>
+                            <td class="text-end fw-semibold">&#8377;{{ daybook.total_receipts|floatformat:2 }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted small">Firm Total Payments (Cash + Bank)</td>
+                            <td class="text-end fw-semibold">&#8377;{{ daybook.total_payments|floatformat:2 }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. ACCOUNTS LIQUIDITY BALANCES TABLE -->
+    <div class="card-box mb-4">
+        <h2 class="h6 fw-bold text-dark border-bottom pb-2 mb-2">
+            <i class="fas fa-wallet text-secondary me-2"></i>Accounts Balances &amp; Daily Net Changes
+        </h2>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Account Name</th>
+                        <th>Type</th>
+                        <th class="text-end">Receipts (+)</th>
+                        <th class="text-end">Payments (-)</th>
+                        <th class="text-end">Transfers In</th>
+                        <th class="text-end">Transfers Out</th>
+                        <th class="text-end">Net Movement</th>
+                        <th class="text-end fw-bold">Live Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in daybook.account_rows %}
+                    <tr>
+                        <td>
+                            <strong>{{ row.name }}</strong>
+                            {% if row.is_default_cash %}<span class="badge bg-success ms-1 small">Default Cash</span>{% endif %}
+                            {% if row.is_default_bank %}<span class="badge bg-primary ms-1 small">Default Bank</span>{% endif %}
+                        </td>
+                        <td>{{ row.type_display }}</td>
+                        <td class="text-end text-success">+&#8377;{{ row.inflows|floatformat:2 }}</td>
+                        <td class="text-end text-danger">-&#8377;{{ row.outflows|floatformat:2 }}</td>
+                        <td class="text-end text-info">&#8377;{{ row.transfers_in|floatformat:2 }}</td>
+                        <td class="text-end text-warning">&#8377;{{ row.transfers_out|floatformat:2 }}</td>
+                        <td class="text-end fw-bold {% if row.net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if row.net_movement >= 0 %}+{% endif %}&#8377;{{ row.net_movement|floatformat:2 }}
+                        </td>
+                        <td class="text-end fw-bold text-dark">&#8377;{{ row.current_balance|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-2">No active financial accounts found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="2">Firm Total</td>
+                        <td class="text-end text-success">+&#8377;{{ daybook.total_receipts|floatformat:2 }}</td>
+                        <td class="text-end text-danger">-&#8377;{{ daybook.total_payments|floatformat:2 }}</td>
+                        <td class="text-end text-info">&#8377;{{ daybook.total_contra|floatformat:2 }}</td>
+                        <td class="text-end text-warning">&#8377;{{ daybook.total_contra|floatformat:2 }}</td>
+                        <td class="text-end {% if daybook.net_liquidity_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if daybook.net_liquidity_change >= 0 %}+{% endif %}&#8377;{{ daybook.net_liquidity_change|floatformat:2 }}
+                        </td>
+                        <td class="text-end text-dark">&#8377;{{ daybook.total_liquid_balance|floatformat:2 }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- 3. ITEMIZED AUDIT LOG OF TRANSACTIONS -->
+    <div class="card-box mb-4">
+        <h2 class="h6 fw-bold text-dark border-bottom pb-2 mb-2">
+            <i class="fas fa-list-check text-primary me-2"></i>Itemized Transactions Audit Ledger ({{ daybook.transactions_count }} Record{{ daybook.transactions_count|pluralize }})
+        </h2>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 8%;">Time</th>
+                        <th style="width: 15%;">Account</th>
+                        <th style="width: 12%;">Type</th>
+                        <th style="width: 30%;">Description / Reference</th>
+                        <th style="width: 12%;">Source Link</th>
+                        <th style="width: 8%;">Staff</th>
+                        <th style="width: 8%; text-align: right;">Amount</th>
+                        <th style="width: 7%; text-align: right;">Bal After</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for txn in daybook.transactions %}
+                    <tr>
+                        <td class="small text-muted">{{ txn.created_at|date:"H:i" }}</td>
+                        <td class="fw-semibold">{{ txn.account.name }}</td>
+                        <td>
+                            {% if txn.transaction_type == 'inflow' %}
+                            <span class="text-success fw-semibold">&darr; Inflow</span>
+                            {% elif txn.transaction_type == 'outflow' %}
+                            <span class="text-danger fw-semibold">&uarr; Outflow</span>
+                            {% elif txn.transaction_type == 'transfer_in' %}
+                            <span class="text-info fw-semibold">&harr; Transfer In</span>
+                            {% elif txn.transaction_type == 'transfer_out' %}
+                            <span class="text-warning fw-semibold">&harr; Transfer Out</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ txn.description }}
+                            {% if txn.reference_no %}<br><small class="text-muted">Ref: {{ txn.reference_no }}</small>{% endif %}
+                        </td>
+                        <td>
+                            {% if txn.job_ticket %}
+                            Ticket {{ txn.job_ticket.job_code }}
+                            {% elif txn.expense %}
+                            Expense #{{ txn.expense_id }}
+                            {% elif txn.transfer_counterpart %}
+                            {{ txn.transfer_counterpart.account.name }}
+                            {% else %}
+                            &mdash;
+                            {% endif %}
+                        </td>
+                        <td class="small">{{ txn.created_by.username|default:"System" }}</td>
+                        <td class="text-end fw-bold {% if txn.transaction_type == 'inflow' or txn.transaction_type == 'transfer_in' %}text-success{% else %}text-danger{% endif %}">
+                            {% if txn.transaction_type == 'inflow' or txn.transaction_type == 'transfer_in' %}+{% else %}-{% endif %}&#8377;{{ txn.amount|floatformat:2 }}
+                        </td>
+                        <td class="text-end text-muted small">&#8377;{{ txn.balance_after|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-3">No financial transactions recorded on this date.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 4. SIGN-OFF / CLOSING VERIFICATION BLOCK -->
+    <div class="row pt-4 mt-4 border-top">
+        <div class="col-6">
+            <p class="small text-muted mb-4">Cashier / Staff Member on Duty:</p>
+            <div class="border-bottom border-dark pb-1" style="width: 220px;"></div>
+            <p class="small text-muted mt-1">Signature &amp; Date</p>
+        </div>
+        <div class="col-6 text-end">
+            <p class="small text-muted mb-4">Manager / Shop Owner Verification:</p>
+            <div class="border-bottom border-dark pb-1 ms-auto" style="width: 220px;"></div>
+            <p class="small text-muted mt-1">Signature &amp; Date</p>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

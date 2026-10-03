@@ -400,156 +400,333 @@
     <div id="pending-undo-list" class="pending-undo-list"></div>
 </div>
 
-<div class="billing-breakdown-card mb-4">
-<div class="table-responsive">
-    <table class="table table-striped table-hover billing-table mb-0">
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th class="text-end">Part Cost (&#8377;)</th>
-                <th class="text-end">Service Charge (&#8377;)</th>
-                <th class="text-center" id="delete-header" style="display: none;">Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for log in service_logs %}
-            <tr id="service-row-{{ log.id }}">
-                <td>
-                    <input type="text"
-                        name="description_{{ log.id }}"
-                        value="{{ log.description }}"
-                        maxlength="255"
-                        class="form-control form-control-sm editable-finance-field"
-                        id="description-{{ log.id }}"
-                        readonly>
-                    {% if log.id in product_sale_log_ids %}
-                        <span class="badge bg-info-subtle text-info-emphasis border mt-1">Product</span>
-                    {% endif %}
-                </td>
-                <td class="text-end">
-                    <input type="number" step="0.01" 
-                           name="part_cost_{{ log.id }}" 
-                           value="{{ log.part_cost|floatformat:2 }}" 
-                           class="form-control form-control-sm text-end editable-finance-field" 
-                           id="part-cost-{{ log.id }}" 
-                           readonly> </td>
-                <td class="text-end">
-                    <input type="number" step="0.01" 
-                        name="service_charge_{{ log.id }}" value="{{ log.service_charge|floatformat:2 }}" 
-                        class="form-control form-control-sm text-end editable-finance-field" 
-                        id="service-charge-{{ log.id }}" 
-                        readonly> 
-                </td>
-                <td class="text-center delete-column" style="display: none;">
-                    <button type="button" class="btn btn-sm btn-danger delete-service-btn" data-service-id="{{ log.id }}">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-            {% endfor %}
-            <!-- New Service Rows (Appended dynamically) -->
-            <tr id="add-service-row" style="display: none;">
-                <td colspan="4" class="billing-control-cell">
-                    <div class="billing-action-row">
-                        <button type="button" id="add-service-btn" class="btn btn-sm btn-outline-primary">
-                            <i class="fas fa-plus"></i> Add New Service
-                        </button>
-                        <button
-                            type="button"
-                            id="add-product-btn"
-                            class="btn btn-sm btn-outline-primary"
-                            style="display: none;"
-                            {% if not products_for_sale %}disabled{% endif %}>
-                            <i class="fas fa-plus me-1"></i>Add Product
-                        </button>
-                    </div>
-                </td>
-            </tr>
-            <tr class="billing-total-row">
-                <td colspan="2" class="text-end text-muted fw-semibold">Subtotal:</td>
-                <td class="text-end"><strong id="subtotal-display" class="text-dark">&#8377;{{ subtotal|floatformat:2 }}</strong></td>
-            </tr>
-            <tr class="billing-total-row">
-                <td colspan="2" class="text-end text-muted fw-semibold">Discount:</td>
-                <td>
-                    <div class="d-flex align-items-center justify-content-end gap-1">
-                        <span class="text-danger fw-bold">- &#8377;</span>
-                        <input type="number" step="0.01" 
-                               name="discount_amount" 
-                               value="{{ discount|floatformat:2 }}" 
-                               class="form-control form-control-sm w-auto text-end editable-finance-field"
-                               id="discount-input"
+<!-- SECTION 1: REPAIR SERVICES & LABOR -->
+<div class="card-box shadow-sm border mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h5 class="fs-6 fw-bold mb-1 text-dark">
+                <i class="fa-solid fa-wrench text-primary me-2"></i>Repair Services &amp; Labor
+            </h5>
+            <small class="text-muted">Labor charges, diagnostics, OS installations, and technician service fees.</small>
+        </div>
+        <span class="badge bg-primary-subtle text-primary border px-2 py-1">
+            <span id="service-count-badge">{{ pure_service_logs|length }}</span> Services
+        </span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle billing-table mb-0" id="services-table">
+            <thead class="table-light">
+                <tr>
+                    <th style="min-width: 250px;">Service Description</th>
+                    <th class="text-end" style="width: 150px;">Part Cost (&#8377;)</th>
+                    <th class="text-end" style="width: 170px;">Service Charge (&#8377;)</th>
+                    <th class="text-end" style="width: 150px;">Line Total (&#8377;)</th>
+                    <th class="text-center delete-column" style="width: 80px; display: none;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="services-table-body">
+                {% for log in pure_service_logs %}
+                <tr id="service-row-{{ log.id }}" class="service-row-item">
+                    <td>
+                        <input type="text"
+                               name="description_{{ log.id }}"
+                               value="{{ log.description }}"
+                               maxlength="255"
+                               class="form-control form-control-sm editable-finance-field service-description-field"
+                               id="description-{{ log.id }}"
                                readonly>
-                    </div>
-                </td>
-            </tr>
-            {% if job_expenses %}
-            <tr class="billing-total-row">
-                <td colspan="2" class="text-end text-muted small">
-                    <i class="fa-solid fa-receipt text-warning me-1"></i> Direct Job Expenses ({{ job_expenses|length }}):
-                </td>
-                <td class="text-end"><strong class="text-danger small">&#8377;{{ job_expenses_total|floatformat:2 }}</strong></td>
-            </tr>
-            {% endif %}
-            <tr class="fw-bold billing-grand-total-row">
-                <td colspan="2" class="text-end"><strong class="fs-6 text-dark">Grand Total:</strong></td>
-                <td class="text-end"><strong id="grand-total-display" class="fs-5 text-success">&#8377;{{ grand_total|floatformat:2 }}</strong></td>
-            </tr>
-        </tbody>
-    </table>
-</div>
+                    </td>
+                    <td class="text-end">
+                        <input type="number" step="0.01" min="0"
+                               name="part_cost_{{ log.id }}"
+                               value="{{ log.part_cost|floatformat:2 }}"
+                               class="form-control form-control-sm text-end editable-finance-field service-part-cost"
+                               id="part-cost-{{ log.id }}"
+                               readonly>
+                    </td>
+                    <td class="text-end">
+                        <input type="number" step="0.01" min="0"
+                               name="service_charge_{{ log.id }}"
+                               value="{{ log.service_charge|floatformat:2 }}"
+                               class="form-control form-control-sm text-end editable-finance-field service-charge-cost"
+                               id="service-charge-{{ log.id }}"
+                               readonly>
+                    </td>
+                    <td class="text-end fw-bold text-dark service-line-total">
+                        &#8377;{{ log.total_cost|floatformat:2 }}
+                    </td>
+                    <td class="text-center delete-column" style="display: none;">
+                        <button type="button" class="btn btn-sm btn-outline-danger delete-service-btn" data-service-id="{{ log.id }}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr id="no-services-row">
+                    <td colspan="5" class="text-center text-muted py-3 small">
+                        <em>No labor or service charges added yet.</em>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr id="add-service-row" style="display: none;">
+                    <td colspan="5" class="bg-light py-2">
+                        <button type="button" id="add-service-btn" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-plus me-1"></i> Add Service Line
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-semibold">
+                    <td colspan="3" class="text-end text-muted small">Total Services &amp; Labor:</td>
+                    <td class="text-end text-primary fw-bold" id="services-subtotal-display">&#8377;0.00</td>
+                    <td class="delete-column" style="display: none;"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
 </div>
 
-{% if not products_for_sale %}
-    <div class="alert alert-warning mt-3 mb-0">
-        No products found. Add a product in Product Management to sell with service.
+<!-- SECTION 2: SPARE PARTS & INVENTORY PRODUCTS -->
+<div class="card-box shadow-sm border mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h5 class="fs-6 fw-bold mb-1 text-dark">
+                <i class="fa-solid fa-boxes-stacked text-success me-2"></i>Spare Parts &amp; Inventory Products
+            </h5>
+            <small class="text-muted">Replaced hardware components, upgraded storage, RAM, screens, or accessories sold.</small>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="{% url 'inventory_dashboard' %}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-warehouse me-1"></i>Manage Products
+            </a>
+            <span class="badge bg-success-subtle text-success border px-2 py-1">
+                <span id="product-count-badge">{{ existing_product_sales|length }}</span> Products
+            </span>
+        </div>
     </div>
-{% endif %}
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle billing-table mb-0" id="products-table">
+            <thead class="table-light">
+                <tr>
+                    <th style="min-width: 260px;">Product / Spare Item</th>
+                    <th class="text-end" style="width: 170px;">
+                        <span>Purchase Price</span>
+                        <i class="fa-solid fa-circle-info text-muted ms-1" title="Internal cost price for profit/margin reference"></i>
+                    </th>
+                    <th class="text-end" style="width: 160px;">Selling Price (&#8377;)</th>
+                    <th class="text-center" style="width: 90px;">Qty</th>
+                    <th class="text-end" style="width: 150px;">Line Total (&#8377;)</th>
+                    <th class="text-center delete-column" style="width: 80px; display: none;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="products-table-body">
+                {% for sale in existing_product_sales %}
+                <tr id="existing-product-row-{{ sale.id }}" class="existing-product-sale-row" data-sale-id="{{ sale.id }}" data-service-id="{{ sale.service_log_id }}">
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-success-subtle text-success border">Product</span>
+                            <div>
+                                <strong class="text-dark d-block">{{ sale.product.name }}</strong>
+                                <small class="text-muted">
+                                    {% if sale.product.sku %}SKU: {{ sale.product.sku }} &bull; {% endif %}Stock: {{ sale.product.stock_quantity }}
+                                </small>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-end">
+                        <div class="text-muted small">Buy: <strong>&#8377;{{ sale.cost_price|default:sale.product.cost_price|floatformat:2 }}</strong></div>
+                        {% if sale.line_profit > 0 %}
+                        <span class="badge bg-success-subtle text-success border px-1.5 py-0.5 mt-0.5" style="font-size: 0.72rem;">
+                            +&#8377;{{ sale.line_profit|floatformat:2 }} profit
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <input type="number" step="0.01" min="0"
+                               name="product_unit_price_{{ sale.service_log_id }}"
+                               value="{{ sale.unit_price|floatformat:2 }}"
+                               class="form-control form-control-sm text-end editable-finance-field existing-product-unit-price"
+                               id="product-unit-price-{{ sale.service_log_id }}"
+                               data-qty="{{ sale.quantity }}"
+                               data-cost="{{ sale.cost_price|default:sale.product.cost_price|default:0 }}"
+                               readonly>
+                    </td>
+                    <td class="text-center">
+                        <span class="badge bg-light text-dark border px-2 py-1 fs-6">{{ sale.quantity }}</span>
+                    </td>
+                    <td class="text-end fw-bold text-dark existing-product-line-total" id="existing-product-line-total-{{ sale.service_log_id }}">
+                        &#8377;{{ sale.line_total|floatformat:2 }}
+                    </td>
+                    <td class="text-center delete-column" style="display: none;">
+                        <button type="button" class="btn btn-sm btn-outline-danger delete-service-btn" data-service-id="{{ sale.service_log_id }}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr id="no-products-row">
+                    <td colspan="6" class="text-center text-muted py-3 small">
+                        <em>No spare parts or products attached to this bill.</em>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr id="add-product-row" style="display: none;">
+                    <td colspan="6" class="bg-light py-2">
+                        <button type="button" id="add-product-btn" class="btn btn-sm btn-outline-success" {% if not products_for_sale %}disabled{% endif %}>
+                            <i class="fas fa-plus me-1"></i> Add Product / Spare Part
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-semibold">
+                    <td colspan="4" class="text-end text-muted small">Total Spare Parts &amp; Products:</td>
+                    <td class="text-end text-success fw-bold" id="products-subtotal-display">&#8377;0.00</td>
+                    <td class="delete-column" style="display: none;"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- SECTION 3: COMBINED SETTLEMENT & SUMMARY -->
+<div class="card-box shadow-sm border mb-4 bg-light-subtle">
+    <div class="row align-items-center justify-content-between g-3">
+        <div class="col-md-5">
+            <div class="small text-muted mb-2 text-uppercase fw-bold">Billing Breakdown Summary</div>
+            <div class="d-flex flex-column gap-1.5 small">
+                <div class="d-flex justify-content-between text-muted">
+                    <span><i class="fa-solid fa-wrench me-1 text-primary"></i> Labor &amp; Services Total:</span>
+                    <strong class="text-dark" id="summary-services-val">&#8377;0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between text-muted">
+                    <span><i class="fa-solid fa-boxes-stacked me-1 text-success"></i> Parts &amp; Products Total:</span>
+                    <strong class="text-dark" id="summary-products-val">&#8377;0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between text-muted border-top pt-1.5">
+                    <span class="fw-bold">Gross Subtotal:</span>
+                    <strong class="text-dark fs-6" id="subtotal-display">&#8377;{{ subtotal|floatformat:2 }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 text-md-end">
+            <div class="d-inline-block text-start" style="min-width: 270px;">
+                <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+                    <span class="text-muted fw-semibold">Discount:</span>
+                    <div class="d-flex align-items-center gap-1">
+                        <span class="text-danger fw-bold">- &#8377;</span>
+                        <input type="number" step="0.01" min="0"
+                               name="discount_amount"
+                               value="{{ discount|floatformat:2 }}"
+                               class="form-control form-control-sm text-end editable-finance-field"
+                               id="discount-input"
+                               style="width: 120px;"
+                               readonly>
+                    </div>
+                </div>
+                {% if job_expenses %}
+                <div class="d-flex align-items-center justify-content-between gap-3 text-muted small mb-2">
+                    <span><i class="fa-solid fa-receipt text-warning me-1"></i> Direct Job Expenses:</span>
+                    <strong class="text-danger">&#8377;{{ job_expenses_total|floatformat:2 }}</strong>
+                </div>
+                {% endif %}
+                <div class="d-flex align-items-center justify-content-between gap-3 border-top pt-2">
+                    <span class="fs-6 fw-bold text-dark">Grand Total:</span>
+                    <strong id="grand-total-display" class="fs-4 text-success">&#8377;{{ grand_total|floatformat:2 }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<template id="new-service-row-template">
+    <tr class="new-service-row-item appended-new-service-row">
+        <td>
+            <input type="text"
+                   name="new_description[]"
+                   class="form-control form-control-sm editable-finance-field service-description-field"
+                   placeholder="e.g. OS Installation, Chip-level servicing"
+                   style="background-color: #fffbe6;"
+                   required>
+        </td>
+        <td class="text-end">
+            <input type="number" step="0.01" min="0"
+                   name="new_part_cost[]"
+                   value="0.00"
+                   class="form-control form-control-sm text-end editable-finance-field service-part-cost"
+                   style="background-color: #fffbe6;">
+        </td>
+        <td class="text-end">
+            <input type="number" step="0.01" min="0"
+                   name="new_service_charge[]"
+                   value="0.00"
+                   class="form-control form-control-sm text-end editable-finance-field service-charge-cost"
+                   style="background-color: #fffbe6;"
+                   required>
+        </td>
+        <td class="text-end fw-bold text-dark service-line-total">
+            &#8377;0.00
+        </td>
+        <td class="text-center delete-column">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-new-service-btn">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>
+    </tr>
+</template>
 
 <template id="inline-product-row-template">
     <tr class="product-sale-row-inline">
         <td>
-            <div class="billing-inline-product">
-                <span class="badge bg-info-subtle text-info-emphasis border align-self-start">Product</span>
-                <input type="search"
-                       class="form-control form-control-sm product-search-input editable-product-field"
-                       placeholder="Search product name"
-                       disabled>
-                <select name="product_id[]" class="form-select form-select-sm product-select editable-product-field" disabled>
-                    <option value="">Select product</option>
+            <div class="product-picker-container">
+                <select name="product_id[]" class="form-select form-select-sm product-select editable-product-field" style="background-color: #fffbe6;" required>
+                    <option value="">-- Choose Product / Spare Part --</option>
                     {% for product in products_for_sale %}
-                        <option value="{{ product.id }}" data-price="{{ product.unit_price }}" data-stock="{{ product.stock_quantity }}">
+                        <option value="{{ product.id }}"
+                                data-price="{{ product.unit_price }}"
+                                data-cost="{{ product.cost_price|default:0 }}"
+                                data-stock="{{ product.stock_quantity }}"
+                                data-sku="{{ product.sku|default:'' }}">
                             {{ product.name }} (Stock: {{ product.stock_quantity }})
                         </option>
                     {% endfor %}
                 </select>
-                <small class="inline-product-meta product-stock-hint">Unit Price: &#8377;0.00 | Stock: --</small>
+                <div class="product-meta-hint small text-muted mt-1" style="font-size: 0.75rem;">
+                    <span class="product-sku-hint"></span>
+                    <span class="product-stock-hint badge bg-light text-secondary border">Stock: --</span>
+                </div>
             </div>
         </td>
         <td class="text-end">
-            <div class="d-flex flex-column align-items-end gap-1">
-                <input type="number"
-                       min="1"
-                       step="1"
-                       value="1"
-                       name="product_qty[]"
-                       class="form-control form-control-sm text-end product-qty editable-product-field"
-                       style="max-width: 120px;"
-                       disabled>
-                <small class="text-muted product-unit-price">&#8377;0.00 each</small>
-                <strong class="product-line-total">&#8377;0.00</strong>
-            </div>
+            <div class="purchase-price-display fw-semibold text-muted small">&#8377;0.00</div>
+            <div class="profit-margin-badge mt-0.5"></div>
         </td>
         <td class="text-end">
             <input type="number"
                    step="0.01"
-                   value="0.00"
-                   name="product_service_charge[]"
-                   class="form-control form-control-sm text-end product-service-charge editable-product-field"
-                   disabled>
+                   min="0"
+                   name="product_unit_price[]"
+                   class="form-control form-control-sm text-end product-unit-price-input editable-product-field"
+                   placeholder="0.00"
+                   style="background-color: #fffbe6;">
         </td>
-        <td class="text-center delete-column" style="display: none;">
-            <button type="button" class="btn btn-sm btn-outline-danger remove-product-btn" style="display: none;">
+        <td class="text-center">
+            <input type="number"
+                   min="1"
+                   step="1"
+                   value="1"
+                   name="product_qty[]"
+                   class="form-control form-control-sm text-center product-qty editable-product-field mx-auto"
+                   style="width: 75px; background-color: #fffbe6;">
+        </td>
+        <td class="text-end fw-bold text-success product-line-total">
+            &#8377;0.00
+        </td>
+        <td class="text-center delete-column">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-product-btn">
                 <i class="fas fa-trash"></i>
             </button>
         </td>
@@ -637,7 +814,7 @@
                         <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded border">
                             <div>
                                 <span class="text-muted small text-uppercase fw-bold">Grand Total Amount</span>
-                                <h4 class="mb-0 text-primary fw-bold">&#8377;{{ grand_total|floatformat:2 }}</h4>
+                                <h4 class="mb-0 text-primary fw-bold" id="modal-grand-total-display">&#8377;{{ grand_total|floatformat:2 }}</h4>
                             </div>
                             <div class="text-end">
                                 <span class="text-muted small text-uppercase fw-bold">Customer</span>
@@ -649,25 +826,58 @@
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-muted text-uppercase">Payment Settlement <span class="text-danger">*</span></label>
                             <div class="btn-group w-100" role="group" aria-label="Payment Status">
-                                <input type="radio" class="btn-check" name="payment_status" id="pay_paid" value="paid" {% if job.payment_status != 'part_paid' and job.payment_status != 'unpaid' %}checked{% endif %} autocomplete="off">
+                                <input type="radio" class="btn-check" name="payment_status" id="pay_paid" value="paid" {% if job.status != 'Closed' or job.payment_status == 'paid' or not job.payment_status %}checked{% endif %} autocomplete="off">
                                 <label class="btn btn-outline-success" for="pay_paid"><i class="fas fa-check-circle me-1"></i> Paid (Full)</label>
 
-                                <input type="radio" class="btn-check" name="payment_status" id="pay_partial" value="part_paid" {% if job.payment_status == 'part_paid' %}checked{% endif %} autocomplete="off">
+                                <input type="radio" class="btn-check" name="payment_status" id="pay_partial" value="part_paid" {% if job.status == 'Closed' and job.payment_status == 'part_paid' %}checked{% endif %} autocomplete="off">
                                 <label class="btn btn-outline-warning" for="pay_partial"><i class="fas fa-adjust me-1"></i> Partial</label>
 
-                                <input type="radio" class="btn-check" name="payment_status" id="pay_unpaid" value="unpaid" {% if job.payment_status == 'unpaid' %}checked{% endif %} autocomplete="off">
+                                <input type="radio" class="btn-check" name="payment_status" id="pay_unpaid" value="unpaid" {% if job.status == 'Closed' and job.payment_status == 'unpaid' %}checked{% endif %} autocomplete="off">
                                 <label class="btn btn-outline-danger" for="pay_unpaid"><i class="fas fa-clock me-1"></i> Credit (Unpaid)</label>
                             </div>
                         </div>
 
-                        <!-- Payment Method -->
-                        <div class="mb-3" id="payment-method-container">
-                            <label for="close_payment_method" class="form-label fw-bold small text-muted text-uppercase">Payment Method</label>
-                            <select class="form-select form-select-sm" id="close_payment_method" name="payment_method">
-                                {% for code, label in payment_methods %}
-                                    <option value="{{ code }}" {% if job.payment_method == code or not job.payment_method and code == 'cash' %}selected{% endif %}>{{ label }}</option>
+                        <!-- Paid in Full Summary Banner -->
+                        <div class="p-2.5 bg-success-subtle border border-success-subtle rounded-3 mb-3 d-flex justify-content-between align-items-center" id="paid-amount-summary">
+                            <span class="small text-success-emphasis fw-medium">
+                                <i class="fa-solid fa-circle-check me-1"></i> Collecting Full Payment:
+                            </span>
+                            <strong class="text-success fs-5 modal-paid-amount-display">&#8377;{{ grand_total|floatformat:2 }}</strong>
+                        </div>
+
+                        <!-- Credit / Unpaid Warning Banner -->
+                        <div class="alert alert-warning py-2.5 px-3 small mb-3 border d-none" id="credit-info-container">
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="fa-solid fa-triangle-exclamation text-danger fs-5 mt-0.5"></i>
+                                <div>
+                                    <strong class="text-danger d-block">Credit / Outstanding Settlement</strong>
+                                    <span>No payment will be deposited now. The full balance (<strong>&#8377;<span class="modal-credit-amount-display">{{ grand_total|floatformat:2 }}</span></strong>) will remain recorded as customer credit due.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Deposit To Account -->
+                        <div class="mb-3" id="financial-account-container">
+                            <label for="close_financial_account" class="form-label fw-bold small text-muted text-uppercase d-flex justify-content-between align-items-center">
+                                <span><i class="fa-solid fa-building-columns text-primary me-1"></i>Deposit To Account <span class="text-danger">*</span></span>
+                                <a href="{% url 'company_profile_settings' %}#bank-details" target="_blank" class="text-decoration-none small text-primary fw-normal" style="font-size: 0.75rem;">
+                                    <i class="fa-solid fa-gear me-1"></i>Manage Accounts
+                                </a>
+                            </label>
+                            <select class="form-select form-select-sm" id="close_financial_account" name="financial_account">
+                                {% for acc in financial_accounts %}
+                                    <option value="{{ acc.id }}"
+                                            data-type="{{ acc.account_type }}"
+                                            data-default-cash="{{ acc.is_default_cash|yesno:'true,false' }}"
+                                            data-default-bank="{{ acc.is_default_bank|yesno:'true,false' }}"
+                                            {% if job.financial_account_id == acc.id or not job.financial_account_id and acc.is_default_cash or not job.financial_account_id and forloop.first %}selected{% endif %}>
+                                        {% if acc.account_type == 'cash' %}💵 {% elif acc.account_type == 'bank' %}🏦 {% else %}📱 {% endif %}{{ acc.name }} ({% if acc.account_type == 'cash' %}Cash Drawer{% elif acc.account_type == 'bank' %}Bank{% else %}UPI{% endif %}){% if acc.is_default_cash %} ★ [Default Cash]{% elif acc.is_default_bank %} ★ [Default Bank]{% endif %} — Bal: &#8377;{{ acc.current_balance|floatformat:2 }}
+                                    </option>
+                                {% empty %}
+                                    <option value="" disabled selected>No accounts configured (Cash Drawer default will be used)</option>
                                 {% endfor %}
                             </select>
+                            <small class="text-muted" style="font-size: 0.75rem;">Funds are credited directly to this account's ledger.</small>
                         </div>
 
                         <!-- Partial Amount Paid Input -->
@@ -697,120 +907,155 @@
     </div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Dynamic settlement modal handler
-    const grandTotalVal = parseFloat('{{ grand_total|default:0 }}') || 0;
+    // ----------------------------------------------------
+    // 1. Dynamic Settlement Modal Handler
+    // ----------------------------------------------------
+    let currentGrandTotal = parseFloat('{{ grand_total|default:0 }}') || 0;
     const payRadios = document.querySelectorAll('input[name="payment_status"]');
-    const methodContainer = document.getElementById('payment-method-container');
+    const accountContainer = document.getElementById('financial-account-container');
     const partialContainer = document.getElementById('partial-amount-container');
     const refContainer = document.getElementById('payment-ref-container');
     const amountInput = document.getElementById('close_amount_paid');
     const balanceDisplay = document.getElementById('modal-balance-due-display');
+    const modalGrandTotalDisplay = document.getElementById('modal-grand-total-display');
 
     function updateSettlementUI() {
         const selected = document.querySelector('input[name="payment_status"]:checked')?.value || 'paid';
+        const paidSummary = document.getElementById('paid-amount-summary');
+        const creditInfo = document.getElementById('credit-info-container');
+
         if (selected === 'unpaid') {
-            if (methodContainer) methodContainer.classList.add('d-none');
+            if (accountContainer) accountContainer.classList.add('d-none');
             if (partialContainer) partialContainer.classList.add('d-none');
             if (refContainer) refContainer.classList.add('d-none');
+            if (paidSummary) paidSummary.classList.add('d-none');
+            if (creditInfo) creditInfo.classList.remove('d-none');
             if (amountInput) amountInput.required = false;
         } else if (selected === 'part_paid') {
-            if (methodContainer) methodContainer.classList.remove('d-none');
+            if (accountContainer) accountContainer.classList.remove('d-none');
             if (partialContainer) partialContainer.classList.remove('d-none');
             if (refContainer) refContainer.classList.remove('d-none');
+            if (paidSummary) paidSummary.classList.add('d-none');
+            if (creditInfo) creditInfo.classList.add('d-none');
             if (amountInput) {
                 amountInput.required = true;
-                calcBalance();
+                calcModalBalance();
             }
         } else { // paid
-            if (methodContainer) methodContainer.classList.remove('d-none');
+            if (accountContainer) accountContainer.classList.remove('d-none');
             if (partialContainer) partialContainer.classList.add('d-none');
             if (refContainer) refContainer.classList.remove('d-none');
+            if (paidSummary) paidSummary.classList.remove('d-none');
+            if (creditInfo) creditInfo.classList.add('d-none');
             if (amountInput) amountInput.required = false;
         }
     }
 
-    function calcBalance() {
+    function calcModalBalance() {
         if (!amountInput || !balanceDisplay) return;
         const val = parseFloat(amountInput.value) || 0;
-        const rem = Math.max(0, grandTotalVal - val);
+        const rem = Math.max(0, currentGrandTotal - val);
         balanceDisplay.textContent = rem.toFixed(2);
     }
 
     payRadios.forEach(r => r.addEventListener('change', updateSettlementUI));
-    if (amountInput) amountInput.addEventListener('input', calcBalance);
+    if (amountInput) amountInput.addEventListener('input', calcModalBalance);
     updateSettlementUI();
 
+    // ----------------------------------------------------
+    // 2. Billing Form Controls & State
+    // ----------------------------------------------------
     const formEl = document.getElementById('job-billing-form');
     const editBtn = document.getElementById('edit-master-btn');
     const saveBtn = document.getElementById('save-master-btn');
     const redoBtn = document.getElementById('redo-master-btn');
+
+    // External / Vyapar Sales Invoice Controls
     const vyaparEditBtn = document.getElementById('edit-invoice-btn');
     const vyaparInput = document.getElementById('vyapar-invoice-input');
     const saveInvoiceBtn = document.getElementById('save-invoice-btn');
     const cancelInvoiceBtn = document.getElementById('cancel-invoice-btn');
-    const financialFields = document.querySelectorAll('.editable-finance-field');
+
+    // Section 1: Services Table Elements
+    const servicesTable = document.getElementById('services-table');
+    const servicesTableBody = document.getElementById('services-table-body');
     const addServiceBtn = document.getElementById('add-service-btn');
-    const addServiceRow = document.getElementById('add-service-row');
+    const addServiceRowEl = document.getElementById('add-service-row');
+    const newServiceRowTemplate = document.getElementById('new-service-row-template');
+    const noServicesRow = document.getElementById('no-services-row');
+    const servicesSubtotalDisplay = document.getElementById('services-subtotal-display');
+    const serviceCountBadge = document.getElementById('service-count-badge');
+
+    // Section 2: Products Table Elements
+    const productsTable = document.getElementById('products-table');
+    const productsTableBody = document.getElementById('products-table-body');
     const addProductBtn = document.getElementById('add-product-btn');
+    const addProductRowEl = document.getElementById('add-product-row');
     const inlineProductRowTemplate = document.getElementById('inline-product-row-template');
-    const billingTableBody = document.querySelector('.billing-table tbody');
+    const noProductsRow = document.getElementById('no-products-row');
+    const productsSubtotalDisplay = document.getElementById('products-subtotal-display');
+    const productCountBadge = document.getElementById('product-count-badge');
+
+    // Section 3: Summary Elements
+    const summaryServicesVal = document.getElementById('summary-services-val');
+    const summaryProductsVal = document.getElementById('summary-products-val');
+    const subtotalDisplay = document.getElementById('subtotal-display');
+    const discountInput = document.getElementById('discount-input');
+    const grandTotalDisplay = document.getElementById('grand-total-display');
+    const validationWarning = document.getElementById('validation-warning');
+
+    // Undo & Pending Deletions
     const pendingUndoPanel = document.getElementById('pending-undo-panel');
     const pendingUndoList = document.getElementById('pending-undo-list');
     const undoAllBtn = document.getElementById('undo-all-btn');
 
     let originalValues = {};
-    let newServiceCounter = 0;
-    let productRowCounter = 0;
     let isEditingMode = false;
     let isInvoiceEditing = false;
     let originalInvoiceValue = vyaparInput ? vyaparInput.value : '';
+    const pendingDeletions = new Map();
 
-    const pendingServiceDeletes = new Map();
-    const pendingProductDeletes = new Map();
-
-    function formatCurrency(value) {
-        return `\u20B9${(parseFloat(value) || 0).toFixed(2)}`;
+    function formatCurrency(val) {
+        return `\u20B9${(parseFloat(val) || 0).toFixed(2)}`;
     }
 
-    function escapeHtml(value) {
-        return (value || '').replace(/[&<>"']/g, function(char) {
-            const entities = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#39;',
-            };
+    function escapeHtml(str) {
+        return (str || '').replace(/[&<>"']/g, function(char) {
+            const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
             return entities[char] || char;
         });
     }
 
+    function showWarning(message) {
+        if (!validationWarning) return;
+        validationWarning.style.display = 'block';
+        validationWarning.innerHTML = `<i class="fas fa-exclamation-triangle me-1"></i> ${message}`;
+        setTimeout(() => {
+            validationWarning.style.display = 'none';
+        }, 4000);
+    }
+
     function saveOriginalValues() {
         originalValues = {};
-        financialFields.forEach((input) => {
-            originalValues[input.id] = input.value;
+        document.querySelectorAll('.editable-finance-field').forEach((input) => {
+            if (input.id) originalValues[input.id] = input.value;
         });
-        if (vyaparInput) {
-            originalValues[vyaparInput.id] = vyaparInput.value;
-            originalInvoiceValue = vyaparInput.value;
-        }
+        if (discountInput) originalValues['discount-input'] = discountInput.value;
+        if (vyaparInput) originalInvoiceValue = vyaparInput.value;
     }
 
     function updateInvoiceControls() {
         if (!vyaparInput) return;
-
         const invoiceEditable = isEditingMode || isInvoiceEditing;
         vyaparInput.readOnly = !invoiceEditable;
         vyaparInput.style.backgroundColor = invoiceEditable ? '#fffbe6' : '';
 
         if (vyaparEditBtn) {
-            vyaparEditBtn.style.display = isEditingMode || isInvoiceEditing ? 'none' : 'inline-flex';
+            vyaparEditBtn.style.display = invoiceEditable ? 'none' : 'inline-flex';
         }
-
         if (saveInvoiceBtn) {
             saveInvoiceBtn.style.display = !isEditingMode && isInvoiceEditing ? 'inline-flex' : 'none';
         }
-
         if (cancelInvoiceBtn) {
             cancelInvoiceBtn.style.display = !isEditingMode && isInvoiceEditing ? 'inline-flex' : 'none';
         }
@@ -833,227 +1078,118 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function clearNewServiceRows() {
-        newServiceCounter = 0;
         document.querySelectorAll('.appended-new-service-row').forEach(row => row.remove());
-        if (addServiceBtn) {
-            addServiceBtn.style.display = '';
-        }
     }
 
     function clearInlineProductRows() {
-        document.querySelectorAll('.product-sale-row-inline').forEach((row) => row.remove());
-        pendingProductDeletes.clear();
-    }
-
-    function createDeleteServiceInput(serviceId) {
-        if (!formEl) return;
-        const existing = formEl.querySelector(`input[name="delete_service_ids[]"][value="${serviceId}"]`);
-        if (existing) return;
-        const deleteInput = document.createElement('input');
-        deleteInput.type = 'hidden';
-        deleteInput.name = 'delete_service_ids[]';
-        deleteInput.value = serviceId;
-        deleteInput.id = `delete-service-input-${serviceId}`;
-        formEl.appendChild(deleteInput);
-    }
-
-    function removeDeleteServiceInput(serviceId) {
-        if (!formEl) return;
-        const input = formEl.querySelector(`input[name="delete_service_ids[]"][value="${serviceId}"]`);
-        if (input) {
-            input.remove();
-        }
-    }
-
-    function rowDescriptionText(row, fallback) {
-        const firstCell = row ? row.querySelector('td') : null;
-        const raw = firstCell ? firstCell.innerText : fallback;
-        return (raw || fallback || '').replace(/\s+/g, ' ').trim().slice(0, 64);
+        document.querySelectorAll('.product-sale-row-inline').forEach(row => row.remove());
     }
 
     function renderPendingUndoList() {
         if (!pendingUndoPanel || !pendingUndoList) return;
-
-        const chips = [];
-        pendingServiceDeletes.forEach((entry, serviceId) => {
-            chips.push({
-                type: 'service',
-                key: String(serviceId),
-                label: `Service: ${entry.label}`,
-            });
-        });
-        pendingProductDeletes.forEach((entry, token) => {
-            chips.push({
-                type: 'product',
-                key: token,
-                label: `Product: ${entry.label}`,
-            });
-        });
-
-        if (!chips.length) {
+        if (pendingDeletions.size === 0) {
             pendingUndoPanel.style.display = 'none';
             pendingUndoList.innerHTML = '';
             return;
         }
-
         pendingUndoPanel.style.display = '';
-        pendingUndoList.innerHTML = chips.map((chip) => `
-            <div class="pending-undo-item">
-                <span>${escapeHtml(chip.label)}</span>
-                <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary undo-delete-btn"
-                    data-delete-type="${chip.type}"
-                    data-delete-key="${escapeHtml(chip.key)}">
-                    Undo
-                </button>
-            </div>
-        `).join('');
+        const items = [];
+        pendingDeletions.forEach((entry, serviceId) => {
+            items.push(`
+                <div class="pending-undo-item">
+                    <span>${escapeHtml(entry.label)}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary undo-delete-btn" data-service-id="${serviceId}">
+                        <i class="fas fa-rotate-left me-1"></i>Undo
+                    </button>
+                </div>
+            `);
+        });
+        pendingUndoList.innerHTML = items.join('');
     }
 
     function queueServiceDeletion(serviceId, row) {
-        if (!row || pendingServiceDeletes.has(serviceId)) return;
-        createDeleteServiceInput(serviceId);
-        pendingServiceDeletes.set(serviceId, {
-            row,
-            label: rowDescriptionText(row, `Service #${serviceId}`),
-        });
+        if (!row || pendingDeletions.has(serviceId)) return;
+
+        // Hidden input for form submit
+        if (formEl && !formEl.querySelector(`input[name="delete_service_ids[]"][value="${serviceId}"]`)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'delete_service_ids[]';
+            input.value = serviceId;
+            input.id = `delete-service-input-${serviceId}`;
+            formEl.appendChild(input);
+        }
+
+        const isProduct = row.classList.contains('existing-product-sale-row');
+        let label = '';
+        if (isProduct) {
+            const prodName = row.querySelector('strong')?.textContent.trim() || 'Product';
+            label = `Product: ${prodName}`;
+        } else {
+            const desc = row.querySelector('.service-description-field')?.value.trim() || `Service #${serviceId}`;
+            label = `Service: ${desc}`;
+        }
+
+        pendingDeletions.set(serviceId, { row, label });
         row.style.display = 'none';
         renderPendingUndoList();
         calculateTotals();
     }
 
     function undoServiceDeletion(serviceId) {
-        const entry = pendingServiceDeletes.get(serviceId);
+        const entry = pendingDeletions.get(serviceId);
         if (!entry) return;
         entry.row.style.display = '';
-        pendingServiceDeletes.delete(serviceId);
-        removeDeleteServiceInput(serviceId);
-        renderPendingUndoList();
-        calculateTotals();
-    }
 
-    function queueProductDeletion(row) {
-        if (!row) return;
-        const token = row.dataset.productDeleteToken || `prod-${++productRowCounter}`;
-        row.dataset.productDeleteToken = token;
-        if (pendingProductDeletes.has(token)) return;
+        const hiddenInput = document.getElementById(`delete-service-input-${serviceId}`);
+        if (hiddenInput) hiddenInput.remove();
 
-        const select = row.querySelector('.product-select');
-        const selectedOption = select ? select.options[select.selectedIndex] : null;
-        const label = select && select.value
-            ? rowDescriptionText(null, selectedOption.textContent.replace(/\(Stock:.*?\)/, '').trim())
-            : 'New product line';
-
-        pendingProductDeletes.set(token, { row, label });
-        row.remove();
-        renderPendingUndoList();
-        calculateTotals();
-    }
-
-    function undoProductDeletion(token) {
-        const entry = pendingProductDeletes.get(token);
-        if (!entry) return;
-
-        if (addServiceRow && addServiceRow.parentNode) {
-            addServiceRow.parentNode.insertBefore(entry.row, addServiceRow);
-        } else if (billingTableBody) {
-            billingTableBody.appendChild(entry.row);
-        }
-
-        pendingProductDeletes.delete(token);
-        toggleProductRowEditing(entry.row, isEditingMode);
+        pendingDeletions.delete(serviceId);
         renderPendingUndoList();
         calculateTotals();
     }
 
     function undoAllPendingDeletions() {
-        Array.from(pendingServiceDeletes.keys()).forEach((serviceId) => undoServiceDeletion(serviceId));
-        Array.from(pendingProductDeletes.keys()).forEach((token) => undoProductDeletion(token));
+        Array.from(pendingDeletions.keys()).forEach(serviceId => undoServiceDeletion(serviceId));
+        pendingDeletions.clear();
         renderPendingUndoList();
-    }
-
-    function toggleProductRowEditing(row, isEditing) {
-        row.querySelectorAll('.editable-product-field').forEach((field) => {
-            field.disabled = !isEditing;
-            field.style.backgroundColor = isEditing ? '#fffbe6' : '';
-        });
-        const select = row.querySelector('.product-select');
-        if (!isEditing) {
-            closeProductDropdownList(select);
-        }
-        const deleteCell = row.querySelector('.delete-column');
-        if (deleteCell) {
-            deleteCell.style.display = isEditing ? 'table-cell' : 'none';
-        }
-        const removeBtn = row.querySelector('.remove-product-btn');
-        if (removeBtn) {
-            removeBtn.style.display = isEditing ? 'inline-block' : 'none';
-        }
-    }
-
-    function toggleProductEditing(isEditing) {
-        if (addProductBtn) {
-            addProductBtn.style.display = isEditing ? 'inline-flex' : 'none';
-        }
-
-        document.querySelectorAll('.product-sale-row-inline').forEach((row) => {
-            toggleProductRowEditing(row, isEditing);
-        });
+        calculateTotals();
     }
 
     function setEditingState(isEditing) {
         isEditingMode = isEditing;
 
-        const breakdownCard = document.querySelector('.billing-breakdown-card');
-        if (breakdownCard) {
-            breakdownCard.classList.toggle('is-editing', isEditing);
-        }
-        const billingTable = document.querySelector('.billing-table');
-        if (billingTable) {
-            billingTable.classList.toggle('is-editing', isEditing);
-        }
-
         if (editBtn) editBtn.style.display = isEditing ? 'none' : 'inline-flex';
         if (saveBtn) saveBtn.style.display = isEditing ? 'inline-flex' : 'none';
         if (redoBtn) redoBtn.style.display = isEditing ? 'inline-flex' : 'none';
 
-        if (addServiceRow) {
-            addServiceRow.style.display = isEditing ? 'table-row' : 'none';
-        }
+        if (addServiceRowEl) addServiceRowEl.style.display = isEditing ? 'table-row' : 'none';
+        if (addProductRowEl) addProductRowEl.style.display = isEditing ? 'table-row' : 'none';
 
-        const deleteHeader = document.getElementById('delete-header');
-        const deleteColumns = document.querySelectorAll('.delete-column');
-        if (deleteHeader) {
-            deleteHeader.style.display = isEditing ? 'table-cell' : 'none';
-        }
-        deleteColumns.forEach((col) => {
+        // Action / Delete columns
+        document.querySelectorAll('.delete-column').forEach((col) => {
             col.style.display = isEditing ? 'table-cell' : 'none';
         });
 
-        financialFields.forEach((input) => {
+        // Editable finance fields
+        document.querySelectorAll('.editable-finance-field').forEach((input) => {
             input.readOnly = !isEditing;
             input.style.backgroundColor = isEditing ? '#fffbe6' : '';
         });
 
-        document.querySelectorAll('[name^="new_"]').forEach((input) => {
-            input.readOnly = !isEditing;
-            input.style.backgroundColor = isEditing ? '#fffbe6' : '';
+        // Product fields
+        document.querySelectorAll('.editable-product-field').forEach((field) => {
+            field.disabled = !isEditing;
+            field.style.backgroundColor = isEditing ? '#fffbe6' : '';
         });
-
-        toggleProductEditing(isEditing);
 
         if (isEditing) {
             isInvoiceEditing = false;
             saveOriginalValues();
         } else {
-            Array.from(pendingServiceDeletes.keys()).forEach((serviceId) => undoServiceDeletion(serviceId));
-            if (formEl) {
-                formEl.querySelectorAll('input[name="delete_service_ids[]"]').forEach((input) => input.remove());
-            }
+            undoAllPendingDeletions();
             clearNewServiceRows();
             clearInlineProductRows();
-            renderPendingUndoList();
         }
 
         updateInvoiceControls();
@@ -1063,188 +1199,252 @@ document.addEventListener('DOMContentLoaded', function() {
     function redoChanges() {
         Object.keys(originalValues).forEach((id) => {
             const input = document.getElementById(id);
-            if (input) {
-                input.value = originalValues[id];
-            }
+            if (input) input.value = originalValues[id];
         });
 
         undoAllPendingDeletions();
-        pendingServiceDeletes.clear();
-        pendingProductDeletes.clear();
-        renderPendingUndoList();
-
-        if (formEl) {
-            formEl.querySelectorAll('input[name="delete_service_ids[]"]').forEach((input) => input.remove());
-        }
-
         clearNewServiceRows();
         clearInlineProductRows();
         setEditingState(false);
     }
 
-    function showWarning(message) {
-        const warning = document.getElementById('validation-warning');
-        if (!warning) return;
-        warning.style.display = 'block';
-        warning.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
-        setTimeout(() => {
-            warning.style.display = 'none';
-        }, 3000);
+    // ----------------------------------------------------
+    // 3. Row Update & Calculations
+    // ----------------------------------------------------
+    function updateExistingProductRow(row) {
+        const unitPriceInput = row.querySelector('.existing-product-unit-price');
+        const lineTotalDisplay = row.querySelector('.existing-product-line-total');
+        const profitContainer = row.querySelector('.existing-profit-container');
+        if (!unitPriceInput) return;
+
+        const unitPrice = parseFloat(unitPriceInput.value || 0);
+        const qty = parseInt(unitPriceInput.dataset.qty || '1', 10);
+        const costPrice = parseFloat(unitPriceInput.dataset.cost || 0);
+
+        const lineTotal = unitPrice * qty;
+        if (lineTotalDisplay) {
+            lineTotalDisplay.textContent = formatCurrency(lineTotal);
+        }
+
+        if (profitContainer) {
+            const lineProfit = lineTotal - (costPrice * qty);
+            if (lineProfit > 0) {
+                profitContainer.innerHTML = `<span class="badge bg-success-subtle text-success border px-1.5 py-0.5 existing-profit-badge" style="font-size: 0.72rem;">+${formatCurrency(lineProfit)} profit</span>`;
+            } else if (lineProfit < 0) {
+                profitContainer.innerHTML = `<span class="badge bg-danger-subtle text-danger border px-1.5 py-0.5 existing-profit-badge" style="font-size: 0.72rem;">-${formatCurrency(Math.abs(lineProfit))} (Loss)</span>`;
+            } else {
+                profitContainer.innerHTML = '';
+            }
+        }
     }
 
+    function updateProductRow(row) {
+        const select = row.querySelector('.product-select');
+        const unitPriceInput = row.querySelector('.product-unit-price-input');
+        const qtyInput = row.querySelector('.product-qty');
+        const purchasePriceDisplay = row.querySelector('.purchase-price-display');
+        const profitBadge = row.querySelector('.profit-margin-badge');
+        const skuHint = row.querySelector('.product-sku-hint');
+        const stockHint = row.querySelector('.product-stock-hint');
+        const lineTotalDisplay = row.querySelector('.product-line-total');
+
+        if (!select) return;
+        const selectedOption = select.options[select.selectedIndex];
+        if (!selectedOption || !select.value) {
+            if (purchasePriceDisplay) purchasePriceDisplay.textContent = '\u20B90.00';
+            if (profitBadge) profitBadge.innerHTML = '';
+            if (skuHint) skuHint.textContent = '';
+            if (stockHint) stockHint.textContent = 'Stock: --';
+            if (unitPriceInput) unitPriceInput.value = '';
+            if (lineTotalDisplay) lineTotalDisplay.textContent = '\u20B90.00';
+            return;
+        }
+
+        const defaultPrice = parseFloat(selectedOption.dataset.price || 0);
+        const costPrice = parseFloat(selectedOption.dataset.cost || 0);
+        const stock = parseInt(selectedOption.dataset.stock || '0', 10);
+        const sku = selectedOption.dataset.sku || '';
+
+        // Auto-fill default unit price if currently empty
+        if (unitPriceInput && (unitPriceInput.value === '' || unitPriceInput.value === null)) {
+            unitPriceInput.value = defaultPrice.toFixed(2);
+        }
+
+        const sellingPrice = parseFloat(unitPriceInput?.value || 0);
+        let qty = parseInt(qtyInput?.value || '1', 10);
+        if (!Number.isFinite(qty) || qty < 1) qty = 1;
+        if (stock > 0 && qty > stock) {
+            qty = stock;
+            if (qtyInput) qtyInput.value = qty;
+            showWarning(`Quantity adjusted to available stock (${stock}).`);
+        }
+        if (qtyInput) {
+            qtyInput.max = stock > 0 ? String(stock) : '';
+        }
+
+        // Purchase Price display
+        if (purchasePriceDisplay) {
+            purchasePriceDisplay.innerHTML = `Buy: <strong>${formatCurrency(costPrice)}</strong>`;
+        }
+
+        // SKU & Stock hints
+        if (skuHint) {
+            skuHint.textContent = sku ? `SKU: ${sku} \u2022 ` : '';
+        }
+        if (stockHint) {
+            stockHint.textContent = `Stock: ${stock}`;
+        }
+
+        // Line total
+        const lineTotal = sellingPrice * qty;
+        if (lineTotalDisplay) {
+            lineTotalDisplay.textContent = formatCurrency(lineTotal);
+        }
+
+        // Live profit badge
+        if (profitBadge) {
+            const lineProfit = lineTotal - (costPrice * qty);
+            if (sellingPrice > costPrice) {
+                const marginPct = costPrice > 0 ? (((sellingPrice - costPrice) / costPrice) * 100).toFixed(0) : 100;
+                profitBadge.innerHTML = `<span class="badge bg-success-subtle text-success border px-1.5 py-0.5" style="font-size: 0.72rem;">+${formatCurrency(lineProfit)} (${marginPct}%)</span>`;
+            } else if (sellingPrice < costPrice) {
+                profitBadge.innerHTML = `<span class="badge bg-danger-subtle text-danger border px-1.5 py-0.5" style="font-size: 0.72rem;">-${formatCurrency(Math.abs(lineProfit))} (Loss)</span>`;
+            } else if (costPrice > 0) {
+                profitBadge.innerHTML = `<span class="badge bg-secondary-subtle text-secondary border px-1.5 py-0.5" style="font-size: 0.72rem;">0% margin</span>`;
+            } else {
+                profitBadge.innerHTML = '';
+            }
+        }
+    }
+
+    function calculateTotals() {
+        let servicesTotal = 0;
+        let productsTotal = 0;
+        let visibleServiceCount = 0;
+        let visibleProductCount = 0;
+
+        // 1. Existing Services
+        document.querySelectorAll('.service-row-item').forEach((row) => {
+            if (row.style.display !== 'none') {
+                visibleServiceCount++;
+                const partCost = parseFloat(row.querySelector('.service-part-cost')?.value || 0) || 0;
+                const serviceCost = parseFloat(row.querySelector('.service-charge-cost')?.value || 0) || 0;
+                const lineTotal = partCost + serviceCost;
+                const lineTotalCell = row.querySelector('.service-line-total');
+                if (lineTotalCell) lineTotalCell.textContent = formatCurrency(lineTotal);
+                servicesTotal += lineTotal;
+            }
+        });
+
+        // 2. New Manual Services
+        document.querySelectorAll('.appended-new-service-row').forEach((row) => {
+            if (row.style.display !== 'none') {
+                visibleServiceCount++;
+                const partCost = parseFloat(row.querySelector('.service-part-cost')?.value || 0) || 0;
+                const serviceCost = parseFloat(row.querySelector('.service-charge-cost')?.value || 0) || 0;
+                const lineTotal = partCost + serviceCost;
+                const lineTotalCell = row.querySelector('.service-line-total');
+                if (lineTotalCell) lineTotalCell.textContent = formatCurrency(lineTotal);
+                servicesTotal += lineTotal;
+            }
+        });
+
+        // 3. Existing Products
+        document.querySelectorAll('.existing-product-sale-row').forEach((row) => {
+            if (row.style.display !== 'none') {
+                visibleProductCount++;
+                updateExistingProductRow(row);
+                const unitPrice = parseFloat(row.querySelector('.existing-product-unit-price')?.value || 0) || 0;
+                const qty = parseInt(row.querySelector('.existing-product-unit-price')?.dataset?.qty || '1', 10);
+                productsTotal += unitPrice * qty;
+            }
+        });
+
+        // 4. New Inline Products
+        document.querySelectorAll('.product-sale-row-inline').forEach((row) => {
+            if (row.style.display !== 'none') {
+                visibleProductCount++;
+                updateProductRow(row);
+                const select = row.querySelector('.product-select');
+                if (select && select.value) {
+                    const unitPrice = parseFloat(row.querySelector('.product-unit-price-input')?.value || 0) || 0;
+                    const qty = parseInt(row.querySelector('.product-qty')?.value || '1', 10);
+                    productsTotal += unitPrice * qty;
+                }
+            }
+        });
+
+        // Placeholder visibility
+        if (noServicesRow) noServicesRow.style.display = visibleServiceCount === 0 ? '' : 'none';
+        if (noProductsRow) noProductsRow.style.display = visibleProductCount === 0 ? '' : 'none';
+
+        // Count badges
+        if (serviceCountBadge) serviceCountBadge.textContent = visibleServiceCount;
+        if (productCountBadge) productCountBadge.textContent = visibleProductCount;
+
+        // Subtotals
+        if (servicesSubtotalDisplay) servicesSubtotalDisplay.textContent = formatCurrency(servicesTotal);
+        if (productsSubtotalDisplay) productsSubtotalDisplay.textContent = formatCurrency(productsTotal);
+        if (summaryServicesVal) summaryServicesVal.textContent = formatCurrency(servicesTotal);
+        if (summaryProductsVal) summaryProductsVal.textContent = formatCurrency(productsTotal);
+
+        // Subtotal, Discount & Grand Total
+        const grossSubtotal = servicesTotal + productsTotal;
+        const discount = parseFloat(discountInput?.value || 0) || 0;
+        const grandTotal = Math.max(0, grossSubtotal - discount);
+
+        if (subtotalDisplay) subtotalDisplay.textContent = formatCurrency(grossSubtotal);
+        if (grandTotalDisplay) grandTotalDisplay.textContent = formatCurrency(grandTotal);
+
+        // Update modal values
+        currentGrandTotal = grandTotal;
+        if (modalGrandTotalDisplay) modalGrandTotalDisplay.textContent = formatCurrency(grandTotal);
+        document.querySelectorAll('.modal-paid-amount-display, .modal-credit-amount-display').forEach(el => {
+            el.textContent = formatCurrency(grandTotal);
+        });
+        if (amountInput) amountInput.max = String(grandTotal);
+        calcModalBalance();
+    }
+
+    // ----------------------------------------------------
+    // 4. Adding Rows & Event Binding
+    // ----------------------------------------------------
     function canAddNewService() {
         const manualRows = Array.from(document.querySelectorAll('.appended-new-service-row'));
         if (!manualRows.length) return true;
         const lastRow = manualRows[manualRows.length - 1];
-        const inputs = lastRow.querySelectorAll('input');
-        return Array.from(inputs).every((input) => input.value.trim() !== '');
+        const descInput = lastRow.querySelector('.service-description-field');
+        return descInput && descInput.value.trim() !== '';
     }
 
     function canAddNewProduct() {
         const rows = Array.from(document.querySelectorAll('.product-sale-row-inline'));
         if (!rows.length) return true;
-
         const lastRow = rows[rows.length - 1];
         const select = lastRow.querySelector('.product-select');
         const qtyInput = lastRow.querySelector('.product-qty');
         const qty = parseInt(qtyInput?.value || '0', 10);
-
-        if (!select || !select.value) return false;
-        if (!Number.isFinite(qty) || qty <= 0) return false;
-        return true;
-    }
-
-    function filterProductOptions(select, searchTerm) {
-        const term = (searchTerm || '').trim().toLowerCase();
-        Array.from(select.options).forEach((option, index) => {
-            if (index === 0) {
-                option.hidden = false;
-                return;
-            }
-            option.hidden = !!term && !option.text.toLowerCase().includes(term);
-        });
-    }
-
-    function firstVisibleProductOption(select) {
-        return Array.from(select.options).find((option, index) => index > 0 && !option.hidden);
-    }
-
-    function openProductDropdownList(select) {
-        if (!select || select.disabled) return;
-        const visibleOptions = Array.from(select.options).filter((option, index) => index > 0 && !option.hidden);
-        if (!visibleOptions.length) {
-            select.removeAttribute('size');
-            select.classList.remove('product-select-open');
-            return;
-        }
-
-        const visibleRows = Math.min(Math.max(visibleOptions.length + 1, 3), 8);
-        select.setAttribute('size', String(visibleRows));
-        select.classList.add('product-select-open');
-    }
-
-    function closeProductDropdownList(select) {
-        if (!select) return;
-        select.removeAttribute('size');
-        select.classList.remove('product-select-open');
-    }
-
-    function updateProductRow(row, syncSearchValue = false) {
-        const select = row.querySelector('.product-select');
-        const searchInput = row.querySelector('.product-search-input');
-        const qtyInput = row.querySelector('.product-qty');
-        const unitPriceText = row.querySelector('.product-unit-price');
-        const stockHint = row.querySelector('.product-stock-hint');
-        const lineTotalText = row.querySelector('.product-line-total');
-
-        if (!select || !qtyInput || !unitPriceText || !lineTotalText || !stockHint) return;
-
-        const selectedOption = select.options[select.selectedIndex];
-        const unitPrice = parseFloat(selectedOption?.dataset?.price || 0);
-        const stock = parseInt(selectedOption?.dataset?.stock || '0', 10);
-        const hasSelection = !!select.value;
-
-        if (!hasSelection) {
-            qtyInput.max = '';
-            unitPriceText.textContent = `${formatCurrency(0)} each`;
-            stockHint.textContent = 'Unit Price: \u20B90.00 | Stock: --';
-            lineTotalText.textContent = formatCurrency(0);
-            return;
-        }
-
-        let qty = parseInt(qtyInput.value || '0', 10);
-        if (!Number.isFinite(qty) || qty < 1) {
-            qty = 1;
-        }
-
-        if (stock > 0 && qty > stock) {
-            qty = stock;
-            showWarning(`Quantity adjusted to available stock (${stock}).`);
-        }
-
-        qtyInput.value = qty;
-        qtyInput.max = stock > 0 ? String(stock) : '';
-
-        const lineTotal = unitPrice * qty;
-        lineTotalText.textContent = formatCurrency(lineTotal);
-        unitPriceText.textContent = `${formatCurrency(unitPrice)} each`;
-        stockHint.textContent = `Unit Price: ${formatCurrency(unitPrice)} | Stock: ${stock}`;
-
-        if (syncSearchValue && searchInput) {
-            searchInput.value = selectedOption.textContent.replace(/\(Stock:.*?\)/, '').trim();
-        }
+        return select && select.value && Number.isFinite(qty) && qty > 0;
     }
 
     function bindInlineProductRowEvents(rowNode) {
         const select = rowNode.querySelector('.product-select');
-        const searchInput = rowNode.querySelector('.product-search-input');
+        const unitPriceInput = rowNode.querySelector('.product-unit-price-input');
         const qtyInput = rowNode.querySelector('.product-qty');
         const removeBtn = rowNode.querySelector('.remove-product-btn');
 
-        if (searchInput && select) {
-            searchInput.addEventListener('focus', function() {
-                filterProductOptions(select, searchInput.value);
-                openProductDropdownList(select);
-            });
-
-            searchInput.addEventListener('input', function() {
-                filterProductOptions(select, searchInput.value);
-                openProductDropdownList(select);
-            });
-
-            searchInput.addEventListener('keydown', function(e) {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                const option = firstVisibleProductOption(select);
-                if (!option) return;
-                select.value = option.value;
-                updateProductRow(rowNode, true);
-                closeProductDropdownList(select);
+        if (select) {
+            select.addEventListener('change', function() {
+                if (unitPriceInput) unitPriceInput.value = '';
+                updateProductRow(rowNode);
                 calculateTotals();
-            });
-
-            searchInput.addEventListener('blur', function() {
-                window.setTimeout(function() {
-                    if (document.activeElement !== select) {
-                        closeProductDropdownList(select);
-                    }
-                }, 120);
             });
         }
 
-        if (select) {
-            select.addEventListener('focus', function() {
-                openProductDropdownList(select);
-            });
-
-            select.addEventListener('change', function() {
-                updateProductRow(rowNode, true);
-                closeProductDropdownList(select);
+        if (unitPriceInput) {
+            unitPriceInput.addEventListener('input', function() {
+                updateProductRow(rowNode);
                 calculateTotals();
-            });
-
-            select.addEventListener('blur', function() {
-                closeProductDropdownList(select);
             });
         }
 
@@ -1257,73 +1457,80 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (removeBtn) {
             removeBtn.addEventListener('click', function() {
-                queueProductDeletion(rowNode);
+                rowNode.remove();
+                calculateTotals();
             });
         }
     }
 
     function addProductRow() {
-        if (!inlineProductRowTemplate || !billingTableBody || !addServiceRow) return;
+        if (!inlineProductRowTemplate || !productsTableBody || !addProductRowEl) return;
         if (addProductBtn && addProductBtn.disabled) {
-            showWarning('No products found. Add a product in Product Management first.');
+            showWarning('No inventory products available in this workspace.');
             return;
         }
 
         if (!canAddNewProduct()) {
-            showWarning('Please fill all fields of the current new product row first.');
+            showWarning('Please select a product and enter a quantity before adding another row.');
             return;
         }
 
         const rowNode = inlineProductRowTemplate.content.firstElementChild.cloneNode(true);
-        rowNode.dataset.productDeleteToken = `prod-${++productRowCounter}`;
         bindInlineProductRowEvents(rowNode);
-        billingTableBody.insertBefore(rowNode, addServiceRow);
-        toggleProductRowEditing(rowNode, true);
+
+        rowNode.querySelectorAll('.editable-product-field').forEach((field) => {
+            field.disabled = false;
+            field.style.backgroundColor = '#fffbe6';
+        });
+        const delCol = rowNode.querySelector('.delete-column');
+        if (delCol) delCol.style.display = 'table-cell';
+
+        productsTableBody.insertBefore(rowNode, addProductRowEl);
         updateProductRow(rowNode);
         calculateTotals();
 
-        const searchInput = rowNode.querySelector('.product-search-input');
-        if (searchInput) searchInput.focus();
+        const select = rowNode.querySelector('.product-select');
+        if (select) select.focus();
     }
 
-    function calculateTotals() {
-        let subtotal = 0;
+    function addServiceRowAction() {
+        if (!newServiceRowTemplate || !servicesTableBody || !addServiceRowEl) return;
 
-        document.querySelectorAll('[id^="service-row-"]').forEach((row) => {
-            if (row.style.display !== 'none') {
-                const partInput = row.querySelector('[name^="part_cost_"]');
-                const serviceInput = row.querySelector('[name^="service_charge_"]');
-                const partCost = parseFloat(partInput?.value || 0);
-                const serviceCost = parseFloat(serviceInput?.value || 0);
-                subtotal += partCost + serviceCost;
-            }
+        if (!canAddNewService()) {
+            showWarning('Please enter a description for the current new service line before adding another.');
+            return;
+        }
+
+        const rowNode = newServiceRowTemplate.content.firstElementChild.cloneNode(true);
+        rowNode.querySelectorAll('.editable-finance-field').forEach((input) => {
+            input.readOnly = false;
+            input.style.backgroundColor = '#fffbe6';
+        });
+        const delCol = rowNode.querySelector('.delete-column');
+        if (delCol) delCol.style.display = 'table-cell';
+
+        const removeBtn = rowNode.querySelector('.remove-new-service-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', function() {
+                rowNode.remove();
+                calculateTotals();
+            });
+        }
+
+        rowNode.querySelectorAll('input').forEach((input) => {
+            input.addEventListener('input', calculateTotals);
         });
 
-        document.querySelectorAll('[name="new_part_cost[]"], [name="new_service_charge[]"]').forEach((input) => {
-            if (input.closest('tr') && input.closest('tr').style.display !== 'none') {
-                subtotal += parseFloat(input.value) || 0;
-            }
-        });
+        servicesTableBody.insertBefore(rowNode, addServiceRowEl);
+        calculateTotals();
 
-        document.querySelectorAll('.product-sale-row-inline').forEach((row) => {
-            const select = row.querySelector('.product-select');
-            if (!select || !select.value) return;
-            const selectedOption = select.options[select.selectedIndex];
-            const unitPrice = parseFloat(selectedOption?.dataset?.price || 0);
-            const qty = parseInt(row.querySelector('.product-qty')?.value || '0', 10) || 0;
-            const serviceCharge = parseFloat(row.querySelector('.product-service-charge')?.value || 0) || 0;
-            subtotal += (unitPrice * qty) + serviceCharge;
-        });
-
-        const discount = parseFloat(document.getElementById('discount-input')?.value || 0) || 0;
-        const grandTotal = subtotal - discount;
-
-        const subtotalDisplay = document.getElementById('subtotal-display');
-        const grandTotalDisplay = document.getElementById('grand-total-display');
-        if (subtotalDisplay) subtotalDisplay.textContent = formatCurrency(subtotal);
-        if (grandTotalDisplay) grandTotalDisplay.textContent = formatCurrency(grandTotal);
+        const descInput = rowNode.querySelector('.service-description-field');
+        if (descInput) descInput.focus();
     }
 
+    // ----------------------------------------------------
+    // 5. Global Event Listeners & Initial State
+    // ----------------------------------------------------
     if (editBtn) {
         editBtn.addEventListener('click', function() {
             setEditingState(true);
@@ -1335,9 +1542,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (vyaparEditBtn) {
-        vyaparEditBtn.addEventListener('click', function() {
-            openInvoiceEditing();
-        });
+        vyaparEditBtn.addEventListener('click', openInvoiceEditing);
     }
 
     if (cancelInvoiceBtn) {
@@ -1345,60 +1550,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (addServiceBtn) {
-        addServiceBtn.addEventListener('click', function() {
-            if (!canAddNewService()) {
-                showWarning('Please fill all fields of the current new service row first.');
-                return;
-            }
-            newServiceCounter += 1;
-            const tempRow = document.createElement('tr');
-            tempRow.className = 'appended-new-service-row';
-            tempRow.innerHTML = `
-                <td><input type="text" name="new_description[]" class="form-control form-control-sm" placeholder="Service description"></td>
-                <td class="text-end"><input type="number" step="0.01" name="new_part_cost[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
-                <td class="text-end"><input type="number" step="0.01" name="new_service_charge[]" class="form-control form-control-sm text-end" placeholder="0.00"></td>
-                <td class="delete-column text-center">
-                    <button type="button" class="btn btn-sm btn-outline-danger remove-new-service-btn">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            `;
-
-            if (isEditingMode) {
-                tempRow.querySelectorAll('input').forEach(input => {
-                    input.style.backgroundColor = '#fffbe6';
-                });
-            }
-
-            tempRow.querySelector('.remove-new-service-btn').addEventListener('click', function() {
-                tempRow.remove();
-                calculateTotals();
-            });
-
-            const addRowNode = document.getElementById('add-service-row');
-            if (addRowNode && addRowNode.parentNode) {
-                addRowNode.parentNode.insertBefore(tempRow, addRowNode);
-            }
-
-            tempRow.querySelector('input').focus();
-            calculateTotals();
-        });
+        addServiceBtn.addEventListener('click', addServiceRowAction);
     }
 
     if (addProductBtn) {
         addProductBtn.addEventListener('click', addProductRow);
     }
 
+    // Undo clicks
     if (pendingUndoList) {
         pendingUndoList.addEventListener('click', function(e) {
             const undoBtn = e.target.closest('.undo-delete-btn');
             if (!undoBtn) return;
-            const type = undoBtn.dataset.deleteType;
-            const key = undoBtn.dataset.deleteKey;
-            if (type === 'service') {
-                undoServiceDeletion(parseInt(key, 10));
-            } else if (type === 'product') {
-                undoProductDeletion(key);
+            const serviceId = parseInt(undoBtn.dataset.serviceId, 10);
+            if (Number.isFinite(serviceId)) {
+                undoServiceDeletion(serviceId);
             }
         });
     }
@@ -1407,24 +1573,67 @@ document.addEventListener('DOMContentLoaded', function() {
         undoAllBtn.addEventListener('click', undoAllPendingDeletions);
     }
 
+    // Delete existing service / product buttons
     document.addEventListener('click', function(e) {
         const deleteServiceBtn = e.target.closest('.delete-service-btn');
         if (deleteServiceBtn) {
             const serviceId = parseInt(deleteServiceBtn.dataset.serviceId, 10);
-            const row = document.getElementById(`service-row-${serviceId}`);
-            if (!Number.isFinite(serviceId) || !row) return;
-            queueServiceDeletion(serviceId, row);
+            const serviceRow = document.getElementById(`service-row-${serviceId}`);
+            const productRow = deleteServiceBtn.closest('.existing-product-sale-row');
+            const targetRow = serviceRow || productRow;
+            if (!Number.isFinite(serviceId) || !targetRow) return;
+            queueServiceDeletion(serviceId, targetRow);
         }
     });
 
+    // Real-time calculation on number inputs
     document.addEventListener('input', function(e) {
-        if (e.target.type === 'number') {
+        if (e.target.matches('.service-part-cost, .service-charge-cost, .existing-product-unit-price, #discount-input')) {
             calculateTotals();
         }
     });
 
+    // Form submit validation
+    if (formEl) {
+        formEl.addEventListener('submit', function(e) {
+            if (document.activeElement === saveInvoiceBtn) return;
+
+            const newServiceRows = document.querySelectorAll('.appended-new-service-row');
+            for (let row of newServiceRows) {
+                const desc = row.querySelector('.service-description-field')?.value.trim();
+                if (!desc) {
+                    e.preventDefault();
+                    showWarning('Please enter a description for all added service lines.');
+                    row.querySelector('.service-description-field')?.focus();
+                    return;
+                }
+            }
+
+            const inlineProductRows = document.querySelectorAll('.product-sale-row-inline');
+            for (let row of inlineProductRows) {
+                const select = row.querySelector('.product-select');
+                const qtyInput = row.querySelector('.product-qty');
+                const qty = parseInt(qtyInput?.value || '0', 10);
+                if (!select || !select.value) {
+                    e.preventDefault();
+                    showWarning('Please select a product for all added spare parts / product rows.');
+                    if (select) select.focus();
+                    return;
+                }
+                if (!Number.isFinite(qty) || qty <= 0) {
+                    e.preventDefault();
+                    showWarning('Product quantity must be at least 1.');
+                    if (qtyInput) qtyInput.focus();
+                    return;
+                }
+            }
+        });
+    }
+
+    // Initialize
     setEditingState(false);
     updateInvoiceControls();
+    calculateTotals();
 });
 </script>
 {% endblock %}

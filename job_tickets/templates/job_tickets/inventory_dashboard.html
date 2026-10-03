@@ -540,10 +540,18 @@
                             <input type="date" name="payment_date" class="form-control" value="{% now 'Y-m-d' %}" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Method</label>
-                            <select name="payment_method" class="form-select">
-                                <option value="cash">Cash</option>
-                                <option value="transfer">Transfer</option>
+                            <label class="form-label" id="credit-payment-account-label"><i class="fa-solid fa-building-columns text-primary me-1"></i>Deposit To Account</label>
+                            <select name="financial_account" id="credit-payment-financial-account" class="form-select" required>
+                                {% for acc in financial_accounts %}
+                                <option value="{{ acc.id }}" {% if forloop.first %}selected{% endif %}>
+                                    {% if acc.account_type == 'cash' %}💵{% elif acc.account_type == 'bank' %}🏦{% else %}📱{% endif %}
+                                    {{ acc.name }} ({{ acc.get_account_type_display }})
+                                    {% if acc.is_default_cash %}★ [Default Cash]{% elif acc.is_default_bank %}★ [Default Bank]{% endif %}
+                                    — ₹{{ acc.current_balance|floatformat:2 }}
+                                </option>
+                                {% empty %}
+                                <option value="" disabled selected>No accounts available</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -581,7 +589,16 @@ function initInventoryDashboard() {
         const amountInput = creditPaymentModal.querySelector('#credit-payment-amount');
         amountInput.value = balance;
         amountInput.max = balance;
-        creditPaymentModal.querySelector('#credit-payment-submit-btn').textContent = trigger.getAttribute('data-action-label') || 'Save Payment';
+        const actionLabel = trigger.getAttribute('data-action-label') || 'Save Payment';
+        creditPaymentModal.querySelector('#credit-payment-submit-btn').textContent = actionLabel;
+        const accountLabel = creditPaymentModal.querySelector('#credit-payment-account-label');
+        if (accountLabel) {
+            if (actionLabel.toLowerCase().includes('pay')) {
+                accountLabel.innerHTML = '<i class="fa-solid fa-building-columns text-primary me-1"></i>Paid From Account';
+            } else {
+                accountLabel.innerHTML = '<i class="fa-solid fa-building-columns text-primary me-1"></i>Deposit To Account';
+            }
+        }
     });
 }
 

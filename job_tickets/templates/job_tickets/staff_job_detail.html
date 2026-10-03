@@ -198,10 +198,10 @@
                         <tr>
                             <th style="width: 30%;">Current Status</th>
                             <td>
+                                {% if staff_access.job_status_change %}
                                 <form method="post" class="d-flex flex-wrap gap-2 align-items-center">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="update_status">
-                                    <span class="badge badge-status badge-info">{{ job.get_status_display }}</span>
                                     <select name="status" class="form-select form-select-sm" style="max-width: 220px;">
                                         {% for value, label in staff_status_choices %}
                                             <option value="{{ value }}" {% if value == job.status %}selected{% endif %}>{{ label }}</option>
@@ -211,8 +211,30 @@
                                         <i class="fas fa-save"></i> Update
                                     </button>
                                 </form>
+                                {% else %}
+                                <span class="badge badge-status badge-info">{{ job.get_status_display }}</span>
+                                {% endif %}
                             </td>
                         </tr>
+                        {% if specialized_service %}
+                        <tr>
+                            <th>Specialized Service</th>
+                            <td>
+                                <span class="badge {% if specialized_service.status == 'Returned from Vendor' %}bg-success{% elif specialized_service.status == 'Sent to Vendor' %}bg-warning text-dark{% else %}bg-secondary{% endif %} me-1">
+                                    {{ specialized_service.get_status_display }}
+                                </span>
+                                {% if specialized_service.vendor %}
+                                    <strong class="text-dark">{{ specialized_service.vendor.company_name }}</strong>
+                                {% endif %}
+                                {% if specialized_service.vendor_bill_number %}
+                                    &bull; Bill: <span class="badge bg-light text-dark border font-monospace">{{ specialized_service.vendor_bill_number }}</span>
+                                {% endif %}
+                                {% if specialized_service.returned_date %}
+                                    &bull; Returned: <span class="text-muted small">{{ specialized_service.returned_date|date:"d M Y" }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
                         <tr>
                             <th>Storage Rack Location</th>
                             <td>
@@ -248,7 +270,16 @@
                             <td>{{ job.technician_notes|linebreaksbr|default:"No notes yet." }}</td>
                         </tr>
                         <tr>
-                            <th>Created At</th>
+                            <th>Received / Intake Date</th>
+                            <td>
+                                <strong class="text-dark">{{ job.display_intake_date|date:"Y-m-d" }}</strong>
+                                {% if job.intake_date and job.created_at and job.intake_date != job.created_at.date %}
+                                    <span class="badge bg-secondary ms-2" title="System Registration Date">Registered: {{ job.created_at|date:"Y-m-d" }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Created In System</th>
                             <td>{{ job.created_at|date:"Y-m-d H:i" }} by {{ job.created_by.username|default:"N/A" }}</td>
                         </tr>
                         <tr>
@@ -283,7 +314,12 @@
                 </div>
                 {% endif %}
 
-                <h4 class="mb-3 mt-4">Customer & Device Details</h4>
+                <div class="d-flex justify-content-between align-items-center mb-3 mt-4">
+                    <h4 class="mb-0">Customer & Device Details</h4>
+                    <button type="button" class="btn btn-sm btn-outline-primary shadow-xs" data-bs-toggle="modal" data-bs-target="#editCustomerDeviceModal">
+                        <i class="fas fa-edit me-1"></i> Edit Details
+                    </button>
+                </div>
                 <table class="table table-bordered">
                     <tbody>
                         <tr>
@@ -320,6 +356,18 @@
                         <tr>
                             <th>Serial Number</th>
                             <td>{{ job.device_serial|default:"N/A" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Device Password / PIN</th>
+                            <td>
+                                {% if job.device_password %}
+                                <span class="badge bg-light text-dark border font-monospace px-2 py-1">
+                                    <i class="fas fa-lock text-warning me-1"></i>{{ job.device_password }}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">None provided</span>
+                                {% endif %}
+                            </td>
                         </tr>
                          <tr>
                             <th>Additional Items</th>
@@ -512,6 +560,12 @@
                                     <th>Client Charge</th>
                                     <td class="text-success fw-bold">₹{{ specialized_service.client_charge|floatformat:2|default:"0.00" }}</td>
                                 </tr>
+                                {% if specialized_service.vendor_bill_number %}
+                                <tr>
+                                    <th>Vendor Bill Number</th>
+                                    <td class="fw-bold text-dark font-monospace">{{ specialized_service.vendor_bill_number }}</td>
+                                </tr>
+                                {% endif %}
                                 {% if specialized_service.sent_date %}
                                 <tr>
                                     <th>Sent Date</th>
@@ -1118,6 +1172,129 @@
     </div>
     
 
+<!-- Edit Customer & Device Details Modal -->
+<div class="modal fade" id="editCustomerDeviceModal" tabindex="-1" aria-labelledby="editCustomerDeviceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow border-0">
+            <form method="post" action="{% url 'staff_job_detail' job.job_code %}" id="edit-customer-device-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="edit_customer_device_details">
+                <div class="modal-header py-3 px-4 bg-light border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 36px; height: 36px;">
+                            <i class="fas fa-user-pen"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold mb-0 text-dark" id="editCustomerDeviceModalLabel">Edit Customer & Device Details</h5>
+                            <span class="text-muted small">Job Code #{{ job.job_code }} &bull; Edits will be recorded in Job History</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Customer Information Section -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-primary text-uppercase small mb-3 border-bottom pb-2">
+                            <i class="fas fa-user me-1"></i> Customer Information
+                        </h6>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="edit_customer_name" class="form-label fw-semibold small">Customer Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="edit_customer_name" name="customer_name" value="{{ job.customer_name }}" placeholder="Enter customer full name with address" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="edit_customer_phone" class="form-label fw-semibold small">Customer Phone <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted small">+91</span>
+                                    <input type="tel" class="form-control" id="edit_customer_phone" name="customer_phone" value="{{ job.customer_phone }}" maxlength="10" required>
+                                </div>
+                                <div class="form-text small">Indian 10-digit mobile number</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="edit_intake_date" class="form-label fw-semibold small"><i class="far fa-calendar-alt text-muted me-1"></i>Intake / Received Date</label>
+                                <input type="date" class="form-control" id="edit_intake_date" name="intake_date" value="{{ job.display_intake_date|date:'Y-m-d' }}">
+                                <div class="form-text small">Date device physically arrived</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Device Information Section -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-primary text-uppercase small mb-3 border-bottom pb-2">
+                            <i class="fas fa-laptop me-1"></i> Device Specifications
+                        </h6>
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label for="edit_device_type" class="form-label fw-semibold small">Device Type <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="edit_device_type" name="device_type" value="{{ job.device_type }}" list="device-type-list" placeholder="e.g. Laptop" required>
+                                <datalist id="device-type-list">
+                                    <option value="Laptop">
+                                    <option value="Desktop">
+                                    <option value="Smartphone">
+                                    <option value="Tablet">
+                                    <option value="All-in-One PC">
+                                    <option value="Printer">
+                                    <option value="Monitor">
+                                    <option value="Server">
+                                </datalist>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="edit_device_brand" class="form-label fw-semibold small">Brand</label>
+                                <input type="text" class="form-control" id="edit_device_brand" name="device_brand" value="{{ job.device_brand }}" placeholder="e.g. Dell, HP, Apple">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="edit_device_model" class="form-label fw-semibold small">Model</label>
+                                <input type="text" class="form-control" id="edit_device_model" name="device_model" value="{{ job.device_model }}" placeholder="e.g. Inspiron 3521">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="edit_device_serial" class="form-label fw-semibold small">Serial / IMEI</label>
+                                <input type="text" class="form-control" id="edit_device_serial" name="device_serial" value="{{ job.device_serial }}" placeholder="Serial or IMEI">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="edit_device_password" class="form-label fw-semibold small"><i class="fas fa-lock text-muted me-1"></i>Password / PIN</label>
+                                <input type="text" class="form-control" id="edit_device_password" name="device_password" value="{{ job.device_password }}" placeholder="e.g. 1234">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Service Details Section -->
+                    <div class="mb-3">
+                        <h6 class="fw-bold text-primary text-uppercase small mb-3 border-bottom pb-2">
+                            <i class="fas fa-clipboard-list me-1"></i> Problem & Accessories
+                        </h6>
+                        <div class="row g-3">
+                            <div class="col-md-12">
+                                <label for="edit_reported_issue" class="form-label fw-semibold small">Reported Issue <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="edit_reported_issue" name="reported_issue" rows="3" required placeholder="Describe the fault reported by customer...">{{ job.reported_issue }}</textarea>
+                            </div>
+                            <div class="col-md-12">
+                                <label for="edit_additional_items" class="form-label fw-semibold small">Additional Items / Accessories Left</label>
+                                <input type="text" class="form-control" id="edit_additional_items" name="additional_items" value="{{ job.additional_items }}" placeholder="e.g. Charger, Power cable, Bag">
+                                <div class="form-text small">List accessories submitted along with the device</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reason for Edit (Audit context) -->
+                    <div class="p-3 bg-light rounded-3 border">
+                        <label for="edit_reason" class="form-label fw-semibold small mb-1">
+                            <i class="fas fa-comment-dots text-secondary me-1"></i> Reason for Edit <span class="text-muted fw-normal">(Optional audit note)</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm" id="edit_reason" name="edit_reason" placeholder="e.g. Customer corrected phone number, Typo in serial number">
+                        <div class="form-text small text-muted">This explanation will be saved in the permanent Job History log.</div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2.5 px-4 bg-light border-top">
+                    <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm px-3 fw-semibold shadow-xs">
+                        <i class="fas fa-save me-1"></i> Save Changes & Log
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Send Custom WhatsApp Message Modal -->
 <div class="modal fade" id="sendWhatsappModal" tabindex="-1" aria-labelledby="sendWhatsappModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1285,22 +1462,28 @@
             </div>
           </div>
 
-          <!-- Payment Method -->
+          <!-- Deposit To Account -->
           <div class="mb-3">
-            <label for="cp_method" class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
-            <select class="form-select" id="cp_method" name="payment_method">
-              {% for key, label in payment_methods %}
-              <option value="{{ key }}">{{ label }}</option>
+            <label for="cp_financial_account" class="form-label fw-semibold d-flex justify-content-between align-items-center">
+              <span><i class="fa-solid fa-wallet text-primary me-1"></i>Deposit To Account <span class="text-danger">*</span></span>
+              <a href="{% url 'company_profile_settings' %}#bank-details" target="_blank" class="text-decoration-none small text-primary fw-normal" style="font-size: 0.75rem;">
+                <i class="fa-solid fa-gear me-1"></i>Manage Accounts
+              </a>
+            </label>
+            <select class="form-select" id="cp_financial_account" name="financial_account" required>
+              {% for acc in financial_accounts %}
+                <option value="{{ acc.id }}"
+                        data-type="{{ acc.account_type }}"
+                        data-default-cash="{{ acc.is_default_cash|yesno:'true,false' }}"
+                        data-default-bank="{{ acc.is_default_bank|yesno:'true,false' }}"
+                        {% if job.financial_account_id == acc.id or not job.financial_account_id and acc.is_default_cash or not job.financial_account_id and forloop.first %}selected{% endif %}>
+                  {% if acc.account_type == 'cash' %}💵 {% elif acc.account_type == 'bank' %}🏦 {% else %}📱 {% endif %}{{ acc.name }} ({% if acc.account_type == 'cash' %}Cash Drawer{% elif acc.account_type == 'bank' %}Bank{% else %}UPI{% endif %}){% if acc.is_default_cash %} ★ [Default Cash]{% elif acc.is_default_bank %} ★ [Default Bank]{% endif %} — Bal: &#8377;{{ acc.current_balance|floatformat:2 }}
+                </option>
+              {% empty %}
+                <option value="">No Accounts Found</option>
               {% endfor %}
-              <option value="custom">Other / Custom Method</option>
             </select>
-          </div>
-
-          <!-- Custom Method Name (shown when "Other / Custom" is selected) -->
-          <div class="mb-3 d-none" id="cp_custom_method_wrap">
-            <label for="cp_custom_method" class="form-label fw-semibold">Custom Method Name <span class="text-danger">*</span></label>
-            <input type="text" class="form-control" id="cp_custom_method" name="custom_payment_method"
-                   placeholder="e.g. Cheque, Store Credit, Barter">
+            <small class="text-muted" style="font-size: 0.75rem;">Funds are credited directly to this account's ledger in real time.</small>
           </div>
 
           <!-- Payment Reference -->
@@ -1416,8 +1599,10 @@
 
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <label class="form-label fw-semibold">Payment Mode</label>
-                            {{ job_expense_form.payment_mode }}
+                            <label class="form-label fw-semibold">
+                                <i class="fa-solid fa-building-columns text-primary me-1"></i>Paid From Account <span class="text-danger">*</span>
+                            </label>
+                            {{ job_expense_form.financial_account }}
                         </div>
                         <div class="col-6">
                             <label class="form-label fw-semibold">Expense Date</label>
@@ -1777,6 +1962,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    const editPhoneInput = document.getElementById('edit_customer_phone');
+    if (editPhoneInput) {
+        editPhoneInput.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '').slice(0, 10);
+        });
+    }
 });
 
 // Lock details when leaving page
@@ -1805,18 +1997,6 @@ document.addEventListener('visibilitychange', function() {
             if (amountInput) amountInput.value = btn.dataset.amount;
         });
     });
-
-    // Custom method toggle
-    const methodSelect = document.getElementById('cp_method');
-    const customMethodWrap = document.getElementById('cp_custom_method_wrap');
-    const customMethodInput = document.getElementById('cp_custom_method');
-    if (methodSelect && customMethodWrap) {
-        methodSelect.addEventListener('change', () => {
-            const isCustom = methodSelect.value === 'custom';
-            customMethodWrap.classList.toggle('d-none', !isCustom);
-            if (customMethodInput) customMethodInput.required = isCustom;
-        });
-    }
 
     // Dynamic custom fields
     let customFieldCount = 0;

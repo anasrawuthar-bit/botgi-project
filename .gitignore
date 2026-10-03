@@ -19,3 +19,4 @@ whatsapp_bridge/tokens/
 kotlin/.gradle/
 kotlin/**/build/
 kotlin/local.properties
+scratch/

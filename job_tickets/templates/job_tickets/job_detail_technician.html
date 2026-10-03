@@ -79,6 +79,14 @@
             border-right: 1px solid #e2e8f0;
         }
     }
+    .tech-photo-thumb-btn:hover {
+        transform: translateY(-2px);
+        border-color: #0d6efd !important;
+        box-shadow: 0 4px 8px rgba(13, 110, 253, 0.18) !important;
+    }
+    .tech-modal-strip-thumb:hover {
+        opacity: 0.95 !important;
+    }
 </style>
 
 
@@ -121,7 +129,10 @@
                     </span>
                 {% endif %}
 
-                <span><i class="far fa-clock me-1"></i> Received: {{ job.created_at|date:"d M Y, h:i A" }}</span>
+                <span><i class="far fa-clock me-1"></i> Received: {{ job.display_intake_date|date:"d M Y" }}</span>
+                {% if job.intake_date and job.created_at and job.intake_date != job.created_at.date %}
+                    <span class="badge bg-light text-secondary border ms-1" title="Registered: {{ job.created_at|date:'d M Y, h:i A' }}"><i class="fas fa-laptop-code me-1"></i>Registered: {{ job.created_at|date:"d M Y" }}</span>
+                {% endif %}
             </div>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -173,13 +184,26 @@
 
                 <!-- Device Specs & Reported Problem -->
                 <div class="col-md-4 border-end-md">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <div class="rounded-circle bg-info-subtle text-info-emphasis d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+                    <div class="d-flex align-items-start gap-2 mb-2">
+                        <div class="rounded-circle bg-info-subtle text-info-emphasis d-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;">
                             <i class="fas fa-laptop"></i>
                         </div>
-                        <div>
+                        <div class="flex-grow-1">
                             <div class="fw-bold text-dark fs-6">{{ job.device_type }} &bull; {{ job.device_brand }} {{ job.device_model }}</div>
                             <div class="text-muted small">Serial: <span class="text-dark fw-semibold">{{ job.device_serial|default:"N/A" }}</span></div>
+                            {% if job.device_password %}
+                            <div class="text-muted small mt-1">
+                                <i class="fas fa-lock text-warning me-1"></i>PIN / Pass: <span class="badge bg-warning-subtle text-dark border border-warning-subtle font-monospace px-1.5 py-0.5">{{ job.device_password }}</span>
+                            </div>
+                            {% endif %}
+                            <div class="text-muted small mt-1">
+                                <i class="fas fa-plug text-secondary me-1"></i>Accessories:
+                                {% if job.additional_items %}
+                                    <span class="badge bg-secondary-subtle text-dark border">{{ job.additional_items }}</span>
+                                {% else %}
+                                    <span class="text-muted">None</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
 
@@ -188,15 +212,6 @@
                         <div class="p-2 rounded bg-light border text-dark small fw-medium" style="max-height: 80px; overflow-y: auto;">
                             {{ job.reported_issue }}
                         </div>
-                    </div>
-
-                    <div class="mt-2 d-flex flex-wrap align-items-center gap-1">
-                        <span class="small text-muted fw-semibold">Accessories:</span>
-                        {% if job.additional_items %}
-                            <span class="badge bg-secondary-subtle text-dark border">{{ job.additional_items }}</span>
-                        {% else %}
-                            <span class="text-muted small">None</span>
-                        {% endif %}
                     </div>
                 </div>
 
@@ -242,13 +257,23 @@
                     {% if device_photos %}
                     <div class="mt-2 pt-2 border-top">
                         <div class="small fw-semibold text-muted mb-1 d-flex justify-content-between align-items-center">
-                            <span><i class="fas fa-camera me-1"></i> Intake Photos ({{ device_photos|length }}):</span>
+                            <span><i class="fas fa-camera text-primary me-1"></i> Intake Photos ({{ device_photos|length }}):</span>
+                            <span class="text-muted" style="font-size: 0.74rem;">Click to preview</span>
                         </div>
-                        <div class="d-flex gap-2 overflow-auto py-1">
+                        <div class="d-flex gap-2 overflow-auto py-1 align-items-center">
                             {% for photo in device_photos %}
-                            <a href="{{ photo.image_url }}" target="_blank" class="border rounded p-1 d-inline-block bg-white shadow-xs" title="Click to view full photo">
-                                <img src="{{ photo.image_url }}" style="height: 44px; width: 44px; object-fit: cover; border-radius: 4px;" alt="Device Photo">
-                            </a>
+                            <button type="button" 
+                                    class="border rounded p-1 d-inline-block bg-white shadow-xs tech-photo-thumb-btn position-relative" 
+                                    data-photo-url="{{ photo.image_url }}"
+                                    data-photo-name="{{ photo.image_name|default:'Device Photo' }}"
+                                    data-photo-index="{{ forloop.counter }}"
+                                    title="Click to preview photo {{ forloop.counter }}"
+                                    style="cursor: pointer; transition: transform 0.15s, border-color 0.15s; line-height: 0; border: 1px solid #dee2e6;">
+                                <img src="{{ photo.image_url }}" 
+                                     style="height: 46px; width: 46px; object-fit: cover; border-radius: 4px;" 
+                                     alt="Device Photo {{ forloop.counter }}">
+                                <span class="position-absolute bottom-0 end-0 bg-dark bg-opacity-75 text-white rounded-start px-1" style="font-size: 9px; line-height: 12px;">#{{ forloop.counter }}</span>
+                            </button>
                             {% endfor %}
                         </div>
                     </div>
@@ -431,6 +456,21 @@
                         </div>
                     </div>
                     <span class="badge bg-warning text-dark px-2 py-1">With Vendor</span>
+                </div>
+            {% elif job.specialized_service and job.specialized_service.status == 'Returned from Vendor' %}
+                <div class="alert alert-success d-flex align-items-center justify-content-between p-3 mb-3 shadow-sm border-0" style="border-left: 4px solid #10b981 !important;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-box-open fa-lg text-success"></i>
+                        <div>
+                            <div class="fw-bold text-dark">Returned from Vendor: {{ job.specialized_service.vendor.company_name }}</div>
+                            <div class="small text-muted">
+                                {% if job.specialized_service.vendor_bill_number %}Bill No: <strong class="font-monospace text-dark">{{ job.specialized_service.vendor_bill_number }}</strong> &bull; {% endif %}
+                                {% if job.specialized_service.returned_date %}Date: <strong>{{ job.specialized_service.returned_date|date:"d M Y" }}</strong> &bull; {% endif %}
+                                Device returned and ready for final technician inspection &amp; testing.
+                            </div>
+                        </div>
+                    </div>
+                    <span class="badge bg-success px-2.5 py-1.5"><i class="fas fa-check-circle me-1"></i>Returned</span>
                 </div>
             {% else %}
                 <div class="card mb-3 shadow-sm border-0" style="background: linear-gradient(180deg, #fffdf8 0%, #fffbf0 100%); border: 1px solid #fed7aa !important;">
@@ -618,6 +658,63 @@
     </div>
 </div>
 
+<!-- Intake Photo Preview Modal -->
+<div class="modal fade" id="techPhotoPreviewModal" tabindex="-1" aria-labelledby="techPhotoPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header py-2.5 px-3 bg-light border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                        <i class="fas fa-camera"></i>
+                    </div>
+                    <div>
+                        <h6 class="modal-title fw-bold mb-0 text-dark" id="techPhotoPreviewModalLabel">Intake Photo</h6>
+                        <span class="text-muted small" id="techPhotoPreviewSub">Photo <span id="techPhotoCurrentNum">1</span> of {{ device_photos|length }}</span>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="#" id="techPhotoOpenNewTab" target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2.5" title="Open full resolution in new tab">
+                        <i class="fas fa-external-link-alt me-1"></i> Full Size
+                    </a>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body p-2 text-center bg-dark bg-opacity-10 position-relative d-flex align-items-center justify-content-center" style="min-height: 400px; max-height: 78vh; user-select: none;">
+                {% if device_photos|length > 1 %}
+                <button type="button" class="btn btn-dark btn-sm rounded-circle position-absolute start-0 ms-3 shadow tech-photo-nav-btn" id="techPhotoPrevBtn" title="Previous photo (Left Arrow)" style="z-index: 10; width: 40px; height: 40px; opacity: 0.85;">
+                    <i class="fas fa-chevron-left fa-lg"></i>
+                </button>
+                {% endif %}
+
+                <img id="techPhotoPreviewImage" src="" alt="Device Intake Photo" class="img-fluid rounded shadow" style="max-height: 72vh; max-width: 100%; object-fit: contain;">
+
+                {% if device_photos|length > 1 %}
+                <button type="button" class="btn btn-dark btn-sm rounded-circle position-absolute end-0 me-3 shadow tech-photo-nav-btn" id="techPhotoNextBtn" title="Next photo (Right Arrow)" style="z-index: 10; width: 40px; height: 40px; opacity: 0.85;">
+                    <i class="fas fa-chevron-right fa-lg"></i>
+                </button>
+                {% endif %}
+            </div>
+            {% if device_photos|length > 1 %}
+            <div class="modal-footer py-2 px-3 bg-light justify-content-center border-top">
+                <div class="d-flex gap-2 overflow-auto py-1" id="techPhotoStripContainer">
+                    {% for photo in device_photos %}
+                    <button type="button" 
+                            class="border rounded p-0 bg-white tech-modal-strip-thumb"
+                            data-photo-url="{{ photo.image_url }}"
+                            data-photo-name="{{ photo.image_name|default:'Device Photo' }}"
+                            data-photo-index="{{ forloop.counter }}"
+                            title="Photo {{ forloop.counter }}"
+                            style="width: 44px; height: 44px; cursor: pointer; overflow: hidden; opacity: 0.65; transition: all 0.15s; border-width: 2px !important;">
+                        <img src="{{ photo.image_url }}" style="width: 100%; height: 100%; object-fit: cover;" alt="Thumbnail {{ forloop.counter }}">
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -712,6 +809,13 @@
 
                 if (data.ok) {
                     showMessage('update-status-message', data.message || 'Updated successfully!', 'success');
+
+                    if (data.redirect_url) {
+                        setTimeout(() => {
+                            window.location.href = data.redirect_url;
+                        }, 500);
+                        return;
+                    }
 
                     const headerBadge = document.getElementById('header-status-badge');
                     if (headerBadge && data.status_display) {
@@ -1137,6 +1241,94 @@
         })
         .catch(() => showToast('Network error deleting log', 'Error', 'danger'));
     });
+
+    // --- Intake Photos Preview Modal ---
+    const techPhotoModalEl = document.getElementById('techPhotoPreviewModal');
+    if (techPhotoModalEl) {
+        const photoModal = bootstrap.Modal.getOrCreateInstance(techPhotoModalEl);
+        const previewImg = document.getElementById('techPhotoPreviewImage');
+        const photoTitle = document.getElementById('techPhotoPreviewModalLabel');
+        const photoCurrentNum = document.getElementById('techPhotoCurrentNum');
+        const openNewTabBtn = document.getElementById('techPhotoOpenNewTab');
+        const prevBtn = document.getElementById('techPhotoPrevBtn');
+        const nextBtn = document.getElementById('techPhotoNextBtn');
+        const stripThumbs = document.querySelectorAll('.tech-modal-strip-thumb');
+
+        const photosList = [];
+        document.querySelectorAll('.tech-photo-thumb-btn').forEach(btn => {
+            photosList.push({
+                url: btn.dataset.photoUrl || '',
+                name: btn.dataset.photoName || 'Device Photo',
+                index: parseInt(btn.dataset.photoIndex, 10) || 1
+            });
+        });
+
+        let currentPhotoIdx = 0;
+
+        function showPhotoByIndex(idx) {
+            if (!photosList.length) return;
+            if (idx < 0) idx = photosList.length - 1;
+            if (idx >= photosList.length) idx = 0;
+            currentPhotoIdx = idx;
+
+            const photo = photosList[idx];
+            if (previewImg) previewImg.src = photo.url;
+            if (openNewTabBtn) openNewTabBtn.href = photo.url;
+            if (photoCurrentNum) photoCurrentNum.textContent = photo.index;
+            if (photoTitle) photoTitle.textContent = photo.name || `Device Photo #${photo.index}`;
+
+            stripThumbs.forEach((thumb, tIdx) => {
+                if (tIdx === idx) {
+                    thumb.classList.add('border-primary', 'shadow-sm');
+                    thumb.classList.remove('border-secondary-subtle');
+                    thumb.style.opacity = '1';
+                    thumb.style.borderColor = '#0d6efd';
+                } else {
+                    thumb.classList.remove('border-primary', 'shadow-sm');
+                    thumb.classList.add('border-secondary-subtle');
+                    thumb.style.opacity = '0.6';
+                    thumb.style.borderColor = '#dee2e6';
+                }
+            });
+        }
+
+        document.querySelectorAll('.tech-photo-thumb-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const clickedIdx = parseInt(this.dataset.photoIndex, 10) - 1;
+                showPhotoByIndex(clickedIdx >= 0 ? clickedIdx : 0);
+                photoModal.show();
+            });
+        });
+
+        stripThumbs.forEach(thumb => {
+            thumb.addEventListener('click', function () {
+                const clickedIdx = parseInt(this.dataset.photoIndex, 10) - 1;
+                showPhotoByIndex(clickedIdx >= 0 ? clickedIdx : 0);
+            });
+        });
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                showPhotoByIndex(currentPhotoIdx - 1);
+            });
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                showPhotoByIndex(currentPhotoIdx + 1);
+            });
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (!techPhotoModalEl.classList.contains('show')) return;
+            if (e.key === 'ArrowLeft') {
+                showPhotoByIndex(currentPhotoIdx - 1);
+            } else if (e.key === 'ArrowRight') {
+                showPhotoByIndex(currentPhotoIdx + 1);
+            }
+        });
+    }
 
 })();
 </script>

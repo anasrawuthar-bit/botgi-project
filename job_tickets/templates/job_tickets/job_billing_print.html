@@ -3,252 +3,1212 @@
 <head>
     {% load job_tickets_extras %}
     <meta charset="UTF-8">
-    <title>Invoice - {{ job.job_code }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if enable_gst %}Tax Invoice{% else %}Payment Bill{% endif %} - {{ job.job_code }}</title>
+    {% if company.display_logo_url %}
+    <link rel="icon" type="image/png" href="{{ company.display_logo_url }}">
+    {% else %}
+    <link rel="icon" type="image/png" href="/static/img/logo.png">
+    {% endif %}
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 11pt;
-            margin: 0;
-            padding: 0;
-            background: #fafafa;
-        }
-        .invoice-container {
-            max-width: 794px;
-            margin: 20px auto;
-            padding: 24px;
-            border: 1px solid #d6d6d6;
-            background: #fff;
-        }
-        .header-classic {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            align-items: center;
-            border-bottom: 2px solid #111;
-            padding-bottom: 10px;
-            margin-bottom: 18px;
-        }
-        .header-classic img {
-            max-width: 130px;
-            height: auto;
-        }
-        .header-classic .title {
-            text-align: right;
-        }
-        .header-classic .title h1 {
-            margin: 0;
-            font-size: 1.5em;
-        }
-        .header-classic .title p {
-            margin: 2px 0;
-            font-size: 0.9em;
-            color: #444;
+        :root {
+            --ink-900: #0f172a;
+            --ink-800: #1e293b;
+            --ink-700: #334155;
+            --ink-500: #64748b;
+            --ink-400: #94a3b8;
+            --border-color: #cbd5e1;
+            --border-light: #e2e8f0;
+            --accent-bg: #f8fafc;
+            --success-green: #15803d;
+            --success-bg: #f0fdf4;
+            --success-border: #bbf7d0;
+            --danger-red: #b91c1c;
+            --danger-bg: #fef2f2;
+            --danger-border: #fecaca;
+            --brand-blue: #0369a1;
+            --brand-bg: #f0f9ff;
         }
 
-        .details-grid {
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.45;
+            color: var(--ink-900);
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 24px 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* Screen toolbar */
+        .screen-toolbar {
+            max-width: {{ company.bill_print_page_width_css|default:"210mm" }};
+            margin: 0 auto 16px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #ffffff;
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .screen-toolbar .toolbar-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ink-800);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .screen-toolbar .format-badge {
+            font-size: 10.5px;
+            font-weight: 600;
+            background: #e2e8f0;
+            color: var(--ink-700);
+            padding: 2px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .toolbar-options {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .toggle-option {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--ink-700);
+            cursor: pointer;
+            user-select: none;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            padding: 4px 8px;
+            border-radius: 5px;
+            transition: all 0.15s ease;
+        }
+
+        .toggle-option:hover {
+            background: #e2e8f0;
+        }
+
+        .toggle-option input {
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-print {
+            background-color: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s ease;
+        }
+
+        .btn-print:hover {
+            background-color: #334155;
+        }
+
+        .btn-close {
+            background-color: transparent;
+            color: var(--ink-700);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .btn-close:hover {
+            background-color: #f8fafc;
+        }
+
+        .print-hidden {
+            display: none !important;
+        }
+
+        /* Invoice Container */
+        .invoice-wrapper {
+            max-width: {{ company.bill_print_page_width_css|default:"210mm" }};
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+            padding: 24px 28px;
+        }
+
+        /* Header Section */
+        .invoice-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid var(--ink-900);
+            padding-bottom: 16px;
+            margin-bottom: 16px;
+            gap: 16px;
+        }
+
+        .brand-block {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            flex: 1.2;
+        }
+
+        .brand-logo img {
+            max-width: 110px;
+            max-height: 60px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .brand-logo-fallback {
+            width: 52px;
+            height: 52px;
+            background: var(--ink-900);
+            color: #ffffff;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .brand-details h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            color: var(--ink-900);
+            line-height: 1.2;
+        }
+
+        .brand-legal {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--ink-700);
+            margin: 2px 0;
+        }
+
+        .brand-tagline {
+            font-size: 11px;
+            color: var(--ink-500);
+            margin-bottom: 4px;
+        }
+
+        .brand-address {
+            font-size: 11px;
+            color: var(--ink-700);
+            margin: 2px 0;
+            line-height: 1.35;
+        }
+
+        .brand-tax-tags {
+            margin-top: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 10.5px;
+            color: var(--ink-800);
+        }
+
+        .brand-tax-tags span {
+            background: #f1f5f9;
+            padding: 1px 6px;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* Invoice Badge Box (Right side of header) */
+        .invoice-badge-box {
+            text-align: right;
+            min-width: 220px;
+            flex: 0.9;
+        }
+
+        .invoice-title {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: var(--ink-900);
+            text-transform: uppercase;
+            margin: 0 0 6px 0;
+        }
+
+        .invoice-meta-table {
+            width: 100%;
+            margin-top: 4px;
+            font-size: 11.5px;
+        }
+
+        .invoice-meta-table tr td {
+            padding: 2px 0;
+            border: none;
+        }
+
+        .invoice-meta-table tr td:first-child {
+            color: var(--ink-500);
+            text-align: right;
+            padding-right: 8px;
+        }
+
+        .invoice-meta-table tr td:last-child {
+            text-align: right;
+            font-weight: 700;
+            color: var(--ink-900);
+        }
+
+        /* Payment Settlement Stamp */
+        .settlement-stamp {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+
+        .stamp-paid {
+            background: var(--success-bg);
+            color: var(--success-green);
+            border: 1.5px solid var(--success-border);
+        }
+
+        .stamp-due {
+            background: var(--danger-bg);
+            color: var(--danger-red);
+            border: 1.5px solid var(--danger-border);
+        }
+
+        /* Info Grid (Billed To & Device Info) */
+        .info-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 18px;
+            gap: 14px;
             margin-bottom: 16px;
-            border-bottom: 1px solid #e4e4e4;
-            padding-bottom: 12px;
-        }
-        .details-grid h4 {
-            margin: 0 0 8px;
-            font-size: 1.05em;
-        }
-        .details-grid p {
-            margin: 4px 0;
-            font-size: 0.95em;
         }
 
-        table {
+        .card-box {
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            padding: 10px 14px;
+        }
+
+        .card-title {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--ink-500);
+            margin: 0 0 6px 0;
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 4px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 3px;
+            font-size: 11.5px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-label {
+            color: var(--ink-500);
+            font-size: 11px;
+            flex-shrink: 0;
+            margin-right: 8px;
+        }
+
+        .info-value {
+            font-weight: 600;
+            color: var(--ink-900);
+            text-align: right;
+            word-break: break-word;
+        }
+
+        /* Itemized Particulars Table */
+        .items-section {
+            margin-bottom: 14px;
+        }
+
+        .items-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 8px;
+            font-size: 11.5px;
+            margin-top: 4px;
         }
-        th, td {
-            border: 1px solid #ccc;
-            padding: 9px;
+
+        .items-table th {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            color: var(--ink-800);
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            padding: 7px 8px;
             text-align: left;
         }
-        thead {
-            background-color: #f2f4f7;
-        }
-        .total-row td {
-            font-weight: bold;
-            background-color: #e9f8f0;
-            font-size: 1.05em;
-        }
-        .feedback-reminder {
-            margin-top: 16px;
-            border: 1px dashed #97a4b1;
-            border-radius: 8px;
-            padding: 10px;
-            background: #f8fbff;
-        }
-        .feedback-reminder h4 {
-            margin: 0 0 8px;
-            font-size: 1.02em;
-        }
-        .feedback-reminder p {
-            margin: 5px 0;
-            font-size: 0.92em;
-        }
-        .feedback-reminder .qr {
-            margin-top: 8px;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
-        .feedback-reminder img {
-            width: 92px;
-            height: 92px;
-            border: 1px solid #cdd6df;
-            border-radius: 6px;
+
+        .items-table td {
+            border: 1px solid var(--border-light);
+            padding: 7px 8px;
+            vertical-align: middle;
         }
 
-        .signature {
-            margin-top: 42px;
-            text-align: right;
+        .items-table tr:nth-child(even) td {
+            background-color: #fafbfc;
         }
-        .signature div {
-            display: inline-block;
-            width: 220px;
+
+        .items-table .col-center {
             text-align: center;
-            border-top: 1px solid #000;
-            padding-top: 5px;
-            font-size: 0.9em;
         }
 
+        .items-table .col-right {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .item-particulars {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .item-desc-text {
+            font-weight: 600;
+            color: var(--ink-900);
+        }
+
+        .item-pill {
+            display: inline-block;
+            font-size: 9.5px;
+            font-weight: 600;
+            padding: 1px 5px;
+            border-radius: 3px;
+            width: fit-content;
+        }
+
+        .pill-product {
+            background: #e0f2fe;
+            color: #0369a1;
+            border: 1px solid #bae6fd;
+        }
+
+        .pill-service {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+        }
+
+        /* Consumed Hardware Serials Callout */
+        .serials-callout {
+            margin-top: 6px;
+            background: #f8fafc;
+            border: 1px dashed var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 11px;
+        }
+
+        .serials-callout-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--ink-700);
+            margin-bottom: 4px;
+        }
+
+        .serial-item-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            padding: 2px 8px;
+            margin: 2px 4px 2px 0;
+            font-size: 10.5px;
+        }
+
+        .serial-item-badge .sn {
+            font-family: ui-monospace, monospace;
+            font-weight: 700;
+            color: var(--ink-900);
+        }
+
+        .serial-item-badge .warranty-date {
+            color: var(--success-green);
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        /* Two-Column Financial & Settlement Grid */
+        .settlement-grid {
+            display: grid;
+            grid-template-columns: 1.15fr 0.85fr;
+            gap: 16px;
+            margin-top: 14px;
+            align-items: start;
+        }
+
+        .settlement-grid.single-col {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .settlement-grid.single-col .totals-card {
+            width: 50%;
+            min-width: 320px;
+        }
+
+        /* Banking and Payment Instructions Box */
+        .banking-box {
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            padding: 10px 14px;
+        }
+
+        .banking-details-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 3px 10px;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        .banking-label {
+            color: var(--ink-500);
+        }
+
+        .banking-val {
+            font-weight: 600;
+            color: var(--ink-900);
+        }
+
+        .upi-qr-block {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--border-light);
+        }
+
+        .upi-qr-block img {
+            width: 72px;
+            height: 72px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            padding: 2px;
+        }
+
+        .upi-qr-text {
+            font-size: 10.5px;
+            line-height: 1.35;
+            color: var(--ink-700);
+        }
+
+        .upi-qr-text strong {
+            color: var(--ink-900);
+            display: block;
+        }
+
+        /* Totals Calculation Table */
+        .totals-card {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 12px;
+            font-size: 11.5px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .totals-row:last-child {
+            border-bottom: none;
+        }
+
+        .totals-row .lbl {
+            color: var(--ink-700);
+        }
+
+        .totals-row .val {
+            font-weight: 600;
+            color: var(--ink-900);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .totals-row.discount-row .val {
+            color: var(--success-green);
+        }
+
+        .totals-row.grand-row {
+            background: #ffffff;
+            border-top: 1.5px solid var(--ink-900);
+            border-bottom: 1.5px solid var(--ink-900);
+            padding: 8px 12px;
+        }
+
+        .totals-row.grand-row .lbl {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--ink-900);
+            text-transform: uppercase;
+        }
+
+        .totals-row.grand-row .val {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--ink-900);
+        }
+
+        .totals-row.paid-row {
+            background: #fafbfc;
+        }
+
+        .totals-row.balance-row {
+            padding: 7px 12px;
+            background: #f1f5f9;
+        }
+
+        .totals-row.balance-row .lbl {
+            font-weight: 800;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+
+        .totals-row.balance-row .val {
+            font-size: 12.5px;
+            font-weight: 800;
+        }
+
+        .val-zero {
+            color: var(--success-green) !important;
+        }
+
+        .val-due {
+            color: var(--danger-red) !important;
+        }
+
+        /* Policy & Terms Block */
+        .policy-block {
+            margin-top: 14px;
+            border-top: 1px solid var(--border-light);
+            padding-top: 10px;
+        }
+
+        .policy-box {
+            font-size: 10px;
+            color: var(--ink-700);
+            line-height: 1.35;
+        }
+
+        .policy-box h4 {
+            font-size: 9.5px;
+            font-weight: 800;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            color: var(--ink-900);
+            margin: 0 0 3px 0;
+        }
+
+        /* Signatures & Feedback Footer */
+        .footer-section {
+            margin-top: 18px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 16px;
+        }
+
+        .feedback-qr-col {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .feedback-qr-col img {
+            width: 64px;
+            height: 64px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            padding: 2px;
+        }
+
+        .feedback-qr-desc {
+            font-size: 10px;
+            color: var(--ink-700);
+            line-height: 1.3;
+        }
+
+        .feedback-qr-desc strong {
+            display: block;
+            font-size: 10.5px;
+            color: var(--ink-900);
+            margin-bottom: 2px;
+        }
+
+        .signatures-col {
+            display: flex;
+            gap: 24px;
+            flex: 1.2;
+            justify-content: flex-end;
+        }
+
+        .sign-box {
+            text-align: center;
+            min-width: 140px;
+        }
+
+        .sign-line {
+            border-top: 1px solid var(--ink-900);
+            margin-bottom: 4px;
+            height: 38px;
+        }
+
+        .sign-label {
+            font-size: 9.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--ink-900);
+        }
+
+        .sign-sub {
+            font-size: 8.5px;
+            color: var(--ink-500);
+        }
+
+        .thank-you-bar {
+            text-align: center;
+            margin-top: 14px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border-light);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--ink-500);
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        /* Print Media Rules */
         @media print {
             @page {
                 size: {{ company.bill_print_page_size_css|default:"A4 portrait" }};
-                margin: {{ company.bill_print_margin_css|default:"12mm" }};
+                margin: {{ company.bill_print_margin_css|default:"10mm" }};
             }
-            .invoice-container {
-                width: {{ company.bill_print_page_width_css|default:"210mm" }};
-                border: none;
-                margin: 0;
-                padding: 0;
-                max-width: none;
+
+            body {
+                background: #ffffff !important;
+                padding: 0 !important;
             }
+
             .no-print {
                 display: none !important;
             }
-            body {
-                background: #fff;
+
+            .invoice-wrapper {
+                width: 100% !important;
+                max-width: none !important;
+                border: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+
+            .card-box, .totals-card, .banking-box, .items-table th, .items-table td {
+                page-break-inside: avoid;
             }
         }
+
+        /* Dedicated Styles for Thermal 80mm Roll */
+        {% if company.bill_print_paper_size == 'thermal_80' %}
+        body {
+            padding: 4px 0;
+            font-size: 10.5px;
+        }
+        .invoice-wrapper {
+            max-width: 80mm !important;
+            padding: 6px 8px !important;
+            border: none;
+            box-shadow: none;
+        }
+        .invoice-header {
+            flex-direction: column !important;
+            text-align: center !important;
+            gap: 8px;
+        }
+        .brand-block {
+            flex-direction: column !important;
+            align-items: center !important;
+            text-align: center !important;
+        }
+        .brand-details h1 {
+            font-size: 16px;
+        }
+        .brand-tax-tags {
+            justify-content: center;
+        }
+        .invoice-badge-box {
+            text-align: center !important;
+            min-width: 100%;
+        }
+        .invoice-meta-table tr td {
+            text-align: center !important;
+        }
+        .info-grid {
+            grid-template-columns: 1fr !important;
+            gap: 8px;
+        }
+        .settlement-grid {
+            grid-template-columns: 1fr !important;
+            gap: 10px;
+        }
+        .settlement-grid.single-col {
+            display: block !important;
+        }
+        .settlement-grid.single-col .totals-card {
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+        .policy-block {
+            grid-template-columns: 1fr !important;
+            gap: 8px;
+        }
+        .footer-section {
+            flex-direction: column !important;
+            align-items: center !important;
+            text-align: center !important;
+            gap: 12px;
+        }
+        .feedback-qr-col {
+            flex-direction: column !important;
+            text-align: center !important;
+        }
+        .signatures-col {
+            width: 100%;
+            justify-content: space-around;
+        }
+        {% endif %}
     </style>
 </head>
 <body>
-    <div class="invoice-container">
-        <div class="header-classic">
-            <div>
-                {% if company.logo %}
-                    <img src="{{ company.logo.url }}" alt="{{ company.company_name }} Logo">
-                {% elif company.logo_url %}
-                    <img src="{{ company.logo_url }}" alt="{{ company.company_name }} Logo">
+
+    <!-- SCREEN ACTION TOOLBAR (Hidden in Print) -->
+    <div class="screen-toolbar no-print">
+        <div class="toolbar-title">
+            <span>{% if enable_gst %}Tax Invoice{% else %}Payment Bill{% endif %}</span>
+            <span class="format-badge">{{ company.get_bill_print_paper_size_display|default:"A4" }}</span>
+            <span style="font-weight: 400; color: var(--ink-500);">• Ticket #{{ job.job_code }}</span>
+        </div>
+        <div class="toolbar-actions">
+            <button type="button" class="btn-print" onclick="return BotgiPrintHelper.startPrint();">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                    <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+                Print Invoice
+            </button>
+            <button type="button" class="btn-close" onclick="window.close();">Close</button>
+        </div>
+    </div>
+
+    <!-- MAIN INVOICE CONTAINER -->
+    <div class="invoice-wrapper">
+
+        <!-- HEADER SECTION -->
+        <header class="invoice-header">
+            <div class="brand-block">
+                {% if company.display_logo_url %}
+                <div class="brand-logo">
+                    <img src="{{ company.display_logo_url }}" alt="{{ company.company_name }}">
+                </div>
+                {% else %}
+                <div class="brand-logo-fallback">
+                    {{ company.company_name|slice:":1"|upper }}
+                </div>
+                {% endif %}
+                <div class="brand-details">
+                    <h1>{{ company.company_name }}</h1>
+                    {% if company.legal_name and company.legal_name != company.company_name %}
+                    <div class="brand-legal">{{ company.legal_name }}</div>
+                    {% endif %}
+                    {% if company.tagline %}
+                    <div class="brand-tagline">{{ company.tagline }}</div>
+                    {% endif %}
+                    <div class="brand-address">
+                        {{ company.address }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.state %}, {{ company.state }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}
+                    </div>
+                    <div class="brand-address">
+                        <strong>Ph:</strong> {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}
+                        {% if company.email %} | <strong>Email:</strong> {{ company.email }}{% endif %}
+                        {% if company.website %} | {{ company.website }}{% endif %}
+                    </div>
+                    <div class="brand-tax-tags">
+                        {% if company.gstin %}<span><strong>GSTIN:</strong> {{ company.gstin }}</span>{% endif %}
+                        {% if company.pan %}<span><strong>PAN:</strong> {{ company.pan }}</span>{% endif %}
+                        {% if company.state_code %}<span><strong>State Code:</strong> {{ company.state_code }}</span>{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="invoice-badge-box">
+                <div class="invoice-title">
+                    {% if enable_gst %}TAX INVOICE{% else %}RETAIL INVOICE{% endif %}
+                </div>
+                <table class="invoice-meta-table">
+                    {% if job.vyapar_invoice_number and job.vyapar_invoice_number != job.job_code %}
+                    <tr>
+                        <td>Invoice No:</td>
+                        <td>{{ job.vyapar_invoice_number }}</td>
+                    </tr>
+                    <tr>
+                        <td>Job Ticket Ref:</td>
+                        <td>{{ job.job_code }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td>Invoice No:</td>
+                        <td>{{ job.job_code }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td>Date:</td>
+                        <td>{{ job.updated_at|date:"d M Y" }}</td>
+                    </tr>
+                    {% if enable_gst and company.state %}
+                    <tr>
+                        <td>Place of Supply:</td>
+                        <td>{{ company.state }}{% if company.state_code %} ({{ company.state_code }}){% endif %}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </header>
+
+        <!-- CUSTOMER & DEVICE INFORMATION GRID -->
+        <section class="info-grid">
+            <!-- Billed To -->
+            <div class="card-box">
+                <div class="card-title">Billed To (Customer Details)</div>
+                <div class="info-row">
+                    <span class="info-label">Customer Name:</span>
+                    <span class="info-value">{{ job.customer_name }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Contact Phone:</span>
+                    <span class="info-value">{{ job.customer_phone }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Intake Date:</span>
+                    <span class="info-value">{{ job.display_intake_date|date:"d M Y" }}</span>
+                </div>
+                {% if job.intake_date and job.created_at and job.intake_date != job.created_at.date %}
+                <div class="info-row">
+                    <span class="info-label">Registered:</span>
+                    <span class="info-value">{{ job.created_at|date:"d M Y, h:i A" }}</span>
+                </div>
                 {% endif %}
             </div>
-            <div class="title">
-                <h1>{{ company.company_name }}</h1>
-                {% if company.tagline %}<p>{{ company.tagline }}</p>{% endif %}
-                <p>{{ company.address }} | {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
-                <p><strong>Job Code:</strong> {{ job.job_code }}</p>
-                <p><strong>Date:</strong> {{ job.updated_at|date:"Y-m-d" }}</p>
-                {% if job.vyapar_invoice_number %}
-                    <p><strong>Invoice No:</strong> {{ job.vyapar_invoice_number }}</p>
-                {% endif %}
-            </div>
-        </div>
 
-        <div class="details-grid">
-            <div>
-                <h4>Customer & Job</h4>
-                <p><strong>Customer:</strong> {{ job.customer_name }}</p>
-                <p><strong>Phone:</strong> {{ job.customer_phone }}</p>
-                <p><strong>Device:</strong> {{ job.device_type }} ({{ job.device_brand }} {{ job.device_model }})</p>
-                <p><strong>Serial:</strong> {{ job.device_serial|default:"N/A" }}</p>
+            <!-- Device & Service Card -->
+            <div class="card-box">
+                <div class="card-title">Device &amp; Service Information</div>
+                <div class="info-row">
+                    <span class="info-label">Device:</span>
+                    <span class="info-value">{{ job.device_type }} &mdash; {{ job.device_brand }} {{ job.device_model }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Serial / IMEI:</span>
+                    <span class="info-value">{{ job.device_serial|default:"N/A" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Serviced By:</span>
+                    <span class="info-value">{{ serviced_by|default:"Workshop Staff" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Reported Issue:</span>
+                    <span class="info-value">{{ job.reported_issue|truncatechars:90 }}</span>
+                </div>
             </div>
-            <div>
-                <h4>Service Details</h4>
-                <p><strong>Technician ID:</strong> {{ technician_id|default:"N/A" }}</p>
-                <p><strong>Created By:</strong> {{ created_by_id|default:"N/A" }}</p>
-                <p><strong>Status:</strong> {{ job.status }}</p>
-                <p><strong>Issue:</strong> {{ job.reported_issue }}</p>
-            </div>
-        </div>
+        </section>
 
-        <div>
-            <h4>Service & Product Breakdown</h4>
-            <table>
+        <!-- ITEMIZED SERVICE & SPARE PARTS TABLE -->
+        <section class="items-section">
+            <table class="items-table">
                 <thead>
                     <tr>
-                        <th>Service Description</th>
-                        <th style="text-align:right;">Part Cost</th>
-                        <th style="text-align:right;">Service Charge</th>
+                        <th class="col-center" style="width: 38px;">#</th>
+                        <th>Item Description &amp; Particulars</th>
+                        <th class="col-right" style="width: 110px;">Parts (&#8377;)</th>
+                        <th class="col-right" style="width: 110px;">Labor (&#8377;)</th>
+                        <th class="col-right" style="width: 110px;">Total (&#8377;)</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for log in service_logs %}
                     <tr>
-                        <td>{{ log.description|default:"Service Performed"|display_service_description }}</td>
-                        <td style="text-align:right;">&#8377;{{ log.part_cost|floatformat:2 }}</td>
-                        <td style="text-align:right;">&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                        <td class="col-center">{{ forloop.counter }}</td>
+                        <td>
+                            <div class="item-particulars">
+                                <span class="item-desc-text">{{ log.description|default:"Repair Service"|display_service_description }}</span>
+                                {% if log.is_product_sale and log.product_name %}
+                                <span style="font-size: 10.5px; color: var(--ink-500);">Part: {{ log.product_name }}</span>
+                                {% endif %}
+                                {% if log.quantity and log.quantity > 1 %}
+                                <span style="font-size: 10px; color: var(--ink-500);">(Qty: {{ log.quantity }} &times; &#8377;{{ log.unit_price|floatformat:2 }})</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="col-right">&#8377;{{ log.part_cost|floatformat:2 }}</td>
+                        <td class="col-right">&#8377;{{ log.service_charge|floatformat:2 }}</td>
+                        <td class="col-right"><strong>&#8377;{{ log.line_total|floatformat:2 }}</strong></td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="col-center" style="padding: 16px; color: var(--ink-500);">
+                            Standard diagnostic and workshop servicing performed.
+                        </td>
                     </tr>
                     {% endfor %}
-                    <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Subtotal:</strong></td>
-                        <td style="text-align:right;"><strong>&#8377;{{ subtotal|floatformat:2 }}</strong></td>
-                    </tr>
-                    <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Discount:</strong></td>
-                        <td style="text-align:right;"><strong>- &#8377;{{ discount|floatformat:2 }}</strong></td>
-                    </tr>
-                    <tr class="total-row">
-                        <td colspan="2" style="text-align:right;"><strong>Grand Total:</strong></td>
-                        <td style="text-align:right;"><strong>&#8377;{{ grand_total|floatformat:2 }}</strong></td>
-                    </tr>
-                    {% if job.payment_status %}
-                    <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Payment Status:</strong></td>
-                        <td style="text-align:right;"><strong>{{ job.get_payment_status_display }}</strong></td>
-                    </tr>
-                    <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Amount Paid ({{ job.get_payment_method_display|default:job.payment_method|default:"N/A" }}):</strong></td>
-                        <td style="text-align:right;"><strong>&#8377;{{ job.amount_paid|floatformat:2 }}</strong></td>
-                    </tr>
-                    <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Balance Due:</strong></td>
-                        <td style="text-align:right;"><strong style="{% if job.balance_due > 0 %}color:#c0392b;{% endif %}">&#8377;{{ job.balance_due|floatformat:2 }}</strong></td>
-                    </tr>
-                    {% endif %}
                 </tbody>
             </table>
-        </div>
 
-        <div class="feedback-reminder">
-            <h4>Feedback Reminder</h4>
-            <p>Please share feedback after delivery to help us improve service quality.</p>
-            <p>Track and rate using Job Code <strong>{{ job.job_code }}</strong> and Phone <strong>{{ job.customer_phone }}</strong>.</p>
-            <div class="qr">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data={{ request.scheme }}://{{ request.get_host }}{% url 'qr_access' job.job_code %}" alt="Feedback QR">
+            <!-- Consumed Serialized Hardware Components (if any) -->
+            {% if consumed_serials %}
+            <div class="serials-callout">
+                <div class="serials-callout-title">Installed Serialized Hardware Components</div>
                 <div>
-                    <p style="margin:0;">Scan to open status and feedback page.</p>
-                    <p style="margin:4px 0 0;">{{ request.get_host }}/qr/{{ job.job_code }}/</p>
+                    {% for serial in consumed_serials %}
+                    <span class="serial-item-badge">
+                        <span>{{ serial.product.name }}</span>
+                        <span class="sn">S/N: {{ serial.serial_number }}</span>
+                        {% if serial.customer_warranty_until %}
+                        <span class="warranty-date">&bull; Warranty until {{ serial.customer_warranty_until|date:"d M Y" }}</span>
+                        {% endif %}
+                    </span>
+                    {% endfor %}
                 </div>
             </div>
-        </div>
+            {% endif %}
+        </section>
 
-        <div class="signature">
-            <div>Authorized Signature</div>
+        <!-- FINANCIAL & SETTLEMENT SECTION (2 Columns or Single Column) -->
+        <section class="settlement-grid{% if not company.include_bill_payment_details %} single-col{% endif %}">
+            {% if company.include_bill_payment_details %}
+            <!-- Left Column: Payment & Banking Info (Optional toggle) -->
+            <div class="banking-box" id="section-bill-bank">
+                <div class="card-title">Payment Settlement &amp; Bank Details</div>
+                
+                <div class="banking-details-grid">
+                    <span class="banking-label">Payment Mode:</span>
+                    <span class="banking-val">{{ job.get_payment_method_display|default:job.payment_method|default:"Direct / Cash" }}</span>
+
+                    <span class="banking-label">Payment Status:</span>
+                    <span class="banking-val">{{ job.get_payment_status_display|default:job.payment_status|default:"Settled" }}</span>
+
+                    {% if job.original_job_ticket %}
+                    <span class="banking-label">Rework Ref:</span>
+                    <span class="banking-val">Warranty Ticket for #{{ job.original_job_ticket.job_code }}</span>
+                    {% endif %}
+
+                    {% if bank_name %}
+                    <span class="banking-label">Bank Name:</span>
+                    <span class="banking-val">{{ bank_name }}</span>
+                    {% elif company.bank_name %}
+                    <span class="banking-label">Bank Name:</span>
+                    <span class="banking-val">{{ company.bank_name }}</span>
+                    {% endif %}
+
+                    {% if account_number %}
+                    <span class="banking-label">Account No:</span>
+                    <span class="banking-val">{{ account_number }}</span>
+                    {% elif company.account_number %}
+                    <span class="banking-label">Account No:</span>
+                    <span class="banking-val">{{ company.account_number }}</span>
+                    {% endif %}
+
+                    {% if ifsc_code %}
+                    <span class="banking-label">IFSC Code:</span>
+                    <span class="banking-val">{{ ifsc_code }}</span>
+                    {% elif company.ifsc_code %}
+                    <span class="banking-label">IFSC Code:</span>
+                    <span class="banking-val">{{ company.ifsc_code }}</span>
+                    {% endif %}
+
+                    {% if branch %}
+                    <span class="banking-label">Branch:</span>
+                    <span class="banking-val">{{ branch }}</span>
+                    {% elif company.branch %}
+                    <span class="banking-label">Branch:</span>
+                    <span class="banking-val">{{ company.branch }}</span>
+                    {% endif %}
+
+                    {% if upi_id %}
+                    <span class="banking-label">UPI ID / VPA:</span>
+                    <span class="banking-val">{{ upi_id }}</span>
+                    {% elif company.upi_id %}
+                    <span class="banking-label">UPI ID / VPA:</span>
+                    <span class="banking-val">{{ company.upi_id }}</span>
+                    {% endif %}
+                </div>
+
+                {% if balance_due > 0 and upi_payment_url %}
+                <div class="upi-qr-block">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&data={{ upi_payment_url|urlencode }}" alt="UPI QR">
+                    <div class="upi-qr-text">
+                        <strong>Scan to Settle Balance</strong>
+                        Scan via GPay / PhonePe / Paytm / BHIM to instantly pay <strong>&#8377;{{ balance_due|floatformat:2 }}</strong> for Ticket {{ job.job_code }}.
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Right Column: Financial Calculation Card -->
+            <div class="totals-card">
+                <div class="totals-row">
+                    <span class="lbl">Subtotal (Parts &amp; Labor):</span>
+                    <span class="val">&#8377;{{ subtotal|floatformat:2 }}</span>
+                </div>
+
+                {% if discount > 0 %}
+                <div class="totals-row discount-row">
+                    <span class="lbl">Special Discount:</span>
+                    <span class="val">- &#8377;{{ discount|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+
+                {% if enable_gst %}
+                <div class="totals-row">
+                    <span class="lbl">Taxable Value:</span>
+                    <span class="val">&#8377;{{ taxable_amount|floatformat:2 }}</span>
+                </div>
+                <div class="totals-row">
+                    <span class="lbl">CGST ({{ cgst_rate|floatformat:1 }}%):</span>
+                    <span class="val">&#8377;{{ cgst_amount|floatformat:2 }}</span>
+                </div>
+                <div class="totals-row">
+                    <span class="lbl">SGST ({{ sgst_rate|floatformat:1 }}%):</span>
+                    <span class="val">&#8377;{{ sgst_amount|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+
+                <div class="totals-row grand-row">
+                    <span class="lbl">Invoice Grand Total:</span>
+                    <span class="val">&#8377;{{ grand_total|floatformat:2 }}</span>
+                </div>
+
+                <div class="totals-row paid-row">
+                    <span class="lbl">Amount Paid:</span>
+                    <span class="val">&#8377;{{ amount_paid|floatformat:2 }}</span>
+                </div>
+
+                <div class="totals-row balance-row">
+                    <span class="lbl">Balance Due:</span>
+                    <span class="val {% if balance_due <= 0 %}val-zero{% else %}val-due{% endif %}">
+                        &#8377;{{ balance_due|floatformat:2 }}
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        <!-- TERMS & CONDITIONS SECTION -->
+        <section class="policy-block" id="section-bill-terms">
+            <div class="policy-box">
+                <h4>Terms &amp; Conditions</h4>
+                <p style="margin: 0;">
+                    {{ company.terms_conditions|default:"1. Devices not collected within 30 days of completion notification will be subject to storage demurrage charges.<br>2. Replaced defective parts must be collected upon delivery.<br>3. Goods once sold are not returnable."|linebreaksbr }}
+                </p>
+            </div>
+        </section>
+
+        <!-- FOOTER & DUAL SIGNATURES (Optional toggle) -->
+        <footer class="footer-section">
+            <div class="feedback-qr-col">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data={{ request.scheme }}://{{ request.get_host }}{% url 'qr_access' job.job_code %}" alt="Feedback QR">
+                <div class="feedback-qr-desc">
+                    <strong>Service Rating &amp; Tracking</strong>
+                    Scan to view service history, check warranty validity, or leave feedback for our technician team.
+                    <div style="font-size: 9px; color: var(--ink-500); margin-top: 2px;">{{ request.get_host }}/qr/{{ job.job_code }}/</div>
+                </div>
+            </div>
+
+            {% if company.include_bill_signatures %}
+            <div class="signatures-col" id="section-bill-signatures">
+                <div class="sign-box">
+                    <div class="sign-line"></div>
+                    <div class="sign-label">Customer Signature</div>
+                    <div class="sign-sub">Device received in good order</div>
+                </div>
+
+                <div class="sign-box">
+                    <div class="sign-line"></div>
+                    <div class="sign-label">For {{ company.company_name }}</div>
+                    <div class="sign-sub">Authorized Signatory</div>
+                </div>
+            </div>
+            {% endif %}
+        </footer>
+
+        <div class="thank-you-bar">
+            Thank you for choosing {{ company.company_name }}!
         </div>
     </div>
 
-    <div class="text-center no-print" style="margin: 16px 0;">
-        <button type="button" onclick="return BotgiPrintHelper.startPrint();" style="padding: 10px 18px; font-size: 15px; cursor: pointer;">Print This Invoice</button>
-    </div>
-    {% include "job_tickets/includes/print_flow_script.html" with autoprint=True %}
+    <!-- Print Automation Script -->
+    {% include "job_tickets/includes/print_flow_script.html" with autoprint=autoprint %}
 </body>
 </html>

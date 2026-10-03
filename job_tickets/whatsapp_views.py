@@ -11,10 +11,12 @@ from .whatsapp_service import (
     get_cloud_status,
     logout_bridge_session,
     process_whatsapp_webhook_payload,
+    render_daily_report_message,
     restart_bridge_session,
     send_bridge_text_message,
     send_cloud_template_message,
     send_cloud_text_message,
+    send_daily_whatsapp_report,
     verify_whatsapp_webhook_signature,
 )
 
@@ -194,6 +196,59 @@ def whatsapp_bridge_test_send_api(request):
         },
         status=status_code,
     )
+
+
+@login_required
+@require_POST
+def whatsapp_daily_report_send_api(request):
+    if not request.user.is_staff:
+        return _forbidden_json()
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except json.JSONDecodeError:
+        payload = {}
+
+    target_phone = (payload.get('phone') or '').strip()
+    target_date = (payload.get('date') or '').strip() or None
+    current_workspace = getattr(request, 'current_workspace', None)
+
+    result = send_daily_whatsapp_report(
+        target_date=target_date,
+        target_phone=target_phone,
+        workspace=current_workspace,
+        is_automatic=False,
+    )
+    status_code = 200 if result.get('ok') else 400
+    return JsonResponse(
+        {
+            'ok': bool(result.get('ok')),
+            'sent_count': result.get('sent_count', 0),
+            'sent_phones': result.get('sent_phones', []),
+            'failed_phones': result.get('failed_phones', []),
+            'errors': result.get('errors', []),
+            'message': result.get('message', ''),
+            'error': result.get('error', ''),
+        },
+        status=status_code,
+    )
+
+
+@login_required
+@require_GET
+def whatsapp_daily_report_preview_api(request):
+    if not request.user.is_staff:
+        return _forbidden_json()
+
+    target_date = (request.GET.get('date') or '').strip() or None
+    current_workspace = getattr(request, 'current_workspace', None)
+
+    message, context = render_daily_report_message(target_date=target_date, workspace=current_workspace)
+    return JsonResponse({
+        'ok': True,
+        'message': message,
+        'context': context,
+    })
 
 
 @csrf_exempt

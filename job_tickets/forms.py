@@ -9,6 +9,7 @@ from .models import (
     Client,
     CompanyProfile,
     Expense,
+    FinancialAccount,
     InventoryEntry,
     InventoryParty,
     JobTicket,
@@ -52,7 +53,7 @@ class JobTicketForm(forms.ModelForm):
     class Meta:
         model = JobTicket
         fields = ['customer_name', 'customer_phone', 'device_type', 
-                  'device_brand', 'device_model', 'device_serial', 
+                  'device_brand', 'device_model', 'device_serial', 'device_password',
                   'reported_issue', 'additional_items', 'is_under_warranty',
                   'estimated_amount', 'estimated_delivery']
 
@@ -60,13 +61,13 @@ class JobTicketForm(forms.ModelForm):
             'estimated_delivery': forms.DateInput(attrs={'type': 'date'}),
 
             'customer_name': forms.TextInput(attrs={
-            'autocomplete': 'off'
-                }),
+                'autocomplete': 'off',
+                'placeholder': 'Enter customer full name with address',
+            }),
             'customer_phone': forms.TextInput(attrs={
                 'type': 'text',
                 'autocomplete': 'off',
                 'inputmode': 'numeric',
-                'placeholder': '98765 43210',
             }),
 
             'device_type': forms.TextInput(attrs={
@@ -80,6 +81,11 @@ class JobTicketForm(forms.ModelForm):
             'device_serial': forms.TextInput(attrs={
             'autocomplete': 'off'
                 }),
+
+            'device_password': forms.TextInput(attrs={
+                'autocomplete': 'off',
+                'placeholder': 'e.g. 1234, Pattern, None',
+            }),
         }
 
     def clean_customer_phone(self):
@@ -272,6 +278,7 @@ class ExpenseForm(forms.ModelForm):
             'category',
             'expense_date',
             'payment_mode',
+            'financial_account',
             'job_ticket',
             'is_billable_to_customer',
             'receipt_file',
@@ -293,6 +300,7 @@ class ExpenseForm(forms.ModelForm):
             'category': forms.Select(attrs={'class': 'form-select'}),
             'expense_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'payment_mode': forms.Select(attrs={'class': 'form-select'}),
+            'financial_account': forms.Select(attrs={'class': 'form-select'}),
             'job_ticket': forms.Select(attrs={
                 'class': 'form-select',
                 'data-searchable-select': 'true',
@@ -306,9 +314,11 @@ class ExpenseForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         workspace = kwargs.pop('workspace', None)
+        self.workspace = workspace
         super().__init__(*args, **kwargs)
         self.fields['job_ticket'].empty_label = '--- None (General / Non-Job Overhead) ---'
         self.fields['job_ticket'].required = False
+        self.fields['payment_mode'].required = False
 
         qs = JobTicket.objects.order_by('-created_at')
         if workspace:
@@ -322,11 +332,185 @@ class ExpenseForm(forms.ModelForm):
 
         self.fields['job_ticket'].label_from_instance = job_label
 
+        # Financial Account field (primary payment selector)
+        self.fields['financial_account'].required = False
+        acc_qs = FinancialAccount.objects.filter(is_active=True).order_by('-is_default_cash', '-is_default_bank', 'name')
+        if workspace:
+            acc_qs = acc_qs.filter(workspace=workspace)
+        self.fields['financial_account'].queryset = acc_qs
+
+        default_acc = acc_qs.filter(is_default_cash=True).first() or acc_qs.first()
+        if default_acc and not self.initial.get('financial_account'):
+            self.initial['financial_account'] = default_acc.id
+
+        self.fields['financial_account'].empty_label = None if default_acc else '--- Select Account ---'
+
+        def acc_label(obj):
+            type_icon = "💵 " if obj.account_type == "cash" else ("🏦 " if obj.account_type == "bank" else "📱 ")
+            type_label = dict(FinancialAccount.ACCOUNT_TYPE_CHOICES).get(obj.account_type, obj.account_type)
+            default_tag = " ★ [Default Cash]" if obj.is_default_cash else (" ★ [Default Bank]" if obj.is_default_bank else "")
+            return f"{type_icon}{obj.name} ({type_label}){default_tag} — Bal: ₹{obj.current_balance:,.2f}"
+
+        self.fields['financial_account'].label_from_instance = acc_label
+
     def clean_amount(self):
         amount = self.cleaned_data.get('amount')
         if amount is not None and amount <= Decimal('0.00'):
             raise forms.ValidationError("Expense amount must be greater than zero.")
         return amount
+
+    def clean(self):
+        cleaned_data = super().clean()
+        acc = cleaned_data.get('financial_account')
+        posted_mode = self.data.get('payment_mode') or cleaned_data.get('payment_mode')
+
+        if acc:
+            if acc.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+                cleaned_data['payment_mode'] = Expense.PAYMENT_MODE_CASH
+            elif acc.account_type == FinancialAccount.ACCOUNT_TYPE_UPI:
+                cleaned_data['payment_mode'] = Expense.PAYMENT_MODE_UPI
+            elif acc.account_type == FinancialAccount.ACCOUNT_TYPE_BANK:
+                if posted_mode in [Expense.PAYMENT_MODE_BANK, Expense.PAYMENT_MODE_CARD]:
+                    cleaned_data['payment_mode'] = posted_mode
+                else:
+                    cleaned_data['payment_mode'] = Expense.PAYMENT_MODE_BANK
+        elif posted_mode:
+            auto_acc = FinancialAccount.get_default_for_payment_method(self.workspace, posted_mode)
+            if auto_acc:
+                cleaned_data['financial_account'] = auto_acc
+            cleaned_data['payment_mode'] = posted_mode
+        else:
+            default_acc = FinancialAccount.get_default_for_payment_method(self.workspace, 'cash')
+            cleaned_data['financial_account'] = default_acc
+            cleaned_data['payment_mode'] = Expense.PAYMENT_MODE_CASH
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.financial_account:
+            if instance.financial_account.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+                instance.payment_mode = Expense.PAYMENT_MODE_CASH
+            elif instance.financial_account.account_type == FinancialAccount.ACCOUNT_TYPE_UPI:
+                instance.payment_mode = Expense.PAYMENT_MODE_UPI
+            elif instance.financial_account.account_type == FinancialAccount.ACCOUNT_TYPE_BANK:
+                posted_mode = self.data.get('payment_mode')
+                if posted_mode in [Expense.PAYMENT_MODE_BANK, Expense.PAYMENT_MODE_CARD]:
+                    instance.payment_mode = posted_mode
+                else:
+                    instance.payment_mode = Expense.PAYMENT_MODE_BANK
+        elif self.cleaned_data.get('payment_mode'):
+            instance.payment_mode = self.cleaned_data['payment_mode']
+        if commit:
+            instance.save()
+        return instance
+
+
+class FinancialAccountForm(forms.ModelForm):
+    opening_balance = forms.DecimalField(
+        required=False,
+        max_digits=12,
+        decimal_places=2,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0.00', 'value': '0.00'}),
+    )
+
+    class Meta:
+        model = FinancialAccount
+        fields = [
+            'name',
+            'account_type',
+            'bank_name',
+            'account_number',
+            'ifsc_code',
+            'branch',
+            'upi_id',
+            'opening_balance',
+            'is_default_cash',
+            'is_default_bank',
+            'notes',
+        ]
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Cash in Hand, Federal Bank - Pattambi', 'required': 'required'}),
+            'account_type': forms.Select(attrs={'class': 'form-select'}),
+            'bank_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Federal Bank'}),
+            'account_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. 99980108152444'}),
+            'ifsc_code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. FDRL0001412'}),
+            'branch': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Pattambi'}),
+            'upi_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. anasrawuthar@okaxis'}),
+            'is_default_cash': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'is_default_bank': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Optional internal notes...'}),
+        }
+
+    def clean_opening_balance(self):
+        bal = self.cleaned_data.get('opening_balance')
+        if bal is not None and bal < Decimal('0.00'):
+            raise forms.ValidationError("Opening balance cannot be negative.")
+        if bal is None and self.instance and self.instance.pk:
+            return self.instance.opening_balance
+        return bal or Decimal('0.00')
+
+
+class AccountTransferForm(forms.Form):
+    from_account = forms.ModelChoiceField(
+        queryset=FinancialAccount.objects.none(),
+        widget=forms.Select(attrs={'class': 'form-select', 'required': 'required'}),
+        label="From Account (Pay Out)",
+    )
+    to_account = forms.ModelChoiceField(
+        queryset=FinancialAccount.objects.none(),
+        widget=forms.Select(attrs={'class': 'form-select', 'required': 'required'}),
+        label="To Account (Deposit In)",
+    )
+    amount = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal('0.01'),
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0.01', 'placeholder': '0.00', 'required': 'required'}),
+        label="Amount (₹)",
+    )
+    transaction_date = forms.DateField(
+        initial=timezone.localdate,
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'required': 'required'}),
+        label="Transfer Date",
+    )
+    reference_no = forms.CharField(
+        max_length=100,
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. CDM Slip, Cheque No, UPI Ref'}),
+        label="Reference / Transaction ID",
+    )
+    notes = forms.CharField(
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Cash drawer deposit to bank'}),
+        label="Purpose / Notes",
+    )
+
+    def __init__(self, *args, **kwargs):
+        workspace = kwargs.pop('workspace', None)
+        super().__init__(*args, **kwargs)
+        qs = FinancialAccount.objects.filter(is_active=True).order_by('-is_default_cash', '-is_default_bank', 'name')
+        if workspace:
+            qs = qs.filter(workspace=workspace)
+        self.fields['from_account'].queryset = qs
+        self.fields['to_account'].queryset = qs
+
+        def format_label(acc):
+            type_label = dict(FinancialAccount.ACCOUNT_TYPE_CHOICES).get(acc.account_type, acc.account_type)
+            return f"{acc.name} ({type_label}) — Bal: ₹{acc.current_balance:,.2f}"
+
+        self.fields['from_account'].label_from_instance = format_label
+        self.fields['to_account'].label_from_instance = format_label
+
+    def clean(self):
+        cleaned_data = super().clean()
+        from_acc = cleaned_data.get('from_account')
+        to_acc = cleaned_data.get('to_account')
+
+        if from_acc and to_acc and from_acc.pk == to_acc.pk:
+            raise forms.ValidationError("From Account and To Account cannot be the same.")
+        return cleaned_data
 
 
 class VendorForm(forms.ModelForm):
@@ -441,7 +625,15 @@ class ProductForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if 'vendor_warranty_months' in self.fields:
+            self.fields['vendor_warranty_months'].required = False
+        if 'customer_warranty_months' in self.fields:
+            self.fields['customer_warranty_months'].required = False
         if not self.is_bound and not getattr(self.instance, 'pk', None):
+            if 'vendor_warranty_months' in self.fields:
+                self.fields['vendor_warranty_months'].initial = 0
+            if 'customer_warranty_months' in self.fields:
+                self.fields['customer_warranty_months'].initial = 0
             try:
                 self.fields['gst_rate'].initial = CompanyProfile.get_profile().gst_rate or Decimal('18.00')
             except Exception:
@@ -452,6 +644,14 @@ class ProductForm(forms.ModelForm):
             self.fields['unit_price'].initial = Decimal('0.00')
             self.fields['stock_quantity'].initial = 0
             self.fields['reserved_stock'].initial = 0
+
+    def clean_vendor_warranty_months(self):
+        val = self.cleaned_data.get('vendor_warranty_months')
+        return val if val is not None else 0
+
+    def clean_customer_warranty_months(self):
+        val = self.cleaned_data.get('customer_warranty_months')
+        return val if val is not None else 0
 
     def clean_hsn_sac_code(self):
         return normalize_compact_code(self.cleaned_data.get('hsn_sac_code'))
@@ -684,6 +884,9 @@ class CompanyProfileForm(forms.ModelForm):
             'default_place_of_supply_state',
             'bank_name', 'account_number', 'ifsc_code', 'branch', 'upi_id',
             'job_code_prefix', 'job_ticket_print_paper_size', 'bill_print_paper_size',
+            'include_workshop_device_tag', 'include_ticket_signatures', 'include_bill_signatures',
+            'include_bill_payment_details',
+            'technician_display_format',
             'enable_gst', 'gst_rate',
             'terms_conditions'
         ]
@@ -718,6 +921,11 @@ class CompanyProfileForm(forms.ModelForm):
             'job_code_prefix': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'GI'}),
             'job_ticket_print_paper_size': forms.Select(attrs={'class': 'form-select'}),
             'bill_print_paper_size': forms.Select(attrs={'class': 'form-select'}),
+            'include_workshop_device_tag': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'include_ticket_signatures': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'include_bill_signatures': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'include_bill_payment_details': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'technician_display_format': forms.Select(attrs={'class': 'form-select'}),
             'gst_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'terms_conditions': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }
@@ -730,6 +938,11 @@ class CompanyProfileForm(forms.ModelForm):
             'e_invoice_applicable': 'E-Invoice Applicable',
             'job_ticket_print_paper_size': 'Job Ticket Print Paper Size',
             'bill_print_paper_size': 'Bill Print Paper Size',
+            'include_workshop_device_tag': 'Include Tear-Off Workshop Device Tag',
+            'include_ticket_signatures': 'Include Signatures on Intake Slip',
+            'include_bill_signatures': 'Include Signatures on Bill & Invoice',
+            'include_bill_payment_details': 'Include Payment Settlement & Bank Details on Bills',
+            'technician_display_format': 'Technician Display on Bill',
         }
 
     def clean_gstin(self):
@@ -799,6 +1012,9 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'notify_on_completed',
             'notify_on_delivered',
             'notify_on_feedback',
+            'notify_daily_report',
+            'daily_report_phone',
+            'daily_report_time',
             'created_template_name',
             'created_template',
             'completed_template_name',
@@ -809,6 +1025,7 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'estimate_template',
             'feedback_template_name',
             'feedback_template',
+            'daily_report_template',
         ]
         widgets = {
             'is_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
@@ -827,6 +1044,9 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'notify_on_completed': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'notify_on_delivered': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'notify_on_feedback': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'notify_daily_report': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'daily_report_phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. 9876543210 (comma-separated for multiple)'}),
+            'daily_report_time': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
             'created_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_created_update'}),
             'created_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'completed_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_completed_update'}),
@@ -837,12 +1057,14 @@ class WhatsAppIntegrationSettingsForm(forms.ModelForm):
             'estimate_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'feedback_template_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'job_feedback_followup'}),
             'feedback_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
+            'daily_report_template': forms.Textarea(attrs={'class': 'form-control', 'rows': 6}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for field_name in ('api_version', 'template_language_code'):
-            self.fields[field_name].required = False
+        for field_name in ('api_version', 'template_language_code', 'daily_report_phone', 'daily_report_time', 'daily_report_template'):
+            if field_name in self.fields:
+                self.fields[field_name].required = False
 
     def clean(self):
         cleaned_data = super().clean()

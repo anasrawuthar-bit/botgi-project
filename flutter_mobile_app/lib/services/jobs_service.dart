@@ -11,6 +11,7 @@ class JobsService {
   JobsService(this._authService);
 
   final AuthService _authService;
+  AuthService get authService => _authService;
 
   Future<List<JobItem>> fetchJobs() async {
     final response = await http.get(
@@ -203,6 +204,30 @@ class JobsService {
     }
 
     return (body['message'] ?? 'Service line deleted.').toString();
+  }
+
+  Future<String> saveJobChecklist({
+    required String jobCode,
+    required Map<String, dynamic> answers,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.baseUrl}/api/mobile/jobs/$jobCode/checklist/'),
+      headers: _authService.authHeaders(),
+      body: jsonEncode({'answers': answers}),
+    );
+
+    final body = _safeJsonDecode(response.body);
+    if (response.statusCode == 401) {
+      await _authService.logout();
+      throw Exception(
+        body['message'] ?? 'Session expired. Please login again.',
+      );
+    }
+    if (response.statusCode != 200) {
+      throw Exception(body['message'] ?? 'Unable to save checklist.');
+    }
+
+    return (body['message'] ?? 'Checklist saved successfully.').toString();
   }
 
   Map<String, dynamic> _safeJsonDecode(String rawBody) {

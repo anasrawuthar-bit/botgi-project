@@ -1,4 +1,5 @@
 {% load static %}
+{% load job_tickets_extras %}
 <!DOCTYPE html>
 <html lang="en">
 
@@ -6,6 +7,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Service Billing | GI Hostings{% endblock %}</title>
+    <script>
+        (function () {
+            try {
+                localStorage.removeItem('botgi_theme');
+                document.cookie = "botgi_theme=; path=/; max-age=0";
+                document.documentElement.setAttribute('data-bs-theme', 'light');
+            } catch (e) {}
+        })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,12 +35,69 @@
             } catch (e) {}
         })();
     </script>
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=2.1">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=3.3">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="icon" href="/static/img/logo.png">
+    {% if company.display_logo_url %}
+    <link rel="icon" type="image/png" href="{{ company.display_logo_url }}">
+    <link rel="shortcut icon" type="image/png" href="{{ company.display_logo_url }}">
+    <link rel="apple-touch-icon" href="{{ company.display_logo_url }}">
+    {% else %}
+    <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/logo.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'img/logo.png' %}">
+    {% endif %}
     {% block extra_css %}{% endblock %}
 
     <style>
+        /* ── Critical Zero-Flicker Collapsed Sidebar Rules ─────── */
+        .sidebar-collapsed .sidebar-brand-link,
+        .sidebar-collapsed .sidebar-brand-logo,
+        .sidebar-collapsed .sidebar-brand-copy,
+        .sidebar-collapsed .sidebar-user-trigger .user-info,
+        .sidebar-collapsed .sidebar-user-trigger .user-caret,
+        .sidebar-collapsed .sidebar-rail-toggle-btn {
+            display: none !important;
+        }
+
+        .sidebar-collapsed .sidebar-brand-head {
+            justify-content: center !important;
+            width: 100% !important;
+        }
+
+        .sidebar-collapsed .sidebar-desktop-toggle {
+            display: inline-flex !important;
+            margin: 0 auto !important;
+            width: 36px !important;
+            height: 36px !important;
+        }
+
+        .sidebar-collapsed .sidebar-desktop-toggle .sidebar-collapse-icon {
+            display: none !important;
+        }
+
+        .sidebar-collapsed .sidebar-desktop-toggle .sidebar-expand-icon {
+            display: block !important;
+        }
+
+        .sidebar-collapsed .sidebar-footer {
+            padding: 0.75rem 0.4rem !important;
+            display: flex !important;
+            justify-content: center !important;
+        }
+
+        .sidebar-collapsed .sidebar-user-trigger {
+            justify-content: center !important;
+            padding: 0 !important;
+            width: 42px !important;
+            height: 42px !important;
+            margin: 0 auto !important;
+            border-radius: 8px !important;
+        }
+
+        .sidebar-collapsed .sidebar-user-trigger .user-avatar {
+            margin: 0 auto !important;
+        }
+
         @media print {
 
             .navbar,
@@ -169,7 +236,16 @@
                     aria-expanded="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}false{% else %}true{% endif %}"
                     data-tooltip="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
                 >
-                    <i class="fa-solid {% if request.COOKIES.botgi_sidebar_collapsed == '1' %}fa-chevron-right{% else %}fa-chevron-left{% endif %}"></i>
+                    <svg class="sidebar-panel-icon sidebar-collapse-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="3" ry="3"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
+                        <path d="m14 9-3 3 3 3"/>
+                    </svg>
+                    <svg class="sidebar-panel-icon sidebar-expand-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="3" ry="3"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
+                        <path d="m12 9 3 3-3 3"/>
+                    </svg>
                 </button>
             </div>
         </div>
@@ -261,13 +337,18 @@
                 </li>
                 <li class="sidebar-menu-divider"></li>
                 <li>
-                    <a class="sidebar-link settings-nav-link" href="#job-settings" data-settings-tab="#job-settings" data-tooltip="Bill / Ticket Configuration">
-                        <i class="fa-solid fa-receipt"></i><span class="sidebar-link-label">Bill / Ticket</span>
+                    <a class="sidebar-link settings-nav-link" href="#job-settings" data-settings-tab="#job-settings" data-tooltip="Job Ticket Configuration">
+                        <i class="fa-solid fa-ticket"></i><span class="sidebar-link-label">Job Ticket</span>
                     </a>
                 </li>
                 <li>
-                    <a class="sidebar-link settings-nav-link" href="#billing-settings" data-settings-tab="#billing-settings" data-tooltip="Billing & GST">
-                        <i class="fa-solid fa-indian-rupee-sign"></i><span class="sidebar-link-label">Billing & GST</span>
+                    <a class="sidebar-link settings-nav-link" href="#bill-settings" data-settings-tab="#bill-settings" data-tooltip="Bill & Invoice Configuration">
+                        <i class="fa-solid fa-receipt"></i><span class="sidebar-link-label">Bill / Invoice</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#billing-settings" data-settings-tab="#billing-settings" data-tooltip="Tax & GST Settings">
+                        <i class="fa-solid fa-indian-rupee-sign"></i><span class="sidebar-link-label">Tax & GST</span>
                     </a>
                 </li>
                 <li>
@@ -284,6 +365,11 @@
                 <li>
                     <a class="sidebar-link settings-nav-link" href="#rack-management" data-settings-tab="#rack-management" data-tooltip="Rack Management">
                         <i class="fa-solid fa-boxes-stacked"></i><span class="sidebar-link-label">Rack Management</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#intake-presets" data-settings-tab="#intake-presets" data-tooltip="Intake Presets & Checklists">
+                        <i class="fa-solid fa-sliders"></i><span class="sidebar-link-label">Presets & Checklists</span>
                     </a>
                 </li>
                 <li>
@@ -334,6 +420,15 @@
                 </li>
                 {% endif %}
 
+                {% if staff_access.account_management %}
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'accounts_dashboard' %}active{% endif %}"
+                        href="{% url 'accounts_dashboard' %}" data-tooltip="Accounts">
+                        <i class="fa-solid fa-building-columns"></i><span class="sidebar-link-label">Accounts</span>
+                    </a>
+                </li>
+                {% endif %}
+
                 {% if staff_access.inventory %}
                 <li>
                     <a
@@ -372,15 +467,6 @@
                 </li>
                 {% endif %}
 
-                {% if staff_access.company_settings %}
-                <li>
-                    <a class="sidebar-link {% if request.resolver_match.url_name == 'company_profile_settings' %}active{% endif %}"
-                        href="{% url 'company_profile_settings' %}" data-tooltip="Settings">
-                        <i class="fa-solid fa-gear"></i><span class="sidebar-link-label">Settings</span>
-                    </a>
-                </li>
-                {% endif %}
-
                 {% else %}
                 {# Technician user #}
                 <li>
@@ -396,39 +482,57 @@
                     </a>
                 </li>
                 {% endif %}
-
-                <li class="sidebar-menu-divider"></li>
-                <li>
-                    <a class="sidebar-link" href="#" data-bs-toggle="modal" data-bs-target="#supportHelpModal" data-tooltip="Help & Support">
-                        <i class="fa-solid fa-headset"></i><span class="sidebar-link-label">Help & Support</span>
-                    </a>
-                </li>
             </ul>
         </nav>
 
         <div class="sidebar-footer">
-            <div class="sidebar-user-badge" data-tooltip="{{ user.username }}">
-                <span class="sidebar-user-avatar">{{ user.username|make_list|first|upper }}</span>
-                <span class="sidebar-user-name">{{ user.username }}</span>
-                <button type="button" class="sidebar-scale-btn ms-auto" data-bs-toggle="modal" data-bs-target="#supportHelpModal" title="Help & Support" aria-label="Help and Support">
-                    <i class="fa-solid fa-headset"></i>
+            <div class="dropup user-profile-dropup" id="userProfileDropup">
+                <button
+                    class="sidebar-user-trigger"
+                    type="button"
+                    id="userProfileTrigger"
+                    data-bs-toggle="dropdown"
+                    data-bs-display="static"
+                    data-bs-auto-close="outside"
+                    aria-expanded="false"
+                    data-tooltip="{{ user.get_full_name|default:user.username }}"
+                >
+                    <span class="user-avatar">{{ user|user_initials }}</span>
+                    <div class="user-info">
+                        <span class="user-name">{{ user.get_full_name|default:user.username }}</span>
+                        <span class="user-org">{{ company.company_name|default:"gi hostings" }}</span>
+                    </div>
+                    <i class="fa-solid fa-chevron-up user-caret"></i>
                 </button>
-                <button type="button" class="sidebar-scale-btn ms-1" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal" title="Display Zoom / Density Scale" aria-label="Adjust display scale">
-                    <i class="fa-solid fa-display"></i>
-                </button>
-            </div>
-            <div class="sidebar-footer-actions">
-                <a class="sidebar-logout-btn" href="{% url 'logout' %}" data-tooltip="Logout">
-                    <i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-logout-label">Logout</span>
-                </a>
-                <button class="sidebar-rail-toggle-btn" id="sidebarRailToggleBtn" type="button"
-                    aria-label="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
-                    data-tooltip="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand sidebar (Ctrl+B){% else %}Collapse sidebar (Ctrl+B){% endif %}"
-                    aria-expanded="{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}false{% else %}true{% endif %}">
-                    <i class="fa-solid {% if request.COOKIES.botgi_sidebar_collapsed == '1' %}fa-angles-right{% else %}fa-angles-left{% endif %}"></i>
-                    <span class="sidebar-rail-toggle-label">{% if request.COOKIES.botgi_sidebar_collapsed == '1' %}Expand{% else %}Collapse{% endif %}</span>
-                    <kbd class="sidebar-kbd">Ctrl+B</kbd>
-                </button>
+                <div class="dropdown-menu user-profile-menu shadow" aria-labelledby="userProfileTrigger">
+                    <div class="user-menu-header">
+                        <span class="user-menu-email" title="{{ user.email|default:user.username }}">{{ user.email|default:user.username }}</span>
+                        <a href="{% url 'logout' %}" class="user-menu-logout">Log out</a>
+                    </div>
+                    <div class="user-menu-section organizations-box">
+                        <div class="user-menu-label">Organizations</div>
+                        <div class="user-menu-org-item active">
+                            <span class="org-name">{{ company.company_name|default:"gi hostings" }}</span>
+                            <i class="fa-solid fa-check text-success ms-auto"></i>
+                        </div>
+                    </div>
+                    <div class="user-menu-links">
+                        {% if staff_access.company_settings %}
+                        <a href="{% url 'company_profile_settings' %}" class="user-menu-link">
+                            <i class="fa-solid fa-gear"></i>
+                            <span>Settings</span>
+                        </a>
+                        {% endif %}
+                        <button type="button" class="user-menu-link border-0 bg-transparent w-100 text-start" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal">
+                            <i class="fa-solid fa-text-height"></i>
+                            <span>Display &amp; Zoom Scale</span>
+                        </button>
+                        <button type="button" class="user-menu-link border-0 bg-transparent w-100 text-start" data-bs-toggle="modal" data-bs-target="#supportHelpModal">
+                            <i class="fa-solid fa-headset"></i>
+                            <span>Help &amp; Support</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </aside>
@@ -462,9 +566,11 @@
     <div class="app-layout {% if user.is_authenticated %}has-sidebar{% endif %}">
         <main class="app-main">
             <div class="app-workspace container-fluid my-3 pb-3">
+                {% block auto_page_title %}
                 <div class="mb-3 d-none" data-auto-page-title>
                     <h1 class="section-title mb-0" data-auto-page-title-text></h1>
                 </div>
+                {% endblock %}
                 {% block content %}{% endblock %}
             </div>
         </main>
@@ -515,7 +621,7 @@
 
             const main = document.querySelector('main.app-main');
             if (main) {
-                const headings = main.querySelectorAll('h1, .section-title');
+                const headings = main.querySelectorAll('h1, h2, .section-title');
                 let hasOtherHeading = false;
                 headings.forEach((heading) => {
                     if (container.contains(heading)) {
@@ -833,7 +939,6 @@
         (function () {
             var mobileToggleBtn = document.getElementById('sidebarToggleBtn');
             var desktopToggleBtn = document.getElementById('sidebarDesktopToggleBtn');
-            var railToggleBtn = document.getElementById('sidebarRailToggleBtn');
             var sidebar = document.getElementById('appSidebar');
             var backdrop = document.getElementById('sidebarBackdrop');
             var desktopSidebarStorageKey = 'appSidebarCollapsed';
@@ -852,24 +957,6 @@
                     desktopToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
                     desktopToggleBtn.setAttribute('aria-label', label);
                     desktopToggleBtn.setAttribute('data-tooltip', label);
-                    var icon = desktopToggleBtn.querySelector('i');
-                    if (icon) {
-                        icon.className = collapsed ? 'fa-solid fa-chevron-right' : 'fa-solid fa-chevron-left';
-                    }
-                }
-
-                if (railToggleBtn) {
-                    railToggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-                    railToggleBtn.setAttribute('aria-label', label);
-                    railToggleBtn.setAttribute('data-tooltip', label);
-                    var railIcon = railToggleBtn.querySelector('i');
-                    if (railIcon) {
-                        railIcon.className = collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
-                    }
-                    var railText = railToggleBtn.querySelector('.sidebar-rail-toggle-label');
-                    if (railText) {
-                        railText.textContent = collapsed ? 'Expand' : 'Collapse';
-                    }
                 }
 
                 if (sidebarTooltip) {
@@ -940,13 +1027,10 @@
                 desktopToggleBtn.addEventListener('click', toggleDesktopSidebar);
             }
 
-            if (railToggleBtn) {
-                railToggleBtn.addEventListener('click', toggleDesktopSidebar);
-            }
-
             if (backdrop) {
                 backdrop.addEventListener('click', closeSidebar);
             }
+
 
             // Keyboard shortcut: Ctrl+B or Cmd+B to toggle sidebar, Escape to close mobile sidebar
             document.addEventListener('keydown', function (e) {

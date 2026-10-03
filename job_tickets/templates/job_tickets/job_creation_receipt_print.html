@@ -2,246 +2,857 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Receipt - {{ job_ticket.job_code }}</title>
+    {% if company.display_logo_url %}
+    <link rel="icon" type="image/png" href="{{ company.display_logo_url }}">
+    {% else %}
+    <link rel="icon" type="image/png" href="/static/img/logo.png">
+    {% endif %}
     <style>
+        :root {
+            --ink-900: #111827;
+            --ink-700: #374151;
+            --ink-500: #6b7280;
+            --border-color: #cbd5e1;
+            --accent-bg: #f8fafc;
+            --highlight-bg: #fffbeb;
+            --highlight-border: #fde68a;
+            --highlight-text: #92400e;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: 'Times New Roman', serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            color: var(--ink-900);
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 20px 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* Screen toolbar */
+        .screen-toolbar {
+            max-width: {{ company.job_ticket_print_page_width_css|default:"148mm" }};
+            margin: 0 auto 16px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #ffffff;
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .screen-toolbar .toolbar-title {
             font-size: 13px;
-            margin: 0;
-            padding: 0;
-        }
-        .receipt-container {
-            max-width: 620px;
-            margin: 20px auto;
-            padding: 20px;
-            border: 1px solid #000;
-            background: #fff;
-        }
-        .header-classic {
-            display: grid;
-            grid-template-columns: minmax(86px, 110px) 1fr minmax(130px, 150px);
-            column-gap: 14px;
-            align-items: center;
-            margin-bottom: 16px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #000;
-        }
-        .header-classic .logo {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            min-height: 58px;
-        }
-        .header-classic .logo img {
-            max-width: 100px;
-            max-height: 58px;
-            height: auto;
-        }
-        .header-classic .info {
-            text-align: center;
-        }
-        .header-classic .info h3 {
-            margin: 0;
-            font-size: 1.4em;
-        }
-        .header-classic .info p {
-            margin: 1px 0;
-            font-size: 0.9em;
-            color: #555;
-        }
-        .header-classic .code {
-            justify-self: end;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 4px;
-        }
-        .header-classic .code small {
-            display: block;
-            font-size: 10px;
             font-weight: 700;
-            line-height: 1;
-            letter-spacing: 0.02em;
-        }
-        .header-classic .ticket-badge {
-            min-width: 118px;
-            max-width: 138px;
-            min-height: 48px;
+            color: var(--ink-900);
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 1.35em;
-            font-weight: 700;
-            border: 1px solid #000;
+            gap: 6px;
+        }
+
+        .screen-toolbar .format-badge {
+            font-size: 10.5px;
+            font-weight: 600;
+            background: #e2e8f0;
+            color: var(--ink-700);
+            padding: 2px 7px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .toolbar-options {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .toggle-option {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--ink-700);
+            cursor: pointer;
+            user-select: none;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
             padding: 4px 8px;
-            background: #fff4cc;
-            text-align: center;
-            line-height: 1.08;
-            overflow-wrap: anywhere;
+            border-radius: 5px;
+            transition: all 0.15s ease;
+        }
+
+        .toggle-option:hover {
+            background: #e2e8f0;
+        }
+
+        .toggle-option input {
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-print {
+            background-color: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.15s ease;
+        }
+
+        .btn-print:hover {
+            background-color: #334155;
+        }
+
+        .btn-close {
+            background-color: transparent;
+            color: var(--ink-700);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 7px 12px;
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn-close:hover {
+            background-color: #f8fafc;
+        }
+
+        .print-hidden {
+            display: none !important;
+        }
+
+        .receipt-wrapper {
+            max-width: {{ company.job_ticket_print_page_width_css|default:"148mm" }};
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            padding: 16px 20px;
+        }
+
+        /* Header section */
+        .receipt-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--ink-900);
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            gap: 12px;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .header-logo img {
+            max-width: 90px;
+            max-height: 52px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .header-meta h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+            color: var(--ink-900);
+        }
+
+        .header-meta p {
+            margin: 1px 0;
+            font-size: 11px;
+            color: var(--ink-700);
+        }
+
+        .header-meta .contact-line {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink-900);
+        }
+
+        .header-badge-box {
+            text-align: right;
+            min-width: 140px;
+        }
+
+        .ticket-title {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--ink-500);
+            margin-bottom: 2px;
+        }
+
+        .ticket-code-pill {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 16px;
+            font-weight: 800;
+            background: #0f172a;
+            color: #ffffff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            display: inline-block;
+            letter-spacing: 0.5px;
+        }
+
+        .ticket-date {
+            font-size: 10px;
+            color: var(--ink-500);
+            margin-top: 3px;
+        }
+
+        /* Two column grid cards */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .card-box {
+            background: var(--accent-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .card-title {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: var(--ink-500);
+            margin-bottom: 6px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 3px;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 3px;
+            font-size: 11.5px;
+        }
+
+        .data-label {
+            color: var(--ink-500);
+            font-size: 11px;
+            flex-shrink: 0;
+            margin-right: 6px;
+        }
+
+        .data-value {
+            font-weight: 600;
+            color: var(--ink-900);
+            text-align: right;
             word-break: break-word;
         }
 
-        .section {
-            margin-bottom: 14px;
-        }
-        .section h4 {
-            border-bottom: 1px solid #ccc;
-            padding-bottom: 4px;
-            margin-bottom: 8px;
-            font-size: 1.08em;
-        }
-        .details-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-        .details-grid p {
-            margin: 0;
-        }
-        .devices-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9em;
-        }
-        .devices-table th, .devices-table td {
-            border: 1px solid #000;
-            padding: 6px;
-            vertical-align: top;
-        }
-        .devices-table th {
-            background-color: #f0f0f0;
-            text-align: left;
-        }
-        .terms-section {
-            margin-top: 16px;
-            font-size: 0.9em;
-            line-height: 1.4;
-        }
-        .qr-box {
-            text-align: center;
-        }
-        .qr-box img {
-            max-width: 130px;
-            border: 1px solid #ddd;
-            padding: 3px;
+        /* Reported issue container */
+        .issue-container {
+            background: var(--highlight-bg);
+            border: 1px solid var(--highlight-border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
         }
 
+        .issue-title {
+            font-size: 10.5px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--highlight-text);
+            margin: 0 0 4px 0;
+        }
+
+        .issue-text {
+            margin: 0;
+            font-size: 11.5px;
+            color: var(--ink-900);
+            line-height: 1.4;
+            font-weight: 500;
+        }
+
+        .accessories-text {
+            margin: 4px 0 0 0;
+            font-size: 11px;
+            color: #78350f;
+            font-weight: 600;
+        }
+
+        /* Multi-device batch table */
+        .batch-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-bottom: 12px;
+        }
+
+        .batch-table th, .batch-table td {
+            border: 1px solid var(--border-color);
+            padding: 6px 8px;
+            text-align: left;
+        }
+
+        .batch-table th {
+            background: #f1f5f9;
+            font-weight: 700;
+            color: var(--ink-700);
+        }
+
+        /* Checklist section */
+        .checklist-box {
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+        }
+
+        .checklist-title {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--ink-500);
+            margin-bottom: 6px;
+        }
+
+        .checklist-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .checklist-chip {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 10.5px;
+            color: var(--ink-700);
+        }
+
+        .checklist-chip strong {
+            color: var(--ink-900);
+        }
+
+        /* Estimate and Promised Delivery */
+        .estimate-banner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 8px 14px;
+            margin-bottom: 12px;
+        }
+
+        .estimate-col strong {
+            font-size: 14px;
+            color: var(--ink-900);
+        }
+
+        /* Tracking and terms row */
+        .tracking-terms-row {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            background: #ffffff;
+        }
+
+        .qr-column {
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .qr-column img {
+            width: 80px;
+            height: 80px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 2px;
+            display: block;
+        }
+
+        .qr-column .qr-label {
+            font-size: 9px;
+            color: var(--ink-500);
+            margin-top: 2px;
+        }
+
+        .terms-column {
+            flex: 1;
+            font-size: 10px;
+            line-height: 1.35;
+            color: var(--ink-700);
+        }
+
+        .terms-column strong {
+            display: block;
+            margin-bottom: 2px;
+            color: var(--ink-900);
+            text-transform: uppercase;
+            font-size: 9.5px;
+            letter-spacing: 0.3px;
+        }
+
+        /* Signatures block */
+        .signature-block {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 14px;
+            padding-top: 8px;
+        }
+
+        .sign-col {
+            text-align: center;
+            width: 44%;
+        }
+
+        .sign-line {
+            border-top: 1px solid #000;
+            margin-bottom: 4px;
+        }
+
+        .sign-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--ink-900);
+            text-transform: uppercase;
+        }
+
+        .sign-desc {
+            font-size: 9px;
+            color: var(--ink-500);
+        }
+
+        /* Perforated tear-off cut line */
+        .cut-divider {
+            margin: 18px 0 14px 0;
+            text-align: center;
+            border-top: 1.5px dashed #94a3b8;
+            position: relative;
+        }
+
+        .cut-divider span {
+            background: #ffffff;
+            padding: 0 10px;
+            position: relative;
+            top: -9px;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+
+        /* Bottom Workshop Shelf / Device Tag Slip */
+        .workshop-tag-slip {
+            background: #f8fafc;
+            border: 1.5px dashed #64748b;
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+
+        .workshop-tag-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 6px;
+        }
+
+        .workshop-tag-title {
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: var(--ink-900);
+        }
+
+        .workshop-tag-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 14px;
+            font-size: 11px;
+        }
+
+        .workshop-tag-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+
+        /* Print media rules */
         @media print {
             @page {
                 size: {{ company.job_ticket_print_page_size_css|default:"A5 portrait" }};
                 margin: {{ company.job_ticket_print_margin_css|default:"6mm" }};
             }
-            .receipt-container {
-                width: {{ company.job_ticket_print_page_width_css|default:"148mm" }};
-                max-width: none;
-                border: none;
-                padding: 8mm;
-                margin: 0;
+
+            body {
+                background: #ffffff !important;
+                padding: 0;
             }
-            .header-classic {
-                grid-template-columns: minmax(80px, 100px) 1fr minmax(118px, 136px);
-                column-gap: 12px;
+
+            .receipt-wrapper {
+                width: 100% !important;
+                max-width: none !important;
+                border: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
             }
+
             .no-print {
                 display: none !important;
             }
         }
+
+        /* Dedicated styles for Thermal 80mm roll */
+        {% if company.job_ticket_print_paper_size == 'thermal_80' %}
+        .receipt-wrapper {
+            max-width: 80mm !important;
+            padding: 6px 8px !important;
+            font-size: 11px !important;
+        }
+        .header-brand {
+            flex-direction: column !important;
+            text-align: center !important;
+        }
+        .receipt-header {
+            flex-direction: column !important;
+            text-align: center !important;
+        }
+        .header-badge-box {
+            text-align: center !important;
+            margin-top: 6px;
+        }
+        .info-grid {
+            grid-template-columns: 1fr !important;
+        }
+        .cut-divider, .workshop-tag-slip {
+            display: none !important;
+        }
+        .tracking-terms-row {
+            flex-direction: column !important;
+            text-align: center !important;
+        }
+        .signature-block {
+            flex-direction: column !important;
+            gap: 14px;
+        }
+        .sign-col {
+            width: 100% !important;
+        }
+        {% endif %}
     </style>
 </head>
 <body>
-    <div class="receipt-container">
-        <div class="header-classic">
-            <div class="logo">
-                {% if company.logo %}
-                    <img src="{{ company.logo.url }}" alt="{{ company.company_name }} Logo">
-                {% elif company.logo_url %}
-                    <img src="{{ company.logo_url }}" alt="{{ company.company_name }} Logo">
+
+    <!-- SCREEN ACTION TOOLBAR (Hidden in Print) -->
+    <div class="screen-toolbar no-print">
+        <div class="toolbar-title">
+            <span>Repair Intake Receipt</span>
+            <span class="format-badge">{{ company.get_job_ticket_print_paper_size_display|default:"A5" }}</span>
+            <span style="font-weight: 400; color: var(--ink-500);">• #{{ job_ticket.job_code }}</span>
+        </div>
+        <div class="toolbar-actions">
+            <button type="button" class="btn-print" onclick="return BotgiPrintHelper.startPrint();">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                    <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+                Print Slip
+            </button>
+            <button type="button" class="btn-close" onclick="window.close();">Close</button>
+        </div>
+    </div>
+
+    <!-- MAIN RECEIPT WRAPPER -->
+    <div class="receipt-wrapper">
+        <!-- CUSTOMER ACKNOWLEDGMENT SLIP -->
+        <div class="receipt-header">
+            <div class="header-brand">
+                {% if company.display_logo_url %}
+                <div class="header-logo">
+                    <img src="{{ company.display_logo_url }}" alt="{{ company.company_name }}">
+                </div>
+                {% endif %}
+                <div class="header-meta">
+                    <h2>{{ company.company_name }}</h2>
+                    {% if company.tagline %}<p>{{ company.tagline }}</p>{% endif %}
+                    <p>{{ company.address }}{% if company.city %}, {{ company.city }}{% endif %}{% if company.pincode %} - {{ company.pincode }}{% endif %}</p>
+                    <p class="contact-line">Ph: {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
+                    {% if company.gstin %}<p>GSTIN: <strong>{{ company.gstin }}</strong></p>{% endif %}
+                </div>
+            </div>
+            <div class="header-badge-box">
+                <div class="ticket-title">Repair Intake Receipt</div>
+                <div class="ticket-code-pill">{{ job_ticket.job_code }}</div>
+            </div>
+        </div>
+
+        <!-- CLIENT & DEVICE DETAILS GRID -->
+        <div class="info-grid">
+            <!-- Client Box -->
+            <div class="card-box">
+                <div class="card-title">Customer Details</div>
+                <div class="data-row">
+                    <span class="data-label">Name:</span>
+                    <span class="data-value">{{ job_ticket.customer_name }}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Phone:</span>
+                    <span class="data-value">{{ job_ticket.customer_phone }}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Handled By:</span>
+                    <span class="data-value">{% if job_ticket.created_by %}{{ job_ticket.created_by.get_full_name|default:job_ticket.created_by.username }}{% else %}Staff{% endif %}</span>
+                </div>
+            </div>
+
+            <!-- Single Device Box (when not batch) -->
+            {% if grouped_jobs|length <= 1 %}
+            <div class="card-box">
+                <div class="card-title">Device Specifications</div>
+                <div class="data-row">
+                    <span class="data-label">Device:</span>
+                    <span class="data-value">{{ job_ticket.device_type }} ({{ job_ticket.device_brand }})</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Model:</span>
+                    <span class="data-value">{{ job_ticket.device_model|default:"-" }}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Serial / IMEI:</span>
+                    <span class="data-value">{{ job_ticket.device_serial|default:"N/A" }}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Intake Date:</span>
+                    <span class="data-value">{{ job_ticket.display_intake_date|date:"d M Y" }}</span>
+                </div>
+                {% if job_ticket.intake_date and job_ticket.created_at and job_ticket.intake_date != job_ticket.created_at.date %}
+                <div class="data-row">
+                    <span class="data-label">Registered:</span>
+                    <span class="data-value">{{ job_ticket.created_at|date:"d M Y, h:i A" }}</span>
+                </div>
                 {% endif %}
             </div>
-            <div class="info">
-                <h3>{{ company.company_name }}</h3>
-                {% if company.tagline %}<p>{{ company.tagline }}</p>{% endif %}
-                <p>Support: {{ company.phone1 }}{% if company.phone2 %} | {{ company.phone2 }}{% endif %}</p>
-            </div>
-            <div class="code">
-                <small>Job Ticket</small>
-                <div class="ticket-badge">{{ job_ticket.job_code }}</div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h4>Client & Job Details</h4>
-            <div class="details-grid">
-                <p><strong>Client:</strong> {{ job_ticket.customer_name }}</p>
-                <p><strong>Date:</strong> {{ job_ticket.created_at|date:"Y-m-d" }}</p>
-                <p><strong>Phone:</strong> {{ job_ticket.customer_phone }}</p>
-                <p><strong>Created By:</strong> {% if job_ticket.created_by %}{{ job_ticket.created_by.username }}{% else %}N/A{% endif %}</p>
-            </div>
-        </div>
-
-        {% if grouped_jobs|length > 1 %}
-            <div class="section">
-                <h4>Devices in this Submission</h4>
-                <table class="devices-table">
-                    <thead>
-                        <tr>
-                            <th>Job Code</th>
-                            <th>Device / Model</th>
-                            <th>Rack</th>
-                            <th>Serial</th>
-                            <th>Reported Issue</th>
-                            <th>Items Kept</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for device in grouped_jobs %}
-                        <tr>
-                            <td>{{ device.job_code }}</td>
-                            <td><strong>{{ device.device_type }}</strong><br>{{ device.device_brand|default:"" }} {{ device.device_model|default:"" }}</td>
-                            <td>{% if device.rack %}<strong>{{ device.rack.name }}</strong>{% if device.rack_column %} - Col {{ device.rack_column }}{% endif %} ({{ device.rack.group }}){% else %}-{% endif %}</td>
-                            <td>{{ device.device_serial|default:"-" }}</td>
-                            <td>{{ device.reported_issue }}</td>
-                            <td>{{ device.additional_items|default:"None" }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="section">
-                <h4>Device Details</h4>
-                <div class="details-grid">
-                    <p><strong>Device:</strong> {{ job_ticket.device_type }} ({{ job_ticket.device_brand }})</p>
-                    <p><strong>Model:</strong> {{ job_ticket.device_model }}</p>
-                    <p><strong>Serial:</strong> {{ job_ticket.device_serial|default:"N/A" }}</p>
-                    <p><strong>Rack Location:</strong> {% if job_ticket.rack %}<strong>{{ job_ticket.rack.name }}</strong>{% if job_ticket.rack_column %} - Col {{ job_ticket.rack_column }}{% endif %} ({{ job_ticket.rack.group }}){% else %}N/A{% endif %}</p>
-                    <p><strong>Estimated Amount:</strong> &#8377;{{ estimated_amount|floatformat:2 }}</p>
+            {% else %}
+            <!-- Batch Summary Box -->
+            <div class="card-box">
+                <div class="card-title">Batch Intake Summary</div>
+                <div class="data-row">
+                    <span class="data-label">Total Units:</span>
+                    <span class="data-value">{{ grouped_jobs|length }} Devices</span>
                 </div>
-                <p style="margin-top:8px;"><strong>Reported Issue:</strong> {{ job_ticket.reported_issue }}</p>
-                <p><strong>Items Kept:</strong> {{ job_ticket.additional_items|default:"None" }}</p>
+                <div class="data-row">
+                    <span class="data-label">Intake Date:</span>
+                    <span class="data-value">{{ job_ticket.display_intake_date|date:"d M Y" }}</span>
+                </div>
+                {% if job_ticket.intake_date and job_ticket.created_at and job_ticket.intake_date != job_ticket.created_at.date %}
+                <div class="data-row">
+                    <span class="data-label">Registered:</span>
+                    <span class="data-value">{{ job_ticket.created_at|date:"d M Y, h:i A" }}</span>
+                </div>
+                {% endif %}
             </div>
+            {% endif %}
+        </div>
+
+        <!-- MULTI-DEVICE BATCH TABLE (If grouped) -->
+        {% if grouped_jobs|length > 1 %}
+        <table class="batch-table">
+            <thead>
+                <tr>
+                    <th>Job Code</th>
+                    <th>Device &amp; Model</th>
+                    <th>Serial Number</th>
+                    <th>Reported Issue</th>
+                    <th>Accessories</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dev in grouped_jobs %}
+                <tr>
+                    <td><strong>{{ dev.job_code }}</strong></td>
+                    <td>{{ dev.device_type }}<br><small>{{ dev.device_brand }} {{ dev.device_model }}</small></td>
+                    <td>{{ dev.device_serial|default:"-" }}</td>
+                    <td>{{ dev.reported_issue }}</td>
+                    <td>{{ dev.additional_items|default:"None" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% endif %}
 
-        <div class="section">
-            <p><strong>Estimated Delivery Date:</strong> {{ estimated_delivery|date:"Y-m-d" }}</p>
+        <!-- REPORTED ISSUE & ACCESSORIES -->
+        {% if grouped_jobs|length <= 1 %}
+        <div class="issue-container">
+            <div class="issue-title">Reported Fault / Customer Remarks</div>
+            <p class="issue-text">{{ job_ticket.reported_issue }}</p>
+            {% if job_ticket.additional_items %}
+            <p class="accessories-text"><strong>Accessories Received:</strong> {{ job_ticket.additional_items }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- PRE-CHECKLIST CHIPS (If recorded) -->
+        {% if checklist_summary %}
+        <div class="checklist-box">
+            <div class="checklist-title">Initial Pre-Inspection Checks</div>
+            <div class="checklist-grid">
+                {% for check in checklist_summary %}
+                <div class="checklist-chip">
+                    <strong>{{ check.label }}:</strong> {{ check.value }}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ESTIMATE & ESTIMATE DATE BANNER -->
+        <div class="estimate-banner">
+            <div class="estimate-col">
+                <span class="data-label">Estimated Repair Cost:</span>
+                <strong>&#8377; {{ estimated_amount|floatformat:2 }}</strong>
+            </div>
+            <div class="estimate-col" style="text-align: right;">
+                <span class="data-label">Estimate Date:</span>
+                <strong>{{ estimated_delivery|date:"D, d M Y" }}</strong>
+            </div>
         </div>
 
-        <div class="section qr-box">
-            <h4>Track Service Status</h4>
-            <p>Scan to check live job status and submit feedback after completion.</p>
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ request.scheme }}://{{ request.get_host }}{% url 'qr_access' job_ticket.job_code %}" alt="QR Code">
-            <p style="font-size: 0.8em; margin-top: 6px;">{{ request.get_host }}/qr/{{ job_ticket.job_code }}/</p>
+        <!-- TRACKING & TERMS ROW -->
+        <div class="tracking-terms-row">
+            <div class="qr-column">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ request.scheme }}://{{ request.get_host }}{% url 'qr_access' job_ticket.job_code %}"
+                     alt="Track QR"
+                     onerror="this.style.display='none'; document.getElementById('qr-fallback-box').style.display='block';">
+                <div id="qr-fallback-box" style="display:none; padding: 4px; font-size: 9px; font-weight:700; border: 1px dashed #cbd5e1; border-radius: 4px;">
+                    Track Online:<br>{{ job_ticket.job_code }}
+                </div>
+                <div class="qr-label">Scan to Track Live</div>
+            </div>
+            <div class="terms-column" id="section-terms">
+                <strong>Intake Terms &amp; Conditions:</strong>
+                {{ company.terms_conditions|default:"1. All repairs carry limited workshop warranty. Physical and liquid damages void warranty.\n2. Customers are responsible for backing up personal data prior to service.\n3. Goods uncollected within 30 days of completion notification may be recycled."|linebreaksbr }}
+                <div style="margin-top: 4px; font-weight: 600;">
+                    Live tracking URL: {{ request.get_host }}/qr/{{ job_ticket.job_code }}/
+                </div>
+            </div>
         </div>
 
-        <div class="terms-section">
-            <h4><u>Terms and Conditions</u></h4>
-            <p>{{ company.terms_conditions|default:"Repair terms apply. Data backup is customer responsibility."|linebreaksbr }}</p>
+        <!-- DUAL SIGNATURE ACKNOWLEDGMENT -->
+        {% if company.include_ticket_signatures %}
+        <div class="signature-block" id="section-signatures">
+            <div class="sign-col">
+                <div class="sign-line"></div>
+                <div class="sign-title">Customer Signature</div>
+                <div class="sign-desc">I confirm the reported faults, accessories &amp; terms above</div>
+            </div>
+            <div class="sign-col">
+                <div class="sign-line"></div>
+                <div class="sign-title">Authorized Store In-Charge</div>
+                <div class="sign-desc">{{ company.company_name }} Seal &amp; Signature</div>
+            </div>
         </div>
+        {% endif %}
+
+        <!-- PERFORATED TEAR-OFF STRIP & WORKSHOP TAG (OPTIONAL) -->
+        {% if company.include_workshop_device_tag %}
+        <div id="section-workshop-tag">
+            <div class="cut-divider">
+                <span>&#9986; Tear-off Strip • Workshop Device Tag &#9986;</span>
+            </div>
+
+            {% for dev in grouped_jobs %}
+            <div class="workshop-tag-slip" {% if not forloop.first %}style="margin-top: 8px;"{% endif %}>
+                <div class="workshop-tag-header">
+                    <div>
+                        <span class="workshop-tag-title">Workshop Device Tag</span> •
+                        <strong style="font-size: 13px; font-family: monospace;">{{ dev.job_code }}</strong>
+                    </div>
+                    <div>
+                        <span style="font-size: 10px; color: var(--ink-500); font-weight: 600;">{{ dev.display_intake_date|date:"d M Y" }}</span>
+                    </div>
+                </div>
+                <div class="workshop-tag-grid">
+                    <div class="workshop-tag-row">
+                        <span class="data-label">Device:</span>
+                        <strong class="data-value">{{ dev.device_type }} {{ dev.device_brand }} {{ dev.device_model }}</strong>
+                    </div>
+                    <div class="workshop-tag-row">
+                        <span class="data-label">Customer:</span>
+                        <span class="data-value">{{ dev.customer_name }} ({{ dev.customer_phone }})</span>
+                    </div>
+                    <div class="workshop-tag-row">
+                        <span class="data-label">Serial:</span>
+                        <span class="data-value">{{ dev.device_serial|default:"None" }}</span>
+                    </div>
+                </div>
+                <div style="margin-top: 6px; font-size: 11px; background: #fff; padding: 4px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                    <strong style="color: #78350f;">Fault:</strong> {{ dev.reported_issue }}
+                    {% if dev.additional_items %}<span style="color: #64748b;"> • Acc: {{ dev.additional_items }}</span>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 
-    <div class="text-center no-print" style="margin: 14px 0;">
-        <button type="button" onclick="return BotgiPrintHelper.startPrint();" style="padding: 10px 20px; font-size: 15px; cursor: pointer;">Print Receipt</button>
+    <!-- PRINT ACTION BAR (HIDDEN IN PRINT) -->
+    <div class="text-center no-print" style="margin: 20px 0; text-align: center;">
+        <button type="button"
+                onclick="return BotgiPrintHelper.startPrint();"
+                style="background: #0f172a; color: #fff; border: none; padding: 12px 28px; font-size: 15px; font-weight: 700; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+            Print Job Ticket Receipt
+        </button>
     </div>
+
     {% include "job_tickets/includes/print_flow_script.html" with autoprint=autoprint %}
 </body>
 </html>

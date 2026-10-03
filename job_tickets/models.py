@@ -1,4 +1,4 @@
-# job_tickets/models.py
+import datetime
 from decimal import Decimal
 
 from django.db import models, transaction
@@ -727,6 +727,14 @@ class InventoryCreditPayment(models.Model):
     direction = models.CharField(max_length=20, choices=DIRECTION_CHOICES)
     payment_date = models.DateField(default=timezone.localdate)
     payment_method = models.CharField(max_length=20, choices=METHOD_CHOICES, default=METHOD_CASH)
+    financial_account = models.ForeignKey(
+        'FinancialAccount',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='inventory_credit_payments',
+        db_index=True,
+    )
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     balance_before = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     balance_after = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -1156,6 +1164,7 @@ class JobTicket(models.Model):
     device_brand = models.CharField(max_length=100, blank=True)
     device_model = models.CharField(max_length=100, blank=True)
     device_serial = models.CharField(max_length=100, blank=True)
+    device_password = models.CharField(max_length=100, blank=True, help_text="Device PIN, password, or pattern for technician access.")
     reported_issue = models.TextField()
     additional_items = models.TextField(blank=True, help_text="e.g., Laptop bag, Charger, Mouse")
     rack = models.ForeignKey(
@@ -1180,6 +1189,12 @@ class JobTicket(models.Model):
     # Indicates the job was newly assigned to a technician and awaiting acknowledgement
     is_new_assignment = models.BooleanField(default=False, help_text="True when job is newly assigned and awaiting technician acknowledgement.")
 
+    intake_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Date when device was physically received at the shop.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     closed_at = models.DateTimeField(null=True, blank=True)
@@ -1243,6 +1258,14 @@ class JobTicket(models.Model):
         max_length=100,
         blank=True,
         help_text="Transaction ID, UPI reference, or check number.",
+    )
+    financial_account = models.ForeignKey(
+        'FinancialAccount',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='settled_jobs',
+        help_text="Financial account (Cash drawer, Bank, UPI) where settlement payment was deposited.",
     )
     payment_date = models.DateTimeField(
         null=True,
@@ -1367,6 +1390,22 @@ class JobTicket(models.Model):
     def balance_due(self):
         paid = self.amount_paid or Decimal('0.00')
         return max(Decimal('0.00'), self.total_cost - paid)
+
+    @property
+    def display_intake_date(self):
+        if self.intake_date:
+            return self.intake_date
+        if self.created_at:
+            return timezone.localtime(self.created_at).date()
+        return timezone.localdate()
+
+    def save(self, *args, **kwargs):
+        if not self.intake_date:
+            if self.created_at:
+                self.intake_date = timezone.localtime(self.created_at).date()
+            else:
+                self.intake_date = timezone.localdate()
+        super().save(*args, **kwargs)
 
 
 
@@ -1688,6 +1727,7 @@ class JobTicketLog(models.Model):
         ('SERVICE', 'Service Log Added/Updated'),
         ('BILLING', 'Billing Info Updated'),
         ('CLOSED', 'Job Closed'),
+        ('DETAILS', 'Customer & Device Details Updated'),
     ]
 
     job_ticket = models.ForeignKey(JobTicket, on_delete=models.CASCADE, related_name='logs')
@@ -1772,6 +1812,12 @@ class SpecializedService(models.Model):
     # Tracking
     sent_date = models.DateTimeField(null=True, blank=True)
     returned_date = models.DateTimeField(null=True, blank=True)
+    vendor_bill_number = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text="Vendor invoice or bill number.",
+    )
     notes = models.TextField(blank=True, help_text="Internal notes about this specialized service.")
 
     @property
@@ -1811,6 +1857,13 @@ class VendorPayment(models.Model):
     )
     payment_date = models.DateField(default=timezone.localdate)
     payment_method = models.CharField(max_length=20, choices=METHOD_CHOICES, default=METHOD_CASH)
+    financial_account = models.ForeignKey(
+        'FinancialAccount',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='vendor_payments',
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     balance_before = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     balance_after = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -1963,6 +2016,32 @@ class CompanyProfile(models.Model):
     sales_invoice_next_number = models.PositiveIntegerField(
         default=1,
         help_text="Next sequence number to use for auto-generated sales invoices.",
+    )
+    include_workshop_device_tag = models.BooleanField(
+        default=True,
+        help_text="Include tear-off workshop device tag on job ticket intake receipts.",
+    )
+    include_ticket_signatures = models.BooleanField(
+        default=True,
+        help_text="Include signature section on job intake receipts.",
+    )
+    include_bill_signatures = models.BooleanField(
+        default=True,
+        help_text="Include signature section on payment bills and invoices.",
+    )
+    include_bill_payment_details = models.BooleanField(
+        default=True,
+        help_text="Include payment settlement and bank details section on bills.",
+    )
+    TECHNICIAN_DISPLAY_CHOICES = [
+        ('id', 'Technician ID Number'),
+        ('name', 'Technician Name'),
+    ]
+    technician_display_format = models.CharField(
+        max_length=10,
+        choices=TECHNICIAN_DISPLAY_CHOICES,
+        default='id',
+        help_text="Display technician by ID number or name under 'Serviced By' on printed bills.",
     )
     
     # GST Settings
@@ -2178,6 +2257,24 @@ class WhatsAppIntegrationSettings(models.Model):
     notify_on_completed = models.BooleanField(default=True)
     notify_on_delivered = models.BooleanField(default=True)
     notify_on_feedback = models.BooleanField(default=True)
+    notify_daily_report = models.BooleanField(
+        default=False,
+        help_text="Automatically send daily business summary report via WhatsApp.",
+    )
+    daily_report_phone = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="Recipient phone number(s) for daily report (comma-separated).",
+    )
+    daily_report_time = models.TimeField(
+        default=datetime.time(21, 0),
+        help_text="Scheduled time to dispatch automatic daily report (e.g. 21:00 for 9:00 PM).",
+    )
+    daily_report_last_sent_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Last date for which the automatic daily report was dispatched.",
+    )
     created_template_name = models.CharField(
         max_length=100,
         blank=True,
@@ -2243,6 +2340,27 @@ class WhatsAppIntegrationSettings(models.Model):
         ),
         blank=True,
     )
+    daily_report_template = models.TextField(
+        default=(
+            "📊 *DAILY BUSINESS SUMMARY - {company_name}*\n"
+            "📅 Date: {date} | Generated: {generated_time}\n\n"
+            "🔧 *Operational Workload:*\n"
+            "• 📥 New Jobs Received: {tickets_created_count}\n"
+            "• ⚙️ Jobs Completed: {tickets_completed_count}\n"
+            "• 🚚 Jobs Delivered / Closed: {tickets_delivered_count}\n"
+            "• ⏳ Active Jobs Backlog: {active_tickets_count}\n\n"
+            "💰 *Financials & Collections:*\n"
+            "• 💵 Cash Receipts: ₹{cash_inflows}\n"
+            "• 📱 Bank & UPI Receipts: ₹{bank_inflows}\n"
+            "• 💳 Total Revenue: ₹{total_inflows}\n"
+            "• 📤 Day Expenses Paid: ₹{total_expenses}\n\n"
+            "🏦 *Cash Drawer Reconciliation:*\n"
+            "• 🪙 Cash in Drawer: ₹{cash_drawer_balance}\n"
+            "• 🌐 Total Liquid Position: ₹{total_liquid_balance}"
+        ),
+        blank=True,
+        help_text="Template used for the daily business summary WhatsApp message.",
+    )
     created_pdf_caption_template = models.TextField(
         default="Job Ticket {job_code}",
         blank=True,
@@ -2273,6 +2391,7 @@ class WhatsAppNotificationLog(models.Model):
         ('delivered', 'Delivered'),
         ('estimate', 'Estimate'),
         ('feedback', 'Feedback'),
+        ('daily_report', 'Daily Report'),
         ('manual', 'Manual'),
     ]
 
@@ -2288,6 +2407,8 @@ class WhatsAppNotificationLog(models.Model):
         JobTicket,
         on_delete=models.CASCADE,
         related_name='whatsapp_notifications',
+        null=True,
+        blank=True,
     )
     event_type = models.CharField(max_length=20, choices=EVENT_CHOICES)
     target_phone = models.CharField(max_length=20)
@@ -2300,7 +2421,8 @@ class WhatsAppNotificationLog(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.job_ticket.job_code} - {self.event_type} - {'ok' if self.was_successful else 'failed'}"
+        prefix = self.job_ticket.job_code if self.job_ticket else 'Daily Report'
+        return f"{prefix} - {self.event_type} - {'ok' if self.was_successful else 'failed'}"
 
 
 class MessageQueue(models.Model):
@@ -2327,6 +2449,7 @@ class MessageQueue(models.Model):
     EVENT_DELIVERED = 'delivered'
     EVENT_ESTIMATE = 'estimate'
     EVENT_FEEDBACK = 'feedback'
+    EVENT_DAILY_REPORT = 'daily_report'
     EVENT_MANUAL = 'manual'
     EVENT_CHOICES = [
         (EVENT_CREATED, 'Created'),
@@ -2334,6 +2457,7 @@ class MessageQueue(models.Model):
         (EVENT_DELIVERED, 'Delivered'),
         (EVENT_ESTIMATE, 'Estimate'),
         (EVENT_FEEDBACK, 'Feedback'),
+        (EVENT_DAILY_REPORT, 'Daily Report'),
         (EVENT_MANUAL, 'Manual'),
     ]
 
@@ -2528,6 +2652,14 @@ class Expense(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default=CATEGORY_OTHER, db_index=True)
     payment_mode = models.CharField(max_length=30, choices=PAYMENT_MODE_CHOICES, default=PAYMENT_MODE_CASH)
+    financial_account = models.ForeignKey(
+        'FinancialAccount',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expenses',
+        help_text="Financial account from which this expense was paid.",
+    )
     expense_date = models.DateField(default=timezone.localdate, db_index=True)
 
     # Optional Link to Job Ticket
@@ -2573,9 +2705,420 @@ class Expense(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self._state.adding or not self.pk
+        if self.financial_account:
+            if self.financial_account.account_type == 'cash':
+                self.payment_mode = self.PAYMENT_MODE_CASH
+            elif self.financial_account.account_type == 'upi_wallet':
+                self.payment_mode = self.PAYMENT_MODE_UPI
+            elif self.financial_account.account_type == 'bank':
+                if self.payment_mode not in [self.PAYMENT_MODE_BANK, self.PAYMENT_MODE_CARD]:
+                    self.payment_mode = self.PAYMENT_MODE_BANK
         super().save(*args, **kwargs)
         if is_new and not self.expense_number:
             date_prefix = (self.expense_date or timezone.localdate()).strftime('%Y%m')
             self.expense_number = f"EXP-{date_prefix}-{self.id:04d}"
             Expense.objects.filter(pk=self.pk).update(expense_number=self.expense_number)
+
+
+class FinancialAccount(models.Model):
+    """
+    Financial Account representing liquid cash drawers, bank accounts, or digital/UPI accounts.
+    Workspace-scoped with live balance tracking, transaction ledger, and self-transfer support.
+    """
+    ACCOUNT_TYPE_CASH = 'cash'
+    ACCOUNT_TYPE_BANK = 'bank'
+    ACCOUNT_TYPE_UPI = 'upi_wallet'
+
+    ACCOUNT_TYPE_CHOICES = [
+        (ACCOUNT_TYPE_CASH, 'Cash Drawer / In-Hand'),
+        (ACCOUNT_TYPE_BANK, 'Bank Account'),
+        (ACCOUNT_TYPE_UPI, 'UPI QR / Digital Wallet'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.CASCADE,
+        related_name='financial_accounts',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    name = models.CharField(max_length=150, help_text="e.g. Cash in Hand, Federal Bank - Pattambi, Petty Cash")
+    account_type = models.CharField(
+        max_length=20,
+        choices=ACCOUNT_TYPE_CHOICES,
+        default=ACCOUNT_TYPE_CASH,
+        db_index=True,
+    )
+
+    # Bank Details (used when account_type == 'bank' or 'upi_wallet')
+    bank_name = models.CharField(max_length=150, blank=True)
+    account_number = models.CharField(max_length=50, blank=True)
+    ifsc_code = models.CharField(max_length=20, blank=True)
+    branch = models.CharField(max_length=150, blank=True)
+    upi_id = models.CharField(max_length=100, blank=True, help_text="UPI ID or VPA for payments")
+
+    # Balances
+    opening_balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    current_balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+
+    # Default flags
+    is_default_cash = models.BooleanField(
+        default=False,
+        help_text="Primary account for cash collections and cash expenses.",
+    )
+    is_default_bank = models.BooleanField(
+        default=False,
+        help_text="Primary account for UPI/bank collections, QR codes, and bank transfers.",
+    )
+
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default_cash', '-is_default_bank', 'name']
+        indexes = [
+            models.Index(fields=['workspace', 'account_type']),
+            models.Index(fields=['workspace', 'is_active']),
+        ]
+
+    def __str__(self):
+        type_label = dict(self.ACCOUNT_TYPE_CHOICES).get(self.account_type, self.account_type)
+        return f"{self.name} ({type_label}) - ₹{self.current_balance:,.2f}"
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding or not self.pk
+        if is_new and self.current_balance == Decimal('0.00') and self.opening_balance != Decimal('0.00'):
+            self.current_balance = self.opening_balance
+
+        super().save(*args, **kwargs)
+
+        # Enforce single default cash and single default bank per workspace
+        if self.is_default_cash and self.workspace:
+            FinancialAccount.objects.filter(
+                workspace=self.workspace,
+                is_default_cash=True,
+            ).exclude(pk=self.pk).update(is_default_cash=False)
+
+        if self.is_default_bank and self.workspace:
+            FinancialAccount.objects.filter(
+                workspace=self.workspace,
+                is_default_bank=True,
+            ).exclude(pk=self.pk).update(is_default_bank=False)
+
+            # Sync primary bank details to CompanyProfile for customer invoice display
+            profile = CompanyProfile.objects.filter(workspace=self.workspace).first()
+            if profile:
+                fields_to_update = []
+                if self.bank_name:
+                    profile.bank_name = self.bank_name
+                    fields_to_update.append('bank_name')
+                if self.account_number:
+                    profile.account_number = self.account_number
+                    fields_to_update.append('account_number')
+                if self.ifsc_code:
+                    profile.ifsc_code = self.ifsc_code
+                    fields_to_update.append('ifsc_code')
+                if self.branch:
+                    profile.branch = self.branch
+                    fields_to_update.append('branch')
+                if self.upi_id:
+                    profile.upi_id = self.upi_id
+                    fields_to_update.append('upi_id')
+                if fields_to_update:
+                    profile.save(update_fields=fields_to_update)
+
+    def deposit(self, amount, description, reference_no='', transaction_date=None, job_ticket=None, inventory_credit_payment=None, user=None, txn_type='inflow'):
+        """Deposit money into account and create ledger record atomically."""
+        from django.db import transaction
+        amount_dec = Decimal(str(amount))
+        if amount_dec <= Decimal('0.00'):
+            return None
+
+        with transaction.atomic():
+            acc = FinancialAccount.objects.select_for_update().get(pk=self.pk)
+            acc.current_balance += amount_dec
+            acc.save(update_fields=['current_balance', 'updated_at'])
+            self.current_balance = acc.current_balance
+
+            txn = AccountTransaction.objects.create(
+                account=acc,
+                transaction_type=txn_type,
+                amount=amount_dec,
+                balance_after=acc.current_balance,
+                transaction_date=transaction_date or timezone.localdate(),
+                description=description,
+                reference_no=reference_no or '',
+                job_ticket=job_ticket,
+                inventory_credit_payment=inventory_credit_payment,
+                created_by=user,
+            )
+            return txn
+
+    def withdraw(self, amount, description, reference_no='', transaction_date=None, expense=None, vendor_payment=None, inventory_credit_payment=None, job_ticket=None, user=None, txn_type='outflow'):
+        """Withdraw money from account and create ledger record atomically."""
+        from django.db import transaction
+        amount_dec = Decimal(str(amount))
+        if amount_dec <= Decimal('0.00'):
+            return None
+
+        with transaction.atomic():
+            acc = FinancialAccount.objects.select_for_update().get(pk=self.pk)
+            acc.current_balance -= amount_dec
+            acc.save(update_fields=['current_balance', 'updated_at'])
+            self.current_balance = acc.current_balance
+
+            txn = AccountTransaction.objects.create(
+                account=acc,
+                transaction_type=txn_type,
+                amount=amount_dec,
+                balance_after=acc.current_balance,
+                transaction_date=transaction_date or timezone.localdate(),
+                description=description,
+                reference_no=reference_no or '',
+                job_ticket=job_ticket,
+                expense=expense,
+                vendor_payment=vendor_payment,
+                inventory_credit_payment=inventory_credit_payment,
+                created_by=user,
+            )
+            return txn
+
+    @classmethod
+    def transfer(cls, from_account, to_account, amount, reference_no='', notes='', description='', transaction_date=None, user=None):
+        """
+        Perform an internal contra self-transfer between two accounts atomically.
+        Creates dual counterpart AccountTransaction records.
+        """
+        from django.db import transaction
+        amount_dec = Decimal(str(amount))
+        if amount_dec <= Decimal('0.00'):
+            raise ValueError("Transfer amount must be greater than zero.")
+        if from_account.pk == to_account.pk:
+            raise ValueError("Cannot transfer to the same account.")
+        if from_account.workspace_id != to_account.workspace_id:
+            raise ValueError("Accounts must belong to the same workspace.")
+
+        txn_date = transaction_date or timezone.localdate()
+
+        with transaction.atomic():
+            first_id, second_id = sorted([from_account.pk, to_account.pk])
+            locked = {acc.pk: acc for acc in cls.objects.select_for_update().filter(pk__in=[first_id, second_id])}
+            from_acc = locked[from_account.pk]
+            to_acc = locked[to_account.pk]
+
+            from_acc.current_balance -= amount_dec
+            from_acc.save(update_fields=['current_balance', 'updated_at'])
+
+            to_acc.current_balance += amount_dec
+            to_acc.save(update_fields=['current_balance', 'updated_at'])
+
+            custom_desc = description or notes
+            desc_out = custom_desc or f"Self-Transfer to {to_acc.name}"
+            desc_in = custom_desc or f"Self-Transfer from {from_acc.name}"
+
+            txn_out = AccountTransaction.objects.create(
+                account=from_acc,
+                transaction_type=AccountTransaction.TYPE_TRANSFER_OUT,
+                amount=amount_dec,
+                balance_after=from_acc.current_balance,
+                transaction_date=txn_date,
+                description=desc_out,
+                reference_no=reference_no or '',
+                created_by=user,
+            )
+
+            txn_in = AccountTransaction.objects.create(
+                account=to_acc,
+                transaction_type=AccountTransaction.TYPE_TRANSFER_IN,
+                amount=amount_dec,
+                balance_after=to_acc.current_balance,
+                transaction_date=txn_date,
+                description=desc_in,
+                reference_no=reference_no or '',
+                transfer_counterpart=txn_out,
+                created_by=user,
+            )
+
+            txn_out.transfer_counterpart = txn_in
+            txn_out.save(update_fields=['transfer_counterpart'])
+
+            from_account.current_balance = from_acc.current_balance
+            to_account.current_balance = to_acc.current_balance
+
+            return txn_out, txn_in
+
+    @classmethod
+    def get_default_cash_account(cls, workspace):
+        if not workspace:
+            return None
+        acc = cls.objects.filter(workspace=workspace, is_active=True, is_default_cash=True).first()
+        if not acc:
+            acc = cls.objects.filter(workspace=workspace, is_active=True, account_type=cls.ACCOUNT_TYPE_CASH).first()
+        if not acc:
+            cls.ensure_default_accounts(workspace)
+            acc = cls.objects.filter(workspace=workspace, is_active=True, is_default_cash=True).first()
+        return acc
+
+    @classmethod
+    def get_default_bank_account(cls, workspace):
+        if not workspace:
+            return None
+        acc = cls.objects.filter(workspace=workspace, is_active=True, is_default_bank=True).first()
+        if not acc:
+            acc = cls.objects.filter(
+                workspace=workspace,
+                is_active=True,
+                account_type__in=[cls.ACCOUNT_TYPE_BANK, cls.ACCOUNT_TYPE_UPI],
+            ).first()
+        if not acc:
+            cls.ensure_default_accounts(workspace)
+            acc = cls.objects.filter(workspace=workspace, is_active=True, is_default_bank=True).first()
+        return acc
+
+    @classmethod
+    def get_default_for_payment_method(cls, workspace, payment_method):
+        if not workspace:
+            return None
+        pm = (payment_method or '').lower().strip()
+        if pm in ['cash', 'petty_cash']:
+            return cls.get_default_cash_account(workspace)
+        return cls.get_default_bank_account(workspace) or cls.get_default_cash_account(workspace)
+
+    @classmethod
+    def ensure_default_accounts(cls, workspace):
+        """Ensure standard Cash in Hand and Bank accounts exist for a workspace."""
+        if not workspace:
+            return
+        # Cash account
+        has_cash = cls.objects.filter(workspace=workspace, account_type=cls.ACCOUNT_TYPE_CASH).exists()
+        if not has_cash:
+            cls.objects.create(
+                workspace=workspace,
+                name="Cash in Hand",
+                account_type=cls.ACCOUNT_TYPE_CASH,
+                opening_balance=Decimal('0.00'),
+                current_balance=Decimal('0.00'),
+                is_default_cash=True,
+                is_active=True,
+            )
+
+        # Bank account
+        has_bank = cls.objects.filter(workspace=workspace, account_type__in=[cls.ACCOUNT_TYPE_BANK, cls.ACCOUNT_TYPE_UPI]).exists()
+        if not has_bank:
+            profile = CompanyProfile.objects.filter(workspace=workspace).first()
+            bank_name = (profile.bank_name if profile and profile.bank_name else "Federal Bank").strip()
+            cls.objects.create(
+                workspace=workspace,
+                name=f"{bank_name} - Pattambi" if bank_name == "Federal Bank" else bank_name,
+                account_type=cls.ACCOUNT_TYPE_BANK,
+                bank_name=bank_name,
+                account_number=profile.account_number if profile and profile.account_number else "99980108152444",
+                ifsc_code=profile.ifsc_code if profile and profile.ifsc_code else "FDRL0001412",
+                branch=profile.branch if profile and profile.branch else "Pattambi",
+                upi_id=profile.upi_id if profile and profile.upi_id else "anasrawuthar@okaxis",
+                opening_balance=Decimal('0.00'),
+                current_balance=Decimal('0.00'),
+                is_default_bank=True,
+                is_active=True,
+            )
+
+
+class AccountTransaction(models.Model):
+    """
+    Detailed audit transaction ledger for a FinancialAccount.
+    Tracks inflows, outflows, and self-transfer movements.
+    """
+    TYPE_INFLOW = 'inflow'
+    TYPE_OUTFLOW = 'outflow'
+    TYPE_TRANSFER_IN = 'transfer_in'
+    TYPE_TRANSFER_OUT = 'transfer_out'
+
+    TRANSACTION_TYPE_CHOICES = [
+        (TYPE_INFLOW, 'Inflow (Receipt)'),
+        (TYPE_OUTFLOW, 'Outflow (Expense/Payment)'),
+        (TYPE_TRANSFER_IN, 'Self Transfer (Received)'),
+        (TYPE_TRANSFER_OUT, 'Self Transfer (Sent)'),
+    ]
+
+    account = models.ForeignKey(
+        FinancialAccount,
+        on_delete=models.CASCADE,
+        related_name='transactions',
+        db_index=True,
+    )
+    transaction_type = models.CharField(
+        max_length=20,
+        choices=TRANSACTION_TYPE_CHOICES,
+        db_index=True,
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    transaction_date = models.DateField(default=timezone.localdate, db_index=True)
+    description = models.CharField(max_length=255)
+    reference_no = models.CharField(max_length=100, blank=True)
+
+    job_ticket = models.ForeignKey(
+        'JobTicket',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='account_transactions',
+        db_index=True,
+    )
+    expense = models.ForeignKey(
+        'Expense',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='account_transactions',
+        db_index=True,
+    )
+    vendor_payment = models.ForeignKey(
+        'VendorPayment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='account_transactions',
+        db_index=True,
+    )
+    inventory_credit_payment = models.ForeignKey(
+        'InventoryCreditPayment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='account_transactions',
+        db_index=True,
+    )
+    transfer_counterpart = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='counterparts',
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_account_transactions',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-transaction_date', '-id']
+        indexes = [
+            models.Index(fields=['account', 'transaction_date']),
+            models.Index(fields=['transaction_type', 'transaction_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.transaction_date} [{self.get_transaction_type_display()}] {self.account.name}: ₹{self.amount} (Bal: ₹{self.balance_after})"
+
 

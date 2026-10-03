@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
 import '../services/auth_service.dart';
@@ -23,115 +24,81 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  late String _selectedMode;
-  late TextEditingController _customUrlController;
+  final _passwordFocusNode = FocusNode();
 
+  bool _obscurePassword = true;
+  bool _rememberUsername = true;
   bool _isSubmitting = false;
-  bool _isSavingServer = false;
   String? _errorText;
+
+  static const String _rememberUsernameKey = 'saved_login_username';
 
   @override
   void initState() {
     super.initState();
-    _selectedMode = AppConfig.mode;
-    _customUrlController = TextEditingController(text: AppConfig.customBaseUrl);
+    _loadSavedUsername();
   }
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    _customUrlController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
-  String _previewBaseUrl() {
-    if (_selectedMode == AppConfig.customMode) {
-      final normalized = AppConfig.normalizeBaseUrl(_customUrlController.text);
-      return normalized.isEmpty ? 'Enter custom URL' : normalized;
-    }
-    if (_selectedMode == AppConfig.prodMode) {
-      return AppConfig.prodBaseUrl;
-    }
-    return AppConfig.devBaseUrl;
+  Future<void> _loadSavedUsername() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUser = prefs.getString(_rememberUsernameKey) ?? '';
+      if (savedUser.isNotEmpty && mounted) {
+        setState(() {
+          _usernameController.text = savedUser;
+          _rememberUsername = true;
+        });
+      }
+    } catch (_) {}
   }
 
-  Future<bool> _applyServerSettings({required bool showFeedback}) async {
-    if (_selectedMode == AppConfig.customMode) {
-      final normalized = AppConfig.normalizeBaseUrl(_customUrlController.text);
-      if (normalized.isEmpty) {
-        setState(() {
-          _errorText = 'Enter a valid custom server URL.';
-        });
-        return false;
-      }
-    }
-
-    setState(() {
-      _isSavingServer = true;
-      _errorText = null;
-    });
-
+  Future<void> _saveUsernamePreference(String username) async {
     try {
-      await AppConfig.setMode(_selectedMode);
-      if (_selectedMode == AppConfig.customMode) {
-        await AppConfig.setCustomBaseUrl(_customUrlController.text);
+      final prefs = await SharedPreferences.getInstance();
+      if (_rememberUsername && username.isNotEmpty) {
+        await prefs.setString(_rememberUsernameKey, username);
+      } else {
+        await prefs.remove(_rememberUsernameKey);
       }
-
-      if (!mounted) {
-        return false;
-      }
-
-      setState(() {
-        _isSavingServer = false;
-      });
-
-      if (showFeedback) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Server set to ${AppConfig.baseUrl}')),
-        );
-      }
-      return true;
-    } catch (_) {
-      if (!mounted) {
-        return false;
-      }
-      setState(() {
-        _isSavingServer = false;
-        _errorText = 'Failed to save server settings.';
-      });
-      return false;
-    }
+    } catch (_) {}
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate() || _isSubmitting) {
       return;
     }
 
-    final serverReady = await _applyServerSettings(showFeedback: false);
-    if (!serverReady) {
-      return;
-    }
+    // Dismiss keyboard
+    FocusScope.of(context).unfocus();
 
     setState(() {
       _isSubmitting = true;
       _errorText = null;
     });
 
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+
     try {
       await widget.authService.login(
-        username: _usernameController.text.trim(),
-        password: _passwordController.text,
+        username: username,
+        password: password,
       );
-      if (!mounted) {
-        return;
-      }
+
+      await _saveUsernamePreference(username);
+
+      if (!mounted) return;
       widget.onLoginSuccess();
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _errorText = error.toString().replaceFirst('Exception: ', '');
       });
@@ -144,197 +111,654 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _openServerSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ServerSettingsSheet(),
+    ).then((_) {
+      if (mounted) {
+        setState(() {}); // refresh active server label
+      }
+    });
+  }
+
+  String _getServerBadgeLabel() {
+    final clean = AppConfig.baseUrl
+        .replaceFirst('http://', '')
+        .replaceFirst('https://', '');
+    return clean.isEmpty ? 'Set Server' : clean;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              AppColors.primarySoft,
-              AppColors.background,
-              Color(0xFFEFF2FF),
+              Color(0xFFE6F4F5),
+              Color(0xFFF3F7FA),
+              Color(0xFFEEF3F8),
             ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: AppSurfaceCard(
-                  padding: const EdgeInsets.all(22),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            children: [
+              // Top Bar with Discrete Server Switcher
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 16, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.support_agent_rounded,
-                            color: Colors.white,
-                            size: 28,
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF10B981),
+                            shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(width: 6),
                         Text(
-                          'GI HOSTINGS',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Service Billing Mobile Login',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Server Settings',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            ChoiceChip(
-                              label: const Text('Dev'),
-                              selected: _selectedMode == AppConfig.devMode,
-                              onSelected: (_) {
-                                setState(() {
-                                  _selectedMode = AppConfig.devMode;
-                                });
-                              },
-                            ),
-                            ChoiceChip(
-                              label: const Text('Prod'),
-                              selected: _selectedMode == AppConfig.prodMode,
-                              onSelected: (_) {
-                                setState(() {
-                                  _selectedMode = AppConfig.prodMode;
-                                });
-                              },
-                            ),
-                            ChoiceChip(
-                              label: const Text('Custom'),
-                              selected: _selectedMode == AppConfig.customMode,
-                              onSelected: (_) {
-                                setState(() {
-                                  _selectedMode = AppConfig.customMode;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                        if (_selectedMode == AppConfig.customMode) ...[
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            controller: _customUrlController,
-                            decoration: const InputDecoration(
-                              labelText: 'Custom Base URL',
-                              hintText: 'http://192.168.1.10:8000',
-                              prefixIcon: Icon(Icons.dns_outlined),
-                            ),
-                            onChanged: (_) {
-                              setState(() {});
-                            },
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Text(
-                          'Active URL: ${_previewBaseUrl()}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: FilledButton.tonalIcon(
-                            onPressed: (_isSavingServer || _isSubmitting)
-                                ? null
-                                : () async {
-                                    await _applyServerSettings(
-                                      showFeedback: true,
-                                    );
-                                  },
-                            icon: const Icon(Icons.save_outlined),
-                            label: Text(
-                              _isSavingServer ? 'Saving...' : 'Save Server',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        TextFormField(
-                          controller: _usernameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Username',
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
-                          validator: (value) {
-                            if ((value ?? '').trim().isEmpty) {
-                              return 'Enter username';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
-                            prefixIcon: Icon(Icons.lock_outline),
-                          ),
-                          validator: (value) {
-                            if ((value ?? '').isEmpty) {
-                              return 'Enter password';
-                            }
-                            return null;
-                          },
-                        ),
-                        if (_errorText != null) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            _errorText!,
-                            style: const TextStyle(color: AppColors.warningFg),
-                          ),
-                        ],
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _isSubmitting ? null : _submit,
-                            icon: _isSubmitting
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.login_rounded),
-                            label: Text(
-                              _isSubmitting ? 'Signing in...' : 'Login',
-                            ),
+                          'Workshop Online',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade600,
                           ),
                         ),
                       ],
                     ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: _openServerSettings,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.grey.shade300),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.03),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.dns_outlined, size: 14, color: AppColors.primary),
+                            const SizedBox(width: 5),
+                            Text(
+                              _getServerBadgeLabel(),
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.ink700,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.tune_rounded, size: 12, color: Colors.grey.shade500),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Main Scrollable Login Card
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 400),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Brand Icon & Identity
+                          _buildBrandHeader(theme),
+
+                          const SizedBox(height: 28),
+
+                          // Login Credentials Card
+                          AppSurfaceCard(
+                            padding: const EdgeInsets.fromLTRB(22, 26, 22, 24),
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Sign In',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.ink900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Enter your credentials to access your bench',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 22),
+
+                                  // Error Banner
+                                  if (_errorText != null) ...[
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEF2F2),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: const Color(0xFFFCA5A5)),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(
+                                            Icons.error_outline_rounded,
+                                            size: 18,
+                                            color: Color(0xFFDC2626),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              _errorText!,
+                                              style: const TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFFB91C1C),
+                                              ),
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                _errorText = null;
+                                              });
+                                            },
+                                            child: const Icon(Icons.close, size: 16, color: Color(0xFFDC2626)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+
+                                  // Username Field
+                                  const Text(
+                                    'Username or Staff ID',
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextFormField(
+                                    controller: _usernameController,
+                                    textInputAction: TextInputAction.next,
+                                    onFieldSubmitted: (_) {
+                                      FocusScope.of(context).requestFocus(_passwordFocusNode);
+                                    },
+                                    decoration: InputDecoration(
+                                      hintText: 'e.g., tech_john or staff',
+                                      prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
+                                      filled: true,
+                                      fillColor: Colors.grey.shade50,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(color: Colors.grey.shade300),
+                                      ),
+                                    ),
+                                    validator: (val) {
+                                      if ((val ?? '').trim().isEmpty) {
+                                        return 'Please enter your username';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+
+                                  const SizedBox(height: 16),
+
+                                  // Password Field with Eye Toggle
+                                  const Text(
+                                    'Password',
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextFormField(
+                                    controller: _passwordController,
+                                    focusNode: _passwordFocusNode,
+                                    obscureText: _obscurePassword,
+                                    textInputAction: TextInputAction.done,
+                                    onFieldSubmitted: (_) => _submit(),
+                                    decoration: InputDecoration(
+                                      hintText: '••••••••',
+                                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
+                                          size: 20,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _obscurePassword = !_obscurePassword;
+                                          });
+                                        },
+                                      ),
+                                      filled: true,
+                                      fillColor: Colors.grey.shade50,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(color: Colors.grey.shade300),
+                                      ),
+                                    ),
+                                    validator: (val) {
+                                      if ((val ?? '').isEmpty) {
+                                        return 'Please enter your password';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+
+                                  const SizedBox(height: 8),
+
+                                  // Remember Username Checkbox
+                                  Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: Checkbox(
+                                          value: _rememberUsername,
+                                          visualDensity: VisualDensity.compact,
+                                          onChanged: (val) {
+                                            setState(() {
+                                              _rememberUsername = val ?? true;
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            _rememberUsername = !_rememberUsername;
+                                          });
+                                        },
+                                        child: Text(
+                                          'Remember username',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: Colors.grey.shade700,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 22),
+
+                                  // Sign In Button
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 50,
+                                    child: FilledButton(
+                                      onPressed: _isSubmitting ? null : _submit,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: AppColors.primary,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                      child: _isSubmitting
+                                          ? const SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  'Sign In to Workshop',
+                                                  style: TextStyle(
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                SizedBox(width: 8),
+                                                Icon(Icons.arrow_forward_rounded, size: 18),
+                                              ],
+                                            ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // Footer Server Info
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: _openServerSettings,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.link_rounded, size: 14, color: Colors.grey.shade600),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Connected to: ${AppConfig.baseUrl}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: Colors.grey.shade600,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Botgi CRM Mobile • v1.0.0',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade500,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrandHeader(ThemeData theme) {
+    return Column(
+      children: [
+        // Workshop Logo Container
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.accent],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.28),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.handyman_rounded,
+            color: Colors.white,
+            size: 32,
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'BOTGI CRM',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            color: AppColors.ink900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text(
+            'Workshop & Service Hub',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ServerSettingsSheet extends StatefulWidget {
+  const _ServerSettingsSheet();
+
+  @override
+  State<_ServerSettingsSheet> createState() => _ServerSettingsSheetState();
+}
+
+class _ServerSettingsSheetState extends State<_ServerSettingsSheet> {
+  late final TextEditingController _hostPortController;
+  bool _isSaving = false;
+  String? _sheetError;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialUrl = AppConfig.customBaseUrl.isNotEmpty
+        ? AppConfig.customBaseUrl
+        : AppConfig.baseUrl;
+    _hostPortController = TextEditingController(text: initialUrl);
+  }
+
+  @override
+  void dispose() {
+    _hostPortController.dispose();
+    super.dispose();
+  }
+
+  String _previewCurrentUrl() {
+    final normalized = AppConfig.normalizeBaseUrl(_hostPortController.text);
+    return normalized.isEmpty ? 'http://<host>:<port>' : normalized;
+  }
+
+  Future<void> _save() async {
+    final raw = _hostPortController.text.trim();
+    final normalized = AppConfig.normalizeBaseUrl(raw);
+    if (normalized.isEmpty) {
+      setState(() {
+        _sheetError = 'Please enter a server host / IP and port.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _sheetError = null;
+    });
+
+    try {
+      await AppConfig.setMode(AppConfig.customMode);
+      await AppConfig.setCustomBaseUrl(normalized);
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Connected to server: ${AppConfig.baseUrl}'),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _sheetError = 'Failed to save server configuration.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.dns_rounded, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text(
+                      'Server Connection',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Enter the custom Botgi backend host and port for this device:',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+            if (_sheetError != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _sheetError!,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: Color(0xFFDC2626),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: _hostPortController,
+              decoration: InputDecoration(
+                labelText: 'Custom Host / Port',
+                hintText: 'e.g. 192.168.1.6:8000 or http://192.168.1.6:8000',
+                prefixIcon: const Icon(Icons.settings_ethernet_rounded),
+                suffixIcon: _hostPortController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _hostPortController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 15, color: Colors.blueGrey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Target URL: ${_previewCurrentUrl()}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton(
+                onPressed: _isSaving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Apply Server Settings',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );

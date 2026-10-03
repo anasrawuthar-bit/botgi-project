@@ -1238,3 +1238,183 @@ def send_job_whatsapp_notification(job: JobTicket, event_type: str) -> dict[str,
         }
 
     return queue_job_whatsapp_message(job, event_type)
+
+
+def generate_daily_report_context(target_date=None, workspace=None) -> dict[str, Any]:
+    """Compile daily operational, ticket, and financial figures for the WhatsApp summary."""
+    from datetime import date, datetime
+    from .models import CompanyProfile, JobTicket
+    from .views.helpers import get_daily_daybook_context, get_daily_report_jobs, scope_to_workspace
+
+    if not target_date:
+        target_date = timezone.localdate()
+    elif isinstance(target_date, str):
+        try:
+            target_date = datetime.strptime(target_date.strip(), '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            target_date = timezone.localdate()
+    elif hasattr(target_date, 'date'):
+        target_date = target_date.date()
+
+    profile = CompanyProfile.objects.filter(workspace=workspace).first() if workspace else CompanyProfile.objects.first()
+    company_name = profile.company_name if profile and profile.company_name else "BOTGI Service Desk"
+
+    tickets_created = get_daily_report_jobs(target_date, 'in', workspace=workspace).count()
+    tickets_completed = get_daily_report_jobs(target_date, 'completed', workspace=workspace).count()
+    tickets_delivered = get_daily_report_jobs(target_date, 'out', workspace=workspace).count()
+
+    active_tickets_qs = scope_to_workspace(JobTicket.objects, workspace)
+    active_backlog = active_tickets_qs.exclude(status__in=['Closed', 'Cancelled', 'Returned']).count()
+
+    daybook = get_daily_daybook_context(target_date, workspace=workspace)
+
+    cash_inflows = daybook.get('cash_inflows', 0) or 0
+    bank_inflows = daybook.get('bank_inflows', 0) or 0
+    total_inflows = daybook.get('total_inflows', 0) or 0
+    cash_outflows = daybook.get('cash_outflows', 0) or 0
+    bank_outflows = daybook.get('bank_outflows', 0) or 0
+    total_expenses = cash_outflows + bank_outflows
+    cash_drawer_balance = daybook.get('expected_closing_cash', 0) or 0
+    total_liquid_balance = daybook.get('closing_liquid_capital', 0) or 0
+    net_movement = daybook.get('net_day_movement', 0) or 0
+
+    return {
+        'company_name': company_name,
+        'date': target_date.strftime('%d %b %Y'),
+        'date_iso': target_date.strftime('%Y-%m-%d'),
+        'generated_time': timezone.localtime().strftime('%I:%M %p'),
+        'tickets_created_count': tickets_created,
+        'tickets_completed_count': tickets_completed,
+        'tickets_delivered_count': tickets_delivered,
+        'active_tickets_count': active_backlog,
+        'cash_inflows': f"{cash_inflows:.2f}",
+        'bank_inflows': f"{bank_inflows:.2f}",
+        'total_inflows': f"{total_inflows:.2f}",
+        'cash_outflows': f"{cash_outflows:.2f}",
+        'bank_outflows': f"{bank_outflows:.2f}",
+        'total_expenses': f"{total_expenses:.2f}",
+        'cash_drawer_balance': f"{cash_drawer_balance:.2f}",
+        'total_liquid_balance': f"{total_liquid_balance:.2f}",
+        'net_day_movement': f"{net_movement:.2f}",
+    }
+
+
+def render_daily_report_message(template: str = '', target_date=None, workspace=None) -> tuple[str, dict[str, Any]]:
+    """Render the daily summary message template using real-time figures."""
+    settings_obj = WhatsAppIntegrationSettings.get_settings(workspace=workspace)
+    tmpl = (template or '').strip() or (settings_obj.daily_report_template or '').strip()
+    context = generate_daily_report_context(target_date=target_date, workspace=workspace)
+
+    message = tmpl
+    for k, v in context.items():
+        message = message.replace(f"{{{k}}}", str(v))
+
+    return message, context
+
+
+def send_daily_whatsapp_report(
+    target_date=None,
+    target_phone: str = '',
+    workspace=None,
+    is_automatic: bool = False,
+) -> dict[str, Any]:
+    """Dispatch the daily summary message via the configured WhatsApp bridge/Cloud API."""
+    from datetime import datetime
+    from .models import CompanyProfile
+
+    settings_obj = WhatsAppIntegrationSettings.get_settings(workspace=workspace)
+    if not settings_obj.is_enabled:
+        return {
+            'ok': False,
+            'error': 'WhatsApp messaging engine is currently disabled in Company Settings.',
+        }
+
+    phones_raw = target_phone.strip() if target_phone else (settings_obj.daily_report_phone or '').strip()
+    phone_list = [p.strip() for p in phones_raw.split(',') if p.strip()]
+
+    if not phone_list:
+        profile = CompanyProfile.objects.filter(workspace=workspace).first() if workspace else CompanyProfile.objects.first()
+        if profile and profile.phone1:
+            phone_list = [profile.phone1]
+        elif profile and profile.phone2:
+            phone_list = [profile.phone2]
+
+    if not phone_list:
+        return {
+            'ok': False,
+            'error': 'No recipient phone number found. Please set a recipient phone number in WhatsApp Settings.',
+        }
+
+    message, context = render_daily_report_message(target_date=target_date, workspace=workspace)
+    if not message.strip():
+        return {
+            'ok': False,
+            'error': 'Daily report template rendered empty message.',
+        }
+
+    is_bridge = settings_obj.delivery_method == WhatsAppIntegrationSettings.DELIVERY_BRIDGE
+    transport = 'whatsapp-bridge' if is_bridge else 'whatsapp-cloud-api'
+
+    sent_phones = []
+    failed_phones = []
+    errors = []
+
+    for raw_phone in phone_list:
+        intl_phone = _phone_to_international(raw_phone, settings_obj.default_country_code)
+        if not intl_phone:
+            failed_phones.append(raw_phone)
+            errors.append(f"Invalid phone: {raw_phone}")
+            continue
+
+        try:
+            if is_bridge:
+                result = send_bridge_text_message(intl_phone, message)
+            else:
+                result = send_cloud_text_message(intl_phone, message)
+
+            is_ok = bool(result.get('ok'))
+            response_text = json.dumps(result.get('data') or result)
+
+            WhatsAppNotificationLog.objects.create(
+                job_ticket=None,
+                event_type='daily_report',
+                target_phone=intl_phone,
+                message=message,
+                was_successful=is_ok,
+                response_text=response_text,
+            )
+
+            if is_ok:
+                sent_phones.append(intl_phone)
+            else:
+                failed_phones.append(intl_phone)
+                errors.append(f"{intl_phone}: {result.get('error', 'Send failed')}")
+        except Exception as e:
+            logger.exception("Error sending WhatsApp daily report to %s: %s", raw_phone, e)
+            failed_phones.append(raw_phone)
+            errors.append(f"{raw_phone}: {str(e)}")
+
+    overall_ok = len(sent_phones) > 0
+
+    if overall_ok and is_automatic:
+        report_dt = target_date or timezone.localdate()
+        if isinstance(report_dt, str):
+            try:
+                report_dt = datetime.strptime(report_dt.strip(), '%Y-%m-%d').date()
+            except Exception:
+                report_dt = timezone.localdate()
+        elif hasattr(report_dt, 'date'):
+            report_dt = report_dt.date()
+        settings_obj.daily_report_last_sent_date = report_dt
+        settings_obj.save(update_fields=['daily_report_last_sent_date', 'updated_at'])
+
+    return {
+        'ok': overall_ok,
+        'sent_count': len(sent_phones),
+        'sent_phones': sent_phones,
+        'failed_phones': failed_phones,
+        'errors': errors,
+        'message': message,
+        'date': context.get('date'),
+        'transport': transport,
+    }

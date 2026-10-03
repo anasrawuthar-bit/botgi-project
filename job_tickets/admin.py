@@ -911,22 +911,23 @@ class VendorPaymentAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
         'specialized_service',
         'payment_date',
         'payment_method',
+        'financial_account',
         'amount',
         'balance_before',
         'balance_after',
         'created_by',
         'created_at',
     )
-    list_filter = ('payment_method', 'payment_date', 'vendor')
+    list_filter = ('payment_method', 'financial_account', 'payment_date', 'vendor')
     search_fields = (
         'vendor__company_name',
         'specialized_service__job_ticket__job_code',
         'reference_no',
         'notes',
     )
-    raw_id_fields = ('vendor', 'specialized_service', 'created_by')
+    raw_id_fields = ('vendor', 'specialized_service', 'financial_account', 'created_by')
     readonly_fields = ('created_at',)
-    list_select_related = ('vendor', 'specialized_service__job_ticket', 'created_by')
+    list_select_related = ('vendor', 'specialized_service__job_ticket', 'financial_account', 'created_by')
     list_per_page = 100
 
     def get_actions(self, request):
@@ -1040,6 +1041,11 @@ class CompanyProfileAdmin(RoleBasedAdminMixin, admin.ModelAdmin):
                     'job_code_prefix',
                     'job_ticket_print_paper_size',
                     'bill_print_paper_size',
+                    'include_workshop_device_tag',
+                    'include_ticket_signatures',
+                    'include_bill_signatures',
+                    'include_bill_payment_details',
+                    'technician_display_format',
                     'sales_invoice_next_number',
                     'enable_gst',
                     'gst_rate',

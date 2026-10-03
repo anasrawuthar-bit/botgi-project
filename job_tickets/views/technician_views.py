@@ -200,7 +200,7 @@ def job_detail_technician(request, job_code):
 
     # fetch job assigned to this technician
     job = get_object_or_404(
-        JobTicket.objects.select_related('rack', 'assigned_to', 'workspace'),
+        JobTicket.objects.select_related('rack', 'assigned_to', 'workspace', 'specialized_service', 'specialized_service__vendor'),
         job_code=job_code,
         assigned_to=technician,
     )
@@ -350,16 +350,22 @@ def job_detail_technician(request, job_code):
                     details = "Technician checklist updated."
                 JobTicketLog.objects.create(job_ticket=job, user=request.user, action='NOTE', details=details)
 
-            # Return JSON response for AJAX requests (no page reload)
+            # Return JSON response for AJAX requests (no page reload unless completed)
             if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                redirect_url = reverse('technician_dashboard') if new_status == 'Completed' else None
                 return JsonResponse({
                     'ok': True,
-                    'message': 'Status and notes updated successfully.',
+                    'message': 'Job completed successfully! Redirecting to dashboard...' if new_status == 'Completed' else 'Status and notes updated successfully.',
                     'status': job.status,
                     'status_display': job.get_status_display(),
                     'technician_notes': job.technician_notes,
+                    'redirect_url': redirect_url,
                 })
             
+            if new_status == 'Completed':
+                messages.success(request, f'Job {job.job_code} marked as Completed.')
+                return redirect('technician_dashboard')
+
             messages.success(request, 'Status updated.')
             return redirect('job_detail_technician', job_code=job_code)
 

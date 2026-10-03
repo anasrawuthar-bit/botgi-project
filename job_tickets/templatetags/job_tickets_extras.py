@@ -38,3 +38,21 @@ def display_service_description(description):
     if not match:
         return text
     return f"Product Sale - {match.group('name').strip()} (Qty: {match.group('qty')})"
+
+
+@register.filter(name='user_initials')
+def user_initials(user):
+    """Returns 1-2 uppercase initials for a user (e.g. 'ans ptb' -> 'AP')."""
+    if not user:
+        return 'U'
+    first = getattr(user, 'first_name', '') or ''
+    last = getattr(user, 'last_name', '') or ''
+    if first and last:
+        return f"{first[0]}{last[0]}".upper()
+    name = (user.get_full_name() if hasattr(user, 'get_full_name') else '') or getattr(user, 'username', '') or ''
+    parts = name.strip().split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]}{parts[1][0]}".upper()
+    elif len(parts) == 1 and parts[0]:
+        return parts[0][:2].upper()
+    return 'U'

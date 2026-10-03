@@ -198,15 +198,15 @@
                 <tr>
                     <td>{{ block.label }}</td>
                     <td>{{ block.note }}</td>
-                    <td class="text-end">{% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.revenue_abs|floatformat:2 }}{% else %}{{ block.revenue|floatformat:2 }}{% endif %}</td>
-                    <td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td>
-                    <td class="text-end">{% if block.is_discount %}- {% endif %}&#8377;{% if block.is_discount %}{{ block.profit_abs|floatformat:2 }}{% else %}{{ block.profit|floatformat:2 }}{% endif %}</td>
+                    <td class="text-end">{% if block.is_discount and block.revenue_abs %}- &#8377;{{ block.revenue_abs|floatformat:2 }}{% elif block.revenue %}&#8377;{{ block.revenue|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
+                    <td class="text-end">{% if block.is_discount or not block.expense %}&mdash;{% else %}&#8377;{{ block.expense|floatformat:2 }}{% endif %}</td>
+                    <td class="text-end">{% if block.is_discount and block.profit_abs %}- &#8377;{{ block.profit_abs|floatformat:2 }}{% elif block.profit %}&#8377;{{ block.profit|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
                 </tr>
                 {% endfor %}
                 <tr>
                     <th colspan="2">Total Closed Jobs</th>
                     <th class="text-end">&#8377;{{ overall_revenue|floatformat:2 }}</th>
-                    <th class="text-end">&#8377;{{ overall_expense|floatformat:2 }}</th>
+                    <th class="text-end">{% if overall_expense %}&#8377;{{ overall_expense|floatformat:2 }}{% else %}&mdash;{% endif %}</th>
                     <th class="text-end">&#8377;{{ overall_profit|floatformat:2 }}</th>
                 </tr>
             </tbody>

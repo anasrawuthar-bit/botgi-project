@@ -8,8 +8,10 @@ ACCESS_CONTROL_GROUP = "Access Control"
 
 ACCESS_GROUPS = {
     "staff_dashboard": "Access: Staff Dashboard",
+    "job_status_change": "Access: Change Job Status",
     "task_management": "Access: Task Management",
     "expense_management": "Access: Expense Management",
+    "account_management": "Access: Bank & Financial Accounts",
     "team_management": "Access: Team Management",
     "inventory": "Access: Inventory Module",
     "feedback_analytics": "Access: Feedback Analytics",
@@ -22,8 +24,10 @@ ACCESS_GROUPS = {
 
 ACCESS_OPTIONS = [
     {"key": "staff_dashboard", "label": "Staff Dashboard", "section": "general"},
+    {"key": "job_status_change", "label": "Change Job Status", "section": "general"},
     {"key": "task_management", "label": "Task Management", "section": "general"},
     {"key": "expense_management", "label": "Expense Management", "section": "general"},
+    {"key": "account_management", "label": "Bank & Financial Accounts", "section": "general"},
     {"key": "team_management", "label": "Staff & Technician Management", "section": "general"},
     {"key": "inventory", "label": "Inventory Module", "section": "general"},
     {"key": "feedback_analytics", "label": "Customer Feedback Analytics", "section": "general"},
@@ -148,6 +152,9 @@ def get_staff_access(user, group_names=None):
 
     for key, group_name in ACCESS_GROUPS.items():
         access[key] = group_name in group_names
+
+    if access.get("company_settings"):
+        access["account_management"] = True
 
     if access["reports_technician"] or access["reports_vendor"] or access["reports_financial"]:
         access["reports_dashboard"] = True

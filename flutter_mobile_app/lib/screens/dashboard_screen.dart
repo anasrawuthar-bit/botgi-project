@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../models/job_item.dart';
+import '../models/task_model.dart';
 import '../services/auth_service.dart';
 import '../services/jobs_service.dart';
 import '../services/management_service.dart';
+import '../services/tasks_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_surface_card.dart';
 import '../widgets/status_pill.dart';
@@ -19,11 +21,15 @@ class DashboardScreen extends StatefulWidget {
     required this.authService,
     required this.jobsService,
     required this.managementService,
+    this.tasksService,
+    this.onNavigateToTasks,
   });
 
   final AuthService authService;
   final JobsService jobsService;
   final ManagementService managementService;
+  final TasksService? tasksService;
+  final VoidCallback? onNavigateToTasks;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -31,18 +37,35 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   late Future<List<JobItem>> _jobsFuture;
+  TaskMetrics _taskMetrics = TaskMetrics();
 
   @override
   void initState() {
     super.initState();
     _jobsFuture = widget.jobsService.fetchJobs();
+    _loadTaskMetrics();
+  }
+
+  Future<void> _loadTaskMetrics() async {
+    if (widget.tasksService == null) return;
+    try {
+      final res = await widget.tasksService!.fetchTasksWithMetrics(status: 'active');
+      if (mounted) {
+        setState(() {
+          _taskMetrics = res.metrics;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _refresh() async {
     setState(() {
       _jobsFuture = widget.jobsService.fetchJobs();
     });
-    await _jobsFuture;
+    await Future.wait([
+      _jobsFuture,
+      _loadTaskMetrics(),
+    ]);
   }
 
   @override
@@ -127,6 +150,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 12),
                 _RevenueCard(amount: revenue),
+                const SizedBox(height: 12),
+                _DirectivesSummaryCard(
+                  metrics: _taskMetrics,
+                  onTap: widget.onNavigateToTasks,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'Operations',
@@ -421,3 +449,96 @@ class _ErrorBlock extends StatelessWidget {
     );
   }
 }
+
+class _DirectivesSummaryCard extends StatelessWidget {
+  const _DirectivesSummaryCard({
+    required this.metrics,
+    this.onTap,
+  });
+
+  final TaskMetrics metrics;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: metrics.urgent > 0 ? const Color(0xFFFCA5A5) : Colors.grey.shade200,
+            width: metrics.urgent > 0 ? 1.5 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: metrics.urgent > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                metrics.urgent > 0 ? Icons.bolt_rounded : Icons.assignment_outlined,
+                color: metrics.urgent > 0 ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Directives & Tasks',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      if (metrics.urgent > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDC2626),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${metrics.urgent} Urgent',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${metrics.active} active tasks • ${metrics.inProgress} in progress',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

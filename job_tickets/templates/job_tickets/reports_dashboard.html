@@ -268,6 +268,9 @@
             <a class="nav-link {% if active_tab == 'financial' %}active{% endif %}" {% if active_tab == 'financial' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=financial">
                 <i class="fas fa-coins me-1"></i>Financial Summary
             </a>
+            <a class="nav-link {% if active_tab == 'daybook' %}active{% endif %}" {% if active_tab == 'daybook' %}aria-current="page"{% endif %} href="?daybook_date={{ daybook_date_str }}&amp;tab=daybook">
+                <i class="fas fa-book-open me-1"></i>Daily Daybook &amp; Reconciliation
+            </a>
             {% endif %}
             {% if staff_access.reports_technician %}
             <a class="nav-link {% if active_tab == 'technician' %}active{% endif %}" {% if active_tab == 'technician' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=technician">
@@ -281,7 +284,28 @@
             {% endif %}
         </nav>
 
-        <!-- The Period Filter Form (Rendered ONLY for Financial, Technicians, Vendors) -->
+        {% if active_tab == 'daybook' %}
+        <!-- Daybook Date Selector Form -->
+        <div class="reports-period mb-4">
+            <form method="get" class="row g-3 align-items-end mb-2" data-async-form data-async-target="#reports-dashboard-page">
+                <input type="hidden" name="tab" value="daybook">
+                <div class="col-sm-8 col-lg-5">
+                    <label for="daybook-date-input" class="form-label fw-bold">Select Daybook Date</label>
+                    <input id="daybook-date-input" type="date" name="daybook_date" value="{{ daybook_date_str }}" class="form-control" required>
+                </div>
+                <div class="col-sm-4 col-lg-3">
+                    <button class="btn btn-primary w-100" type="submit">
+                        <i class="fas fa-calendar-check me-1"></i>Inspect Daybook
+                    </button>
+                </div>
+            </form>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a class="btn btn-sm btn-outline-secondary" href="?daybook_date={{ today_date_str }}&amp;tab=daybook">Today</a>
+                <span class="small text-muted ms-auto">Viewing Daybook for: <strong>{{ daybook_data.target_date_str }}</strong> {% if daybook_data.is_today %}<span class="badge bg-success ms-1">Today</span>{% endif %}</span>
+            </div>
+        </div>
+        {% else %}
+        <!-- The Period Filter Form (Rendered for Financial, Technicians, Vendors) -->
         <div class="reports-period mb-4">
             <form method="get" class="row g-3 align-items-end mb-2" data-async-form data-async-target="#reports-dashboard-page">
                 <input type="hidden" name="tab" value="{{ active_tab }}">
@@ -300,45 +324,330 @@
                 </div>
             </form>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <a class="btn btn-sm btn-outline-secondary" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
-                <a class="btn btn-sm btn-outline-secondary" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
+                <a class="btn btn-sm btn-outline-secondary{% if preset == 'this_month' %} active{% endif %}" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
+                <a class="btn btn-sm btn-outline-secondary{% if preset == 'last_month' or preset == 'previous_month' %} active{% endif %}" href="?preset=last_month&amp;tab={{ active_tab }}">Previous month</a>
+                <a class="btn btn-sm btn-outline-secondary{% if preset == 'last_7_days' %} active{% endif %}" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
                 <span class="small text-muted ms-auto">Active period: <strong>{{ current_report_start }}</strong> &ndash; <strong>{{ current_report_end }}</strong></span>
             </div>
         </div>
+        {% endif %}
 
         <!-- Tab 1: Financial Summary -->
         {% if active_tab == 'financial' and staff_access.reports_financial %}
-        <section aria-labelledby="financial-heading">
+        <section>
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
                 <div>
-                    <h2 class="h4 mb-1" id="financial-heading">Financial summary</h2>
-                    <p class="small text-muted mb-0">{{ current_report_start }} &ndash; {{ current_report_end }} &middot; {{ financial_summary.jobs_closed_count }} closed jobs</p>
+                    <span class="small text-muted">{{ current_report_start }} &ndash; {{ current_report_end }} &middot; {{ financial_summary.jobs_closed_count }} closed job{{ financial_summary.jobs_closed_count|pluralize }}</span>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
                     <a class="btn btn-outline-primary" href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">View / print summary</a>
                     <a class="btn btn-outline-secondary" href="{% url 'export_monthly_summary_csv' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">Export CSV</a>
                 </div>
             </div>
-            <div class="row g-3 mb-4">
-                <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Revenue after discounts</h3><p class="h4 mb-0 text-dark">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</p></div></div>
-                <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Direct Job Costs (COGS)</h3><p class="h4 mb-0 text-danger">&#8377;{{ financial_summary.overall_expense|floatformat:2 }}</p></div></div>
-                <div class="col-md-3"><div class="card-box h-100"><h3 class="h6 text-muted">Shop Overhead Expenses</h3><p class="h4 mb-0 text-warning">&#8377;{{ financial_summary.period_overhead_expenses|default:"0.00"|floatformat:2 }}</p></div></div>
-                <div class="col-md-3"><div class="card-box h-100 border-start border-4 border-success"><h3 class="h6 text-muted">True Net Profit</h3><p class="h4 mb-0 text-success fw-bold">&#8377;{{ financial_summary.period_net_profit|default:financial_summary.overall_profit|floatformat:2 }}</p></div></div>
+            <div class="table-responsive mb-4">
+                <table class="table align-middle">
+                    <caption>Revenue and recorded costs for the selected period</caption>
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Category</th>
+                            <th scope="col" class="text-end">Revenue</th>
+                            <th scope="col" class="text-end">Cost</th>
+                            <th scope="col" class="text-end">Margin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for block in financial_summary.closed_financial_blocks %}
+                        <tr>
+                            <th scope="row" class="{% if block.is_discount %}text-secondary fw-normal{% endif %}">
+                                {{ block.label }}
+                            </th>
+                            <td class="text-end {% if block.is_discount and block.revenue_abs %}text-danger fw-semibold{% elif not block.revenue %}text-muted{% endif %}">
+                                {% if block.is_discount and block.revenue_abs %}
+                                    - &#8377;{{ block.revenue_abs|floatformat:2 }}
+                                {% elif block.revenue %}
+                                    &#8377;{{ block.revenue|floatformat:2 }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-muted">
+                                {% if block.is_discount or not block.expense %}
+                                    &mdash;
+                                {% else %}
+                                    &#8377;{{ block.expense|floatformat:2 }}
+                                {% endif %}
+                            </td>
+                            <td class="text-end {% if block.is_discount and block.profit_abs %}text-danger fw-semibold{% elif not block.profit %}text-muted{% endif %}">
+                                {% if block.is_discount and block.profit_abs %}
+                                    - &#8377;{{ block.profit_abs|floatformat:2 }}
+                                {% elif block.profit %}
+                                    &#8377;{{ block.profit|floatformat:2 }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold border-top border-2">
+                            <th scope="row">Totals</th>
+                            <td class="text-end">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</td>
+                            <td class="text-end text-muted">{% if financial_summary.overall_expense %}&#8377;{{ financial_summary.overall_expense|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
+                            <td class="text-end {% if financial_summary.overall_profit >= 0 %}text-success{% else %}text-danger{% endif %}">&#8377;{{ financial_summary.overall_profit|floatformat:2 }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
-            <p class="small text-muted">Direct costs include parts stock, vendor charges, and job-linked direct expenses. Shop overhead includes general utility, rent, and non-job operating expenses recorded for this period.</p>
-            <div class="table-responsive mb-4"><table class="table align-middle">
-                <caption>Revenue and recorded costs for the selected period</caption>
-                <thead><tr><th scope="col">Category</th><th scope="col" class="text-end">Revenue</th><th scope="col" class="text-end">Cost</th><th scope="col" class="text-end">Margin</th></tr></thead>
-                <tbody>{% for block in financial_summary.closed_financial_blocks %}<tr><th scope="row">{{ block.label }}</th><td class="text-end">&#8377;{{ block.revenue|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.expense|floatformat:2 }}</td><td class="text-end">&#8377;{{ block.profit|floatformat:2 }}</td></tr>{% endfor %}</tbody>
-            </table></div>
-            <div class="border rounded p-3">
-                <h3 class="h6">Linked credit bills for jobs closed in this period</h3>
-                <div class="row g-3">
-                    <div class="col-md-4">Bill value <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_bill_total|floatformat:2 }}</strong></div>
-                    <div class="col-md-4">Paid to date <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_paid|floatformat:2 }}</strong></div>
-                    <div class="col-md-4">Outstanding balance <strong class="d-block">&#8377;{{ financial_summary.closed_receivable_balance|floatformat:2 }}</strong></div>
+        </section>
+        {% endif %}
+
+        <!-- Tab: Daily Daybook & Reconciliation -->
+        {% if active_tab == 'daybook' and staff_access.reports_financial %}
+        <section aria-labelledby="daybook-heading">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+                <div>
+                    <h2 class="h4 mb-1" id="daybook-heading">Daily Daybook &amp; Cash Drawer Reconciliation</h2>
+                    <p class="small text-muted mb-0">
+                        Date: <strong>{{ daybook_data.target_date_str }}</strong>
+                        {% if daybook_data.is_today %}<span class="badge bg-success ms-1">Today</span>{% endif %}
+                        &middot; {{ daybook_data.transactions_count }} transaction{{ daybook_data.transactions_count|pluralize }} recorded
+                    </p>
                 </div>
-                <p class="small text-muted mt-3 mb-0">Current balances for linked credit bills; payments may have been received outside the selected period.</p>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-outline-success" id="reports-send-daybook-wa-btn" data-date="{{ daybook_data.target_date_str }}">
+                        <i class="fa-brands fa-whatsapp me-1"></i>WhatsApp Summary
+                    </button>
+                    <a class="btn btn-outline-primary" href="{% url 'print_daily_daybook_report' %}?date={{ daybook_data.target_date_str }}">
+                        <i class="fas fa-print me-1"></i>Print Daybook
+                    </a>
+                    <a class="btn btn-outline-secondary" href="{% url 'export_daily_daybook_csv' %}?date={{ daybook_data.target_date_str }}">
+                        <i class="fas fa-file-csv me-1"></i>Export CSV
+                    </a>
+                </div>
+            </div>
+
+            <!-- Two Reconciliation Panels -->
+            <div class="row g-3 mb-4">
+                <!-- Panel 1: Cash Drawer Reconciliation -->
+                <div class="col-lg-6">
+                    <div class="card-box h-100 p-4 border-start border-4 border-success">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="h5 fw-bold text-dark mb-0">
+                                <i class="fas fa-money-bill-wave text-success me-2"></i>Physical Cash Drawer
+                            </h3>
+                            <span class="badge bg-light text-muted border">{{ daybook_data.default_cash.name|default:"Cash in Hand" }}</span>
+                        </div>
+                        <ul class="list-group list-group-flush mb-3">
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span class="text-muted">Opening Cash Balance (Start of Day)</span>
+                                <strong class="text-dark">&#8377;{{ daybook_data.opening_cash|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-plus text-success me-1"></i>Today's Cash Receipts (Jobs &amp; Sales)</span>
+                                <strong class="text-success">+&#8377;{{ daybook_data.cash_inflows|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-minus text-danger me-1"></i>Today's Cash Expenses / Outflows</span>
+                                <strong class="text-danger">-&#8377;{{ daybook_data.cash_outflows|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-arrow-right text-info me-1"></i>Contra: Deposited into Bank</span>
+                                <strong class="text-info">-&#8377;{{ daybook_data.cash_to_bank|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-arrow-left text-primary me-1"></i>Contra: Withdrawn from Bank</span>
+                                <strong class="text-primary">+&#8377;{{ daybook_data.bank_to_cash|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2 pt-3 border-top border-2">
+                                <span class="fw-bold text-dark fs-6">Expected Physical Cash in Drawer</span>
+                                <span class="h4 mb-0 fw-bold text-success">&#8377;{{ daybook_data.expected_drawer_cash|floatformat:2 }}</span>
+                            </li>
+                        </ul>
+                        <div class="p-2 rounded bg-light small text-muted">
+                            <i class="fas fa-info-circle me-1"></i>At closing, physical cash in the drawer should match <strong>&#8377;{{ daybook_data.expected_drawer_cash|floatformat:2 }}</strong>.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel 2: Bank & Digital Wallet Movement -->
+                <div class="col-lg-6">
+                    <div class="card-box h-100 p-4 border-start border-4 border-primary">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="h5 fw-bold text-dark mb-0">
+                                <i class="fas fa-university text-primary me-2"></i>Bank &amp; Digital Accounts
+                            </h3>
+                            <span class="badge bg-light text-muted border">{{ daybook_data.default_bank.name|default:"Federal Bank / UPI" }}</span>
+                        </div>
+                        <ul class="list-group list-group-flush mb-3">
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-plus text-success me-1"></i>UPI / Bank Collections Today</span>
+                                <strong class="text-success">+&#8377;{{ daybook_data.bank_inflows|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-minus text-danger me-1"></i>Bank Payouts / Vendor Payments</span>
+                                <strong class="text-danger">-&#8377;{{ daybook_data.bank_outflows|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-arrow-down text-info me-1"></i>Contra: Cash Deposits Received</span>
+                                <strong class="text-info">+&#8377;{{ daybook_data.cash_to_bank|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                <span><i class="fas fa-arrow-up text-warning me-1"></i>Contra: ATM / Cash Withdrawals Paid</span>
+                                <strong class="text-warning">-&#8377;{{ daybook_data.bank_to_cash|floatformat:2 }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2 pt-3 border-top border-2">
+                                <span class="fw-bold text-dark fs-6">Today's Net Bank Change</span>
+                                <span class="h4 mb-0 fw-bold {% if daybook_data.net_bank_flow >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                                    {% if daybook_data.net_bank_flow >= 0 %}+{% endif %}&#8377;{{ daybook_data.net_bank_flow|floatformat:2 }}
+                                </span>
+                            </li>
+                        </ul>
+                        <div class="p-2 rounded bg-light small text-muted">
+                            <i class="fas fa-shield-alt me-1"></i>UPI &amp; Bank entries reconcile automatically with customer ticket billing and shop expenses.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-Account Balances Table -->
+            <div class="card-box p-3 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="h6 fw-bold text-dark mb-0">
+                        <i class="fas fa-wallet text-secondary me-2"></i>Accounts Liquidity Summary ({{ daybook_data.target_date_str }})
+                    </h3>
+                    <a href="{% url 'company_profile_settings' %}?tab=bank-details" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-cog me-1"></i>Manage Accounts
+                    </a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Account</th>
+                                <th>Type</th>
+                                <th class="text-end">Receipts Today</th>
+                                <th class="text-end">Payments Today</th>
+                                <th class="text-end">Transfers Net</th>
+                                <th class="text-end">Net Movement</th>
+                                <th class="text-end fw-bold">Current Live Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in daybook_data.account_rows %}
+                            <tr>
+                                <td>
+                                    <span class="fw-bold text-dark">{{ row.name }}</span>
+                                    {% if row.is_default_cash %}<span class="badge bg-success-subtle text-success ms-1">Default Cash</span>{% endif %}
+                                    {% if row.is_default_bank %}<span class="badge bg-primary-subtle text-primary ms-1">Default Bank</span>{% endif %}
+                                </td>
+                                <td><span class="badge bg-light text-secondary border">{{ row.type_display }}</span></td>
+                                <td class="text-end text-success">+&#8377;{{ row.inflows|floatformat:2 }}</td>
+                                <td class="text-end text-danger">-&#8377;{{ row.outflows|floatformat:2 }}</td>
+                                <td class="text-end text-info">&#8377;{{ row.transfers_in|add:row.transfers_out|floatformat:2 }}</td>
+                                <td class="text-end fw-semibold {% if row.net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {% if row.net_movement >= 0 %}+{% endif %}&#8377;{{ row.net_movement|floatformat:2 }}
+                                </td>
+                                <td class="text-end fw-bold text-dark fs-6">&#8377;{{ row.current_balance|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-3">No active financial accounts found.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="2">Firm Total</td>
+                                <td class="text-end text-success">+&#8377;{{ daybook_data.total_receipts|floatformat:2 }}</td>
+                                <td class="text-end text-danger">-&#8377;{{ daybook_data.total_payments|floatformat:2 }}</td>
+                                <td class="text-end text-info">&#8377;{{ daybook_data.total_contra|floatformat:2 }}</td>
+                                <td class="text-end {% if daybook_data.net_liquidity_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {% if daybook_data.net_liquidity_change >= 0 %}+{% endif %}&#8377;{{ daybook_data.net_liquidity_change|floatformat:2 }}
+                                </td>
+                                <td class="text-end text-dark fs-6">&#8377;{{ daybook_data.total_liquid_balance|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Chronological Audit Ledger of Transactions -->
+            <div class="card-box p-3 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="h6 fw-bold text-dark mb-0">
+                        <i class="fas fa-list-check text-primary me-2"></i>Daybook Transactions Audit Log
+                    </h3>
+                    <span class="badge bg-light text-muted border">{{ daybook_data.transactions_count }} entry</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Time</th>
+                                <th>Account</th>
+                                <th>Type</th>
+                                <th>Description / Reference</th>
+                                <th>Linked Source</th>
+                                <th>Staff</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">Balance After</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for txn in daybook_data.transactions %}
+                            <tr>
+                                <td class="small text-muted">{{ txn.created_at|date:"H:i" }}</td>
+                                <td><span class="fw-semibold text-dark">{{ txn.account.name }}</span></td>
+                                <td>
+                                    {% if txn.transaction_type == 'inflow' %}
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-arrow-down me-1"></i>Inflow</span>
+                                    {% elif txn.transaction_type == 'outflow' %}
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-arrow-up me-1"></i>Outflow</span>
+                                    {% elif txn.transaction_type == 'transfer_in' %}
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="fas fa-exchange-alt me-1"></i>Transfer In</span>
+                                    {% elif txn.transaction_type == 'transfer_out' %}
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exchange-alt me-1"></i>Transfer Out</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="text-dark">{{ txn.description }}</span>
+                                    {% if txn.reference_no %}<small class="text-muted d-block">Ref: {{ txn.reference_no }}</small>{% endif %}
+                                </td>
+                                <td>
+                                    {% if txn.job_ticket %}
+                                    <a href="{% url 'staff_job_detail' txn.job_ticket.job_code %}" class="badge bg-primary text-decoration-none">
+                                        <i class="fas fa-ticket me-1"></i>{{ txn.job_ticket.job_code }}
+                                    </a>
+                                    {% elif txn.expense %}
+                                    <a href="{% url 'expense_dashboard' %}" class="badge bg-danger text-decoration-none">
+                                        <i class="fas fa-receipt me-1"></i>Exp #{{ txn.expense_id }}
+                                    </a>
+                                    {% elif txn.transfer_counterpart %}
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-arrows-alt-h me-1"></i>{{ txn.transfer_counterpart.account.name }}
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted small">&mdash;</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted">{{ txn.created_by.get_full_name|default:txn.created_by.username|default:"System" }}</td>
+                                <td class="text-end fw-bold {% if txn.transaction_type == 'inflow' or txn.transaction_type == 'transfer_in' %}text-success{% else %}text-danger{% endif %}">
+                                    {% if txn.transaction_type == 'inflow' or txn.transaction_type == 'transfer_in' %}+{% else %}-{% endif %}&#8377;{{ txn.amount|floatformat:2 }}
+                                </td>
+                                <td class="text-end fw-semibold text-muted">&#8377;{{ txn.balance_after|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">
+                                    <i class="fas fa-inbox fa-2x mb-2 d-block text-secondary"></i>
+                                    No financial transactions recorded on {{ daybook_data.target_date_str }}.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
         {% endif %}
@@ -347,14 +656,29 @@
         {% if active_tab == 'technician' and staff_access.reports_technician %}
         <section aria-labelledby="technician-heading">
             <h2 class="h4" id="technician-heading">Technician performance</h2>
-            <p class="text-muted small">{{ tech_start_date }} &ndash; {{ tech_end_date }} &middot; Completed and closed jobs. Parts and service sales exclude vendor service lines and are before job discounts.</p>
+            <p class="text-muted small">{{ tech_start_date }} &ndash; {{ tech_end_date }} &middot; Jobs completed in period. Parts and service sales exclude vendor service lines and are before job discounts.</p>
             <div class="table-responsive"><table class="table table-hover align-middle">
-                <thead><tr><th scope="col">Technician</th><th scope="col" class="text-end">Jobs</th><th scope="col" class="text-end">Parts sales</th><th scope="col" class="text-end">Service sales</th><th scope="col">Report</th></tr></thead>
+                <thead><tr><th scope="col">Technician</th><th scope="col" class="text-end">Jobs</th><th scope="col" class="text-end">Parts sales</th><th scope="col" class="text-end">Service sales</th><th scope="col" class="text-end">Total sales</th><th scope="col">Report</th></tr></thead>
                 <tbody>{% for tech in monthly_tech_performance %}<tr>
                     <th scope="row">{{ tech.user.get_full_name|default:tech.user.username }}<span class="d-block small text-muted fw-normal">{{ tech.unique_id }}</span></th>
-                    <td class="text-end">{{ tech.jobs_done }}</td><td class="text-end">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td><td class="text-end">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
-                    <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'technician_report_print' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">View / print</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'technician_report_export_csv' tech.id %}?start_date={{ tech_start_date }}&amp;end_date={{ tech_end_date }}">CSV</a></div></td>
-                </tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">No technicians available in this workspace.</td></tr>{% endfor %}</tbody>
+                    <td class="text-end">{{ tech.jobs_done }}</td>
+                    <td class="text-end">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td>
+                    <td class="text-end">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
+                    <td class="text-end fw-semibold">&#8377;{{ tech.monthly_total_sales|floatformat:2 }}</td>
+                    <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'technician_report_print' tech.id %}">View / print</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'technician_report_export_csv' tech.id %}">CSV</a></div></td>
+                </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No technicians available in this workspace.</td></tr>{% endfor %}</tbody>
+                {% if monthly_tech_performance %}
+                <tfoot class="table-group-divider fw-bold">
+                    <tr class="table-light">
+                        <th scope="row">Total</th>
+                        <td class="text-end">{{ tech_total_jobs }}</td>
+                        <td class="text-end">&#8377;{{ tech_total_parts_sales|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ tech_total_service_sales|floatformat:2 }}</td>
+                        <td class="text-end fw-bold text-dark">&#8377;{{ tech_total_combined_sales|floatformat:2 }}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
             </table></div>
         </section>
         {% endif %}
@@ -370,6 +694,18 @@
                     <th scope="row">{{ vendor.company_name }}</th><td class="text-end">{{ vendor.total_jobs_given }}</td><td class="text-end">&#8377;{{ vendor.total_vendor_cost|floatformat:2 }}</td><td class="text-end">&#8377;{{ vendor.total_client_charge|floatformat:2 }}</td><td class="text-end fw-semibold">&#8377;{{ vendor.profit|floatformat:2 }}</td>
                     <td><a class="btn btn-sm btn-outline-primary" href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date }}&amp;end_date={{ vendor_end_date }}">View report</a></td>
                 </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No vendors available in this workspace.</td></tr>{% endfor %}</tbody>
+                {% if vendor_performance %}
+                <tfoot class="table-group-divider fw-bold">
+                    <tr class="table-light">
+                        <th scope="row">Total</th>
+                        <td class="text-end">{{ vendor_total_jobs }}</td>
+                        <td class="text-end">&#8377;{{ vendor_total_cost|floatformat:2 }}</td>
+                        <td class="text-end">&#8377;{{ vendor_total_client_charge|floatformat:2 }}</td>
+                        <td class="text-end fw-semibold">&#8377;{{ vendor_total_profit|floatformat:2 }}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
             </table></div>
         </section>
         {% endif %}
@@ -380,4 +716,46 @@
     <p class="alert alert-warning">No report sections are enabled for your account. Please contact an admin.</p>
     {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const waBtn = document.getElementById('reports-send-daybook-wa-btn');
+    if (waBtn) {
+        waBtn.addEventListener('click', async function () {
+            const reportDate = waBtn.getAttribute('data-date') || '';
+            const recipientOverride = prompt('Enter recipient WhatsApp phone number (leave empty to use default setting):', '');
+            if (recipientOverride === null) return; // User cancelled
+            
+            waBtn.disabled = true;
+            const originalHtml = waBtn.innerHTML;
+            waBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Sending...';
+            try {
+                const response = await fetch("{% url 'whatsapp_daily_report_send_api' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}',
+                    },
+                    body: JSON.stringify({
+                        date: reportDate,
+                        phone: recipientOverride.trim(),
+                    }),
+                });
+                const payload = await response.json();
+                if (response.ok && payload.ok) {
+                    const sentTo = (payload.sent_phones || []).join(', ') || 'recipient';
+                    alert(`Daily report successfully sent to WhatsApp: ${sentTo}`);
+                } else {
+                    alert(`Failed to send report: ${payload.error || payload.message || 'Unknown error'}`);
+                }
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                waBtn.disabled = false;
+                waBtn.innerHTML = originalHtml;
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

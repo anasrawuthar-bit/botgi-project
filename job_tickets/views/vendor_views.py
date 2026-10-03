@@ -4,6 +4,7 @@ from .helpers import (
     _net_amount_after_discount,
     _staff_access_required,
 )
+from ..models import FinancialAccount, AccountTransaction
 
 
 def _parse_vendor_money(raw_value, label):
@@ -34,7 +35,7 @@ def _clean_vendor_payment_method(raw_value):
     return method
 
 
-def _record_vendor_payment_for_locked_service(service, amount, payment_method, payment_date, reference_no, notes, user):
+def _record_vendor_payment_for_locked_service(service, amount, payment_method, payment_date, reference_no, notes, user, financial_account=None):
     if not service.vendor_id:
         raise ValueError("Vendor is required before recording payment.")
     if service.status != 'Returned from Vendor':
@@ -66,6 +67,7 @@ def _record_vendor_payment_for_locked_service(service, amount, payment_method, p
         specialized_service=service,
         payment_date=payment_date,
         payment_method=payment_method,
+        financial_account=financial_account,
         amount=amount,
         balance_before=balance_before,
         balance_after=balance_after,
@@ -76,10 +78,25 @@ def _record_vendor_payment_for_locked_service(service, amount, payment_method, p
     service.vendor_paid_amount = ((service.vendor_paid_amount or Decimal('0.00')) + amount).quantize(Decimal('0.01'))
     service.vendor_balance_amount = balance_after
     service.save(update_fields=['vendor_paid_amount', 'vendor_balance_amount'])
+
+    # Deduct from financial account ledger
+    if financial_account and amount > Decimal('0.00'):
+        desc = f"Vendor Payment: {service.vendor.company_name} ({service.job_ticket.job_code})"
+        if notes:
+            desc = f"{desc} - {notes}"
+        financial_account.withdraw(
+            amount=amount,
+            description=desc[:255],
+            reference_no=normalized_reference,
+            transaction_date=payment_date,
+            vendor_payment=payment,
+            user=user if getattr(user, 'is_authenticated', False) else None,
+        )
+
     return payment
 
 
-def _record_vendor_payment_for_service(service_id, amount, payment_method, payment_date, reference_no, notes, user):
+def _record_vendor_payment_for_service(service_id, amount, payment_method, payment_date, reference_no, notes, user, financial_account=None):
     service = (
         SpecializedService.objects
         .select_for_update()
@@ -93,10 +110,11 @@ def _record_vendor_payment_for_service(service_id, amount, payment_method, payme
         reference_no,
         notes,
         user,
+        financial_account=financial_account,
     )
 
 
-def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, reference_no, notes, user):
+def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, reference_no, notes, user, financial_account=None):
     if amount <= Decimal('0.00'):
         raise ValueError("Payment amount must be greater than zero.")
 
@@ -148,6 +166,7 @@ def _record_vendor_bulk_payment(vendor, amount, payment_method, payment_date, re
             reference_no,
             payment_note,
             user,
+            financial_account=financial_account,
         )
         payments.append(payment)
         remaining = (remaining - allocation).quantize(Decimal('0.01'))
@@ -248,11 +267,26 @@ def mark_service_returned(request, service_id):
     if request.method == 'POST':
         vendor_cost = request.POST.get('vendor_cost')
         client_charge = request.POST.get('client_charge')
+        vendor_bill_number = (request.POST.get('vendor_bill_number') or '').strip()
+        return_date_str = (request.POST.get('return_date') or '').strip()
         
-        # Validate that costs are provided
+        # Validate that costs and bill number are provided
         if not vendor_cost or not client_charge:
             messages.error(request, "Both Vendor Bill Amount and Client Charge are required.")
             return redirect('vendor_dashboard')
+
+        if not vendor_bill_number:
+            messages.error(request, "Vendor Bill / Invoice Number is required.")
+            return redirect('vendor_dashboard')
+
+        return_dt = timezone.now()
+        if return_date_str:
+            try:
+                parsed_date = datetime.strptime(return_date_str, '%Y-%m-%d').date()
+                now_time = timezone.localtime().time()
+                return_dt = timezone.make_aware(datetime.combine(parsed_date, now_time))
+            except Exception:
+                pass
         
         try:
             vendor_cost = _parse_vendor_money(vendor_cost, "vendor cost")
@@ -266,9 +300,10 @@ def mark_service_returned(request, service_id):
         vendor_balance_amount = vendor_cost.quantize(Decimal('0.01'))
         
         with transaction.atomic():
-            # Step 1: Update the SpecializedService record with costs
+            # Step 1: Update the SpecializedService record with costs & bill info
             service.status = 'Returned from Vendor'
-            service.returned_date = timezone.now()
+            service.returned_date = return_dt
+            service.vendor_bill_number = vendor_bill_number
             service.vendor_cost = vendor_cost
             service.vendor_discount_amount = vendor_discount_amount
             service.vendor_paid_amount = vendor_paid_amount
@@ -295,7 +330,8 @@ def mark_service_returned(request, service_id):
             # Step 4: Log this important event
             details = (
                 f"Device returned from vendor '{service.vendor.company_name}'. "
-                f"Vendor bill Rs {vendor_cost}, balance Rs {vendor_balance_amount}, "
+                f"Bill #{vendor_bill_number}, return date {return_dt.strftime('%d-%m-%Y')}, "
+                f"vendor cost Rs {vendor_cost}, balance Rs {vendor_balance_amount}, "
                 f"client charge Rs {client_charge}. Service charge automatically added. "
                 f"Status changed from '{old_status}' to 'Repairing'."
             )
@@ -326,7 +362,6 @@ def record_vendor_payment(request, vendor_id):
 
     try:
         amount = _parse_vendor_money(request.POST.get('payment_amount'), "payment amount")
-        payment_method = _clean_vendor_payment_method(request.POST.get('payment_method'))
         payment_date = _parse_vendor_payment_date(request.POST.get('payment_date'))
     except ValueError as exc:
         messages.error(request, str(exc))
@@ -334,6 +369,35 @@ def record_vendor_payment(request, vendor_id):
 
     reference_no = request.POST.get('reference_no')
     notes = request.POST.get('notes')
+
+    financial_account_id = request.POST.get('financial_account')
+    financial_account = None
+    if financial_account_id:
+        financial_account = FinancialAccount.objects.filter(
+            Q(workspace=current_workspace) | Q(workspace__isnull=True),
+            id=financial_account_id,
+            is_active=True,
+        ).first()
+        if not financial_account:
+            messages.error(request, "Selected payment account is invalid or inactive.")
+            return _redirect_back_to_vendor_page(request)
+    else:
+        financial_account = FinancialAccount.get_default_cash_account(current_workspace)
+
+    # Derive payment method automatically from the selected financial account
+    raw_payment_method = request.POST.get('payment_method')
+    if raw_payment_method:
+        try:
+            payment_method = _clean_vendor_payment_method(raw_payment_method)
+        except ValueError:
+            payment_method = VendorPayment.METHOD_CASH
+    elif financial_account:
+        if financial_account.account_type == FinancialAccount.ACCOUNT_TYPE_CASH:
+            payment_method = VendorPayment.METHOD_CASH
+        else:
+            payment_method = VendorPayment.METHOD_TRANSFER
+    else:
+        payment_method = VendorPayment.METHOD_CASH
 
     try:
         with transaction.atomic():
@@ -356,6 +420,7 @@ def record_vendor_payment(request, vendor_id):
                         reference_no,
                         notes,
                         request.user,
+                        financial_account=financial_account,
                     )
                 ]
             else:
@@ -367,17 +432,19 @@ def record_vendor_payment(request, vendor_id):
                     reference_no,
                     notes,
                     request.user,
+                    financial_account=financial_account,
                 )
 
             for payment in payments:
                 log_label = "Vendor bulk payment allocated" if payment_scope == 'bulk' else "Vendor payment recorded"
+                acc_label = f" via {financial_account.name}" if financial_account else ""
                 JobTicketLog.objects.create(
                     job_ticket=payment.specialized_service.job_ticket,
                     user=request.user,
                     action='BILLING',
                     details=(
                         f"{log_label} for '{vendor.company_name}': "
-                        f"Rs {payment.amount} by {payment.get_payment_method_display()} on {payment.payment_date}. "
+                        f"Rs {payment.amount} by {payment.get_payment_method_display()}{acc_label} on {payment.payment_date}. "
                         f"Balance Rs {payment.balance_after}."
                     ),
                 )
@@ -541,12 +608,19 @@ def vendor_dashboard(request):
     recent_payments = (
         VendorPayment.objects
         .filter(vendor_id__in=vendor_by_id)
-        .select_related('vendor', 'specialized_service__job_ticket', 'created_by')
+        .select_related('vendor', 'specialized_service__job_ticket', 'created_by', 'financial_account')
         .order_by('-payment_date', '-created_at')
     )
     if current_workspace:
         recent_payments = recent_payments.filter(specialized_service__job_ticket__workspace=current_workspace)
     recent_payments = recent_payments[:75]
+
+    financial_accounts = list(
+        FinancialAccount.objects.filter(
+            Q(workspace=current_workspace) | Q(workspace__isnull=True),
+            is_active=True,
+        ).order_by('-is_default_cash', '-is_default_bank', 'name')
+    )
 
     context = {
         'vendors': vendors,
@@ -555,6 +629,7 @@ def vendor_dashboard(request):
         'recent_vendor_payments': recent_payments,
         'today_date': timezone.localdate().strftime('%Y-%m-%d'),
         'vendor_payment_method_choices': VendorPayment.METHOD_CHOICES,
+        'financial_accounts': financial_accounts,
     }
     return render(request, 'job_tickets/vendor_dashboard.html', context)
 
@@ -628,7 +703,7 @@ def _build_vendor_report_context(request, vendor_id):
         SpecializedService.objects.filter(vendor=vendor),
         getattr(request, 'current_workspace', None), field='job_ticket__workspace',
     ).select_related('job_ticket')
-    payments = VendorPayment.objects.filter(vendor=vendor).select_related('specialized_service__job_ticket', 'created_by')
+    payments = VendorPayment.objects.filter(vendor=vendor).select_related('specialized_service__job_ticket', 'created_by', 'financial_account')
     period_query = ''
 
     # Apply date filtering using vendor concept
@@ -801,6 +876,7 @@ def vendor_report_export_csv(request, vendor_id):
         'Date',
         'Job Code',
         'Method',
+        'Account',
         'Payable Before',
         'Paid',
         'Balance',
@@ -815,6 +891,7 @@ def vendor_report_export_csv(request, vendor_id):
             payment.payment_date.strftime('%Y-%m-%d') if payment.payment_date else '',
             payment_job.job_code,
             payment.get_payment_method_display(),
+            payment.financial_account.name if payment.financial_account else '',
             money(payment.balance_before),
             money(payment.amount),
             money(payment.balance_after),

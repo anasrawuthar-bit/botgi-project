@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>Active Workload Report</title>
+    {% if company.display_logo_url %}
+    <link rel="icon" type="image/png" href="{{ company.display_logo_url }}">
+    {% else %}
+    <link rel="icon" type="image/png" href="/static/img/logo.png">
+    {% endif %}
     <style>
         body { font-family: Arial, sans-serif; font-size: 10pt; margin: 0; padding: 20px; }
         .header { text-align: center; margin-bottom: 30px; }

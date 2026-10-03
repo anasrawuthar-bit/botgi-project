@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from ..forms import ExpenseForm
-from ..models import Expense, JobTicket
+from ..models import Expense, FinancialAccount, JobTicket
 from .helpers import _staff_access_required, scope_to_workspace
 
 
@@ -152,7 +152,26 @@ def expense_create(request):
         expense = form.save(commit=False)
         expense.workspace = workspace
         expense.recorded_by = request.user
+
+        # Auto-route to default account if not explicitly selected
+        if not expense.financial_account:
+            expense.financial_account = FinancialAccount.get_default_for_payment_method(
+                workspace,
+                expense.payment_mode
+            )
+
         expense.save()
+
+        # Deduct from financial account ledger
+        if expense.financial_account and expense.amount > Decimal('0.00'):
+            expense.financial_account.withdraw(
+                amount=expense.amount,
+                description=f"Expense: {expense.title} ({expense.get_category_display()})",
+                reference_no=expense.expense_number or '',
+                transaction_date=expense.expense_date,
+                expense=expense,
+                user=request.user,
+            )
 
         # If job linked, optionally log to JobTicketLog
         if expense.job_ticket:
@@ -164,7 +183,8 @@ def expense_create(request):
                 details=f"Expense of ₹{expense.amount:.2f} ({expense.title}) recorded.",
             )
 
-        messages.success(request, f"Expense '{expense.title}' (₹{expense.amount:.2f}) recorded successfully.")
+        account_name = f" from {expense.financial_account.name}" if expense.financial_account else ""
+        messages.success(request, f"Expense '{expense.title}' (₹{expense.amount:.2f}){account_name} recorded successfully.")
         return redirect(next_url)
 
     for field, errs in form.errors.items():
@@ -175,7 +195,7 @@ def expense_create(request):
 @login_required
 @require_POST
 def expense_delete(request, expense_id):
-    """Delete an expense record."""
+    """Delete an expense record and restore balance to financial account."""
     denied = _staff_access_required(request, "expense_management")
     if denied:
         return denied
@@ -185,8 +205,16 @@ def expense_delete(request, expense_id):
     expense = get_object_or_404(qs, id=expense_id)
     title = expense.title
     number = expense.expense_number or str(expense.id)
+
+    # Restore balance on linked financial account
+    for txn in expense.account_transactions.all():
+        acc = txn.account
+        acc.current_balance += txn.amount
+        acc.save(update_fields=['current_balance', 'updated_at'])
+        txn.delete()
+
     expense.delete()
 
-    messages.success(request, f"Expense {number} ('{title}') deleted successfully.")
+    messages.success(request, f"Expense {number} ('{title}') deleted successfully. Account balance restored.")
     next_url = request.POST.get('next') or 'expense_dashboard'
     return redirect(next_url)

@@ -182,10 +182,12 @@ def mobile_api_job_detail(request, job_code):
         return error_response
 
     job = get_object_or_404(
-        JobTicket.objects.select_related('assigned_to__user', 'created_by').prefetch_related(
+        JobTicket.objects.select_related('assigned_to__user', 'created_by', 'rack').prefetch_related(
             'service_logs__product_sale__product',
             'logs__user',
             'photos',
+            'tasks__assigned_to__user',
+            'tasks__created_by',
         ),
         job_code=job_code,
     )
@@ -256,6 +258,28 @@ def mobile_api_job_detail(request, job_code):
     can_change_status = _mobile_technician_can_change_status(job)
     specialized_service = getattr(job, 'specialized_service', None)
 
+    linked_tasks = []
+    for t in job.tasks.all().order_by('-created_at')[:20]:
+        linked_tasks.append(
+            {
+                'id': t.id,
+                'title': t.title,
+                'description': t.description or '',
+                'priority': t.priority,
+                'priority_display': t.get_priority_display(),
+                'status': t.status,
+                'status_display': t.get_status_display(),
+                'due_date': timezone.localtime(t.due_date).strftime('%Y-%m-%d %H:%M') if t.due_date else '',
+                'assigned_to': (
+                    t.assigned_to.user.get_full_name() or t.assigned_to.user.username
+                    if t.assigned_to and getattr(t.assigned_to, 'user', None)
+                    else ''
+                ),
+                'created_by': t.created_by.username if t.created_by else '',
+                'created_at': timezone.localtime(t.created_at).strftime('%Y-%m-%d %H:%M'),
+            }
+        )
+
     return JsonResponse(
         {
             'job': {
@@ -268,6 +292,9 @@ def mobile_api_job_detail(request, job_code):
                 'device_brand': job.device_brand or '',
                 'device_model': job.device_model or '',
                 'device_serial': job.device_serial or '',
+                'device_password': job.device_password or '',
+                'rack_location': job.rack_location_display() or '',
+                'rack_short': job.rack_short_display() or '',
                 'reported_issue': job.reported_issue or '',
                 'additional_items': job.additional_items or '',
                 'technician_notes': job.technician_notes or '',
@@ -290,6 +317,7 @@ def mobile_api_job_detail(request, job_code):
                 'created_at': timezone.localtime(job.created_at).strftime('%Y-%m-%d %H:%M'),
                 'technician_checklist': _get_job_checklist_answers(job),
             },
+            'tasks': linked_tasks,
 
             'financials': {
                 'part_total': str(job.part_total or Decimal('0.00')),
@@ -811,8 +839,8 @@ def mobile_api_job_action(request, job_code):
                     )
             target_status = 'Completed'
         elif action_key == 'ready_for_pickup':
-            if not permissions['is_staff']:
-                return JsonResponse({'error': 'forbidden', 'message': 'Only staff can perform this action.'}, status=403)
+            if not permissions['is_staff'] or not user_has_staff_access(user, 'job_status_change'):
+                return JsonResponse({'error': 'forbidden', 'message': 'Only staff with status change access can perform this action.'}, status=403)
             if job.status != 'Completed':
                 return JsonResponse(
                     {'error': 'invalid_transition', 'message': 'Only completed jobs can be marked ready for pickup.'},
@@ -1921,6 +1949,20 @@ def mobile_api_reports_summary(request):
 
 def _serialize_task_for_mobile(task, user=None, detailed=False):
     """Serialize a Task for the Flutter mobile app."""
+    is_tech = hasattr(user, 'technician_profile') if user else False
+    is_mine = False
+    if user:
+        if is_tech and task.assigned_to_id == user.technician_profile.id:
+            is_mine = True
+        elif task.created_by_id == user.id:
+            is_mine = True
+
+    is_overdue = bool(
+        task.due_date and
+        task.due_date < timezone.now() and
+        task.status in [Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]
+    )
+
     data = {
         'id': task.id,
         'title': task.title,
@@ -1930,10 +1972,14 @@ def _serialize_task_for_mobile(task, user=None, detailed=False):
         'status': task.status,
         'status_display': task.get_status_display(),
         'due_date': timezone.localtime(task.due_date).strftime('%Y-%m-%d %H:%M') if task.due_date else '',
+        'is_overdue': is_overdue,
+        'is_mine': is_mine,
         'created_at': timezone.localtime(task.created_at).strftime('%Y-%m-%d %H:%M'),
         'completed_at': timezone.localtime(task.completed_at).strftime('%Y-%m-%d %H:%M') if task.completed_at else '',
         'created_by': task.created_by.username if task.created_by else 'System',
         'assigned_to': task.assigned_to.user.username if task.assigned_to and task.assigned_to.user else '',
+        'assigned_to_id': task.assigned_to_id,
+        'assigned_to_name': (task.assigned_to.user.get_full_name() or task.assigned_to.user.username) if task.assigned_to and task.assigned_to.user else '',
         'job_reference': {
             'id': task.job_reference.id,
             'job_code': task.job_reference.job_code,
@@ -1969,22 +2015,117 @@ def _serialize_task_for_mobile(task, user=None, detailed=False):
     return data
 
 
+@csrf_exempt
 def mobile_api_tasks(request):
-    """List standalone tasks for technician or staff, ordered by priority."""
+    """List or create standalone tasks for technician or staff."""
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
 
-    if user.is_staff and not user_has_staff_access(user, "task_management"):
-        return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
-
     workspace = _mobile_request_workspace(request, user)
     is_tech = hasattr(user, 'technician_profile')
 
+    if request.method == 'POST':
+        # Create Task from mobile
+        if user.is_staff and not user_has_staff_access(user, "task_management"):
+            return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+
+        try:
+            payload = json.loads((request.body or b'{}').decode('utf-8'))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            payload = request.POST
+
+        title = (payload.get('title') or '').strip()
+        if not title:
+            return JsonResponse({'error': 'missing_title', 'message': 'Task title is required.'}, status=400)
+
+        description = (payload.get('description') or '').strip()
+        priority = (payload.get('priority') or Task.PRIORITY_MEDIUM).strip().lower()
+        if priority not in dict(Task.PRIORITY_CHOICES):
+            priority = Task.PRIORITY_MEDIUM
+
+        due_date_str = (payload.get('due_date') or '').strip()
+        due_date = None
+        if due_date_str:
+            try:
+                from django.utils.dateparse import parse_datetime
+                due_date = parse_datetime(due_date_str)
+                if not due_date:
+                    from datetime import datetime
+                    due_date = datetime.strptime(due_date_str[:16], '%Y-%m-%d %H:%M')
+                if due_date and timezone.is_naive(due_date):
+                    due_date = timezone.make_aware(due_date)
+            except Exception:
+                due_date = None
+
+        assigned_to_id = payload.get('assigned_to_id')
+        assigned_to = None
+        if assigned_to_id:
+            assigned_to = TechnicianProfile.objects.filter(id=assigned_to_id).first()
+        elif is_tech and (payload.get('assign_to_me') or payload.get('assigned_to_me')):
+            assigned_to = user.technician_profile
+
+        job_reference_id = payload.get('job_reference_id')
+        job_code = (payload.get('job_code') or '').strip()
+        job_ref = None
+        if job_reference_id:
+            job_ref = JobTicket.objects.filter(id=job_reference_id).first()
+        elif job_code:
+            job_ref = JobTicket.objects.filter(job_code=job_code).first()
+
+        task = Task.objects.create(
+            workspace=workspace,
+            title=title,
+            description=description,
+            priority=priority,
+            due_date=due_date,
+            assigned_to=assigned_to,
+            job_reference=job_ref,
+            created_by=user,
+            status=Task.STATUS_OPEN,
+        )
+
+        initial_message = (payload.get('initial_message') or '').strip()
+        if initial_message:
+            init_msg = TaskMessage.objects.create(
+                task=task,
+                sender=user,
+                body=initial_message,
+            )
+            broadcast_task_message(task, init_msg)
+
+        broadcast_task_created(task)
+        return JsonResponse({
+            'ok': True,
+            'message': 'Task created successfully.',
+            'task': _serialize_task_for_mobile(task, user=user, detailed=True),
+        }, status=201)
+
+    # GET: List tasks
+    if user.is_staff and not user_has_staff_access(user, "task_management"):
+        return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+
+    mine_filter = request.GET.get('mine') in ('1', 'true', 'yes')
     if is_tech and not user.is_staff:
-        qs = Task.objects.filter(assigned_to=user.technician_profile)
+        base_qs = Task.objects.filter(assigned_to=user.technician_profile)
+    elif mine_filter and is_tech:
+        base_qs = scope_to_workspace(Task.objects.all(), workspace).filter(assigned_to=user.technician_profile)
+    elif mine_filter and user.is_staff:
+        base_qs = scope_to_workspace(Task.objects.all(), workspace).filter(
+            Q(assigned_to__user=user) | Q(created_by=user)
+        )
     else:
-        qs = scope_to_workspace(Task.objects.all(), workspace)
+        base_qs = scope_to_workspace(Task.objects.all(), workspace)
+
+    # Compute KPI statistics over base_qs
+    total_count = base_qs.count()
+    active_count = base_qs.filter(status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]).count()
+    urgent_count = base_qs.filter(priority=Task.PRIORITY_URGENT, status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]).count()
+    in_progress_count = base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
+    open_count = base_qs.filter(status=Task.STATUS_OPEN).count()
+    done_count = base_qs.filter(status=Task.STATUS_DONE).count()
+
+    qs = base_qs
 
     # Search
     q = (request.GET.get('q') or '').strip()
@@ -2016,11 +2157,23 @@ def mobile_api_tasks(request):
     )
 
     tasks_data = [_serialize_task_for_mobile(t, user=user) for t in tasks_list]
-    return JsonResponse({'count': len(tasks_data), 'tasks': tasks_data})
+    return JsonResponse({
+        'count': len(tasks_data),
+        'metrics': {
+            'total': total_count,
+            'active': active_count,
+            'urgent': urgent_count,
+            'in_progress': in_progress_count,
+            'open': open_count,
+            'done': done_count,
+        },
+        'tasks': tasks_data,
+    })
 
 
+@csrf_exempt
 def mobile_api_task_detail(request, task_id):
-    """Get full task details including attachments and messages."""
+    """Get or update full task details including attachments and messages."""
     user, error_response = authenticate_mobile_request(request)
     if error_response:
         return error_response
@@ -2039,9 +2192,143 @@ def mobile_api_task_detail(request, task_id):
     if is_tech and not user.is_staff and task.assigned_to != user.technician_profile:
         return JsonResponse({'error': 'forbidden', 'message': 'You are not assigned to this task.'}, status=403)
 
+    if request.method in ('POST', 'PATCH', 'PUT'):
+        try:
+            payload = json.loads((request.body or b'{}').decode('utf-8'))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            payload = request.POST
+
+        update_fields = ['updated_at']
+        if 'title' in payload and (payload['title'] or '').strip():
+            task.title = payload['title'].strip()
+            update_fields.append('title')
+        if 'description' in payload:
+            task.description = (payload['description'] or '').strip()
+            update_fields.append('description')
+        if 'priority' in payload and payload['priority'] in dict(Task.PRIORITY_CHOICES):
+            task.priority = payload['priority']
+            update_fields.append('priority')
+        if 'due_date' in payload:
+            due_str = (payload['due_date'] or '').strip()
+            if due_str:
+                try:
+                    from django.utils.dateparse import parse_datetime
+                    due_dt = parse_datetime(due_str)
+                    if not due_dt:
+                        from datetime import datetime
+                        due_dt = datetime.strptime(due_str[:16], '%Y-%m-%d %H:%M')
+                    if due_dt and timezone.is_naive(due_dt):
+                        due_dt = timezone.make_aware(due_dt)
+                    task.due_date = due_dt
+                except Exception:
+                    pass
+            else:
+                task.due_date = None
+            update_fields.append('due_date')
+        if 'assigned_to_id' in payload:
+            aid = payload['assigned_to_id']
+            if aid:
+                tech = TechnicianProfile.objects.filter(id=aid).first()
+                if tech:
+                    task.assigned_to = tech
+                    update_fields.append('assigned_to')
+            else:
+                task.assigned_to = None
+                update_fields.append('assigned_to')
+
+        task.save(update_fields=list(set(update_fields)))
+        return JsonResponse({
+            'ok': True,
+            'message': 'Task updated successfully.',
+            'task': _serialize_task_for_mobile(task, user=user, detailed=True),
+        })
+
     return JsonResponse({
         'ok': True,
         'task': _serialize_task_for_mobile(task, user=user, detailed=True),
+    })
+
+
+def mobile_api_technicians(request):
+    """List active technicians available for task/job assignment."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+    workspace = _mobile_request_workspace(request, user)
+    techs = get_assignable_technician_queryset(workspace).select_related('user')
+    tech_data = [
+        {
+            'id': t.id,
+            'unique_id': t.unique_id,
+            'name': t.user.get_full_name() or t.user.username,
+            'username': t.user.username,
+            'is_me': bool(hasattr(user, 'technician_profile') and user.technician_profile.id == t.id),
+        }
+        for t in techs
+    ]
+    return JsonResponse({'technicians': tech_data})
+
+
+def mobile_api_jobs_quicklist(request):
+    """List recent/active jobs for dropdown selection (e.g. when creating/linking a task)."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+    workspace = _mobile_request_workspace(request, user)
+    qs = scope_to_workspace(JobTicket.objects.exclude(status='Closed'), workspace)
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        qs = qs.filter(
+            Q(job_code__icontains=q) |
+            Q(customer_name__icontains=q) |
+            Q(device_brand__icontains=q) |
+            Q(device_model__icontains=q)
+        )
+    jobs = qs.order_by('-created_at')[:30]
+    data = [
+        {
+            'id': j.id,
+            'job_code': j.job_code,
+            'customer_name': j.customer_name,
+            'device': f"{j.device_type} {j.device_brand or ''}".strip(),
+            'status': j.status,
+        }
+        for j in jobs
+    ]
+    return JsonResponse({'jobs': data})
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_task_attachment_upload(request, task_id):
+    """Upload an attachment or photo to a task."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    task = get_object_or_404(Task, pk=task_id)
+    file_obj = request.FILES.get('file') or request.FILES.get('attachment')
+    if not file_obj:
+        return JsonResponse({'error': 'no_file', 'message': 'No file uploaded.'}, status=400)
+
+    att = TaskAttachment.objects.create(
+        task=task,
+        file=file_obj,
+        file_name=file_obj.name,
+        file_size=file_obj.size,
+        uploaded_by=user,
+    )
+    return JsonResponse({
+        'ok': True,
+        'message': 'Attachment uploaded.',
+        'attachment': {
+            'id': att.id,
+            'file_name': att.file_name,
+            'file_size': att.file_size,
+            'file_url': att.file.url if att.file else '',
+            'uploaded_at': timezone.localtime(att.uploaded_at).strftime('%Y-%m-%d %H:%M'),
+            'uploaded_by': user.username,
+        }
     })
 
 

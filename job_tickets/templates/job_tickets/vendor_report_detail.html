@@ -129,6 +129,7 @@
                         <th>Date</th>
                         <th>Job Code</th>
                         <th>Method</th>
+                        <th>Account</th>
                         <th class="text-end">Payable Before</th>
                         <th class="text-end">Paid</th>
                         <th class="text-end">Balance</th>
@@ -146,6 +147,15 @@
                             </a>
                         </td>
                         <td>{{ payment.get_payment_method_display }}</td>
+                        <td>
+                            {% if payment.financial_account %}
+                                <span class="badge {% if payment.financial_account.account_type == 'cash' %}bg-success-subtle text-success-emphasis border border-success-subtle{% else %}bg-primary-subtle text-primary-emphasis border border-primary-subtle{% endif %} px-2 py-0.5 rounded-pill">
+                                    <i class="fa-solid {% if payment.financial_account.account_type == 'cash' %}fa-money-bill-wave{% else %}fa-building-columns{% endif %} me-1"></i>{{ payment.financial_account.name }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted small">-</span>
+                            {% endif %}
+                        </td>
                         <td class="text-end">&#8377;{{ payment.balance_before|floatformat:2 }}</td>
                         <td class="text-end text-primary">&#8377;{{ payment.amount|floatformat:2 }}</td>
                         <td class="text-end text-warning">&#8377;{{ payment.balance_after|floatformat:2 }}</td>
@@ -154,7 +164,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center">No payments recorded for this vendor yet.</td>
+                        <td colspan="9" class="text-center">No payments recorded for this vendor yet.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

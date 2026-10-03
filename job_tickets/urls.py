@@ -58,6 +58,8 @@ urlpatterns = [
     path('staff/reports/monthly/print/', views.print_monthly_summary_report, name='print_monthly_summary_report'),
     path('staff/reports/monthly/export/csv/', views.export_monthly_summary_csv, name='export_monthly_summary_csv'),
     path('staff/reports/monthly/print/pdf-layout/', views.print_monthly_summary_pdf, name='print_monthly_summary_pdf'),
+    path('staff/reports/daybook/print/', views.print_daily_daybook_report, name='print_daily_daybook_report'),
+    path('staff/reports/daybook/export/csv/', views.export_daily_daybook_csv, name='export_daily_daybook_csv'),
 
     # Technician-facing views
     path('technician-dashboard/', views.technician_dashboard, name='technician_dashboard'),
@@ -74,6 +76,7 @@ urlpatterns = [
     path('api/mobile/login/', views.mobile_api_login, name='mobile_api_login'),
     path('api/mobile/me/', views.mobile_api_me, name='mobile_api_me'),
     path('api/mobile/jobs/', views.mobile_api_jobs, name='mobile_api_jobs'),
+    path('api/mobile/jobs/quick-list/', views.mobile_api_jobs_quicklist, name='mobile_api_jobs_quicklist'),
     path('api/mobile/jobs/<str:job_code>/', views.mobile_api_job_detail, name='mobile_api_job_detail'),
     path('api/mobile/jobs/<str:job_code>/action/', views.mobile_api_job_action, name='mobile_api_job_action'),
     path('api/mobile/jobs/<str:job_code>/technician-update/', views.mobile_api_job_technician_update, name='mobile_api_job_technician_update'),
@@ -117,6 +120,8 @@ urlpatterns = [
     path('api/whatsapp/bridge/restart/', whatsapp_views.whatsapp_bridge_restart_api, name='whatsapp_bridge_restart_api'),
     path('api/whatsapp/bridge/logout/', whatsapp_views.whatsapp_bridge_logout_api, name='whatsapp_bridge_logout_api'),
     path('api/whatsapp/bridge/test-send/', whatsapp_views.whatsapp_bridge_test_send_api, name='whatsapp_bridge_test_send_api'),
+    path('api/whatsapp/daily-report/send/', whatsapp_views.whatsapp_daily_report_send_api, name='whatsapp_daily_report_send_api'),
+    path('api/whatsapp/daily-report/preview/', whatsapp_views.whatsapp_daily_report_preview_api, name='whatsapp_daily_report_preview_api'),
     path('api/whatsapp/webhook/', whatsapp_views.whatsapp_cloud_webhook_api, name='whatsapp_cloud_webhook_api'),
 
     # from chatgpt
@@ -160,11 +165,13 @@ urlpatterns = [
     path('technician/tasks/<int:task_id>/', views.technician_task_detail, name='technician_task_detail'),
 
     # Standalone Task Management (Mobile API)
+    path('api/mobile/technicians/', views.mobile_api_technicians, name='mobile_api_technicians'),
     path('api/mobile/tasks/', views.mobile_api_tasks, name='mobile_api_tasks'),
     path('api/mobile/tasks/<int:task_id>/', views.mobile_api_task_detail, name='mobile_api_task_detail'),
     path('api/mobile/tasks/<int:task_id>/status/', views.mobile_api_task_update_status, name='mobile_api_task_update_status'),
     path('api/mobile/tasks/<int:task_id>/message/', views.mobile_api_task_message_send, name='mobile_api_task_message_send'),
     path('api/mobile/tasks/<int:task_id>/messages/', views.mobile_api_task_messages, name='mobile_api_task_messages'),
+    path('api/mobile/tasks/<int:task_id>/attachments/', views.mobile_api_task_attachment_upload, name='mobile_api_task_attachment_upload'),
 
     # Expense Management
     path('staff/expenses/', views.expense_dashboard, name='expense_dashboard'),
@@ -176,4 +183,27 @@ urlpatterns = [
     path('staff/racks/<int:rack_id>/edit/', views.rack_edit, name='rack_edit'),
     path('staff/racks/<int:rack_id>/delete/', views.rack_delete, name='rack_delete'),
     path('staff/job/<str:job_code>/update-rack/', views.staff_update_job_rack, name='staff_update_job_rack'),
+
+    # Financial Accounts & Self Transfers
+    path('staff/accounts/', views.accounts_dashboard, name='accounts_dashboard'),
+    path('staff/accounts/create/', views.account_create, name='account_create'),
+    path('staff/accounts/<int:account_id>/edit/', views.account_edit, name='account_edit'),
+    path('staff/accounts/<int:account_id>/set-default/', views.account_set_default, name='account_set_default'),
+    path('staff/accounts/<int:account_id>/delete/', views.account_delete, name='account_delete'),
+    path('staff/accounts/<int:account_id>/deactivate/', views.account_deactivate, name='account_deactivate'),
+    path('staff/accounts/<int:account_id>/reactivate/', views.account_reactivate, name='account_reactivate'),
+    path('staff/accounts/transfer/', views.account_transfer, name='account_transfer'),
+
+    # Intake Presets & Checklist Management
+    path('staff/presets/create/', views.preset_create, name='preset_create'),
+    path('staff/presets/<int:preset_id>/edit/', views.preset_edit, name='preset_edit'),
+    path('staff/presets/<int:preset_id>/delete/', views.preset_delete, name='preset_delete'),
+
+    path('staff/checklists/template/create/', views.checklist_template_create, name='checklist_template_create'),
+    path('staff/checklists/template/<int:template_id>/edit/', views.checklist_template_edit, name='checklist_template_edit'),
+    path('staff/checklists/template/<int:template_id>/delete/', views.checklist_template_delete, name='checklist_template_delete'),
+
+    path('staff/checklists/template/<int:template_id>/field/create/', views.checklist_field_create, name='checklist_field_create'),
+    path('staff/checklists/field/<int:field_id>/edit/', views.checklist_field_edit, name='checklist_field_edit'),
+    path('staff/checklists/field/<int:field_id>/delete/', views.checklist_field_delete, name='checklist_field_delete'),
 ]

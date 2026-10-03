@@ -9,6 +9,9 @@ class JobDetail {
     required this.deviceBrand,
     required this.deviceModel,
     required this.deviceSerial,
+    required this.devicePassword,
+    required this.rackLocation,
+    required this.rackShort,
     required this.reportedIssue,
     required this.additionalItems,
     required this.technicianNotes,
@@ -30,10 +33,16 @@ class JobDetail {
     required this.grandTotal,
     required this.canEditNotes,
     required this.canManageServiceLogs,
+    required this.canChangeStatus,
     required this.serviceLogs,
     required this.timeline,
     required this.availableActions,
     this.taskAssignment,
+    required this.tasks,
+    required this.checklistSchema,
+    required this.checklistTitle,
+    required this.checklistNotes,
+    required this.checklistAnswers,
   });
 
   final String jobCode;
@@ -45,6 +54,9 @@ class JobDetail {
   final String deviceBrand;
   final String deviceModel;
   final String deviceSerial;
+  final String devicePassword;
+  final String rackLocation;
+  final String rackShort;
   final String reportedIssue;
   final String additionalItems;
   final String technicianNotes;
@@ -66,10 +78,16 @@ class JobDetail {
   final String grandTotal;
   final bool canEditNotes;
   final bool canManageServiceLogs;
+  final bool canChangeStatus;
   final List<JobServiceLine> serviceLogs;
   final List<JobTimelineEvent> timeline;
   final List<JobActionOption> availableActions;
   final TaskAssignmentDetail? taskAssignment;
+  final List<LinkedTaskItem> tasks;
+  final List<ChecklistFieldItem> checklistSchema;
+  final String checklistTitle;
+  final String checklistNotes;
+  final Map<String, dynamic> checklistAnswers;
 
   factory JobDetail.fromJson(Map<String, dynamic> json) {
     final job = json['job'] as Map<String, dynamic>? ?? {};
@@ -79,6 +97,9 @@ class JobDetail {
     final timelineRaw = json['timeline'];
     final actionsRaw = json['available_actions'];
     final taskRaw = json['task_assignment'];
+    final tasksRaw = json['tasks'];
+    final checklistSchemaRaw = json['technician_checklist_schema'];
+    final checklistAnswersRaw = job['technician_checklist'];
 
     return JobDetail(
       jobCode: (job['job_code'] ?? '').toString(),
@@ -90,6 +111,9 @@ class JobDetail {
       deviceBrand: (job['device_brand'] ?? '').toString(),
       deviceModel: (job['device_model'] ?? '').toString(),
       deviceSerial: (job['device_serial'] ?? '').toString(),
+      devicePassword: (job['device_password'] ?? '').toString(),
+      rackLocation: (job['rack_location'] ?? '').toString(),
+      rackShort: (job['rack_short'] ?? '').toString(),
       reportedIssue: (job['reported_issue'] ?? '').toString(),
       additionalItems: (job['additional_items'] ?? '').toString(),
       technicianNotes: (job['technician_notes'] ?? '').toString(),
@@ -114,6 +138,10 @@ class JobDetail {
       canEditNotes: (permissions['can_edit_notes'] ?? false) == true,
       canManageServiceLogs: (permissions['can_manage_service_logs'] ?? false) ==
           true,
+      canChangeStatus: (permissions['can_change_status'] ??
+              json['can_change_status'] ??
+              false) ==
+          true,
       serviceLogs: logsRaw is List
           ? logsRaw
                 .whereType<Map<String, dynamic>>()
@@ -135,6 +163,23 @@ class JobDetail {
       taskAssignment: taskRaw is Map<String, dynamic>
           ? TaskAssignmentDetail.fromJson(taskRaw)
           : null,
+      tasks: tasksRaw is List
+          ? tasksRaw
+              .whereType<Map<String, dynamic>>()
+              .map(LinkedTaskItem.fromJson)
+              .toList(growable: false)
+          : const [],
+      checklistSchema: checklistSchemaRaw is List
+          ? checklistSchemaRaw
+              .whereType<Map<String, dynamic>>()
+              .map(ChecklistFieldItem.fromJson)
+              .toList(growable: false)
+          : const [],
+      checklistTitle: (json['technician_checklist_title'] ?? '').toString(),
+      checklistNotes: (json['technician_checklist_notes'] ?? '').toString(),
+      checklistAnswers: checklistAnswersRaw is Map<String, dynamic>
+          ? Map<String, dynamic>.from(checklistAnswersRaw)
+          : {},
     );
   }
 }
@@ -299,6 +344,90 @@ class JobActionOption {
     return JobActionOption(
       key: (json['key'] ?? '').toString(),
       label: (json['label'] ?? '').toString(),
+    );
+  }
+}
+
+class ChecklistFieldItem {
+  ChecklistFieldItem({
+    required this.key,
+    required this.label,
+    required this.type,
+    required this.required,
+    required this.placeholder,
+    required this.helpText,
+    required this.options,
+    required this.value,
+  });
+
+  final String key;
+  final String label;
+  final String type; // 'checkbox', 'select', 'text'
+  final bool required;
+  final String placeholder;
+  final String helpText;
+  final List<String> options;
+  final dynamic value;
+
+  factory ChecklistFieldItem.fromJson(Map<String, dynamic> json) {
+    final opts = json['options'];
+    return ChecklistFieldItem(
+      key: (json['key'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      type: (json['type'] ?? 'text').toString(),
+      required: (json['required'] ?? false) == true,
+      placeholder: (json['placeholder'] ?? '').toString(),
+      helpText: (json['help_text'] ?? '').toString(),
+      options: opts is List
+          ? opts.map((e) => e.toString()).toList(growable: false)
+          : const [],
+      value: json['value'],
+    );
+  }
+}
+
+class LinkedTaskItem {
+  LinkedTaskItem({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.priority,
+    required this.priorityDisplay,
+    required this.status,
+    required this.statusDisplay,
+    required this.dueDate,
+    required this.assignedTo,
+    required this.createdBy,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String title;
+  final String description;
+  final String priority;
+  final String priorityDisplay;
+  final String status;
+  final String statusDisplay;
+  final String dueDate;
+  final String assignedTo;
+  final String createdBy;
+  final String createdAt;
+
+  factory LinkedTaskItem.fromJson(Map<String, dynamic> json) {
+    return LinkedTaskItem(
+      id: (json['id'] is int)
+          ? json['id'] as int
+          : int.tryParse('${json['id']}') ?? 0,
+      title: (json['title'] ?? '').toString(),
+      description: (json['description'] ?? '').toString(),
+      priority: (json['priority'] ?? 'medium').toString(),
+      priorityDisplay: (json['priority_display'] ?? 'Medium').toString(),
+      status: (json['status'] ?? 'open').toString(),
+      statusDisplay: (json['status_display'] ?? 'Open').toString(),
+      dueDate: (json['due_date'] ?? '').toString(),
+      assignedTo: (json['assigned_to'] ?? '').toString(),
+      createdBy: (json['created_by'] ?? '').toString(),
+      createdAt: (json['created_at'] ?? '').toString(),
     );
   }
 }
