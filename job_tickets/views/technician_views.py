@@ -1010,7 +1010,7 @@ def technician_task_detail(request, task_id):
     task = get_object_or_404(task_qs.filter(claimable_q), id=task_id)
 
     attachments = task.attachments.all()
-    messages_list = task.messages.select_related('sender').all()
+    messages_list = task.messages.select_related('sender').prefetch_related('attachments').all()
     message_form = TaskMessageForm()
 
     context = {

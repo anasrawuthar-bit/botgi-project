@@ -3193,7 +3193,7 @@ def task_detail(request, task_id):
     task = get_object_or_404(qs, id=task_id)
 
     attachments = task.attachments.all()
-    messages_list = task.messages.select_related('sender').all()
+    messages_list = task.messages.select_related('sender').prefetch_related('attachments').all()
     message_form = TaskMessageForm()
     technicians = get_assignable_technician_queryset(workspace)
 
@@ -3232,15 +3232,23 @@ def task_message_send(request, task_id):
             sender=request.user,
             body=form.cleaned_data['body'],
         )
+        msg_attachments = []
         files = request.FILES.getlist('attachments')
         for f in files:
-            TaskAttachment.objects.create(
+            att = TaskAttachment.objects.create(
                 task=task,
+                message=msg,
                 file=f,
                 file_name=f.name,
                 file_size=f.size,
                 uploaded_by=request.user,
             )
+            msg_attachments.append({
+                'id': att.id,
+                'name': att.file_name or (att.file.name.split('/')[-1] if att.file else 'file'),
+                'url': att.file.url if att.file else '',
+                'size': att.file_size or 0,
+            })
         broadcast_task_message(task, msg)
         if request.headers.get('x-requested-with') == 'XMLHttpRequest':
             return JsonResponse({
@@ -3249,6 +3257,7 @@ def task_message_send(request, task_id):
                 'sender': msg.sender.username,
                 'body': msg.body,
                 'sent_at': timezone.localtime(msg.sent_at).strftime('%d %b %Y, %H:%M'),
+                'attachments': msg_attachments,
             })
 
     if is_tech and not request.user.is_staff:

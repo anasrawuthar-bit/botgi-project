@@ -490,15 +490,11 @@
 
     if (msgForm) {
         msgForm.addEventListener('submit', function(e) {
-            const fileInput = msgForm.querySelector('input[type="file"]');
-            const hasFiles = fileInput && fileInput.files && fileInput.files.length > 0;
-            if (hasFiles) {
-                return;
-            }
-
             e.preventDefault();
             const text = bodyInput ? bodyInput.value.trim() : '';
-            if (!text) return;
+            const fileInput = msgForm.querySelector('input[type="file"][name="attachments"]');
+            const hasFiles = fileInput && fileInput.files && fileInput.files.length > 0;
+            if (!text && !hasFiles) return;
 
             const tempId = 'temp-' + Date.now();
             const tempDiv = document.createElement('div');
@@ -508,7 +504,7 @@
             tempDiv.style.opacity = '0.7';
             tempDiv.innerHTML = `
                 <div class="chat-bubble">
-                    ${escapeHtml(text).replace(/\n/g, '<br>')}
+                    ${escapeHtml(text || 'Sent attachment(s)').replace(/\n/g, '<br>')}
                 </div>
                 <div class="chat-meta">
                     <strong>${escapeHtml(currentUsername)}</strong> &bull; Sending...
@@ -518,10 +514,19 @@
             if (placeholder) placeholder.remove();
             chatBox.appendChild(tempDiv);
             scrollToBottom();
-            if (bodyInput) bodyInput.value = '';
 
             const formData = new FormData(msgForm);
-            formData.set('body', text);
+            if (text) formData.set('body', text);
+
+            if (bodyInput) bodyInput.value = '';
+            if (fileInput) {
+                fileInput.value = '';
+                const label = fileInput.closest('label');
+                if (label) {
+                    label.classList.remove('btn-primary');
+                    label.classList.add('btn-outline-secondary');
+                }
+            }
 
             fetch(msgForm.action, {
                 method: 'POST',
@@ -541,7 +546,16 @@
                         tempDiv.removeAttribute('data-pending');
                         tempDiv.style.opacity = '1';
                         tempDiv.querySelector('.chat-meta').innerHTML = `<strong>${escapeHtml(data.sender)}</strong> &bull; ${data.sent_at}`;
+                        if (data.attachments && data.attachments.length > 0 && !tempDiv.querySelector('.chat-bubble .border-top')) {
+                            let attachmentsHtml = '<div class="mt-2 pt-2 border-top border-white-50 small">';
+                            data.attachments.forEach(att => {
+                                attachmentsHtml += `<div><i class="fas fa-paperclip me-1"></i><a href="${att.url}" target="_blank" class="text-white text-decoration-none fw-semibold">${escapeHtml(att.name)}</a></div>`;
+                            });
+                            attachmentsHtml += '</div>';
+                            tempDiv.querySelector('.chat-bubble').insertAdjacentHTML('beforeend', attachmentsHtml);
+                        }
                     }
+                    scrollToBottom();
                 } else {
                     tempDiv.remove();
                 }

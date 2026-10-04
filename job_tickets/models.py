@@ -1643,6 +1643,7 @@ class Task(models.Model):
 class TaskAttachment(models.Model):
     """File attachment for a standalone Task."""
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='attachments')
+    message = models.ForeignKey('TaskMessage', on_delete=models.SET_NULL, null=True, blank=True, related_name='attachments')
     file = models.FileField(upload_to='task_attachments/%Y/%m/', blank=True, null=True)
     file_name = models.CharField(max_length=255, blank=True)
     file_size = models.PositiveIntegerField(default=0)

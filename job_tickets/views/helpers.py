@@ -1630,8 +1630,8 @@ def broadcast_task_message(task, msg):
 
         workspace_id = task.workspace_id
         attachments = []
-        if hasattr(task, 'attachments'):
-            for att in task.attachments.all().order_by('-uploaded_at')[:5]:
+        if hasattr(msg, 'attachments'):
+            for att in msg.attachments.all():
                 attachments.append({
                     'id': att.id,
                     'name': att.file_name or (att.file.name.split('/')[-1] if att.file else 'file'),

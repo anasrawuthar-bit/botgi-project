@@ -2708,6 +2708,7 @@ def mobile_api_task_message_send(request, task_id):
     for f in files:
         TaskAttachment.objects.create(
             task=task,
+            message=msg,
             file=f,
             file_name=f.name,
             file_size=f.size,
