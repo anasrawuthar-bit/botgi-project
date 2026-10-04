@@ -11,49 +11,81 @@
     font-family: "Plus Jakarta Sans", "Inter", sans-serif;
   }
 
-  .inventory-products-shell .stat-card p {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 0.76rem;
+  .stat-card-clickable {
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 12px;
+    border: 1px solid rgba(15, 42, 86, 0.08);
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(15, 42, 86, 0.04);
+  }
+
+  .stat-card-clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(15, 42, 86, 0.08);
+    border-color: rgba(10, 124, 134, 0.3);
+  }
+
+  .stat-card-clickable.active-filter {
+    border-color: #0A7C86 !important;
+    background: #f0fdfa !important;
+    box-shadow: 0 0 0 2px rgba(10, 124, 134, 0.25) !important;
   }
 
   .inventory-product-catalog {
     border: 1px solid rgba(15, 42, 86, 0.08);
-    box-shadow: 0 18px 45px rgba(15, 42, 86, 0.08);
+    box-shadow: 0 18px 45px rgba(15, 42, 86, 0.06);
+    border-radius: 12px;
   }
 
   .inventory-product-catalog .table {
-    min-width: 1160px;
+    min-width: 100%;
+    margin-bottom: 0;
   }
 
   .inventory-product-catalog thead th {
-    font-size: 0.88rem;
+    font-size: 0.76rem;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #475569;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
     white-space: nowrap;
   }
 
   .inventory-product-catalog tbody td {
-    vertical-align: top;
-    padding-top: 0.9rem;
-    padding-bottom: 0.9rem;
+    vertical-align: middle;
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
   }
 
   .inventory-product-name {
-    color: #10284d;
-    font-size: 1.05rem;
+    color: #0f172a;
+    font-size: 0.96rem;
     font-weight: 700;
     line-height: 1.35;
   }
 
   .inventory-product-search .form-control {
-    min-width: 15rem;
+    min-width: 16rem;
   }
 
-  .inventory-stock-badge {
-    min-width: 2.5rem;
-    display: inline-flex;
-    justify-content: center;
+  .catalog-filter-btn.active {
+    background-color: #0A7C86 !important;
+    border-color: #0A7C86 !important;
+    color: #ffffff !important;
+    font-weight: 600;
+  }
+
+  .action-btn-group .btn {
+    border-color: #e2e8f0;
+  }
+  .action-btn-group .btn:hover {
+    border-color: #cbd5e1;
   }
 </style>
 {% endblock %}
@@ -65,13 +97,14 @@
             {% include "job_tickets/_inventory_sidebar.html" %}
         </div>
         <div class="col-lg-9 col-xl-9 inventory-shell-main-col">
+            <!-- Header Row -->
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                 <div>
-                    <h1 class="section-title mb-1"><i class="fas fa-boxes-stacked me-2"></i>Inventory Products</h1>
-                    <p class="mb-0 text-muted">Manage stock items used in billing and inventory entries.</p>
+                    <h1 class="section-title mb-1"><i class="fas fa-boxes-stacked me-2 text-primary"></i>Inventory Products</h1>
+                    <p class="mb-0 text-muted">Manage stock items, pricing, profit margins, and inventory entries.</p>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal">
+                    <button type="button" class="btn btn-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#addProductModal">
                         <i class="fas fa-plus me-1"></i>Add New Product
                     </button>
                     {% if not from_inventory %}
@@ -82,191 +115,322 @@
                 </div>
             </div>
 
+            <!-- Interactive KPI Stat Cards Row -->
             <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                    <div class="stat-card">
-                        <p>Total Products</p>
-                        <h3>{{ total_products }}</h3>
+                <div class="col-6 col-xl-3">
+                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between active-filter" data-filter-status="all" id="stat-card-all" title="Click to show all products">
+                        <div>
+                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Total Products</span>
+                            <h3 class="mb-0 fw-bold text-dark mt-1">{{ total_products }}</h3>
+                            <span class="small text-muted" style="font-size: 0.74rem;">All Catalog Items</span>
+                        </div>
+                        <div class="rounded-circle p-2.5 bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                            <i class="fas fa-boxes-stacked fa-lg"></i>
+                        </div>
                     </div>
                 </div>
-                <div class="col-md-4">
-                    <div class="stat-card">
-                        <p>Out of Stock</p>
-                        <h3>{{ out_of_stock_count }}</h3>
+                <div class="col-6 col-xl-3">
+                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-filter-status="in_stock" id="stat-card-in_stock" title="Click to show in-stock products">
+                        <div>
+                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">In Stock</span>
+                            <h3 class="mb-0 fw-bold text-success mt-1">{{ in_stock_count }}</h3>
+                            <span class="small text-muted" style="font-size: 0.74rem;">Ready to Bill</span>
+                        </div>
+                        <div class="rounded-circle p-2.5 bg-success-subtle text-success d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                            <i class="fas fa-circle-check fa-lg"></i>
+                        </div>
                     </div>
                 </div>
-                <div class="col-md-4">
-                    <div class="stat-card">
-                        <p>Reserved Alerts</p>
-                        <h3>{{ reserved_alert_count }}</h3>
+                <div class="col-6 col-xl-3">
+                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-filter-status="out_of_stock" id="stat-card-out_of_stock" title="Click to show out-of-stock products">
+                        <div>
+                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Out of Stock</span>
+                            <h3 class="mb-0 fw-bold text-danger mt-1">{{ out_of_stock_count }}</h3>
+                            <span class="small text-muted" style="font-size: 0.74rem;">Zero Quantity</span>
+                        </div>
+                        <div class="rounded-circle p-2.5 bg-danger-subtle text-danger d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                            <i class="fas fa-circle-xmark fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-xl-3">
+                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-filter-status="reserved_alert" id="stat-card-reserved_alert" title="Click to show reserved alerts">
+                        <div>
+                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Reserved Alerts</span>
+                            <h3 class="mb-0 fw-bold text-warning mt-1">{{ reserved_alert_count }}</h3>
+                            <span class="small text-muted" style="font-size: 0.74rem;">≤ Min. Stock Threshold</span>
+                        </div>
+                        <div class="rounded-circle p-2.5 bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                            <i class="fas fa-triangle-exclamation fa-lg"></i>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="card-box h-100 inventory-product-catalog">
+            <!-- Product Catalog Card -->
+            <div class="card-box h-100 inventory-product-catalog bg-white p-3">
                 <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
-                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Product Catalog</h5>
-                    <form method="get" class="d-flex gap-2 inventory-product-search" data-async-form data-async-target="#inventory-products-page">
-                        <input type="text" name="q" class="form-control" placeholder="Search by name, category, brand..." value="{{ query }}">
-                        <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search"></i></button>
-                    </form>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <h5 class="mb-0 fw-bold text-dark me-2"><i class="fas fa-list me-2 text-primary"></i>Product Catalog</h5>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Stock status filter">
+                            <button type="button" class="btn btn-outline-secondary catalog-filter-btn active" data-status-filter="all">All ({{ total_products }})</button>
+                            <button type="button" class="btn btn-outline-secondary catalog-filter-btn" data-status-filter="in_stock">In Stock ({{ in_stock_count }})</button>
+                            <button type="button" class="btn btn-outline-secondary catalog-filter-btn" data-status-filter="out_of_stock">Out of Stock ({{ out_of_stock_count }})</button>
+                            <button type="button" class="btn btn-outline-secondary catalog-filter-btn" data-status-filter="reserved_alert">Reserved Alert ({{ reserved_alert_count }})</button>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="position-relative inventory-product-search">
+                            <input type="text" id="catalog-live-search" class="form-control form-control-sm ps-4" placeholder="Search product, category, SKU, HSN..." value="{{ query }}">
+                            <i class="fas fa-search position-absolute top-50 start-0 translate-middle-y ms-2.5 text-muted" style="font-size: 0.8rem;"></i>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="table-responsive inventory-scroll-region">
-                    <table class="table table-striped table-hover">
+                <!-- Fit-to-screen Table (No horizontal scrollbar required) -->
+                <div class="table-responsive inventory-scroll-region border rounded-2">
+                    <table class="table table-hover align-middle mb-0" id="product-catalog-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Category</th>
-                                <th>GST Profile</th>
-                                <th>Last Purchase From</th>
-                                <th>Last Invoice No</th>
-                                <th>Last Purchase Date</th>
-                                <th>Purchase Price</th>
-                                <th>Sales Price</th>
-                                <th>Reserved</th>
-                                <th>Stock</th>
-                                <th>History</th>
+                                <th style="width: 26%;">Product & Category</th>
+                                <th style="width: 12%;">GST / HSN</th>
+                                <th style="width: 14%;">Purchase Price</th>
+                                <th style="width: 16%;">Sales Price & Margin</th>
+                                <th style="width: 14%;">Stock Status</th>
+                                <th style="width: 8%;">Reserved</th>
+                                <th class="text-end" style="width: 10%;">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="catalog-table-body">
                             {% for product in products %}
-                                <tr>
-                                    <td>
-                                        <span class="inventory-product-name">{{ product.name }}</span>
-                                        <div class="small text-muted mt-1">
-                                            {{ product.get_item_type_display }}{% if product.uqc %} | {{ product.uqc }}{% endif %}
-                                        </div>
-                                    </td>
-                                    <td>{{ product.category|default:"-" }}</td>
-                                    <td>
-                                        <div class="small">
-                                            <strong>{{ product.hsn_sac_code|default:"-" }}</strong>
-                                        </div>
-                                        <div class="small text-muted">
-                                            {{ product.get_tax_category_display }}{% if product.tax_category == 'taxable' %} | {{ product.gst_rate|floatformat:2 }}%{% endif %}
-                                            {% if product.cess_rate %} | Cess {{ product.cess_rate|floatformat:2 }}%{% endif %}
-                                        </div>
-                                    </td>
-                                    <td>{{ product.latest_purchase_party|default:"-" }}</td>
-                                    <td>{{ product.latest_purchase_invoice|default:"-" }}</td>
-                                    <td>{{ product.latest_purchase_date|date:"Y-m-d"|default:"-" }}</td>
-                                    <td>{{ product.cost_price|floatformat:2 }}</td>
-                                    <td>{{ product.unit_price|floatformat:2 }}</td>
-                                    <td>
-                                        <form method="post" class="inventory-inline-stock-form" data-async-form data-async-target="#inventory-products-page" data-async-success="Reserved stock updated.">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="product_id" value="{{ product.id }}">
-                                            <input type="number" name="reserved_stock" class="form-control form-control-sm" min="0" step="1" value="{{ product.reserved_stock }}">
-                                            <button type="submit" name="update_reserved_stock_submit" class="btn btn-outline-secondary btn-sm" aria-label="Save reserved stock for {{ product.name }}">
-                                                <i class="fas fa-save"></i>
-                                            </button>
-                                        </form>
-                                    </td>
-                                    <td>
-                                        {% if product.stock_quantity <= 0 %}
-                                            <span class="badge bg-danger inventory-stock-badge">{{ product.stock_quantity }}</span>
-                                        {% elif product.reserved_stock and product.stock_quantity <= product.reserved_stock %}
-                                            <span class="badge bg-warning text-dark inventory-stock-badge">{{ product.stock_quantity }}</span>
-                                        {% else %}
-                                            <span class="badge bg-success inventory-stock-badge">{{ product.stock_quantity }}</span>
+                            <tr class="product-row" 
+                                data-stock-status="{{ product.stock_status }}" 
+                                data-product-name="{{ product.name|lower }}" 
+                                data-product-category="{{ product.category|default:''|lower }}" 
+                                data-product-hsn="{{ product.hsn_sac_code|default:''|lower }}" 
+                                data-product-brand="{{ product.brand|default:''|lower }}"
+                                data-product-sku="{{ product.sku|default:''|lower }}">
+                                <td>
+                                    <div class="fw-bold text-dark inventory-product-name">{{ product.name }}</div>
+                                    <div class="d-flex align-items-center gap-1.5 flex-wrap mt-1">
+                                        {% if product.category %}
+                                        <span class="badge bg-light text-secondary border px-1.5 py-0.5" style="font-size: 0.72rem;">{{ product.category }}</span>
                                         {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="btn-group btn-group-sm" role="group" aria-label="Product actions">
-                                            <a href="{% url 'inventory_product_ledger' product_id=product.id %}" class="btn btn-outline-primary">
-                                                Ledger
-                                            </a>
-                                            <button
-                                                type="button"
-                                                class="btn btn-outline-secondary"
-                                                data-bs-toggle="collapse"
-                                                data-bs-target="#product-history-{{ product.id }}"
-                                                aria-expanded="false"
-                                                aria-controls="product-history-{{ product.id }}"
-                                            >
-                                                Quick
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr class="collapse" id="product-history-{{ product.id }}">
-                                    <td colspan="11" class="bg-light-subtle">
-                                        <div class="py-2">
-                                            <h6 class="mb-2">Transaction History</h6>
-                                            <a href="{% url 'inventory_product_ledger' product_id=product.id %}" class="btn btn-outline-primary btn-sm mb-2">
+                                        <span class="small text-muted" style="font-size: 0.75rem;">
+                                            {{ product.get_item_type_display }}{% if product.uqc %} • {{ product.uqc }}{% endif %}
+                                        </span>
+                                        {% if product.has_serial_tracking %}
+                                        <span class="badge bg-info-subtle text-info border border-info-subtle px-1.5 py-0.5" style="font-size: 0.7rem;" title="Serial / IMEI tracked product">
+                                            <i class="fas fa-barcode me-1"></i>Serial
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                    {% if product.bin_location %}
+                                    <div class="small text-muted mt-1" style="font-size: 0.74rem;">
+                                        <i class="fas fa-location-dot me-1 text-primary opacity-75"></i>{{ product.bin_location }}
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="small fw-semibold text-dark">{{ product.hsn_sac_code|default:"-" }}</div>
+                                    <div class="mt-0.5">
+                                        {% if product.tax_category == 'taxable' %}
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size: 0.72rem;">{{ product.gst_rate|floatformat:0 }}% GST</span>
+                                        {% elif product.tax_category == 'exempt' %}
+                                        <span class="badge bg-light text-muted border" style="font-size: 0.72rem;">Exempt</span>
+                                        {% elif product.tax_category == 'nil_rated' %}
+                                        <span class="badge bg-light text-muted border" style="font-size: 0.72rem;">Nil Rated</span>
+                                        {% else %}
+                                        <span class="badge bg-light text-muted border" style="font-size: 0.72rem;">Non-GST</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if product.cess_rate %}
+                                    <div class="small text-muted mt-0.5" style="font-size: 0.72rem;">+{{ product.cess_rate|floatformat:1 }}% Cess</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark font-monospace" style="font-size: 0.95rem;">₹{{ product.cost_price|floatformat:2 }}</div>
+                                    {% if product.latest_purchase_party %}
+                                    <div class="small text-muted text-truncate mt-0.5" style="max-width: 140px; font-size: 0.74rem;" title="Last: {{ product.latest_purchase_party }} on {{ product.latest_purchase_date|date:'d M Y'|default:'-' }}{% if product.latest_purchase_invoice %} (Inv: {{ product.latest_purchase_invoice }}){% endif %}">
+                                        <i class="fas fa-truck me-1 text-secondary opacity-75"></i>{{ product.latest_purchase_party }}
+                                    </div>
+                                    {% else %}
+                                    <div class="small text-muted mt-0.5" style="font-size: 0.72rem;">No purchases yet</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark font-monospace" style="font-size: 0.95rem;">₹{{ product.unit_price|floatformat:2 }}</div>
+                                    {% if product.margin_percent %}
+                                    <div class="mt-0.5">
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 0.72rem;" title="Gross Profit: ₹{{ product.profit_amount|floatformat:2 }} per unit">
+                                            <i class="fas fa-arrow-trend-up me-1"></i>+{{ product.margin_percent }}% (₹{{ product.profit_amount|floatformat:0 }})
+                                        </span>
+                                    </div>
+                                    {% elif product.cost_price > 0 and product.unit_price == product.cost_price %}
+                                    <div class="mt-0.5">
+                                        <span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 0.72rem;">0% Margin</span>
+                                    </div>
+                                    {% elif product.cost_price > 0 and product.unit_price < product.cost_price %}
+                                    <div class="mt-0.5">
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5" style="font-size: 0.72rem;">Loss Margin</span>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if product.stock_status == 'out_of_stock' %}
+                                    <div class="d-flex flex-column align-items-start">
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 fw-bold" style="font-size: 0.8rem;">
+                                            <i class="fas fa-circle-xmark me-1"></i>0 {{ product.uqc|default:'NOS' }}
+                                        </span>
+                                        <span class="small text-danger fw-semibold mt-1" style="font-size: 0.72rem;">Out of Stock</span>
+                                    </div>
+                                    {% elif product.stock_status == 'reserved_alert' %}
+                                    <div class="d-flex flex-column align-items-start">
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 fw-bold" style="font-size: 0.8rem;">
+                                            <i class="fas fa-triangle-exclamation me-1 text-warning"></i>{{ product.stock_quantity }} {{ product.uqc|default:'NOS' }}
+                                        </span>
+                                        <span class="small text-warning-emphasis fw-semibold mt-1" style="font-size: 0.72rem;">Low Stock (≤ {{ product.reserved_stock }})</span>
+                                    </div>
+                                    {% else %}
+                                    <div class="d-flex flex-column align-items-start">
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-bold" style="font-size: 0.8rem;">
+                                            <i class="fas fa-circle-check me-1"></i>{{ product.stock_quantity }} {{ product.uqc|default:'NOS' }}
+                                        </span>
+                                        <span class="small text-success fw-semibold mt-1" style="font-size: 0.72rem;">In Stock</span>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge bg-light text-dark border px-2 py-1 font-monospace" style="font-size: 0.82rem;" title="Reserved alert threshold">
+                                            {{ product.reserved_stock|default:0 }}
+                                        </span>
+                                        <button type="button" class="btn btn-sm btn-light border-0 text-muted p-1 btn-quick-reserved" title="Adjust reserved stock threshold" data-bs-toggle="modal" data-bs-target="#quickReservedModal" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" data-reserved-stock="{{ product.reserved_stock|default:0 }}">
+                                            <i class="fas fa-pen-to-square"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm action-btn-group" role="group">
+                                        <button type="button" class="btn btn-outline-primary px-2 py-1 btn-edit-product" title="Edit Product"
+                                            data-product-id="{{ product.id }}"
+                                            data-name="{{ product.name }}"
+                                            data-category="{{ product.category|default:'' }}"
+                                            data-brand="{{ product.brand|default:'' }}"
+                                            data-item-type="{{ product.item_type }}"
+                                            data-hsn="{{ product.hsn_sac_code|default:'' }}"
+                                            data-uqc="{{ product.uqc|default:'' }}"
+                                            data-tax-category="{{ product.tax_category }}"
+                                            data-gst-rate="{{ product.gst_rate }}"
+                                            data-cess-rate="{{ product.cess_rate }}"
+                                            data-cost-price="{{ product.cost_price }}"
+                                            data-unit-price="{{ product.unit_price }}"
+                                            data-stock-quantity="{{ product.stock_quantity }}"
+                                            data-reserved-stock="{{ product.reserved_stock }}"
+                                            data-bin-location="{{ product.bin_location|default:'' }}"
+                                            data-has-serial-tracking="{% if product.has_serial_tracking %}1{% else %}0{% endif %}"
+                                            data-vendor-warranty="{{ product.vendor_warranty_months }}"
+                                            data-customer-warranty="{{ product.customer_warranty_months }}"
+                                            data-description="{{ product.description|default:'' }}"
+                                            data-tax-inclusive="{% if product.is_tax_inclusive_default %}1{% else %}0{% endif %}">
+                                            <i class="fas fa-pen me-1"></i>Edit
+                                        </button>
+                                        <a href="{% url 'inventory_product_ledger' product_id=product.id %}" class="btn btn-outline-secondary px-2 py-1" title="Product Ledger">
+                                            <i class="fas fa-book-open"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-outline-secondary px-2 py-1" data-bs-toggle="collapse" data-bs-target="#product-history-{{ product.id }}" aria-expanded="false" title="Quick Transactions">
+                                            <i class="fas fa-clock-rotate-left"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger px-2 py-1 btn-delete-product" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" title="Delete / Archive Product">
+                                            <i class="fas fa-trash-can"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- Expandable Quick Transaction History Drawer -->
+                            <tr class="collapse" id="product-history-{{ product.id }}">
+                                <td colspan="7" class="bg-light-subtle p-3">
+                                    <div class="py-1">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0 fw-bold text-dark"><i class="fas fa-clock-rotate-left me-1.5 text-primary"></i>Recent Transactions for {{ product.name }}</h6>
+                                            <a href="{% url 'inventory_product_ledger' product_id=product.id %}" class="btn btn-outline-primary btn-sm">
                                                 <i class="fas fa-book-open me-1"></i>Open Full Ledger
                                             </a>
-                                            <div class="border rounded p-2 bg-white">
-                                                <div class="table-responsive inventory-scroll-region inventory-scroll-region--history">
-                                                    <table class="table table-sm table-striped mb-0">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Status</th>
-                                                                <th>Date</th>
-                                                                <th>Invoice</th>
-                                                                <th>Party</th>
-                                                                <th>Qty</th>
-                                                                <th>Total</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {% for entry in product.combined_history %}
-                                                            <tr>
-                                                                <td>
-                                                                    {% if entry.entry_type == 'opening_stock' %}
-                                                                        <span class="badge bg-secondary-subtle text-secondary">Opening Stock</span>
-                                                                    {% elif entry.entry_type == 'purchase' %}
-                                                                        <span class="badge bg-primary-subtle text-primary">Purchase</span>
-                                                                    {% elif entry.entry_type == 'sale' %}
-                                                                        <span class="badge bg-success-subtle text-success">Sale</span>
-                                                                    {% elif entry.entry_type == 'sale_return' %}
-                                                                        <span class="badge bg-info-subtle text-info">Sales Return</span>
-                                                                    {% elif entry.entry_type == 'purchase_return' %}
-                                                                        <span class="badge bg-warning-subtle text-dark">Purchase Return</span>
-                                                                    {% else %}
-                                                                        <span class="badge bg-secondary-subtle text-secondary">{{ entry.entry_type|default:"-" }}</span>
+                                        </div>
+                                        <div class="border rounded bg-white overflow-hidden shadow-sm">
+                                            <div class="table-responsive inventory-scroll-region inventory-scroll-region--history">
+                                                <table class="table table-sm table-striped mb-0">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Type</th>
+                                                            <th>Date</th>
+                                                            <th>Invoice No</th>
+                                                            <th>Party / Customer</th>
+                                                            <th>Qty</th>
+                                                            <th>Total Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for entry in product.combined_history %}
+                                                        <tr>
+                                                            <td>
+                                                                {% if entry.entry_type == 'opening_stock' %}
+                                                                    <span class="badge bg-secondary-subtle text-secondary">Opening Stock</span>
+                                                                {% elif entry.entry_type == 'purchase' %}
+                                                                    <span class="badge bg-primary-subtle text-primary">Purchase</span>
+                                                                {% elif entry.entry_type == 'sale' %}
+                                                                    <span class="badge bg-success-subtle text-success">Sale</span>
+                                                                {% elif entry.entry_type == 'sale_return' %}
+                                                                    <span class="badge bg-info-subtle text-info">Sales Return</span>
+                                                                {% elif entry.entry_type == 'purchase_return' %}
+                                                                    <span class="badge bg-warning-subtle text-dark">Purchase Return</span>
+                                                                {% else %}
+                                                                    <span class="badge bg-secondary-subtle text-secondary">{{ entry.entry_type|default:"-" }}</span>
                                                                 {% endif %}
-                                                                </td>
-                                                                <td>{{ entry.entry_date|date:"Y-m-d" }}</td>
-                                                                <td>{{ entry.invoice_number|default:"-" }}</td>
-                                                                <td>{{ entry.party.name|default:"-" }}</td>
-                                                                <td>{{ entry.quantity }}</td>
-                                                                <td>{{ entry.total_amount|floatformat:2 }}</td>
-                                                            </tr>
-                                                            {% empty %}
-                                                            <tr>
-                                                                <td colspan="6" class="text-center text-muted">No transaction history.</td>
-                                                            </tr>
-                                                            {% endfor %}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
+                                                            </td>
+                                                            <td>{{ entry.entry_date|date:"Y-m-d" }}</td>
+                                                            <td>{{ entry.invoice_number|default:"-" }}</td>
+                                                            <td>{{ entry.party.name|default:"-" }}</td>
+                                                            <td class="font-monospace fw-semibold">{{ entry.quantity }}</td>
+                                                            <td class="font-monospace fw-semibold">₹{{ entry.total_amount|floatformat:2 }}</td>
+                                                        </tr>
+                                                        {% empty %}
+                                                        <tr>
+                                                            <td colspan="6" class="text-center text-muted py-3">No transaction history recorded yet.</td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
-                                    </td>
-                                </tr>
+                                    </div>
+                                </td>
+                            </tr>
                             {% empty %}
-                                <tr>
-                                    <td colspan="11" class="text-center">No products found.</td>
-                                </tr>
+                            <tr id="no-products-row">
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    <i class="fas fa-boxes-stacked fa-2x mb-2 text-secondary opacity-50 d-block"></i>
+                                    <div>No products found matching your filter or search.</div>
+                                </td>
+                            </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             </div>
 
+            <!-- Modal: Add New Product -->
             <div class="modal fade quick-pop-modal" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="addProductModalLabel">
-                                <i class="fas fa-plus-square me-2"></i>Add New Product
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header py-3 px-4 bg-light border-bottom">
+                            <h5 class="modal-title fw-bold text-dark" id="addProductModalLabel">
+                                <i class="fas fa-plus-circle me-2 text-primary"></i>Add New Product
                             </h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <form method="post">
-                            <div class="modal-body">
+                            <div class="modal-body p-4">
                                 {% csrf_token %}
                                 {% if product_form.non_field_errors %}
                                     <div class="alert alert-danger py-2">
@@ -275,133 +439,126 @@
                                 {% endif %}
                                 <div class="row g-3">
                                     <div class="col-md-6">
-                                        <label class="form-label">{{ product_form.name.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.name.label }}</label>
                                         {{ product_form.name }}
                                         {% if product_form.name.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.name.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label">{{ product_form.category.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.category.label }}</label>
                                         {{ product_form.category }}
                                         {% if product_form.category.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.category.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label">{{ product_form.brand.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.brand.label }}</label>
                                         {{ product_form.brand }}
                                         {% if product_form.brand.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.brand.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.item_type.label }}</label>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.item_type.label }}</label>
                                         {{ product_form.item_type }}
                                         {% if product_form.item_type.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.item_type.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.hsn_sac_code.label }}</label>
-                                        {{ product_form.hsn_sac_code }}
-                                        {% if product_form.hsn_sac_code.errors %}
-                                            <div class="text-danger small mt-1">{{ product_form.hsn_sac_code.errors|striptags }}</div>
-                                        {% endif %}
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.uqc.label }}</label>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.uqc.label }}</label>
                                         {{ product_form.uqc }}
                                         {% if product_form.uqc.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.uqc.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.tax_category.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.hsn_sac_code.label }}</label>
+                                        {{ product_form.hsn_sac_code }}
+                                        {% if product_form.hsn_sac_code.errors %}
+                                            <div class="text-danger small mt-1">{{ product_form.hsn_sac_code.errors|striptags }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.tax_category.label }}</label>
                                         {{ product_form.tax_category }}
                                         {% if product_form.tax_category.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.tax_category.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.gst_rate.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.gst_rate.label }}</label>
                                         {{ product_form.gst_rate }}
                                         {% if product_form.gst_rate.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.gst_rate.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.cess_rate.label }}</label>
-                                        {{ product_form.cess_rate }}
-                                        {% if product_form.cess_rate.errors %}
-                                            <div class="text-danger small mt-1">{{ product_form.cess_rate.errors|striptags }}</div>
-                                        {% endif %}
-                                    </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">{{ product_form.cost_price.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.cost_price.label }}</label>
                                         {{ product_form.cost_price }}
                                         {% if product_form.cost_price.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.cost_price.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">{{ product_form.purchase_price_tax_mode.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.purchase_price_tax_mode.label }}</label>
                                         {{ product_form.purchase_price_tax_mode }}
-                                        {% if product_form.purchase_price_tax_mode.errors %}
-                                            <div class="text-danger small mt-1">{{ product_form.purchase_price_tax_mode.errors|striptags }}</div>
-                                        {% endif %}
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">{{ product_form.unit_price.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.unit_price.label }}</label>
                                         {{ product_form.unit_price }}
                                         {% if product_form.unit_price.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.unit_price.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">{{ product_form.sales_price_tax_mode.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.sales_price_tax_mode.label }}</label>
                                         {{ product_form.sales_price_tax_mode }}
-                                        {% if product_form.sales_price_tax_mode.errors %}
-                                            <div class="text-danger small mt-1">{{ product_form.sales_price_tax_mode.errors|striptags }}</div>
-                                        {% endif %}
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.stock_quantity.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.stock_quantity.label }}</label>
                                         {{ product_form.stock_quantity }}
                                         {% if product_form.stock_quantity.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.stock_quantity.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label">{{ product_form.reserved_stock.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.reserved_stock.label }}</label>
                                         {{ product_form.reserved_stock }}
                                         {% if product_form.reserved_stock.errors %}
                                             <div class="text-danger small mt-1">{{ product_form.reserved_stock.errors|striptags }}</div>
                                         {% endif %}
                                     </div>
-                                    <div class="col-md-4 d-flex align-items-end">
-                                        <div class="form-check mb-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.bin_location.label }}</label>
+                                        {{ product_form.bin_location }}
+                                    </div>
+                                    <div class="col-md-6 d-flex align-items-center mt-3">
+                                        <div class="form-check">
+                                            {{ product_form.has_serial_tracking }}
+                                            <label class="form-check-label fw-semibold small text-dark" for="{{ product_form.has_serial_tracking.id_for_label }}">
+                                                {{ product_form.has_serial_tracking.label }}
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 d-flex align-items-center mt-3">
+                                        <div class="form-check">
                                             {{ product_form.is_tax_inclusive_default }}
-                                            <label class="form-check-label" for="{{ product_form.is_tax_inclusive_default.id_for_label }}">
+                                            <label class="form-check-label fw-semibold small text-dark" for="{{ product_form.is_tax_inclusive_default.id_for_label }}">
                                                 {{ product_form.is_tax_inclusive_default.label }}
                                             </label>
                                         </div>
-                                        {% if product_form.is_tax_inclusive_default.errors %}
-                                            <div class="text-danger small mt-1">{{ product_form.is_tax_inclusive_default.errors|striptags }}</div>
-                                        {% endif %}
                                     </div>
                                     <div class="col-12">
-                                        <label class="form-label">{{ product_form.description.label }}</label>
+                                        <label class="form-label fw-semibold small text-dark">{{ product_form.description.label }}</label>
                                         {{ product_form.description }}
-                                        {% if product_form.description.errors %}
-                                            <div class="text-danger small mt-1">{{ product_form.description.errors|striptags }}</div>
-                                        {% endif %}
                                     </div>
                                 </div>
                             </div>
-                            <div class="modal-footer">
+                            <div class="modal-footer bg-light py-2.5 px-4 border-top">
                                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" name="add_product_submit" class="btn btn-primary">
+                                <button type="submit" name="add_product_submit" class="btn btn-primary fw-semibold shadow-sm">
                                     <i class="fas fa-save me-1"></i>Save Product
                                 </button>
                             </div>
@@ -409,18 +566,328 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Modal: Edit Product -->
+            <div class="modal fade quick-pop-modal" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header py-3 px-4 bg-light border-bottom">
+                            <h5 class="modal-title fw-bold text-dark" id="editProductModalLabel">
+                                <i class="fas fa-pen-to-square me-2 text-primary"></i>Edit Product
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post" id="edit-product-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="product_id" id="edit_product_id">
+                            <div class="modal-body p-4">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Product Name *</label>
+                                        <input type="text" name="name" id="edit_product_name" class="form-control" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Category</label>
+                                        <input type="text" name="category" id="edit_product_category" class="form-control">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Brand</label>
+                                        <input type="text" name="brand" id="edit_product_brand" class="form-control">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">Item Type</label>
+                                        <select name="item_type" id="edit_product_item_type" class="form-select">
+                                            <option value="goods">Goods</option>
+                                            <option value="service">Service</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">UQC (Unit)</label>
+                                        <input type="text" name="uqc" id="edit_product_uqc" class="form-control" placeholder="NOS, KGS...">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">HSN / SAC Code</label>
+                                        <input type="text" name="hsn_sac_code" id="edit_product_hsn" class="form-control">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">Tax Category</label>
+                                        <select name="tax_category" id="edit_product_tax_category" class="form-select">
+                                            <option value="taxable">Taxable</option>
+                                            <option value="exempt">Exempt</option>
+                                            <option value="nil_rated">Nil Rated</option>
+                                            <option value="non_gst">Non-GST</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">GST Rate (%)</label>
+                                        <input type="number" step="0.01" min="0" name="gst_rate" id="edit_product_gst_rate" class="form-control">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">Purchase Price (₹)</label>
+                                        <input type="number" step="0.01" name="cost_price" id="edit_product_cost_price" class="form-control">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">Purchase Tax Mode</label>
+                                        <select name="purchase_price_tax_mode" id="edit_product_purchase_tax_mode" class="form-select">
+                                            <option value="without_tax">Without Tax</option>
+                                            <option value="with_tax">With Tax</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">Selling Price (₹)</label>
+                                        <input type="number" step="0.01" name="unit_price" id="edit_product_unit_price" class="form-control">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small text-dark">Sales Tax Mode</label>
+                                        <select name="sales_price_tax_mode" id="edit_product_sales_tax_mode" class="form-select">
+                                            <option value="without_tax">Without Tax</option>
+                                            <option value="with_tax">With Tax</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">Reserved Stock Alert</label>
+                                        <input type="number" min="0" step="1" name="reserved_stock" id="edit_product_reserved_stock" class="form-control">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">Rack / Shelf / Bin</label>
+                                        <input type="text" name="bin_location" id="edit_product_bin_location" class="form-control" placeholder="Rack A - Shelf 2">
+                                    </div>
+                                    <div class="col-md-4 d-flex align-items-center mt-4">
+                                        <div class="form-check">
+                                            <input type="checkbox" name="has_serial_tracking" id="edit_product_has_serial_tracking" class="form-check-input">
+                                            <label class="form-check-label fw-semibold small text-dark" for="edit_product_has_serial_tracking">
+                                                Track Serial / IMEI
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold small text-dark">Description / Notes</label>
+                                        <textarea name="description" id="edit_product_description" class="form-control" rows="2"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer bg-light py-2.5 px-4 border-top">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="edit_product_submit" class="btn btn-primary fw-semibold shadow-sm">
+                                    <i class="fas fa-check-circle me-1"></i>Update Product
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal: Quick Reserved Stock Adjust -->
+            <div class="modal fade" id="quickReservedModal" tabindex="-1" aria-labelledby="quickReservedModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header py-2.5 px-3 bg-light border-bottom">
+                            <h6 class="modal-title fw-bold text-dark" id="quickReservedModalLabel">
+                                <i class="fas fa-shield-halved me-1.5 text-warning"></i>Reserved Stock Alert
+                            </h6>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post" data-async-form data-async-target="#inventory-products-page" data-async-success="Reserved stock updated.">
+                            {% csrf_token %}
+                            <input type="hidden" name="product_id" id="quick_res_product_id">
+                            <div class="modal-body p-3">
+                                <div class="small text-muted mb-1">Product:</div>
+                                <div class="fw-bold text-dark mb-3" id="quick_res_product_name"></div>
+                                <label class="form-label fw-semibold small text-dark">Minimum Reserved Stock</label>
+                                <input type="number" name="reserved_stock" id="quick_res_stock_input" class="form-control form-control-lg font-monospace text-center fw-bold" min="0" step="1" required>
+                                <div class="small text-muted mt-2" style="font-size: 0.74rem;">
+                                    When current stock falls to or below this number, low-stock warnings will trigger.
+                                </div>
+                            </div>
+                            <div class="modal-footer bg-light py-2 px-3 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="update_reserved_stock_submit" class="btn btn-sm btn-primary fw-semibold">
+                                    <i class="fas fa-save me-1"></i>Save Threshold
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal: Delete / Archive Product -->
+            <div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header py-2.5 px-3 bg-danger text-white border-bottom">
+                            <h6 class="modal-title fw-bold mb-0" id="deleteProductModalLabel">
+                                <i class="fas fa-triangle-exclamation me-1.5"></i>Delete Product
+                            </h6>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="product_id" id="delete_modal_product_id">
+                            <div class="modal-body p-3">
+                                <p class="mb-2 text-dark">Are you sure you want to remove:</p>
+                                <div class="fw-bold text-danger mb-2" id="delete_modal_product_name"></div>
+                                <div class="small text-muted" style="font-size: 0.76rem;">
+                                    If this product has existing sales or purchase records, it will be safely archived instead of erased.
+                                </div>
+                            </div>
+                            <div class="modal-footer bg-light py-2 px-3 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="delete_product_submit" class="btn btn-sm btn-danger fw-semibold">
+                                    <i class="fas fa-trash-can me-1"></i>Confirm Delete
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
 
-{% if product_form.errors %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    if (typeof bootstrap === 'undefined') return;
-    const modalEl = document.getElementById('addProductModal');
-    if (!modalEl) return;
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    // 1. Client-side Live Search and Status Filtering
+    const searchInput = document.getElementById('catalog-live-search');
+    const tableRows = document.querySelectorAll('#catalog-table-body .product-row');
+    const noProductsRow = document.getElementById('no-products-row');
+    const filterBtns = document.querySelectorAll('.catalog-filter-btn');
+    const statCards = document.querySelectorAll('.stat-card-clickable');
+
+    let currentStatusFilter = 'all';
+
+    function applyCatalogFilter() {
+        const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+        let visibleCount = 0;
+
+        tableRows.forEach(row => {
+            const status = row.getAttribute('data-stock-status') || '';
+            const name = row.getAttribute('data-product-name') || '';
+            const cat = row.getAttribute('data-product-category') || '';
+            const hsn = row.getAttribute('data-product-hsn') || '';
+            const brand = row.getAttribute('data-product-brand') || '';
+            const sku = row.getAttribute('data-product-sku') || '';
+
+            // Status condition
+            let statusMatch = true;
+            if (currentStatusFilter !== 'all') {
+                statusMatch = (status === currentStatusFilter);
+            }
+
+            // Text search condition
+            let searchMatch = true;
+            if (query) {
+                searchMatch = (name.includes(query) || cat.includes(query) || hsn.includes(query) || brand.includes(query) || sku.includes(query));
+            }
+
+            if (statusMatch && searchMatch) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+                // Close any open collapse under this row
+                const collapseId = row.querySelector('[data-bs-toggle="collapse"]')?.getAttribute('data-bs-target');
+                if (collapseId) {
+                    const collEl = document.querySelector(collapseId);
+                    if (collEl && collEl.classList.contains('show')) {
+                        bootstrap.Collapse.getInstance(collEl)?.hide();
+                    }
+                }
+            }
+        });
+
+        if (noProductsRow) {
+            noProductsRow.style.display = (visibleCount === 0) ? '' : 'none';
+        }
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', applyCatalogFilter);
+    }
+
+    function setStatusFilter(status) {
+        currentStatusFilter = status;
+
+        filterBtns.forEach(btn => {
+            if (btn.getAttribute('data-status-filter') === status) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        statCards.forEach(card => {
+            if (card.getAttribute('data-filter-status') === status) {
+                card.classList.add('active-filter');
+            } else {
+                card.classList.remove('active-filter');
+            }
+        });
+
+        applyCatalogFilter();
+    }
+
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', function () {
+            setStatusFilter(this.getAttribute('data-status-filter') || 'all');
+        });
+    });
+
+    statCards.forEach(card => {
+        card.addEventListener('click', function () {
+            setStatusFilter(this.getAttribute('data-filter-status') || 'all');
+        });
+    });
+
+    // 2. Edit Product Modal Population
+    const editModalEl = document.getElementById('editProductModal');
+    document.querySelectorAll('.btn-edit-product').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const d = this.dataset;
+            document.getElementById('edit_product_id').value = d.productId || '';
+            document.getElementById('edit_product_name').value = d.name || '';
+            document.getElementById('edit_product_category').value = d.category || '';
+            document.getElementById('edit_product_brand').value = d.brand || '';
+            document.getElementById('edit_product_item_type').value = d.itemType || 'goods';
+            document.getElementById('edit_product_uqc').value = d.uqc || '';
+            document.getElementById('edit_product_hsn').value = d.hsn || '';
+            document.getElementById('edit_product_tax_category').value = d.taxCategory || 'taxable';
+            document.getElementById('edit_product_gst_rate').value = d.gstRate || '18';
+            document.getElementById('edit_product_cost_price').value = d.costPrice || '0';
+            document.getElementById('edit_product_unit_price').value = d.unitPrice || '0';
+            document.getElementById('edit_product_reserved_stock').value = d.reservedStock || '0';
+            document.getElementById('edit_product_bin_location').value = d.binLocation || '';
+            document.getElementById('edit_product_description').value = d.description || '';
+            document.getElementById('edit_product_has_serial_tracking').checked = (d.hasSerialTracking === '1');
+
+            if (typeof bootstrap !== 'undefined' && editModalEl) {
+                bootstrap.Modal.getOrCreateInstance(editModalEl).show();
+            }
+        });
+    });
+
+    // 3. Quick Reserved Stock Modal Population
+    document.querySelectorAll('.btn-quick-reserved').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const d = this.dataset;
+            document.getElementById('quick_res_product_id').value = d.productId || '';
+            document.getElementById('quick_res_product_name').textContent = d.productName || '';
+            document.getElementById('quick_res_stock_input').value = d.reservedStock || '0';
+        });
+    });
+
+    // 4. Delete / Archive Product Modal Population
+    const deleteModalEl = document.getElementById('deleteProductModal');
+    document.querySelectorAll('.btn-delete-product').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const d = this.dataset;
+            document.getElementById('delete_modal_product_id').value = d.productId || '';
+            document.getElementById('delete_modal_product_name').textContent = d.productName || '';
+            if (typeof bootstrap !== 'undefined' && deleteModalEl) {
+                bootstrap.Modal.getOrCreateInstance(deleteModalEl).show();
+            }
+        });
+    });
 });
 </script>
-{% endif %}
 {% endblock %}

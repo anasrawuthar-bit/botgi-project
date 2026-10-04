@@ -1001,6 +1001,27 @@ def product_dashboard(request):
         product.combined_history = combined_history
         product.has_transaction_history = bool(product.combined_history)
 
+        # Margin & Stock Status computations
+        stock_qty = product.stock_quantity or 0
+        res_stock = product.reserved_stock or 0
+        if stock_qty <= 0:
+            product.stock_status = 'out_of_stock'
+        elif res_stock > 0 and stock_qty <= res_stock:
+            product.stock_status = 'reserved_alert'
+        else:
+            product.stock_status = 'in_stock'
+
+        cost = product.cost_price or Decimal('0.00')
+        price = product.unit_price or Decimal('0.00')
+        if cost > Decimal('0.00') and price > cost:
+            profit = price - cost
+            margin = (profit / price) * Decimal('100.00')
+            product.profit_amount = profit
+            product.margin_percent = margin.quantize(Decimal('0.1'))
+        else:
+            product.profit_amount = None
+            product.margin_percent = None
+
     if request.method == 'POST':
         if 'update_reserved_stock_submit' in request.POST:
             is_async_request = request.headers.get('X-Botgi-Async') == '1'
@@ -1056,26 +1077,20 @@ def product_dashboard(request):
         if 'add_product_submit' in request.POST:
             product_form = ProductForm(request.POST)
             if product_form.is_valid():
-                def _normalize_tax_mode_price(raw_price, price_mode):
-                    price = raw_price or Decimal('0.00')
-                    gst_rate = effective_tax_rate(
-                        product_form.cleaned_data.get('gst_rate'),
-                        product_form.cleaned_data.get('tax_category'),
-                    )
-                    if price_mode == 'with_tax' and gst_rate > 0:
-                        divisor = Decimal('100.00') + gst_rate
-                        if divisor > 0:
-                            price = (price * Decimal('100.00')) / divisor
-                    return price.quantize(Decimal('0.01'))
-
+                gst_rate = effective_tax_rate(
+                    product_form.cleaned_data.get('gst_rate'),
+                    product_form.cleaned_data.get('tax_category'),
+                )
                 product = product_form.save(commit=False)
                 product.cost_price = _normalize_tax_mode_price(
                     product_form.cleaned_data.get('cost_price'),
                     product_form.cleaned_data.get('purchase_price_tax_mode'),
+                    gst_rate,
                 )
                 product.unit_price = _normalize_tax_mode_price(
                     product_form.cleaned_data.get('unit_price'),
                     product_form.cleaned_data.get('sales_price_tax_mode'),
+                    gst_rate,
                 )
                 if not product.workspace_id:
                     product.workspace = getattr(request, 'current_workspace', None)
@@ -1083,13 +1098,66 @@ def product_dashboard(request):
                 messages.success(request, f"Product '{product.name}' added successfully.")
                 return redirect(redirect_target)
             messages.error(request, "Please fix the errors and try again.")
+        elif 'edit_product_submit' in request.POST:
+            product_id = request.POST.get('product_id')
+            product = scope_to_workspace(
+                Product.objects.filter(pk=product_id),
+                current_workspace,
+            ).first()
+            if not product:
+                messages.error(request, "Selected product was not found.")
+                return redirect(redirect_target)
+
+            product_form = ProductForm(request.POST, instance=product)
+            if product_form.is_valid():
+                gst_rate = effective_tax_rate(
+                    product_form.cleaned_data.get('gst_rate'),
+                    product_form.cleaned_data.get('tax_category'),
+                )
+                edited_product = product_form.save(commit=False)
+                edited_product.cost_price = _normalize_tax_mode_price(
+                    product_form.cleaned_data.get('cost_price'),
+                    product_form.cleaned_data.get('purchase_price_tax_mode'),
+                    gst_rate,
+                )
+                edited_product.unit_price = _normalize_tax_mode_price(
+                    product_form.cleaned_data.get('unit_price'),
+                    product_form.cleaned_data.get('sales_price_tax_mode'),
+                    gst_rate,
+                )
+                edited_product.save()
+                messages.success(request, f"Product '{edited_product.name}' updated successfully.")
+                return redirect(redirect_target)
+            messages.error(request, "Please fix the errors in the edit form and try again.")
+        elif 'delete_product_submit' in request.POST:
+            product_id = request.POST.get('product_id')
+            product = scope_to_workspace(
+                Product.objects.filter(pk=product_id),
+                current_workspace,
+            ).first()
+            if not product:
+                messages.error(request, "Selected product was not found.")
+                return redirect(redirect_target)
+
+            has_entries = InventoryEntry.objects.filter(product=product).exists()
+            has_sales = ProductSale.objects.filter(product=product).exists()
+            if has_entries or has_sales:
+                product.is_active = False
+                product.save(update_fields=['is_active', 'updated_at'])
+                messages.info(request, f"Product '{product.name}' has transaction records and was deactivated.")
+            else:
+                prod_name = product.name
+                product.delete()
+                messages.success(request, f"Product '{prod_name}' deleted successfully.")
+            return redirect(redirect_target)
         else:
             product_form = ProductForm()
     else:
         product_form = ProductForm()
 
-    products_scope = scope_to_workspace(Product.objects.all(), current_workspace)
+    products_scope = scope_to_workspace(Product.objects.filter(is_active=True), current_workspace)
     out_of_stock_count = products_scope.filter(stock_quantity__lte=0).count()
+    in_stock_count = products_scope.filter(stock_quantity__gt=0).count()
     reserved_alert_count = products_scope.filter(
         reserved_stock__gt=0,
         stock_quantity__lte=F('reserved_stock'),
@@ -1099,6 +1167,7 @@ def product_dashboard(request):
         'product_form': product_form,
         'query': query,
         'total_products': products_scope.count(),
+        'in_stock_count': in_stock_count,
         'reserved_alert_count': reserved_alert_count,
         'out_of_stock_count': out_of_stock_count,
         'from_inventory': current_url_name == 'inventory_product_dashboard',
