@@ -1,3 +1,4 @@
+import json
 import re
 
 from .helpers import *  # noqa: F401,F403
@@ -591,6 +592,7 @@ def job_detail_technician(request, job_code):
     if job.workspace_id:
         racks_qs = racks_qs.filter(workspace=job.workspace)
     available_racks = list(racks_qs.order_by('group', 'name'))
+    rack_occupancy_data = get_rack_occupancy_data(available_racks, exclude_job=job)
     device_photos = list(job.photos.all())
 
     # WhatsApp phone number formatting
@@ -634,6 +636,8 @@ def job_detail_technician(request, job_code):
         'checklist_notes': checklist_notes,
         'checklist_required_for_completion': checklist_required_for_completion,
         'available_racks': available_racks,
+        'rack_occupancy_data': rack_occupancy_data,
+        'rack_occupancy_data_json': json.dumps(rack_occupancy_data),
         'device_photos': device_photos,
         'whatsapp_phone': whatsapp_phone,
         'delivery_status': delivery_status,

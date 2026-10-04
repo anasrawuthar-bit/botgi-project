@@ -642,6 +642,7 @@
                         <select name="rack_column" id="tech_rack_col" class="form-select">
                             <option value="">-- General Shelf (No specific col) --</option>
                         </select>
+                        <div id="tech-rack-slot-hint" class="small mt-1"></div>
                         <small class="text-muted">Numbered slot on the shelf. Can be left unselected if general shelf placement.</small>
                     </div>
 
@@ -863,41 +864,121 @@
         });
     });
 
+    const rackOccupancyData = {{ rack_occupancy_data_json|default:'{}'|safe }};
+
     // Dynamic column options based on selected rack
     function updateTechColOptions(rackId, selectedCol) {
         const colSelect = document.getElementById('tech_rack_col');
         const colGroup = document.getElementById('tech-col-select-group');
+        const hintEl = document.getElementById('tech-rack-slot-hint');
         if (!colSelect) return;
 
         colSelect.innerHTML = '<option value="">-- General Shelf (No specific col) --</option>';
         if (!rackId) {
             if (colGroup) colGroup.style.display = 'none';
+            if (hintEl) hintEl.innerHTML = '';
             return;
         }
         if (colGroup) colGroup.style.display = 'block';
 
+        const rackInfo = rackOccupancyData[String(rackId)] || {};
+        const occupiedMap = rackInfo.occupied || {};
         const rackSelect = document.getElementById('tech_rack_id');
         const opt = rackSelect ? rackSelect.querySelector('option[value="' + rackId + '"]') : null;
-        const totalCols = opt ? parseInt(opt.getAttribute('data-total-columns') || '10', 10) : 10;
+        const totalCols = rackInfo.total_columns || (opt ? parseInt(opt.getAttribute('data-total-columns') || '10', 10) : 10);
 
         for (let i = 1; i <= totalCols; i++) {
             const option = document.createElement('option');
             option.value = i;
-            option.textContent = 'Col ' + i;
+            const occJobs = occupiedMap[String(i)] || [];
+            if (occJobs.length > 0) {
+                const jobCodes = occJobs.map(j => j.job_code).join(',');
+                option.textContent = `Col ${i} • Occupied [${jobCodes}]`;
+                option.style.color = '#dc2626';
+            } else {
+                option.textContent = `Col ${i} • Available`;
+                option.style.color = '#16a34a';
+            }
             if (selectedCol && String(selectedCol) === String(i)) {
                 option.selected = true;
             }
             colSelect.appendChild(option);
         }
+
+        refreshTechRackSlotHint(rackId, selectedCol || colSelect.value);
+    }
+
+    function refreshTechRackSlotHint(rackId, selectedCol) {
+        const hintEl = document.getElementById('tech-rack-slot-hint');
+        if (!hintEl) return;
+        if (!rackId) {
+            hintEl.innerHTML = '';
+            return;
+        }
+
+        const rackInfo = rackOccupancyData[String(rackId)] || {};
+        const occupiedMap = rackInfo.occupied || {};
+        const totalCols = rackInfo.total_columns || 10;
+        const occupiedCount = rackInfo.occupied_count !== undefined ? rackInfo.occupied_count : Object.keys(occupiedMap).length;
+        const freeCount = rackInfo.free_count !== undefined ? rackInfo.free_count : Math.max(0, totalCols - occupiedCount);
+        const freeCols = rackInfo.free_columns || [];
+
+        let freePreview = '';
+        if (freeCols.length > 0) {
+            const previewList = freeCols.slice(0, 6).join(', ') + (freeCols.length > 6 ? '...' : '');
+            freePreview = `<span class="text-muted ms-1" style="font-size: 0.75rem;">(Available: Col ${previewList})</span>`;
+        }
+
+        let warningMsg = '';
+        const colStr = String(selectedCol || '');
+        if (colStr && occupiedMap[colStr] && occupiedMap[colStr].length > 0) {
+            const occJobs = occupiedMap[colStr];
+            const details = occJobs.map(j => `${j.job_code}${j.device_type ? ' (' + j.device_type + ')' : ''}`).join(', ');
+            warningMsg = `
+                <div class="d-flex align-items-center gap-1 text-danger fw-semibold mt-1" style="font-size: 0.78rem;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Col ${colStr} occupied by: ${details} (can share slot if needed).</span>
+                </div>
+            `;
+        } else if (colStr) {
+            warningMsg = `
+                <div class="d-flex align-items-center gap-1 text-success fw-semibold mt-1" style="font-size: 0.78rem;">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>Col ${colStr} is currently vacant.</span>
+                </div>
+            `;
+        }
+
+        hintEl.innerHTML = `
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-1">
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 0.72rem;">
+                    <i class="fa-solid fa-check me-1"></i>${freeCount} Free
+                </span>
+                ${occupiedCount > 0 ? `
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5" style="font-size: 0.72rem;">
+                    <i class="fa-solid fa-boxes-stacked me-1"></i>${occupiedCount} Occupied
+                </span>` : ''}
+                ${freePreview}
+            </div>
+            ${warningMsg}
+        `;
     }
 
     const techRackSelect = document.getElementById('tech_rack_id');
+    const techColSelect = document.getElementById('tech_rack_col');
     const techModalEl = document.getElementById('techMoveRackModal');
+
     if (techRackSelect) {
         techRackSelect.addEventListener('change', function () {
             updateTechColOptions(this.value, '');
         });
         updateTechColOptions(techRackSelect.value, "{{ job.rack_column|default:'' }}");
+    }
+
+    if (techColSelect) {
+        techColSelect.addEventListener('change', function () {
+            refreshTechRackSlotHint(techRackSelect ? techRackSelect.value : '', this.value);
+        });
     }
 
     if (techModalEl) {

@@ -2674,7 +2674,7 @@ class _ChangeRackSheetState extends State<_ChangeRackSheet> {
                   (r) => DropdownMenuItem<int?>(
                     value: r.id,
                     child: Text(
-                      r.displayName,
+                      '${r.displayName} (${r.freeCount} free / ${r.totalColumns})',
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -2697,6 +2697,60 @@ class _ChangeRackSheetState extends State<_ChangeRackSheet> {
                 });
               },
             ),
+            if (_selectedRackId != null && rack != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF15803D)),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${rack.freeCount} Free',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (rack.occupiedCount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 14, color: Color(0xFFDC2626)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${rack.occupiedCount} Occupied',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFDC2626)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (rack.freeColumns.isNotEmpty)
+                    Text(
+                      '(Available: Col ${rack.freeColumns.take(6).join(', ')}${rack.freeColumns.length > 6 ? '...' : ''})',
+                      style: const TextStyle(fontSize: 11, color: AppColors.ink500),
+                    ),
+                ],
+              ),
+            ],
             if (_selectedRackId != null && totalCols > 0) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<int?>(
@@ -2715,11 +2769,50 @@ class _ChangeRackSheetState extends State<_ChangeRackSheet> {
                     value: null,
                     child: Text('General Rack (No specific slot)', style: TextStyle(color: AppColors.ink500)),
                   ),
-                  for (int i = 1; i <= totalCols; i++)
-                    DropdownMenuItem<int?>(
-                      value: i,
-                      child: Text('Column $i', style: const TextStyle(fontSize: 14)),
-                    ),
+                  for (int i = 1; i <= totalCols; i++) ...[
+                    () {
+                      final isOcc = rack?.isColumnOccupied(i) ?? false;
+                      final occList = rack?.getOccupantsForColumn(i) ?? const [];
+                      final occJobCodes = occList
+                          .map((o) => (o is Map && o['job_code'] != null) ? o['job_code'].toString() : '')
+                          .where((s) => s.isNotEmpty)
+                          .join(', ');
+
+                      return DropdownMenuItem<int?>(
+                        value: i,
+                        child: Row(
+                          children: [
+                            Text(
+                              'Column $i',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isOcc ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isOcc ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                isOcc
+                                    ? (occJobCodes.isNotEmpty ? 'Occupied [$occJobCodes]' : 'Occupied')
+                                    : 'Available',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isOcc ? const Color(0xFFDC2626) : const Color(0xFF15803D),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }(),
+                  ],
                 ],
                 onChanged: (val) {
                   setState(() {
@@ -2727,6 +2820,52 @@ class _ChangeRackSheetState extends State<_ChangeRackSheet> {
                   });
                 },
               ),
+              if (_selectedColumn != null && rack != null) ...[
+                if (rack.isColumnOccupied(_selectedColumn!)) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFDC2626)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Col $_selectedColumn is currently occupied by: ${rack.getOccupantsForColumn(_selectedColumn!).map((o) => (o is Map && o['job_code'] != null) ? '${o['job_code']}${o['device_type'] != null && o['device_type'].toString().isNotEmpty ? ' (${o['device_type']})' : ''}' : '').where((s) => s.isNotEmpty).join(', ')} (can share slot if needed).',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFB91C1C)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF16A34A)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Col $_selectedColumn is currently vacant.',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF15803D)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ],
             const SizedBox(height: 18),
             SizedBox(

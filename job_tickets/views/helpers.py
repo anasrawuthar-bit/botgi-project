@@ -6397,5 +6397,75 @@ def get_company_start_date():
     first_job = JobTicket.objects.order_by('created_at').first()
     return first_job.created_at.date() if first_job else timezone.localdate()
 
+def get_rack_occupancy_data(racks, exclude_job=None):
+    """
+    Builds a dictionary of occupancy data for a list of DeviceRack objects.
+    Returns:
+    {
+        str(rack_id): {
+            'id': int,
+            'name': str,
+            'group': str,
+            'total_columns': int,
+            'occupied': {
+                '1': [{'job_code': '...', 'device_type': '...', 'customer_name': '...'}],
+                ...
+            },
+            'occupied_count': int,
+            'free_count': int,
+            'free_columns': [int, ...],
+        }
+    }
+    """
+    from ..models import JobTicket
+    occupancy_data = {}
+    racks_list = list(racks)
+    for r in racks_list:
+        total_cols = max(1, r.total_columns or 10)
+        occupancy_data[str(r.id)] = {
+            'id': r.id,
+            'name': r.name,
+            'group': r.group,
+            'total_columns': total_cols,
+            'occupied': {},
+            'occupied_count': 0,
+            'free_count': total_cols,
+            'free_columns': list(range(1, total_cols + 1)),
+        }
+
+    if racks_list:
+        tickets_qs = JobTicket.objects.filter(
+            rack__in=racks_list,
+            rack_column__isnull=False
+        ).exclude(
+            status__in=['Closed', 'Returned']
+        )
+        if exclude_job:
+            tickets_qs = tickets_qs.exclude(id=exclude_job.id)
+
+        active_rack_tickets = tickets_qs.values('rack_id', 'rack_column', 'job_code', 'device_type', 'customer_name')
+        for t in active_rack_tickets:
+            rid = str(t['rack_id'])
+            col_str = str(t['rack_column'])
+            if rid in occupancy_data:
+                if col_str not in occupancy_data[rid]['occupied']:
+                    occupancy_data[rid]['occupied'][col_str] = []
+                occupancy_data[rid]['occupied'][col_str].append({
+                    'job_code': t['job_code'],
+                    'device_type': t['device_type'] or '',
+                    'customer_name': t['customer_name'] or '',
+                })
+
+        for rid, info in occupancy_data.items():
+            total_cols = info['total_columns']
+            occupied_cols = [int(c) for c in info['occupied'].keys() if c.isdigit() and 1 <= int(c) <= total_cols]
+            occupied_set = set(occupied_cols)
+            free_cols = [c for c in range(1, total_cols + 1) if c not in occupied_set]
+            info['occupied_count'] = len(occupied_cols)
+            info['free_count'] = len(free_cols)
+            info['free_columns'] = free_cols
+
+    return occupancy_data
+
 __all__ = [name for name in globals() if not name.startswith("__") and name != "__all__"]
 

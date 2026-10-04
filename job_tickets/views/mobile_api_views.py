@@ -347,14 +347,20 @@ def mobile_api_job_detail(request, job_code):
     active_racks_qs = DeviceRack.objects.filter(is_active=True)
     if job.workspace_id:
         active_racks_qs = active_racks_qs.filter(workspace=job.workspace)
+    racks_list = list(active_racks_qs.order_by('group', 'name'))
+    rack_occupancy_data = get_rack_occupancy_data(racks_list, exclude_job=job)
     available_racks = [
         {
             'id': r.id,
             'name': r.name,
             'group': r.group,
             'total_columns': max(1, r.total_columns or 10),
+            'occupied': rack_occupancy_data.get(str(r.id), {}).get('occupied', {}),
+            'occupied_count': rack_occupancy_data.get(str(r.id), {}).get('occupied_count', 0),
+            'free_count': rack_occupancy_data.get(str(r.id), {}).get('free_count', max(1, r.total_columns or 10)),
+            'free_columns': rack_occupancy_data.get(str(r.id), {}).get('free_columns', []),
         }
-        for r in active_racks_qs.order_by('group', 'name')
+        for r in racks_list
     ]
 
     return JsonResponse(

@@ -459,25 +459,74 @@ class DeviceRackOption {
     required this.name,
     required this.group,
     required this.totalColumns,
+    this.occupied = const {},
+    this.freeCount = 0,
+    this.occupiedCount = 0,
+    this.freeColumns = const [],
   });
 
   final int id;
   final String name;
   final String group;
   final int totalColumns;
+  final Map<String, List<dynamic>> occupied;
+  final int freeCount;
+  final int occupiedCount;
+  final List<int> freeColumns;
 
   String get displayName => group.isNotEmpty ? '$name ($group)' : name;
 
+  List<dynamic> getOccupantsForColumn(int col) {
+    final list = occupied[col.toString()];
+    if (list != null && list.isNotEmpty) return list;
+    return const [];
+  }
+
+  bool isColumnOccupied(int col) => getOccupantsForColumn(col).isNotEmpty;
+
   factory DeviceRackOption.fromJson(Map<String, dynamic> json) {
+    final rawOccupied = json['occupied'];
+    final Map<String, List<dynamic>> parsedOccupied = {};
+    if (rawOccupied is Map) {
+      for (final entry in rawOccupied.entries) {
+        if (entry.value is List) {
+          parsedOccupied[entry.key.toString()] = entry.value as List<dynamic>;
+        }
+      }
+    }
+
+    final totalCols = (json['total_columns'] is int)
+        ? json['total_columns'] as int
+        : int.tryParse('${json['total_columns']}') ?? 10;
+
+    final rawFreeCols = json['free_columns'];
+    final List<int> parsedFreeCols = [];
+    if (rawFreeCols is List) {
+      for (final item in rawFreeCols) {
+        if (item is int) {
+          parsedFreeCols.add(item);
+        } else {
+          final p = int.tryParse('$item');
+          if (p != null) parsedFreeCols.add(p);
+        }
+      }
+    }
+
     return DeviceRackOption(
       id: (json['id'] is int)
           ? json['id'] as int
           : int.tryParse('${json['id']}') ?? 0,
       name: (json['name'] ?? '').toString(),
       group: (json['group'] ?? '').toString(),
-      totalColumns: (json['total_columns'] is int)
-          ? json['total_columns'] as int
-          : int.tryParse('${json['total_columns']}') ?? 10,
+      totalColumns: totalCols,
+      occupied: parsedOccupied,
+      occupiedCount: (json['occupied_count'] is int)
+          ? json['occupied_count'] as int
+          : int.tryParse('${json['occupied_count']}') ?? 0,
+      freeCount: (json['free_count'] is int)
+          ? json['free_count'] as int
+          : int.tryParse('${json['free_count']}') ?? totalCols,
+      freeColumns: parsedFreeCols,
     );
   }
 }
