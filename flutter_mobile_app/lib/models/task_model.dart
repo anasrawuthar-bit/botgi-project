@@ -16,6 +16,11 @@ class TaskModel {
     this.assignedToName = '',
     this.isOverdue = false,
     this.isMine = false,
+    this.isOpenToAll = false,
+    this.hasAlarm = false,
+    this.alarmTime = '',
+    this.isClaimable = false,
+    this.canAccept = false,
     this.jobReference,
     this.attachmentsCount = 0,
     this.messagesCount = 0,
@@ -39,6 +44,11 @@ class TaskModel {
   final String assignedToName;
   final bool isOverdue;
   final bool isMine;
+  final bool isOpenToAll;
+  final bool hasAlarm;
+  final String alarmTime;
+  final bool isClaimable;
+  final bool canAccept;
   final TaskJobReference? jobReference;
   final int attachmentsCount;
   final int messagesCount;
@@ -65,6 +75,11 @@ class TaskModel {
       assignedToName: (json['assigned_to_name'] ?? '').toString(),
       isOverdue: json['is_overdue'] == true,
       isMine: json['is_mine'] == true,
+      isOpenToAll: json['is_open_to_all'] == true,
+      hasAlarm: json['has_alarm'] == true,
+      alarmTime: (json['alarm_time'] ?? '').toString(),
+      isClaimable: json['is_claimable'] == true,
+      canAccept: json['can_accept'] == true,
       jobReference: json['job_reference'] is Map<String, dynamic>
           ? TaskJobReference.fromJson(json['job_reference'] as Map<String, dynamic>)
           : null,
@@ -106,6 +121,11 @@ class TaskModel {
     String? assignedToName,
     bool? isOverdue,
     bool? isMine,
+    bool? isOpenToAll,
+    bool? hasAlarm,
+    String? alarmTime,
+    bool? isClaimable,
+    bool? canAccept,
     TaskJobReference? jobReference,
     int? attachmentsCount,
     int? messagesCount,
@@ -129,6 +149,11 @@ class TaskModel {
       assignedToName: assignedToName ?? this.assignedToName,
       isOverdue: isOverdue ?? this.isOverdue,
       isMine: isMine ?? this.isMine,
+      isOpenToAll: isOpenToAll ?? this.isOpenToAll,
+      hasAlarm: hasAlarm ?? this.hasAlarm,
+      alarmTime: alarmTime ?? this.alarmTime,
+      isClaimable: isClaimable ?? this.isClaimable,
+      canAccept: canAccept ?? this.canAccept,
       jobReference: jobReference ?? this.jobReference,
       attachmentsCount: attachmentsCount ?? this.attachmentsCount,
       messagesCount: messagesCount ?? this.messagesCount,
@@ -146,6 +171,7 @@ class TaskMetrics {
     this.inProgress = 0,
     this.open = 0,
     this.done = 0,
+    this.pool = 0,
   });
 
   final int total;
@@ -154,6 +180,7 @@ class TaskMetrics {
   final int inProgress;
   final int open;
   final int done;
+  final int pool;
 
   factory TaskMetrics.fromJson(Map<String, dynamic> json) {
     return TaskMetrics(
@@ -163,6 +190,7 @@ class TaskMetrics {
       inProgress: (json['in_progress'] is int) ? json['in_progress'] as int : int.tryParse('${json['in_progress']}') ?? 0,
       open: (json['open'] is int) ? json['open'] as int : int.tryParse('${json['open']}') ?? 0,
       done: (json['done'] is int) ? json['done'] as int : int.tryParse('${json['done']}') ?? 0,
+      pool: (json['pool'] is int) ? json['pool'] as int : int.tryParse('${json['pool']}') ?? 0,
     );
   }
 }

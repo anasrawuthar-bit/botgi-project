@@ -171,6 +171,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: const Icon(Icons.logout),
             label: const Text('Logout'),
           ),
+          const SizedBox(height: 28),
+          Center(
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 38,
+                    height: 38,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Botgi Technician',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'GIHostings • Version 1.0.0',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
         ],
       ),
     );

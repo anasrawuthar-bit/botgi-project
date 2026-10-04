@@ -5720,6 +5720,67 @@ class StandaloneTaskSystemTests(TestCase):
         task.refresh_from_db()
         self.assertEqual(task.status, 'in_progress')
 
+    def test_task_assignment_mutual_exclusivity(self):
+        """Option A: Task assignment is either open to all or a specific person, never both."""
+        self.client.force_login(self.staff_user)
+
+        # 1. Invalid: Both Open to All and a specific person selected
+        resp_invalid = self.client.post(reverse('task_create'), {
+            'title': 'Conflicting Assignment Task',
+            'priority': 'medium',
+            'is_open_to_all': 'on',
+            'assigned_to': self.tech_profile.id,
+        })
+        # Should redirect with form error and not create task
+        self.assertEqual(resp_invalid.status_code, 302)
+        self.assertFalse(Task.objects.filter(workspace=self.workspace, title='Conflicting Assignment Task').exists())
+
+        # 2. Valid: Open to All only
+        resp_open = self.client.post(reverse('task_create'), {
+            'title': 'Pool Shared Task',
+            'priority': 'medium',
+            'is_open_to_all': 'on',
+            'assigned_to': '',
+        })
+        self.assertEqual(resp_open.status_code, 302)
+        task_open = Task.objects.filter(workspace=self.workspace, title='Pool Shared Task').first()
+        self.assertIsNotNone(task_open)
+        self.assertTrue(task_open.is_open_to_all)
+        self.assertIsNone(task_open.assigned_to)
+
+        # 3. Valid: Specific technician only
+        resp_specific = self.client.post(reverse('task_create'), {
+            'title': 'Targeted Tech Task',
+            'priority': 'high',
+            'is_open_to_all': '',
+            'assigned_to': self.tech_profile.id,
+        })
+        self.assertEqual(resp_specific.status_code, 302)
+        task_specific = Task.objects.filter(workspace=self.workspace, title='Targeted Tech Task').first()
+        self.assertIsNotNone(task_specific)
+        self.assertFalse(task_specific.is_open_to_all)
+        self.assertEqual(task_specific.assigned_to, self.tech_profile)
+
+        # 4. Reassignment: Switch from Open to All -> Specific Person via status update
+        update_to_specific = self.client.post(reverse('task_update_status', args=[task_open.id]), {
+            'assignment_type': 'specific',
+            'assigned_to': self.tech_profile.id,
+        })
+        self.assertEqual(update_to_specific.status_code, 302)
+        task_open.refresh_from_db()
+        self.assertFalse(task_open.is_open_to_all)
+        self.assertEqual(task_open.assigned_to, self.tech_profile)
+
+        # 5. Reassignment: Switch from Specific Person -> Open to All via status update
+        update_to_open = self.client.post(reverse('task_update_status', args=[task_open.id]), {
+            'assignment_type': 'open',
+            'assigned_to': '',
+        })
+        self.assertEqual(update_to_open.status_code, 302)
+        task_open.refresh_from_db()
+        self.assertTrue(task_open.is_open_to_all)
+        self.assertIsNone(task_open.assigned_to)
+
     def test_task_management_access_control(self):
         limited_staff = User.objects.create_user(
             username='limited_task_staff',
@@ -5874,19 +5935,30 @@ class StandaloneTaskSystemTests(TestCase):
         jobs_data = jobs_resp.json()
         self.assertIn('jobs', jobs_data)
 
-        # 3. Create task from mobile
+        # 3. Technician cannot create task from mobile (403 Forbidden)
         create_payload = {
             'title': 'Bench Diagnostic for Acer Nitro',
             'description': 'Check GPU thermal throttling',
             'priority': 'high',
-            'assign_to_me': True,
             'initial_message': 'Started logging temperatures',
         }
-        create_resp = self.client.post(
+        tech_create_resp = self.client.post(
             reverse('mobile_api_tasks'),
             data=json.dumps(create_payload),
             content_type='application/json',
             **auth_headers,
+        )
+        self.assertEqual(tech_create_resp.status_code, 403)
+
+        # 4. Staff CAN create task via mobile API (201 Created)
+        staff_token = issue_mobile_jwt(self.staff_user)
+        staff_auth_headers = {'HTTP_AUTHORIZATION': f'Bearer {staff_token}'}
+        staff_payload = dict(create_payload, assigned_to_id=self.tech_profile.id)
+        create_resp = self.client.post(
+            reverse('mobile_api_tasks'),
+            data=json.dumps(staff_payload),
+            content_type='application/json',
+            **staff_auth_headers,
         )
         self.assertEqual(create_resp.status_code, 201)
         res_data = create_resp.json()
@@ -5895,19 +5967,28 @@ class StandaloneTaskSystemTests(TestCase):
         self.assertEqual(res_data['task']['title'], 'Bench Diagnostic for Acer Nitro')
         self.assertEqual(res_data['task']['priority'], 'high')
 
-        # 4. Update task details from mobile
+        # 5. Technician cannot edit task details from mobile (403 Forbidden)
         upd_payload = {
             'priority': 'urgent',
             'description': 'GPU thermal paste dried out, fan replacement needed',
         }
-        detail_upd_resp = self.client.post(
+        tech_upd_resp = self.client.post(
             reverse('mobile_api_task_detail', args=[created_task_id]),
             data=json.dumps(upd_payload),
             content_type='application/json',
             **auth_headers,
         )
-        self.assertEqual(detail_upd_resp.status_code, 200)
-        self.assertEqual(detail_upd_resp.json()['task']['priority'], 'urgent')
+        self.assertEqual(tech_upd_resp.status_code, 403)
+
+        # 6. Staff CAN edit task details via mobile API (200 OK)
+        staff_upd_resp = self.client.post(
+            reverse('mobile_api_task_detail', args=[created_task_id]),
+            data=json.dumps(upd_payload),
+            content_type='application/json',
+            **staff_auth_headers,
+        )
+        self.assertEqual(staff_upd_resp.status_code, 200)
+        self.assertEqual(staff_upd_resp.json()['task']['priority'], 'urgent')
 
         # 5. Fetch tasks with metrics
         list_resp = self.client.get(reverse('mobile_api_tasks'), **auth_headers)

@@ -545,12 +545,17 @@ def get_mobile_job_permissions(user, job):
         and (not workspace_id or technician_profile.workspace_id == workspace_id)
         and membership_is_active
     )
+    has_linked_task = (
+        technician_profile is not None
+        and job.tasks.filter(assigned_to=technician_profile).exists()
+        and membership_is_active
+    )
     staff_can_access = bool(
         user.is_staff
         and user_has_staff_access(user, "staff_dashboard")
         and membership_is_active
     )
-    can_access = staff_can_access or is_assigned_tech
+    can_access = staff_can_access or is_assigned_tech or has_linked_task
     return {
         'is_staff': bool(staff_can_access),
         'is_assigned_tech': bool(is_assigned_tech),
@@ -1551,19 +1556,60 @@ def send_job_update_message(job_code, new_status):
     try:
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
-        from ..consumers import staff_group_name, tech_group_name, job_group_name
+        from ..consumers import staff_group_name, tech_group_name, job_group_name, tech_tasks_group_name
         
         channel_layer = get_channel_layer()
         if channel_layer:
-            job = JobTicket.objects.only('workspace_id').get(job_code=job_code)
+            job = (
+                JobTicket.objects.select_related('assigned_to__user')
+                .only(
+                    'job_code',
+                    'workspace_id',
+                    'customer_name',
+                    'device_type',
+                    'device_brand',
+                    'assigned_to_id',
+                    'assigned_to__user__username',
+                )
+                .get(job_code=job_code)
+            )
+            tech_user = job.assigned_to.user.username if job.assigned_to and job.assigned_to.user else None
+            tech_id = job.assigned_to_id
+            device_str = f"{job.device_type} {job.device_brand or ''}".strip()
+            workspace_id = job.workspace_id
+
             message = {
                 'type': 'job_status_update',
                 'job_code': job_code,
                 'status': new_status,
+                'customer_name': job.customer_name,
+                'device': device_str,
+                'assigned_tech_id': tech_id,
+                'assigned_tech_username': tech_user,
             }
-            workspace_id = job.workspace_id
             async_to_sync(channel_layer.group_send)(staff_group_name(workspace_id), message)
+            if workspace_id:
+                async_to_sync(channel_layer.group_send)(staff_group_name(None), message)
+
             async_to_sync(channel_layer.group_send)(tech_group_name(workspace_id), message)
+            if workspace_id:
+                async_to_sync(channel_layer.group_send)(tech_group_name(None), message)
+
+            # Send assignment alert directly to the technician's private feed
+            if tech_id:
+                personal_event = {
+                    'type': 'task_feed_event',
+                    'action': 'job_assigned',
+                    'job_code': job_code,
+                    'customer_name': job.customer_name,
+                    'device': device_str,
+                    'status': new_status,
+                    'technician_id': tech_id,
+                    'technician_username': tech_user,
+                }
+                async_to_sync(channel_layer.group_send)(tech_tasks_group_name(workspace_id, tech_id), personal_event)
+                if workspace_id:
+                    async_to_sync(channel_layer.group_send)(tech_tasks_group_name(None, tech_id), personal_event)
             
             async_to_sync(channel_layer.group_send)(job_group_name(workspace_id, job_code), message)
     except Exception as e:
@@ -1683,11 +1729,11 @@ def broadcast_task_status(task, old_status, new_status, user=None):
 
 
 def broadcast_task_created(task):
-    """Broadcast newly created task to staff dashboard and assigned technician feed."""
+    """Broadcast newly created task to staff dashboard and assigned technician feed (or all techs if open pool)."""
     try:
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
-        from ..consumers import staff_tasks_group_name, tech_tasks_group_name
+        from ..consumers import staff_tasks_group_name, tech_tasks_group_name, tech_group_name
 
         channel_layer = get_channel_layer()
         if not channel_layer:
@@ -1707,6 +1753,9 @@ def broadcast_task_created(task):
             'due_date': timezone.localtime(task.due_date).strftime('%d %b, %H:%M') if task.due_date else '',
             'assigned_to_id': task.assigned_to_id,
             'assigned_to_name': task.assigned_to.user.username if task.assigned_to and getattr(task.assigned_to, 'user', None) else '',
+            'is_open_to_all': task.is_open_to_all,
+            'has_alarm': task.has_alarm,
+            'alarm_time': timezone.localtime(task.alarm_time).strftime('%d %b, %H:%M') if task.alarm_time else '',
             'created_at': timezone.localtime(task.created_at).strftime('%d %b, %H:%M'),
         }
 
@@ -1714,13 +1763,69 @@ def broadcast_task_created(task):
             staff_tasks_group_name(workspace_id),
             feed_payload,
         )
+        if workspace_id:
+            async_to_sync(channel_layer.group_send)(
+                staff_tasks_group_name(None),
+                feed_payload,
+            )
+
         if task.assigned_to_id:
             async_to_sync(channel_layer.group_send)(
                 tech_tasks_group_name(workspace_id, task.assigned_to_id),
                 feed_payload,
             )
+            if workspace_id:
+                async_to_sync(channel_layer.group_send)(
+                    tech_tasks_group_name(None, task.assigned_to_id),
+                    feed_payload,
+                )
+        elif task.is_open_to_all:
+            # Broadcast to ALL technicians' global channel
+            async_to_sync(channel_layer.group_send)(
+                tech_group_name(workspace_id),
+                feed_payload,
+            )
+            if workspace_id:
+                async_to_sync(channel_layer.group_send)(
+                    tech_group_name(None),
+                    feed_payload,
+                )
     except Exception as e:
         print(f"broadcast_task_created failed: {e}")
+
+
+def broadcast_task_accepted(task, technician):
+    """Broadcast task acceptance to staff and technician feeds in real time."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from ..consumers import staff_tasks_group_name, tech_group_name
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+
+        workspace_id = task.workspace_id
+        tech_name = technician.user.get_full_name() or technician.user.username
+        feed_payload = {
+            'type': 'task_feed_event',
+            'action': 'task_accepted',
+            'task_id': task.id,
+            'title': task.title,
+            'assigned_to_id': technician.id,
+            'assigned_to_name': tech_name,
+            'status': task.status,
+            'status_display': task.get_status_display(),
+        }
+
+        async_to_sync(channel_layer.group_send)(staff_tasks_group_name(workspace_id), feed_payload)
+        if workspace_id:
+            async_to_sync(channel_layer.group_send)(staff_tasks_group_name(None), feed_payload)
+        async_to_sync(channel_layer.group_send)(tech_group_name(workspace_id), feed_payload)
+        if workspace_id:
+            async_to_sync(channel_layer.group_send)(tech_group_name(None), feed_payload)
+    except Exception as e:
+        print(f"broadcast_task_accepted failed: {e}")
 
 
 def broadcast_task_deleted(workspace_id, task_id, title):

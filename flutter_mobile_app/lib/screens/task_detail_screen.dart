@@ -35,6 +35,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   StreamSubscription<Map<String, dynamic>>? _chatSubscription;
   bool _isSending = false;
   bool _isUpdatingStatus = false;
+  bool _isClaiming = false;
 
   @override
   void initState() {
@@ -49,6 +50,31 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _messageController.dispose();
     _chatScrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _claimTask() async {
+    if (_task == null || _isClaiming) return;
+    setState(() => _isClaiming = true);
+    try {
+      final updated = await widget.tasksService.acceptTask(_task!.id);
+      if (!mounted) return;
+      setState(() {
+        _task = updated;
+        _isClaiming = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Task "${updated.title}" successfully claimed and assigned to you!'),
+          backgroundColor: const Color(0xFF16A34A),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isClaiming = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to claim task: ${TasksService.formatError(e)}'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   void _subscribeToChat() {
@@ -149,7 +175,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _errorMessage = TasksService.formatError(e);
         _isLoading = false;
       });
     }
@@ -181,7 +207,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.warningFg,
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(TasksService.formatError(e)),
         ),
       );
     } finally {
@@ -260,7 +286,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.warningFg,
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(TasksService.formatError(e)),
         ),
       );
     } finally {
@@ -272,23 +298,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
-  void _openEditTaskSheet() {
-    if (_task == null) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _EditTaskSheet(
-        task: _task!,
-        tasksService: widget.tasksService,
-        onUpdated: (updatedTask) {
-          setState(() {
-            _task = updatedTask;
-          });
-        },
-      ),
-    );
-  }
 
   String _statusLabel(String status) {
     switch (status) {
@@ -322,12 +331,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       appBar: AppBar(
         title: const Text('Task & Directives', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
-          if (_task != null)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: 'Edit Task',
-              onPressed: _openEditTaskSheet,
-            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -376,6 +379,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               controller: _chatScrollController,
                               padding: const EdgeInsets.all(16),
                               children: [
+                                if (_task!.canAccept) ...[
+                                  _buildClaimBanner(_task!),
+                                  const SizedBox(height: 12),
+                                ],
                                 _buildHeaderCard(_task!),
                                 const SizedBox(height: 12),
                                 if (_task!.jobReference != null) ...[
@@ -400,6 +407,73 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
+  Widget _buildClaimBanner(TaskModel task) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF86EFAC)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF16A34A).withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.front_hand_rounded, color: Color(0xFF16A34A), size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Open Pool Directive',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: Color(0xFF166534),
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Available for any active technician to accept.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF15803D)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _isClaiming ? null : _claimTask,
+            child: _isClaiming
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Claim Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeaderCard(TaskModel task) {
     final isUrgent = task.priority == 'urgent';
 
@@ -420,32 +494,83 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    PriorityBadge(
-                      priority: task.priority,
-                      label: task.priorityDisplay,
-                    ),
-                    if (task.isOverdue) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: const Color(0xFFDC2626)),
-                        ),
-                        child: const Text(
-                          'OVERDUE',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFFDC2626),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      PriorityBadge(
+                        priority: task.priority,
+                        label: task.priorityDisplay,
+                      ),
+                      if (task.hasAlarm)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFEF4444)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.notifications_active_rounded, size: 11, color: Color(0xFFDC2626)),
+                              SizedBox(width: 3),
+                              Text(
+                                'ALARM',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
+                      if (task.isOpenToAll)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFECFEFF),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFF06B6D4)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.groups_rounded, size: 11, color: Color(0xFF0891B2)),
+                              SizedBox(width: 3),
+                              Text(
+                                'OPEN POOL',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0891B2),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (task.isOverdue)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFDC2626)),
+                          ),
+                          child: const Text(
+                            'OVERDUE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                        ),
                     ],
-                  ],
+                  ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -524,7 +649,29 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             // Status Progression Stepper / Action Buttons
             Row(
               children: [
-                if (task.status == 'open')
+                if (task.canAccept)
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF16A34A),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: _isClaiming ? null : _claimTask,
+                      icon: _isClaiming
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.touch_app_rounded),
+                      label: Text(
+                        _isClaiming ? 'Claiming Task...' : 'Accept & Claim Directive',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  )
+                else if (task.status == 'open')
                   Expanded(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
@@ -857,7 +1004,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   Widget _buildQuickResponseChips() {
     final quickResponses = [
-      'Started work on bench',
+      'Started work on task',
       'Waiting for parts approval',
       'Inspection complete, testing now',
       'Completed and ready for review',
@@ -928,252 +1075,3 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 }
 
-class _EditTaskSheet extends StatefulWidget {
-  const _EditTaskSheet({
-    required this.task,
-    required this.tasksService,
-    required this.onUpdated,
-  });
-
-  final TaskModel task;
-  final TasksService tasksService;
-  final ValueChanged<TaskModel> onUpdated;
-
-  @override
-  State<_EditTaskSheet> createState() => _EditTaskSheetState();
-}
-
-class _EditTaskSheetState extends State<_EditTaskSheet> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _titleController;
-  late final TextEditingController _descController;
-  late String _priority;
-  int? _assignedToId;
-  List<TechnicianItem> _technicians = [];
-  bool _isLoadingTechs = true;
-  bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController(text: widget.task.title);
-    _descController = TextEditingController(text: widget.task.description);
-    _priority = widget.task.priority;
-    _assignedToId = widget.task.assignedToId;
-    _loadTechs();
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _descController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadTechs() async {
-    try {
-      final list = await widget.tasksService.fetchTechnicians();
-      if (!mounted) return;
-      setState(() {
-        _technicians = list;
-        _isLoadingTechs = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _isLoadingTechs = false;
-      });
-    }
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      final updated = await widget.tasksService.updateTask(
-        taskId: widget.task.id,
-        title: _titleController.text.trim(),
-        description: _descController.text.trim(),
-        priority: _priority,
-        assignedToId: _assignedToId,
-      );
-
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      widget.onUpdated(updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task updated successfully!')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
-          backgroundColor: AppColors.warningFg,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Edit Directive / Task', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Title *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _titleController,
-                      validator: (val) => val == null || val.trim().isEmpty ? 'Title is required' : null,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Priority Level', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        _priorityChip('urgent', '⚡ Urgent', const Color(0xFFDC2626)),
-                        const SizedBox(width: 8),
-                        _priorityChip('high', '↑ High', const Color(0xFFEA580C)),
-                        const SizedBox(width: 8),
-                        _priorityChip('medium', '● Medium', const Color(0xFF2563EB)),
-                        const SizedBox(width: 8),
-                        _priorityChip('low', '↓ Low', Colors.grey.shade600),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Assignee', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<int>(
-                      initialValue: _assignedToId,
-                      decoration: InputDecoration(
-                        hintText: _isLoadingTechs ? 'Loading technicians...' : 'Select Technician (or unassigned)',
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      items: [
-                        const DropdownMenuItem<int>(
-                          value: null,
-                          child: Text('Unassigned'),
-                        ),
-                        ..._technicians.map((t) => DropdownMenuItem<int>(
-                              value: t.id,
-                              child: Text('${t.name} (${t.username})'),
-                            )),
-                      ],
-                      onChanged: (val) {
-                        setState(() {
-                          _assignedToId = val;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Directives & Instructions', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _descController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: FilledButton(
-                        onPressed: _isSaving ? null : _save,
-                        child: _isSaving
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Save Changes'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _priorityChip(String key, String label, Color color) {
-    final isSelected = _priority == key;
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() {
-            _priority = key;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: isSelected ? color.withValues(alpha: 0.15) : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? color : Colors.grey.shade300,
-              width: isSelected ? 1.5 : 1,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: isSelected ? color : Colors.grey.shade800,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

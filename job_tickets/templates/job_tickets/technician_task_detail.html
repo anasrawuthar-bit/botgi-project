@@ -78,11 +78,26 @@
                 <span id="taskStatusBadge" class="badge {% if task.status == 'open' %}bg-info text-dark{% elif task.status == 'in_progress' %}bg-warning text-dark{% elif task.status == 'done' %}bg-success{% elif task.status == 'cancelled' %}bg-secondary{% endif %}">
                     {% if task.status == 'open' %}Pending Start{% elif task.status == 'in_progress' %}In Progress{% elif task.status == 'done' %}Completed{% else %}Cancelled{% endif %}
                 </span>
+
+                {% if task.has_alarm %}
+                    <span class="badge bg-danger text-white px-2 py-1"><i class="fas fa-bell me-1 fa-shake"></i>ALARM ENABLED</span>
+                {% endif %}
+
+                {% if task.is_open_to_all %}
+                    <span class="badge bg-primary text-white px-2 py-1"><i class="fas fa-users me-1"></i>OPEN POOL</span>
+                {% endif %}
             </div>
         </div>
 
         <div class="d-flex gap-2" id="taskStatusActions">
-            {% if task.status == 'open' %}
+            {% if can_claim %}
+                <form method="post" action="{% url 'technician_task_accept' task.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="fas fa-hand-holding-medical me-1"></i> Accept &amp; Claim Directive
+                    </button>
+                </form>
+            {% elif task.status == 'open' %}
                 <form method="post" action="{% url 'task_update_status' task.id %}" class="d-inline status-action-form">
                     {% csrf_token %}
                     <input type="hidden" name="status" value="in_progress">
@@ -105,6 +120,23 @@
             {% endif %}
         </div>
     </div>
+
+    {% if can_claim %}
+        <div class="card border-primary mb-4 bg-primary bg-opacity-10 shadow-sm">
+            <div class="card-body p-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                <div>
+                    <h5 class="fw-bold text-primary mb-1"><i class="fas fa-hand-holding-medical me-2"></i>Open Pool Task Directive</h5>
+                    <p class="mb-0 text-dark">This directive is currently open in the shared pool. Claim and accept this task to take full ownership and begin work.</p>
+                </div>
+                <form method="post" action="{% url 'technician_task_accept' task.id %}" class="flex-shrink-0">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary btn-lg shadow fw-bold">
+                        <i class="fas fa-check-circle me-2"></i>Accept &amp; Claim Directive
+                    </button>
+                </form>
+            </div>
+        </div>
+    {% endif %}
 
     <div class="row g-4">
         <!-- Left Column: Details & Attachments -->

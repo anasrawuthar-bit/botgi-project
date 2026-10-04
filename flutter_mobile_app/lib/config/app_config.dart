@@ -7,11 +7,12 @@ class AppConfig {
   static const String prodMode = 'prod';
   static const String customMode = 'custom';
 
-  // Android emulator: http://10.0.2.2:8000
-  // iOS simulator: http://127.0.0.1:8000
-  // Physical device: use your computer LAN IP.
-  static const String devBaseUrl = 'http://192.168.1.6:8000';
-  static const String prodBaseUrl = 'https://api.gihostings.com';
+  // Android emulator: http://10.0.2.2:3000
+  // Edge/Chrome/Desktop: http://127.0.0.1:3000
+  // Physical Android device: http://192.168.1.2:3000
+  static const String devBaseUrl = 'http://192.168.1.2:3000';
+  static const String prodBaseUrl = 'https://dir.anasrawuthar.in';
+
 
   static const String _modeKey = 'app_server_mode';
   static const String _customUrlKey = 'app_custom_base_url';

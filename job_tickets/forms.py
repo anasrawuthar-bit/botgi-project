@@ -210,14 +210,33 @@ class TaskCreateForm(forms.Form):
     assigned_to = forms.ModelChoiceField(
         queryset=TechnicianProfile.objects.none(),
         required=False,
-        empty_label='--- Unassigned ---',
+        empty_label='--- Select Technician ---',
         widget=forms.Select(attrs={
             'class': 'form-select',
             'data-searchable-select': 'true',
             'data-icon': 'fa-solid fa-user-gear',
-            'data-placeholder': 'Type to search technician...',
+            'data-placeholder': 'Select technician...',
+            'id': 'task-assigned-to-select',
         }),
         label='Assign To',
+    )
+    is_open_to_all = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'task-is-open-to-all'}),
+        label='Open to All Technicians (Shared Pool)',
+    )
+    has_alarm = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'task-has-alarm'}),
+        label='Set Alarm Alert (High Priority Audible Ring)',
+    )
+    alarm_time = forms.DateTimeField(
+        required=False,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'],
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control', 'id': 'task-alarm-time'}),
+        label='Alarm Time (optional, defaults to due date)',
     )
     job_reference = forms.ModelChoiceField(
         queryset=JobTicket.objects.none(),
@@ -256,6 +275,22 @@ class TaskCreateForm(forms.Form):
             return f"{obj.job_code}{customer}{device}"
 
         self.fields['job_reference'].label_from_instance = job_label
+
+    def clean(self):
+        cleaned_data = super().clean()
+        is_open_to_all = bool(cleaned_data.get('is_open_to_all'))
+        assigned_to = cleaned_data.get('assigned_to')
+
+        if is_open_to_all and assigned_to:
+            raise forms.ValidationError(
+                "A task cannot be assigned to both 'Open to All' and a specific technician. "
+                "Please choose either Open to All or an individual assignee."
+            )
+
+        if is_open_to_all:
+            cleaned_data['assigned_to'] = None
+
+        return cleaned_data
 
 
 class TaskMessageForm(forms.Form):

@@ -179,6 +179,9 @@
             <div class="col-6 col-md-auto">
                 <select name="tech" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">All Technicians</option>
+                    <option value="pool" {% if tech_filter == 'pool' %}selected{% endif %}>
+                        🌐 Open Pool (Anyone) ({{ pool_count }})
+                    </option>
                     {% for tech in technicians %}
                         <option value="{{ tech.id }}" {% if tech_filter == tech.id|stringformat:"s" %}selected{% endif %}>
                             {{ tech.user.username }}
@@ -268,9 +271,21 @@
                             {% endif %}
                         </td>
                         <td>
-                            <a href="{% url 'task_detail' task.id %}" class="fw-bold text-decoration-none text-dark d-block">
-                                {{ task.title }}
-                            </a>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <a href="{% url 'task_detail' task.id %}" class="fw-bold text-decoration-none text-dark">
+                                    {{ task.title }}
+                                </a>
+                                {% if task.has_alarm %}
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="Audible alarm alert enabled">
+                                        <i class="fas fa-bell me-1"></i>Alarm
+                                    </span>
+                                {% endif %}
+                                {% if task.is_open_to_all %}
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                        <i class="fas fa-users me-1"></i>Open Pool
+                                    </span>
+                                {% endif %}
+                            </div>
                             {% if task.description %}
                                 <small class="text-muted text-truncate d-inline-block" style="max-width: 420px;">
                                     {{ task.description|truncatewords:15 }}
@@ -289,6 +304,8 @@
                         <td>
                             {% if task.assigned_to %}
                                 <span class="fw-semibold text-dark"><i class="fas fa-user-cog text-muted me-1"></i>{{ task.assigned_to.user.username }}</span>
+                            {% elif task.is_open_to_all %}
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="fas fa-users me-1"></i>Open Pool (Anyone)</span>
                             {% else %}
                                 <span class="badge bg-light text-muted border">Unassigned</span>
                             {% endif %}
@@ -381,12 +398,74 @@
                             {{ create_form.due_date }}
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">Assign Technician</label>
-                            {{ create_form.assigned_to }}
-                        </div>
-                        <div class="col-md-6">
                             <label class="form-label fw-semibold">Link to Job Ticket (Optional)</label>
                             {{ create_form.job_reference }}
+                        </div>
+
+                        <!-- Option A: Assignment Type Radio Toggle (Mutually Exclusive) -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold d-block mb-1">
+                                Assignment Type <span class="text-danger">*</span>
+                            </label>
+                            <div class="card border rounded-3 p-3 bg-light">
+                                <div class="d-none">
+                                    {{ create_form.is_open_to_all }}
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <div class="card h-100 p-3 border-2 border-primary bg-white shadow-sm position-relative assignment-mode-card" id="cardAssignOpen" style="cursor: pointer; transition: all 0.2s ease;">
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input" type="radio" name="assignment_mode" id="modeOpenToAll" value="open" checked>
+                                                <label class="form-check-label fw-bold text-dark stretched-link" for="modeOpenToAll" style="cursor: pointer;">
+                                                    <i class="fas fa-users text-primary me-1"></i> Open to All (Shared Pool)
+                                                </label>
+                                            </div>
+                                            <div class="small text-muted mt-2 ps-4">
+                                                Dispatched to the shared technician pool. Any active technician can claim and work on this task.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="card h-100 p-3 border bg-white position-relative assignment-mode-card" id="cardAssignSpecific" style="cursor: pointer; transition: all 0.2s ease;">
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input" type="radio" name="assignment_mode" id="modeSpecificPerson" value="specific">
+                                                <label class="form-check-label fw-bold text-dark stretched-link" for="modeSpecificPerson" style="cursor: pointer;">
+                                                    <i class="fas fa-user-check text-success me-1"></i> Assign to Specific Person
+                                                </label>
+                                            </div>
+                                            <div class="small text-muted mt-2 ps-4">
+                                                Exclusively assigned to one technician. Other technicians cannot claim it.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Specific Assignee Selection (Only visible when Specific Person is chosen) -->
+                                <div id="specificPersonWrapper" class="mt-3 pt-3 border-top" style="display: none;">
+                                    <label class="form-label fw-semibold small text-dark mb-1" for="task-assigned-to-select">
+                                        <i class="fas fa-user-cog text-muted me-1"></i> Select Technician <span class="text-danger">*</span>
+                                    </label>
+                                    {{ create_form.assigned_to }}
+                                    <div class="form-text small">Select the technician responsible for executing this task.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="card p-3 bg-light border-0 rounded-3">
+                                <div class="form-check form-switch mb-1">
+                                    {{ create_form.has_alarm }}
+                                    <label class="form-check-label fw-bold text-danger" for="task-has-alarm">
+                                        <i class="fas fa-bell me-1"></i> Trigger Audible Alarm Alert
+                                    </label>
+                                </div>
+                                <div class="small text-muted">High priority audible chime on web and vibrating alarm push alert.</div>
+                            </div>
+                        </div>
+                        <div class="col-12" id="alarmTimeRow" style="display: none;">
+                            <label class="form-label fw-semibold"><i class="fas fa-clock text-danger me-1"></i>Custom Alarm Trigger Time</label>
+                            {{ create_form.alarm_time }}
+                            <div class="form-text">Optional. If empty, the alarm triggers immediately when task is dispatched or due.</div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold">Attachments (PDFs, Images, Schematics)</label>
@@ -417,11 +496,57 @@
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/staff_tasks/`;
     let socket = null;
     let reconnectTimeout = null;
+    let reconnectDelay = 2000;
+
+    function playAlarmTone() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            function tone(time, freq, dur) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(freq, time);
+                gain.gain.setValueAtTime(0.3, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + dur);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(time);
+                osc.stop(time + dur);
+            }
+            const t = ctx.currentTime;
+            tone(t, 880, 0.2);
+            tone(t + 0.25, 880, 0.2);
+            tone(t + 0.5, 1174.66, 0.35);
+        } catch(e) {
+            console.warn('Alarm tone error', e);
+        }
+    }
+
+    function showAlarmBanner(data) {
+        playAlarmTone();
+        const banner = document.createElement('div');
+        banner.className = 'alert alert-danger shadow-lg border-2 border-danger position-fixed top-0 start-50 translate-middle-x mt-3 d-flex align-items-center gap-3';
+        banner.style.zIndex = '99999';
+        banner.style.maxWidth = '90vw';
+        banner.innerHTML = `
+            <div class="fs-2 text-danger"><i class="fas fa-bell fa-shake"></i></div>
+            <div class="flex-grow-1">
+                <div class="fw-bold">🚨 ALARM DIRECTIVE: ${escapeHtml(data.title)}</div>
+                <div class="small">${escapeHtml(data.description || 'Audible alarm directive requires immediate action.')}</div>
+            </div>
+            <a href="/tasks/${data.task_id}/" class="btn btn-danger btn-sm fw-bold">View Directive</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(banner);
+    }
 
     function connectSocket() {
         socket = new WebSocket(wsUrl);
 
         socket.onopen = function() {
+            reconnectDelay = 2000;
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
         };
 
@@ -437,7 +562,10 @@
         };
 
         socket.onclose = function() {
-            reconnectTimeout = setTimeout(connectSocket, 4000);
+            reconnectTimeout = setTimeout(() => {
+                reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
+                connectSocket();
+            }, reconnectDelay);
         };
 
         socket.onerror = function() {
@@ -465,7 +593,13 @@
             if (data.priority === 'urgent') {
                 updateCounter('metricUrgentCount', 1);
             }
-            showLiveToast(`New Task: "${data.title}" created with ${data.priority_display} priority.`, 'primary');
+            if (data.has_alarm) {
+                showAlarmBanner(data);
+            } else if (data.is_open_to_all) {
+                showLiveToast(`New Open Pool Task: "${data.title}" - Open to all active technicians.`, 'info');
+            } else {
+                showLiveToast(`New Task: "${data.title}" created with ${data.priority_display} priority.`, 'primary');
+            }
             // Dynamically insert or reload if on all/active view
             const tbody = document.getElementById('taskTableBody');
             if (tbody) {
@@ -521,6 +655,15 @@
                     else if (data.new_status === 'cancelled') statusBadge.classList.add('bg-secondary');
                 }
             }
+        } else if (data.action === 'task_accepted') {
+            const row = document.getElementById(`task-row-${data.task_id}`);
+            if (row) {
+                const assignedTd = row.querySelector('td:nth-child(3)');
+                if (assignedTd) {
+                    assignedTd.innerHTML = `<span class="fw-semibold text-dark"><i class="fas fa-user-cog text-muted me-1"></i>${escapeHtml(data.assigned_to_name)}</span>`;
+                }
+            }
+            showLiveToast(`Task "${data.title}" was claimed by ${data.assigned_to_name}`, 'success');
         } else if (data.action === 'task_deleted') {
             const row = document.getElementById(`task-row-${data.task_id}`);
             if (row) {
@@ -551,11 +694,100 @@
 
     connectSocket();
 
+    const alarmCheckbox = document.getElementById('task-has-alarm');
+    const alarmRow = document.getElementById('alarmTimeRow');
+    if (alarmCheckbox && alarmRow) {
+        alarmCheckbox.addEventListener('change', function() {
+            alarmRow.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
+    // Option A: Mutually Exclusive Assignment Mode Handler
+    const isModalOpenToAllCheckbox = document.getElementById('task-is-open-to-all');
+    const radioOpen = document.getElementById('modeOpenToAll');
+    const radioSpecific = document.getElementById('modeSpecificPerson');
+    const cardOpen = document.getElementById('cardAssignOpen');
+    const cardSpecific = document.getElementById('cardAssignSpecific');
+    const specificWrapper = document.getElementById('specificPersonWrapper');
+    const assignedToSelect = document.getElementById('task-assigned-to-select') || (createTaskModalEl ? createTaskModalEl.querySelector('select[name="assigned_to"]') : null);
+
+    function setAssignmentMode(mode) {
+        if (mode === 'open') {
+            if (radioOpen) radioOpen.checked = true;
+            if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = true;
+            if (cardOpen) {
+                cardOpen.classList.add('border-2', 'border-primary', 'shadow-sm');
+                cardOpen.classList.remove('border');
+            }
+            if (cardSpecific) {
+                cardSpecific.classList.remove('border-2', 'border-primary', 'shadow-sm');
+                cardSpecific.classList.add('border');
+            }
+            if (specificWrapper) specificWrapper.style.display = 'none';
+            if (assignedToSelect) {
+                assignedToSelect.value = '';
+                assignedToSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        } else {
+            if (radioSpecific) radioSpecific.checked = true;
+            if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = false;
+            if (cardSpecific) {
+                cardSpecific.classList.add('border-2', 'border-primary', 'shadow-sm');
+                cardSpecific.classList.remove('border');
+            }
+            if (cardOpen) {
+                cardOpen.classList.remove('border-2', 'border-primary', 'shadow-sm');
+                cardOpen.classList.add('border');
+            }
+            if (specificWrapper) specificWrapper.style.display = 'block';
+        }
+    }
+
+    if (radioOpen) {
+        radioOpen.addEventListener('change', function() {
+            if (this.checked) setAssignmentMode('open');
+        });
+    }
+    if (radioSpecific) {
+        radioSpecific.addEventListener('change', function() {
+            if (this.checked) setAssignmentMode('specific');
+        });
+    }
+    if (cardOpen) {
+        cardOpen.addEventListener('click', function(e) {
+            setAssignmentMode('open');
+        });
+    }
+    if (cardSpecific) {
+        cardSpecific.addEventListener('click', function(e) {
+            setAssignmentMode('specific');
+        });
+    }
+
     const createTaskModalEl = document.getElementById('createTaskModal');
     if (createTaskModalEl) {
+        const createForm = createTaskModalEl.querySelector('form');
+        if (createForm) {
+            createForm.addEventListener('submit', function(e) {
+                if (radioOpen && radioOpen.checked) {
+                    if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = true;
+                    if (assignedToSelect) assignedToSelect.value = '';
+                } else if (radioSpecific && radioSpecific.checked) {
+                    if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = false;
+                    if (assignedToSelect && !assignedToSelect.value) {
+                        e.preventDefault();
+                        alert('Please select a specific technician, or switch to "Open to All".');
+                        return;
+                    }
+                }
+            });
+        }
+
         createTaskModalEl.addEventListener('hidden.bs.modal', function () {
             const form = createTaskModalEl.querySelector('form');
             if (form) form.reset();
+            if (alarmRow) alarmRow.style.display = 'none';
+            setAssignmentMode('open');
             createTaskModalEl.querySelectorAll('select[data-searchable-select]').forEach(function (sel) {
                 sel.dispatchEvent(new Event('change', { bubbles: true }));
             });

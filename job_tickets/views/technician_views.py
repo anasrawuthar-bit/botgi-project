@@ -914,7 +914,7 @@ def technician_return_to_staff(request, job_code):
 
 @login_required
 def technician_task_dashboard(request):
-    """Technician's view of their assigned standalone tasks, ordered by priority."""
+    """Technician's view of assigned standalone tasks and claimable open pool tasks."""
     if not request.user.groups.filter(name='Technicians').exists():
         return redirect('unauthorized')
 
@@ -924,7 +924,17 @@ def technician_task_dashboard(request):
             'tasks': [], 'warning': 'No technician profile found. Contact admin.'
         })
 
-    qs = Task.objects.filter(assigned_to=technician)
+    tab = (request.GET.get('tab') or 'my').strip().lower()
+    if tab == 'pool':
+        qs = Task.objects.filter(
+            Q(is_open_to_all=True) | Q(assigned_to__isnull=True),
+            status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS],
+        )
+        if technician.workspace:
+            qs = qs.filter(workspace=technician.workspace)
+    else:
+        tab = 'my'
+        qs = Task.objects.filter(assigned_to=technician)
 
     # Search
     q = (request.GET.get('q') or '').strip()
@@ -950,16 +960,26 @@ def technician_task_dashboard(request):
     if priority in dict(Task.PRIORITY_CHOICES):
         qs = qs.filter(priority=priority)
 
-    tasks = list(qs.select_related('created_by', 'job_reference').prefetch_related('attachments', 'messages'))
+    tasks = list(qs.select_related('created_by', 'job_reference', 'assigned_to__user').prefetch_related('attachments', 'messages'))
 
-    base_qs = Task.objects.filter(assigned_to=technician)
-    urgent_count = base_qs.filter(priority=Task.PRIORITY_URGENT, status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]).count()
-    open_count = base_qs.filter(status=Task.STATUS_OPEN).count()
-    in_progress_count = base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
-    done_count = base_qs.filter(status=Task.STATUS_DONE).count()
+    my_base_qs = Task.objects.filter(assigned_to=technician)
+    urgent_count = my_base_qs.filter(priority=Task.PRIORITY_URGENT, status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]).count()
+    open_count = my_base_qs.filter(status=Task.STATUS_OPEN).count()
+    in_progress_count = my_base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
+    done_count = my_base_qs.filter(status=Task.STATUS_DONE).count()
+
+    pool_qs = Task.objects.filter(
+        Q(is_open_to_all=True) | Q(assigned_to__isnull=True),
+        status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS],
+    )
+    if technician.workspace:
+        pool_qs = pool_qs.filter(workspace=technician.workspace)
+    pool_count = pool_qs.count()
 
     context = {
         'tasks': tasks,
+        'current_tab': tab,
+        'pool_count': pool_count,
         'urgent_count': urgent_count,
         'open_count': open_count,
         'in_progress_count': in_progress_count,
@@ -967,13 +987,14 @@ def technician_task_dashboard(request):
         'status_filter': status,
         'priority_filter': priority,
         'search_query': q,
+        'technician': technician,
     }
     return render(request, 'job_tickets/technician_task_dashboard.html', context)
 
 
 @login_required
 def technician_task_detail(request, task_id):
-    """Technician view for a single assigned task with message thread and status updates."""
+    """Technician view for a single task with message thread, attachments, and claim/status actions."""
     if not request.user.groups.filter(name='Technicians').exists():
         return redirect('unauthorized')
 
@@ -981,11 +1002,12 @@ def technician_task_detail(request, task_id):
     if not technician:
         return redirect('technician_task_dashboard')
 
-    task = get_object_or_404(
-        Task.objects.select_related('created_by', 'job_reference'),
-        id=task_id,
-        assigned_to=technician,
-    )
+    claimable_q = Q(assigned_to=technician) | Q(is_open_to_all=True) | Q(assigned_to__isnull=True)
+    task_qs = Task.objects.select_related('created_by', 'job_reference', 'assigned_to__user')
+    if technician.workspace:
+        task_qs = task_qs.filter(Q(workspace=technician.workspace) | Q(workspace__isnull=True))
+
+    task = get_object_or_404(task_qs.filter(claimable_q), id=task_id)
 
     attachments = task.attachments.all()
     messages_list = task.messages.select_related('sender').all()
@@ -993,8 +1015,49 @@ def technician_task_detail(request, task_id):
 
     context = {
         'task': task,
+        'technician': technician,
+        'is_assigned_to_me': bool(task.assigned_to_id == technician.id),
+        'can_claim': bool(task.is_claimable and task.assigned_to_id != technician.id),
         'attachments': attachments,
         'messages_list': messages_list,
         'message_form': message_form,
     }
     return render(request, 'job_tickets/technician_task_detail.html', context)
+
+
+@login_required
+@require_POST
+def technician_task_accept(request, task_id):
+    """Claim and accept an open pool / unassigned task."""
+    if not request.user.groups.filter(name='Technicians').exists():
+        return redirect('unauthorized')
+
+    technician = TechnicianProfile.objects.filter(user=request.user).first()
+    if not technician:
+        messages.error(request, 'No technician profile found.')
+        return redirect('technician_task_dashboard')
+
+    from django.db import transaction
+    with transaction.atomic():
+        try:
+            task = Task.objects.select_for_update().get(id=task_id)
+        except Task.DoesNotExist:
+            messages.error(request, 'Task not found.')
+            return redirect('technician_task_dashboard')
+
+        if not task.is_claimable:
+            messages.warning(request, f"Task '{task.title}' has already been claimed or is closed.")
+            return redirect('technician_task_dashboard')
+
+        task.accept_by_technician(technician)
+        msg = TaskMessage.objects.create(
+            task=task,
+            sender=request.user,
+            body=f"{request.user.get_full_name() or request.user.username} accepted and claimed this task from the open pool.",
+        )
+        broadcast_task_message(task, msg)
+        broadcast_task_accepted(task, technician)
+
+    messages.success(request, f"Task '{task.title}' claimed successfully and added to your queue.")
+    return redirect('technician_task_detail', task_id=task.id)
+

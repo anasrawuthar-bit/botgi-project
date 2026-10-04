@@ -6,9 +6,14 @@ import '../theme/app_colors.dart';
 import '../widgets/app_surface_card.dart';
 
 class PendingApprovalsScreen extends StatefulWidget {
-  const PendingApprovalsScreen({super.key, required this.managementService});
+  const PendingApprovalsScreen({
+    super.key,
+    required this.managementService,
+    this.title,
+  });
 
   final ManagementService managementService;
+  final String? title;
 
   @override
   State<PendingApprovalsScreen> createState() => _PendingApprovalsScreenState();
@@ -114,7 +119,7 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Pending Approvals')),
+      appBar: AppBar(title: Text(widget.title ?? 'Pending Approvals')),
       body: SafeArea(
         child: FutureBuilder<PendingApprovalsResponse>(
           future: _approvalsFuture,
@@ -156,9 +161,15 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen> {
                   ),
                   const SizedBox(height: 10),
                   if (data.approvals.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(child: Text('No pending approvals.')),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text(
+                          widget.title != null
+                              ? 'No ${widget.title!.toLowerCase()} found.'
+                              : 'No pending approvals.',
+                        ),
+                      ),
                     )
                   else
                     ...data.approvals.map(

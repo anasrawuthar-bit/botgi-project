@@ -64,6 +64,19 @@
         gap: 0.25rem;
         background: #ffffff;
     }
+    .dashboard-nav-tabs .nav-item.tab-draggable {
+        cursor: grab;
+        user-select: none;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+    .dashboard-nav-tabs .nav-item.tab-draggable:active {
+        cursor: grabbing;
+    }
+    .dashboard-nav-tabs .nav-item.tab-dragging {
+        opacity: 0.4;
+        background: rgba(13, 110, 253, 0.05);
+        border-radius: 4px;
+    }
     .dashboard-nav-tabs .nav-link {
         border: none;
         border-bottom: 2px solid transparent;
@@ -269,42 +282,42 @@
     <div class="card border-0 shadow-sm rounded-3 mb-4" style="border: 1px solid var(--border-color) !important; overflow: hidden;">
         <div class="card-header bg-white border-bottom p-0">
             <ul class="nav nav-tabs border-0 dashboard-nav-tabs px-3 pt-2" id="dashboardTabs" role="tablist">
-                <li class="nav-item" role="presentation">
+                <li class="nav-item tab-draggable" role="presentation" data-tab-id="pending-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link active d-inline-flex align-items-center gap-2" id="pending-tab" data-bs-toggle="tab" data-bs-target="#tab-pending" type="button" role="tab" aria-controls="tab-pending" aria-selected="true">
                         <i class="fa-regular fa-clock"></i>
                         <span>Pending Intake</span>
                         <span class="badge rounded-pill {% if pending_count %}bg-warning text-dark{% else %}bg-light text-muted border{% endif %}">{{ pending_count }}</span>
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
+                <li class="nav-item tab-draggable" role="presentation" data-tab-id="in-progress-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="in-progress-tab" data-bs-toggle="tab" data-bs-target="#tab-in-progress" type="button" role="tab" aria-controls="tab-in-progress" aria-selected="false">
                         <i class="fa-solid fa-screwdriver-wrench"></i>
                         <span>In Progress</span>
                         <span class="badge rounded-pill {% if in_progress_jobs_count %}bg-primary{% else %}bg-light text-muted border{% endif %}">{{ in_progress_jobs_count }}</span>
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
+                <li class="nav-item tab-draggable" role="presentation" data-tab-id="ready-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="ready-tab" data-bs-toggle="tab" data-bs-target="#tab-ready" type="button" role="tab" aria-controls="tab-ready" aria-selected="false">
                         <i class="fa-solid fa-circle-check"></i>
                         <span>Ready for Pickup</span>
                         <span class="badge rounded-pill {% if ready_count %}bg-success{% else %}bg-light text-muted border{% endif %}">{{ ready_count }}</span>
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
+                <li class="nav-item tab-draggable" role="presentation" data-tab-id="specialized-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="specialized-tab" data-bs-toggle="tab" data-bs-target="#tab-specialized" type="button" role="tab" aria-controls="tab-specialized" aria-selected="false">
                         <i class="fa-solid fa-share-nodes"></i>
                         <span>Specialized Routing</span>
                         <span class="badge rounded-pill {% if awaiting_assignment_jobs %}bg-info text-dark{% else %}bg-light text-muted border{% endif %}">{{ awaiting_assignment_jobs|length }}</span>
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
+                <li class="nav-item tab-draggable" role="presentation" data-tab-id="completed-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="completed-tab" data-bs-toggle="tab" data-bs-target="#tab-completed" type="button" role="tab" aria-controls="tab-completed" aria-selected="false">
                         <i class="fa-solid fa-check-double"></i>
                         <span>Completed</span>
                         <span class="badge rounded-pill bg-light text-muted border">{{ completed_count }}</span>
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
+                <li class="nav-item tab-draggable" role="presentation" data-tab-id="returned-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="returned-tab" data-bs-toggle="tab" data-bs-target="#tab-returned" type="button" role="tab" aria-controls="tab-returned" aria-selected="false">
                         <i class="fa-solid fa-arrow-rotate-left"></i>
                         <span>Returned</span>
@@ -1046,13 +1059,13 @@
                             {% endfor %}
                         </select>
                         <span class="input-group-text bg-light text-muted small px-2">Col</span>
-                        <select name="device_forms[INDEX].rack_column" class="form-select device-rack-col-select" id="rack-col-INDEX" style="min-width: 95px; max-width: 110px;" disabled>
+                        <select name="device_forms[INDEX].rack_column" class="form-select device-rack-col-select" id="rack-col-INDEX" style="min-width: 140px;" disabled>
                             <option value="">--</option>
                         </select>
                     </div>
-                    <small class="text-muted d-block mt-1" style="font-size: 0.76rem;">
+                    <div class="rack-slot-hint text-muted d-block mt-1" style="font-size: 0.76rem;">
                         Storage rack & column/slot number
-                    </small>
+                    </div>
                 </div>
 
                 <!-- Device Photos & Camera Section -->
@@ -1238,47 +1251,58 @@
 <div id="reminder-prompt-stack" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;"></div>
 
 <script>
-    // --- DJANGO CHANNELS / WEBSOCKET LIVE UPDATE (DISABLED - Django Channels removed) ---
-    /*
+    // --- DJANGO CHANNELS / WEBSOCKET LIVE UPDATE FOR STAFF OPERATIONS HUB ---
     document.addEventListener('DOMContentLoaded', function() {
-        // Determine WebSocket protocol (wss for HTTPS, ws for HTTP)
         var ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
-        
-        // Connect to the global staff updates endpoint
-        var jobStatusSocket = new WebSocket(
-            ws_scheme + '://' + window.location.host + '/ws/staff_updates/'
-        );
-    
-        jobStatusSocket.onopen = function(e) {
-            console.log("WebSocket connection established for Staff Dashboard.");
-        };
-    
-        jobStatusSocket.onmessage = function(e) {
-            const data = JSON.parse(e.data);
-            
-            // Check for the job status update type
-            if (data.type === 'job_status_update') {
-                const jobCode = data.job_code;
-                const newStatus = data.status;
-                
-                console.log(`Live update received: Job ${jobCode} status changed to ${newStatus}. Reloading dashboard...`);
-    
-                // For the Staff Dashboard, a full reload is the simplest and most robust way 
-                // to update all interconnected lists (Pending, In Progress, Specialized, Counts, etc.).
-                window.location.reload();
+        var ws_url = ws_scheme + '://' + window.location.host + '/ws/staff_updates/';
+        var jobStatusSocket = null;
+        var reconnectTimer = null;
+
+        function connectStaffWs() {
+            try {
+                jobStatusSocket = new WebSocket(ws_url);
+
+                jobStatusSocket.onopen = function(e) {
+                    console.log("WebSocket connected for Staff Operations Hub.");
+                };
+
+                jobStatusSocket.onmessage = function(e) {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.type === 'job_status_update' || data.type === 'job_assigned' || data.action === 'job_assigned') {
+                            console.log(`Live update received: Job ${data.job_code} status changed. Updating hub...`);
+                            // Check if a modal is currently open to avoid disrupting active staff work
+                            const activeModal = document.querySelector('.modal.show');
+                            if (activeModal) {
+                                console.log('Staff modal is actively open; deferring auto-reload to avoid wiping input.');
+                                return;
+                            }
+                            window.location.reload();
+                        }
+                    } catch (err) {
+                        console.error("Error processing staff WebSocket message:", err);
+                    }
+                };
+
+                jobStatusSocket.onclose = function(e) {
+                    console.warn('Staff Dashboard WebSocket closed. Reconnecting in 3s...', e);
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = setTimeout(connectStaffWs, 3000);
+                };
+
+                jobStatusSocket.onerror = function(e) {
+                    console.error('Staff Dashboard WebSocket error:', e);
+                    try { jobStatusSocket.close(); } catch (_) {}
+                };
+            } catch (err) {
+                console.error("Failed to initialize staff WebSocket:", err);
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(connectStaffWs, 5000);
             }
-        };
-    
-        jobStatusSocket.onclose = function(e) {
-            console.error('Staff Dashboard WebSocket closed unexpectedly:', e);
-            // Optional: Implement a reconnection attempt here
-        };
-    
-        jobStatusSocket.onerror = function(e) {
-            console.error('Staff Dashboard WebSocket error:', e);
-        };
+        }
+
+        connectStaffWs();
     });
-    */
 
     // staff_dashboard.html (Inside the final <script> block)
 
@@ -1307,6 +1331,7 @@
     const cameraStreams = new WeakMap();
     const capturedPhotoFiles = new WeakMap();
     const activeChecklists = {{ active_checklist_templates_json|safe|default:"{}" }};
+    const rackOccupancyData = {{ rack_occupancy_data_json|safe|default:"{}" }};
 
     function syncDeviceChecklistToggle(formBlock) {
         if (!formBlock) return;
@@ -2161,6 +2186,7 @@
         const formBlock = rackSelect.closest('.device-form-block');
         if (!formBlock) return;
         const colSelect = formBlock.querySelector('.device-rack-col-select');
+        const hintEl = formBlock.querySelector('.rack-slot-hint');
         if (!colSelect) return;
 
         const rackId = (rackSelect.value || '').trim();
@@ -2168,24 +2194,114 @@
             colSelect.innerHTML = '<option value="">--</option>';
             colSelect.disabled = true;
             colSelect.value = '';
+            if (hintEl) {
+                hintEl.innerHTML = '<span class="text-muted">Storage rack & column/slot number</span>';
+            }
             return;
         }
 
-        const keepCol = selectedCol || colSelect.value || '';
+        const rackInfo = rackOccupancyData[String(rackId)] || {};
+        const occupiedMap = rackInfo.occupied || {};
         const selectedOpt = rackSelect.options[rackSelect.selectedIndex];
-        const totalCols = selectedOpt ? parseInt(selectedOpt.getAttribute('data-total-columns') || '10', 10) : 10;
+        const totalCols = rackInfo.total_columns || (selectedOpt ? parseInt(selectedOpt.getAttribute('data-total-columns') || '10', 10) : 10);
 
-        colSelect.innerHTML = '<option value="">-- Any --</option>';
+        const keepCol = selectedCol || colSelect.value || '';
+        let occupiedCount = 0;
+        const freeCols = [];
+
+        colSelect.innerHTML = '<option value="">-- Select Column --</option>';
         for (let i = 1; i <= totalCols; i++) {
             const opt = document.createElement('option');
             opt.value = i;
-            opt.textContent = `Col ${i}`;
+            const occJobs = occupiedMap[String(i)] || [];
+            if (occJobs.length > 0) {
+                occupiedCount++;
+                const jobCodes = occJobs.map(j => j.job_code).join(',');
+                opt.textContent = `Col ${i} • Occupied [${jobCodes}]`;
+                opt.dataset.occupied = 'true';
+                opt.style.color = '#dc2626';
+            } else {
+                freeCols.push(i);
+                opt.textContent = `Col ${i} • Available`;
+                opt.dataset.occupied = 'false';
+                opt.style.color = '#16a34a';
+            }
             if (keepCol && String(keepCol) === String(i)) {
                 opt.selected = true;
             }
             colSelect.appendChild(opt);
         }
         colSelect.disabled = false;
+
+        refreshRackSlotHint(formBlock);
+    }
+
+    function refreshRackSlotHint(formBlock) {
+        if (!formBlock) return;
+        const rackSelect = formBlock.querySelector('.device-rack-select');
+        const colSelect = formBlock.querySelector('.device-rack-col-select');
+        const hintEl = formBlock.querySelector('.rack-slot-hint');
+        if (!rackSelect || !colSelect || !hintEl) return;
+
+        const rackId = (rackSelect.value || '').trim();
+        if (!rackId) {
+            hintEl.innerHTML = '<span class="text-muted">Storage rack & column/slot number</span>';
+            return;
+        }
+
+        const rackInfo = rackOccupancyData[String(rackId)] || {};
+        const occupiedMap = rackInfo.occupied || {};
+        const totalCols = rackInfo.total_columns || 10;
+        const selectedCol = (colSelect.value || '').trim();
+
+        const occupiedCols = Object.keys(occupiedMap).map(Number).filter(n => n >= 1 && n <= totalCols);
+        const occupiedCount = occupiedCols.length;
+        const freeCount = Math.max(0, totalCols - occupiedCount);
+
+        let freePreview = '';
+        const freeCols = [];
+        for (let i = 1; i <= totalCols; i++) {
+            if (!occupiedMap[String(i)] || occupiedMap[String(i)].length === 0) {
+                freeCols.push(i);
+            }
+        }
+        if (freeCols.length > 0) {
+            const previewList = freeCols.slice(0, 5).join(', ') + (freeCols.length > 5 ? '...' : '');
+            freePreview = `<span class="text-muted ms-1" style="font-size: 0.72rem;">(Available: Col ${previewList})</span>`;
+        }
+
+        let warningMsg = '';
+        if (selectedCol && occupiedMap[selectedCol]) {
+            const occJobs = occupiedMap[selectedCol];
+            const details = occJobs.map(j => `${j.job_code}${j.device_type ? ' (' + j.device_type + ')' : ''}`).join(', ');
+            warningMsg = `
+                <div class="d-flex align-items-center gap-1 text-danger fw-semibold mt-1" style="font-size: 0.74rem;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Col ${selectedCol} occupied by: ${details} (can share slot if needed).</span>
+                </div>
+            `;
+        } else if (selectedCol) {
+            warningMsg = `
+                <div class="d-flex align-items-center gap-1 text-success fw-semibold mt-1" style="font-size: 0.74rem;">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>Col ${selectedCol} is currently vacant.</span>
+                </div>
+            `;
+        }
+
+        hintEl.innerHTML = `
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-0.5">
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 0.70rem;">
+                    <i class="fa-solid fa-check me-1"></i>${freeCount} Free
+                </span>
+                ${occupiedCount > 0 ? `
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5" style="font-size: 0.70rem;">
+                    <i class="fa-solid fa-boxes-stacked me-1"></i>${occupiedCount} Occupied
+                </span>` : ''}
+                ${freePreview}
+            </div>
+            ${warningMsg}
+        `;
     }
 
     function addDeviceForm(initial = false) {
@@ -2312,6 +2428,11 @@
             const rackSelect = event.target.closest('.device-rack-select');
             if (rackSelect) {
                 updateDeviceColOptions(rackSelect);
+            }
+
+            const colSelect = event.target.closest('.device-rack-col-select');
+            if (colSelect) {
+                refreshRackSlotHint(colSelect.closest('.device-form-block'));
             }
 
             if (event.target && event.target.classList.contains('device-type-input')) {
@@ -2518,6 +2639,81 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     } catch (e) {}
+
+    // Initialize Drag & Drop for Status Tabs
+    function initDraggableTabs() {
+        const tabsList = document.getElementById('dashboardTabs');
+        if (!tabsList) return;
+
+        const STORAGE_KEY = 'botgi_dashboard_tabs_order';
+
+        // 1. Restore saved tab order
+        try {
+            const savedOrder = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            if (Array.isArray(savedOrder) && savedOrder.length > 0) {
+                const currentItems = Array.from(tabsList.querySelectorAll('.tab-draggable'));
+                const map = new Map();
+                currentItems.forEach(el => map.set(el.dataset.tabId, el));
+
+                savedOrder.forEach(tabId => {
+                    const el = map.get(tabId);
+                    if (el) {
+                        tabsList.appendChild(el);
+                        map.delete(tabId);
+                    }
+                });
+                // Append any remaining tabs not in savedOrder
+                map.forEach(el => tabsList.appendChild(el));
+            }
+        } catch (e) {
+            console.warn('Could not restore tab order:', e);
+        }
+
+        // 2. Drag & Drop events
+        let draggedItem = null;
+
+        tabsList.addEventListener('dragstart', function(e) {
+            const item = e.target.closest('.tab-draggable');
+            if (!item) return;
+            draggedItem = item;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.dataset.tabId || '');
+            setTimeout(() => {
+                if (draggedItem) draggedItem.classList.add('tab-dragging');
+            }, 0);
+        });
+
+        tabsList.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const targetItem = e.target.closest('.tab-draggable');
+            if (!targetItem || targetItem === draggedItem) return;
+
+            const rect = targetItem.getBoundingClientRect();
+            const midPoint = rect.left + rect.width / 2;
+            if (e.clientX < midPoint) {
+                tabsList.insertBefore(draggedItem, targetItem);
+            } else {
+                tabsList.insertBefore(draggedItem, targetItem.nextSibling);
+            }
+        });
+
+        tabsList.addEventListener('dragend', function() {
+            if (draggedItem) {
+                draggedItem.classList.remove('tab-dragging');
+                draggedItem = null;
+            }
+            // Save new order to localStorage
+            const newOrder = Array.from(tabsList.querySelectorAll('.tab-draggable'))
+                .map(el => el.dataset.tabId)
+                .filter(Boolean);
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(newOrder));
+            } catch (e) {}
+        });
+    }
+
+    initDraggableTabs();
 
     const hash = window.location.hash.replace('#', '');
     let targetTabId = null;

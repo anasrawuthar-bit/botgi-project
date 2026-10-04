@@ -158,8 +158,8 @@ class JobStatusConsumer(WebsocketConsumer):
 class StaffDashboardConsumer(WebsocketConsumer):
     # This consumer handles connections for the Staff Dashboard
     def connect(self):
-        user = self.scope.get('user')
-        if not user or not user.is_authenticated or not getattr(user, 'is_staff', False):
+        user = _authenticate_websocket_user(self.scope)
+        if not user or not getattr(user, 'is_staff', False):
             self.close()
             return
         workspace_id = _query_value(self.scope, 'workspace')
@@ -179,6 +179,11 @@ class StaffDashboardConsumer(WebsocketConsumer):
             staff_group_name(self.workspace_id),
             self.channel_name
         )
+        if self.workspace_id:
+            async_to_sync(self.channel_layer.group_add)(
+                staff_group_name(None),
+                self.channel_name
+            )
         async_to_sync(self.channel_layer.group_add)(
             staff_tasks_group_name(self.workspace_id),
             self.channel_name
@@ -190,6 +195,11 @@ class StaffDashboardConsumer(WebsocketConsumer):
             staff_group_name(self.workspace_id),
             self.channel_name
         )
+        if hasattr(self, 'workspace_id') and self.workspace_id:
+            async_to_sync(self.channel_layer.group_discard)(
+                staff_group_name(None),
+                self.channel_name
+            )
         async_to_sync(self.channel_layer.group_discard)(
             staff_tasks_group_name(self.workspace_id),
             self.channel_name
@@ -202,6 +212,9 @@ class StaffDashboardConsumer(WebsocketConsumer):
     def job_status_update(self, event):
         self.send(text_data=json.dumps(event))
 
+    def job_assigned(self, event):
+        self.send(text_data=json.dumps(event))
+
     def task_feed_event(self, event):
         self.send(text_data=json.dumps(event))
         
@@ -209,8 +222,8 @@ class StaffDashboardConsumer(WebsocketConsumer):
 class TechnicianDashboardConsumer(WebsocketConsumer):
     # This consumer handles connections for the Technician Dashboard
     def connect(self):
-        user = self.scope.get('user')
-        if not user or not user.is_authenticated:
+        user = _authenticate_websocket_user(self.scope)
+        if not user:
             self.close()
             return
         technician = TechnicianProfile.objects.filter(user=user).first()
@@ -226,10 +239,20 @@ class TechnicianDashboardConsumer(WebsocketConsumer):
             tech_group_name(self.workspace_id),
             self.channel_name
         )
+        if self.workspace_id:
+            async_to_sync(self.channel_layer.group_add)(
+                tech_group_name(None),
+                self.channel_name
+            )
         async_to_sync(self.channel_layer.group_add)(
             tech_tasks_group_name(self.workspace_id, self.tech_id),
             self.channel_name
         )
+        if self.workspace_id:
+            async_to_sync(self.channel_layer.group_add)(
+                tech_tasks_group_name(None, self.tech_id),
+                self.channel_name
+            )
         self.accept()
 
     def disconnect(self, close_code):
@@ -237,17 +260,30 @@ class TechnicianDashboardConsumer(WebsocketConsumer):
             tech_group_name(self.workspace_id),
             self.channel_name
         )
+        if hasattr(self, 'workspace_id') and self.workspace_id:
+            async_to_sync(self.channel_layer.group_discard)(
+                tech_group_name(None),
+                self.channel_name
+            )
         if hasattr(self, 'tech_id'):
             async_to_sync(self.channel_layer.group_discard)(
                 tech_tasks_group_name(self.workspace_id, self.tech_id),
                 self.channel_name
             )
+            if hasattr(self, 'workspace_id') and self.workspace_id:
+                async_to_sync(self.channel_layer.group_discard)(
+                    tech_tasks_group_name(None, self.tech_id),
+                    self.channel_name
+                )
         
     def receive(self, text_data):
         pass
 
     # Receive message from technician update group (sent from views.py)
     def job_status_update(self, event):
+        self.send(text_data=json.dumps(event))
+
+    def job_assigned(self, event):
         self.send(text_data=json.dumps(event))
 
     def task_feed_event(self, event):
@@ -430,3 +466,10 @@ class TechnicianTaskDashboardConsumer(WebsocketConsumer):
 
     def task_feed_event(self, event):
         self.send(text_data=json.dumps(event))
+
+
+class FallbackRejectConsumer(WebsocketConsumer):
+    """Silently closes unrecognized WebSocket connections (such as Next.js HMR or bot probes)."""
+
+    def connect(self):
+        self.close(code=4404)

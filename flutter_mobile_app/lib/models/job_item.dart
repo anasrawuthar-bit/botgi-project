@@ -6,6 +6,7 @@ class JobItem {
     required this.device,
     required this.status,
     required this.updatedAt,
+    this.createdAt = '',
     required this.total,
     required this.partTotal,
     required this.serviceTotal,
@@ -21,6 +22,7 @@ class JobItem {
   final String device;
   final String status;
   final String updatedAt;
+  final String createdAt;
   final String total;
   final String partTotal;
   final String serviceTotal;
@@ -37,6 +39,7 @@ class JobItem {
       device: (json['device'] ?? '').toString(),
       status: (json['status'] ?? '').toString(),
       updatedAt: (json['updated_at'] ?? '').toString(),
+      createdAt: (json['created_at'] ?? '').toString(),
       total: (json['total'] ?? '0.00').toString(),
       partTotal: (json['part_total'] ?? '0.00').toString(),
       serviceTotal: (json['service_total'] ?? '0.00').toString(),

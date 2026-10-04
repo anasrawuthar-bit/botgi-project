@@ -250,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Enter your credentials to access your bench',
+                                    'Enter your credentials to continue',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: Colors.grey.shade600,
@@ -303,7 +303,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                                   // Username Field
                                   const Text(
-                                    'Username or Staff ID',
+                                    'Username',
                                     style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                                   ),
                                   const SizedBox(height: 6),
@@ -314,7 +314,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       FocusScope.of(context).requestFocus(_passwordFocusNode);
                                     },
                                     decoration: InputDecoration(
-                                      hintText: 'e.g., tech_john or staff',
                                       prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
                                       filled: true,
                                       fillColor: Colors.grey.shade50,
@@ -346,7 +345,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     textInputAction: TextInputAction.done,
                                     onFieldSubmitted: (_) => _submit(),
                                     decoration: InputDecoration(
-                                      hintText: '••••••••',
                                       prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
                                       suffixIcon: IconButton(
                                         icon: Icon(
@@ -487,7 +485,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Botgi CRM Mobile • v1.0.0',
+                            'Botgi Technician • Powered by GIHostings • v1.0.0',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade500,
@@ -510,34 +508,39 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildBrandHeader(ThemeData theme) {
     return Column(
       children: [
-        // Workshop Logo Container
+        // App Logo
         Container(
-          width: 64,
-          height: 64,
+          width: 84,
+          height: 84,
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppColors.primary, AppColors.accent],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(18),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey.shade200),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.28),
-                blurRadius: 14,
-                offset: const Offset(0, 5),
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: const Icon(
-            Icons.handyman_rounded,
-            color: Colors.white,
-            size: 32,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.asset(
+              'assets/images/logo.png',
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Icon(
+                Icons.handyman_rounded,
+                color: AppColors.primary,
+                size: 36,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 14),
         const Text(
-          'BOTGI CRM',
+          'BOTGI TECHNICIAN',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w900,
@@ -553,7 +556,7 @@ class _LoginScreenState extends State<LoginScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Text(
-            'Workshop & Service Hub',
+            'Powered by GIHostings',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,

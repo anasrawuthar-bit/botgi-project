@@ -131,10 +131,60 @@ def mobile_api_jobs(request):
     else:
         jobs_qs = JobTicket.objects.none()
 
+    # Scope filter: active, history, or all
+    scope = (request.GET.get('scope') or '').strip().lower()
+    finished_statuses = ['Completed', 'Closed', 'Ready for Pickup', 'Returned']
+    if scope == 'active':
+        jobs_qs = jobs_qs.exclude(status__in=finished_statuses)
+    elif scope == 'history':
+        jobs_qs = jobs_qs.filter(status__in=['Completed', 'Closed', 'Ready for Pickup'])
+
+    # Status filter if passed directly
+    status_param = (request.GET.get('status') or '').strip()
+    if status_param and status_param.upper() != 'ALL':
+        jobs_qs = jobs_qs.filter(status__iexact=status_param)
+
+    # Date / Month filter
+    report_month_param = (request.GET.get('report_month') or '').strip()
+    preset = (request.GET.get('preset') or '').strip().lower()
+    today = timezone.localdate()
+
+    if preset == 'this_month':
+        start_date = today.replace(day=1)
+        if today.month == 12:
+            end_date = datetime(today.year + 1, 1, 1).date()
+        else:
+            end_date = datetime(today.year, today.month + 1, 1).date()
+        start_of_period = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
+        end_of_period = timezone.make_aware(datetime.combine(end_date, datetime.min.time()))
+        jobs_qs = jobs_qs.filter(updated_at__gte=start_of_period, updated_at__lt=end_of_period)
+    elif preset == 'last_month':
+        first_day_current = today.replace(day=1)
+        last_month_end = first_day_current - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        start_of_period = timezone.make_aware(datetime.combine(last_month_start, datetime.min.time()))
+        end_of_period = timezone.make_aware(datetime.combine(first_day_current, datetime.min.time()))
+        jobs_qs = jobs_qs.filter(updated_at__gte=start_of_period, updated_at__lt=end_of_period)
+    elif report_month_param:
+        try:
+            year_str, month_str = report_month_param.split('-')
+            year = int(year_str)
+            month = int(month_str)
+            start_date = datetime(year, month, 1).date()
+            if month == 12:
+                end_date = datetime(year + 1, 1, 1).date()
+            else:
+                end_date = datetime(year, month + 1, 1).date()
+            start_of_period = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
+            end_of_period = timezone.make_aware(datetime.combine(end_date, datetime.min.time()))
+            jobs_qs = jobs_qs.filter(updated_at__gte=start_of_period, updated_at__lt=end_of_period)
+        except (ValueError, TypeError):
+            pass
+
     try:
-        limit = min(max(int(request.GET.get('limit', 200)), 1), 300)
+        limit = min(max(int(request.GET.get('limit', 300)), 1), 500)
     except (TypeError, ValueError):
-        limit = 200
+        limit = 300
 
     jobs = list(
         jobs_qs.select_related('assigned_to__user', 'specialized_service')
@@ -142,6 +192,10 @@ def mobile_api_jobs(request):
         .order_by('-updated_at')[:limit]
     )
     calculate_job_totals(jobs, exclude_vendor_charges=True)
+
+    history_parts_total = sum(j.part_total or Decimal('0.00') for j in jobs)
+    history_service_total = sum(j.service_total or Decimal('0.00') for j in jobs)
+    history_grand_total = sum(j.total or Decimal('0.00') for j in jobs)
 
     jobs_data = []
     for job in jobs:
@@ -152,6 +206,7 @@ def mobile_api_jobs(request):
                 'customer_phone': job.customer_phone,
                 'device': f"{job.device_type} {job.device_brand or ''} {job.device_model or ''}".strip(),
                 'status': job.status,
+                'created_at': timezone.localtime(job.created_at).strftime('%Y-%m-%d %H:%M'),
                 'updated_at': timezone.localtime(job.updated_at).strftime('%Y-%m-%d %H:%M'),
                 'total': str(job.total or Decimal('0.00')),
                 'part_total': str(job.part_total or Decimal('0.00')),
@@ -171,7 +226,16 @@ def mobile_api_jobs(request):
             }
         )
 
-    return JsonResponse({'count': len(jobs_data), 'jobs': jobs_data})
+    return JsonResponse({
+        'count': len(jobs_data),
+        'summary': {
+            'count': len(jobs_data),
+            'parts_total': str(history_parts_total),
+            'service_total': str(history_service_total),
+            'grand_total': str(history_grand_total),
+        },
+        'jobs': jobs_data,
+    })
 
 def mobile_api_job_detail(request, job_code):
     if request.method != 'GET':
@@ -280,6 +344,19 @@ def mobile_api_job_detail(request, job_code):
             }
         )
 
+    active_racks_qs = DeviceRack.objects.filter(is_active=True)
+    if job.workspace_id:
+        active_racks_qs = active_racks_qs.filter(workspace=job.workspace)
+    available_racks = [
+        {
+            'id': r.id,
+            'name': r.name,
+            'group': r.group,
+            'total_columns': max(1, r.total_columns or 10),
+        }
+        for r in active_racks_qs.order_by('group', 'name')
+    ]
+
     return JsonResponse(
         {
             'job': {
@@ -293,8 +370,10 @@ def mobile_api_job_detail(request, job_code):
                 'device_model': job.device_model or '',
                 'device_serial': job.device_serial or '',
                 'device_password': job.device_password or '',
-                'rack_location': job.rack_location_display() or '',
-                'rack_short': job.rack_short_display() or '',
+                'rack_id': job.rack_id,
+                'rack_column': job.rack_column,
+                'rack_location': job.rack_location_display or '',
+                'rack_short': job.rack_short_display or '',
                 'reported_issue': job.reported_issue or '',
                 'additional_items': job.additional_items or '',
                 'technician_notes': job.technician_notes or '',
@@ -316,6 +395,8 @@ def mobile_api_job_detail(request, job_code):
                 'updated_at': timezone.localtime(job.updated_at).strftime('%Y-%m-%d %H:%M'),
                 'created_at': timezone.localtime(job.created_at).strftime('%Y-%m-%d %H:%M'),
                 'technician_checklist': _get_job_checklist_answers(job),
+                'receipt_url': f'/client-receipt/{job.job_code}/',
+                'receipt_pdf_url': f'/client-receipt/{job.job_code}/pdf/',
             },
             'tasks': linked_tasks,
 
@@ -329,6 +410,7 @@ def mobile_api_job_detail(request, job_code):
             'service_logs': service_logs_data,
             'timeline': timeline,
             'available_actions': get_mobile_job_available_actions(user, job),
+            'available_racks': available_racks,
             'permissions': {
                 'can_edit_notes': mobile_can_edit_notes(user, job),
                 'can_manage_service_logs': mobile_can_manage_service_lines(user, job),
@@ -825,8 +907,17 @@ def mobile_api_job_action(request, job_code):
                     {'error': 'invalid_transition', 'message': 'Job cannot be completed from current status.'},
                     status=400,
                 )
+            checklist_schema, _, _ = _build_checklist_schema_for_job(job)
+            raw_answers = payload.get('answers')
+            if raw_answers is not None:
+                try:
+                    posted_answers = _mobile_normalize_checklist_answers(raw_answers, checklist_schema)
+                    job.technician_checklist = _merge_checklist_answers(_get_job_checklist_answers(job), posted_answers)
+                    job.save(update_fields=['technician_checklist', 'updated_at'])
+                except ValueError as exc:
+                    return JsonResponse({'error': 'invalid_checklist', 'message': str(exc)}, status=400)
+
             if not permissions['is_staff']:
-                checklist_schema, _, _ = _build_checklist_schema_for_job(job)
                 missing_required = _missing_required_checklist_labels(job, checklist_schema)
                 if missing_required:
                     return JsonResponse(
@@ -876,6 +967,117 @@ def mobile_api_job_action(request, job_code):
             'available_actions': get_mobile_job_available_actions(user, job),
         }
     )
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_job_rack(request, job_code):
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    try:
+        payload = json.loads((request.body or b'{}').decode('utf-8'))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
+
+    rack_id_raw = payload.get('rack_id')
+    rack_col_raw = payload.get('rack_column')
+
+    with transaction.atomic():
+        job = get_object_or_404(
+            JobTicket.objects.select_for_update(),
+            job_code=job_code,
+        )
+        permissions = get_mobile_job_permissions(user, job)
+        if not (permissions['can_access'] and (
+            permissions['is_assigned_tech']
+            or permissions['is_staff']
+            or user.is_staff
+            or user.is_superuser
+            or user.groups.filter(name__icontains='technician').exists()
+        )):
+            return JsonResponse(
+                {'error': 'forbidden', 'message': 'You do not have permission to update rack for this job.'},
+                status=403,
+            )
+
+        old_rack = job.rack
+        old_col = job.rack_column
+        new_rack = None
+        new_col = None
+
+        if rack_id_raw is not None and str(rack_id_raw).strip() != '':
+            try:
+                rack_id = int(rack_id_raw)
+                rack_qs = DeviceRack.objects.filter(id=rack_id, is_active=True)
+                if job.workspace_id:
+                    rack_qs = rack_qs.filter(workspace=job.workspace)
+                new_rack = rack_qs.first()
+                if not new_rack:
+                    return JsonResponse(
+                        {'error': 'invalid_rack', 'message': 'Selected rack is not available or inactive.'},
+                        status=400,
+                    )
+            except (ValueError, TypeError):
+                return JsonResponse({'error': 'invalid_rack', 'message': 'Invalid rack ID.'}, status=400)
+
+            if rack_col_raw is not None and str(rack_col_raw).strip() != '':
+                try:
+                    parsed_col = int(rack_col_raw)
+                    if 1 <= parsed_col <= max(1, new_rack.total_columns or 100):
+                        new_col = parsed_col
+                    else:
+                        return JsonResponse(
+                            {
+                                'error': 'invalid_column',
+                                'message': f'Column must be between 1 and {new_rack.total_columns}.',
+                            },
+                            status=400,
+                        )
+                except (ValueError, TypeError):
+                    return JsonResponse({'error': 'invalid_column', 'message': 'Invalid column number.'}, status=400)
+
+        if old_rack != new_rack or old_col != new_col:
+            job.rack = new_rack
+            job.rack_column = new_col
+            job.save(update_fields=['rack', 'rack_column', 'updated_at'])
+
+            def _fmt_loc(r, c):
+                if not r:
+                    return 'None'
+                if c:
+                    return f"'{r.name}' - Col {c} ({r.group})"
+                return f"'{r.name}' ({r.group})"
+
+            old_desc = _fmt_loc(old_rack, old_col)
+            new_desc = _fmt_loc(new_rack, new_col)
+            JobTicketLog.objects.create(
+                job_ticket=job,
+                user=user,
+                action='STATUS',
+                details=f'Rack location changed from {old_desc} to {new_desc}.',
+            )
+            send_job_update_message(job.job_code, job.status)
+
+    col_display = f' - Col {new_col}' if new_col else ''
+    msg = (
+        f'Device moved to {new_rack.name}{col_display} ({new_rack.group}).'
+        if new_rack
+        else 'Device unassigned from rack.'
+    )
+
+    return JsonResponse(
+        {
+            'ok': True,
+            'message': msg,
+            'rack_id': new_rack.id if new_rack else None,
+            'rack_column': new_col,
+            'rack_location': job.rack_location_display or '',
+            'rack_short': job.rack_short_display or '',
+        }
+    )
+
 
 @csrf_exempt
 @require_POST
@@ -1963,6 +2165,9 @@ def _serialize_task_for_mobile(task, user=None, detailed=False):
         task.status in [Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]
     )
 
+    tech_id = getattr(getattr(user, 'technician_profile', None), 'id', None)
+    can_accept = bool(is_tech and task.is_claimable and (not task.assigned_to_id or task.assigned_to_id != tech_id))
+
     data = {
         'id': task.id,
         'title': task.title,
@@ -1974,6 +2179,11 @@ def _serialize_task_for_mobile(task, user=None, detailed=False):
         'due_date': timezone.localtime(task.due_date).strftime('%Y-%m-%d %H:%M') if task.due_date else '',
         'is_overdue': is_overdue,
         'is_mine': is_mine,
+        'is_open_to_all': task.is_open_to_all,
+        'has_alarm': task.has_alarm,
+        'alarm_time': timezone.localtime(task.alarm_time).strftime('%Y-%m-%d %H:%M') if task.alarm_time else '',
+        'is_claimable': task.is_claimable,
+        'can_accept': can_accept,
         'created_at': timezone.localtime(task.created_at).strftime('%Y-%m-%d %H:%M'),
         'completed_at': timezone.localtime(task.completed_at).strftime('%Y-%m-%d %H:%M') if task.completed_at else '',
         'created_by': task.created_by.username if task.created_by else 'System',
@@ -2026,9 +2236,9 @@ def mobile_api_tasks(request):
     is_tech = hasattr(user, 'technician_profile')
 
     if request.method == 'POST':
-        # Create Task from mobile
-        if user.is_staff and not user_has_staff_access(user, "task_management"):
-            return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
+        # Create Task from mobile: staff only (technicians cannot create tasks)
+        if not user.is_staff or not user_has_staff_access(user, "task_management"):
+            return JsonResponse({'error': 'forbidden', 'message': 'Only staff with task management permission can create tasks.'}, status=403)
 
         try:
             payload = json.loads((request.body or b'{}').decode('utf-8'))
@@ -2058,9 +2268,26 @@ def mobile_api_tasks(request):
             except Exception:
                 due_date = None
 
+        is_open_to_all = bool(payload.get('is_open_to_all'))
+        has_alarm = bool(payload.get('has_alarm'))
+        alarm_time_str = (payload.get('alarm_time') or '').strip()
+        alarm_time = None
+        if alarm_time_str:
+            try:
+                from django.utils.dateparse import parse_datetime
+                alarm_time = parse_datetime(alarm_time_str)
+                if alarm_time and timezone.is_naive(alarm_time):
+                    alarm_time = timezone.make_aware(alarm_time)
+            except Exception:
+                alarm_time = None
+        if has_alarm and not alarm_time:
+            alarm_time = due_date or timezone.now()
+
         assigned_to_id = payload.get('assigned_to_id')
         assigned_to = None
-        if assigned_to_id:
+        if is_open_to_all:
+            assigned_to = None
+        elif assigned_to_id:
             assigned_to = TechnicianProfile.objects.filter(id=assigned_to_id).first()
         elif is_tech and (payload.get('assign_to_me') or payload.get('assigned_to_me')):
             assigned_to = user.technician_profile
@@ -2080,6 +2307,9 @@ def mobile_api_tasks(request):
             priority=priority,
             due_date=due_date,
             assigned_to=assigned_to,
+            is_open_to_all=is_open_to_all,
+            has_alarm=has_alarm,
+            alarm_time=alarm_time,
             job_reference=job_ref,
             created_by=user,
             status=Task.STATUS_OPEN,
@@ -2105,8 +2335,15 @@ def mobile_api_tasks(request):
     if user.is_staff and not user_has_staff_access(user, "task_management"):
         return JsonResponse({'error': 'forbidden', 'message': 'Task management access required.'}, status=403)
 
+    pool_filter = request.GET.get('pool') in ('1', 'true', 'yes') or request.GET.get('scope') == 'pool'
     mine_filter = request.GET.get('mine') in ('1', 'true', 'yes')
-    if is_tech and not user.is_staff:
+
+    if pool_filter:
+        base_qs = scope_to_workspace(Task.objects.all(), workspace).filter(
+            Q(is_open_to_all=True) | Q(assigned_to__isnull=True),
+            status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]
+        )
+    elif is_tech and not user.is_staff:
         base_qs = Task.objects.filter(assigned_to=user.technician_profile)
     elif mine_filter and is_tech:
         base_qs = scope_to_workspace(Task.objects.all(), workspace).filter(assigned_to=user.technician_profile)
@@ -2116,6 +2353,12 @@ def mobile_api_tasks(request):
         )
     else:
         base_qs = scope_to_workspace(Task.objects.all(), workspace)
+
+    workspace_all = scope_to_workspace(Task.objects.all(), workspace)
+    pool_count = workspace_all.filter(
+        Q(is_open_to_all=True) | Q(assigned_to__isnull=True),
+        status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS]
+    ).count()
 
     # Compute KPI statistics over base_qs
     total_count = base_qs.count()
@@ -2166,6 +2409,7 @@ def mobile_api_tasks(request):
             'in_progress': in_progress_count,
             'open': open_count,
             'done': done_count,
+            'pool': pool_count,
         },
         'tasks': tasks_data,
     })
@@ -2189,10 +2433,15 @@ def mobile_api_task_detail(request, task_id):
         pk=task_id,
     )
 
-    if is_tech and not user.is_staff and task.assigned_to != user.technician_profile:
-        return JsonResponse({'error': 'forbidden', 'message': 'You are not assigned to this task.'}, status=403)
+    tech_profile = getattr(user, 'technician_profile', None)
+    if is_tech and not user.is_staff and task.assigned_to != tech_profile:
+        if not task.is_claimable:
+            return JsonResponse({'error': 'forbidden', 'message': 'You are not assigned to this task.'}, status=403)
 
     if request.method in ('POST', 'PATCH', 'PUT'):
+        # Edit Task details from mobile: staff only (technicians cannot edit task definitions)
+        if not user.is_staff or not user_has_staff_access(user, "task_management"):
+            return JsonResponse({'error': 'forbidden', 'message': 'Only staff with task management permission can edit task details.'}, status=403)
         try:
             payload = json.loads((request.body or b'{}').decode('utf-8'))
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
@@ -2377,6 +2626,45 @@ def mobile_api_task_update_status(request, task_id):
         'status': task.status,
         'status_display': task.get_status_display(),
         'completed_at': timezone.localtime(task.completed_at).strftime('%Y-%m-%d %H:%M') if task.completed_at else '',
+    })
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_task_accept(request, task_id):
+    """Technician claims and accepts a task from the open pool."""
+    user, error_response = authenticate_mobile_request(request)
+    if error_response:
+        return error_response
+
+    is_tech = hasattr(user, 'technician_profile')
+    if not is_tech:
+        return JsonResponse({'error': 'forbidden', 'message': 'Only technicians can claim tasks.'}, status=403)
+
+    technician = user.technician_profile
+    from django.db import transaction
+    with transaction.atomic():
+        try:
+            task = Task.objects.select_for_update().get(id=task_id)
+        except Task.DoesNotExist:
+            return JsonResponse({'error': 'not_found', 'message': 'Task not found.'}, status=404)
+
+        if not task.is_claimable:
+            return JsonResponse({'error': 'already_claimed', 'message': 'This task has already been claimed or is closed.'}, status=400)
+
+        task.accept_by_technician(technician)
+        msg = TaskMessage.objects.create(
+            task=task,
+            sender=user,
+            body=f"{user.get_full_name() or user.username} accepted and claimed this task from the open pool.",
+        )
+        broadcast_task_message(task, msg)
+        broadcast_task_accepted(task, technician)
+
+    return JsonResponse({
+        'ok': True,
+        'message': f"Task '{task.title}' claimed successfully.",
+        'task': _serialize_task_for_mobile(task, user=user, detailed=True),
     })
 
 

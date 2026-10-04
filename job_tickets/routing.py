@@ -22,4 +22,7 @@ websocket_urlpatterns = [
 
     # 6. Live Task Feed for Technician Dashboard
     re_path(r'ws/tech_tasks/$', consumers.TechnicianTaskDashboardConsumer.as_asgi()),
+
+    # 7. Fallback: Cleanly reject unrecognized WebSocket routes (e.g. Next.js HMR or bot probes)
+    re_path(r'^.*$', consumers.FallbackRejectConsumer.as_asgi()),
 ]

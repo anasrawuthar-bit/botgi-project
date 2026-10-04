@@ -7,6 +7,7 @@ import '../services/management_service.dart';
 import '../services/notification_service.dart';
 import '../services/tasks_service.dart';
 import 'dashboard_screen.dart';
+import 'job_detail_screen.dart';
 import 'jobs_screen.dart';
 import 'profile_screen.dart';
 import 'task_detail_screen.dart';
@@ -34,8 +35,9 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
-  Timer? _taskPollTimer;
+  Timer? _pollTimer;
   final Set<int> _knownTaskIds = <int>{};
+  final Set<String> _knownJobCodes = <String>{};
   int _activeTaskCount = 0;
 
   @override
@@ -43,15 +45,19 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     _initNotifications();
     _checkNewTasks(initial: true);
-    _taskPollTimer = Timer.periodic(
-      const Duration(seconds: 25),
-      (_) => _checkNewTasks(),
+    _checkNewJobs(initial: true);
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 18),
+      (_) {
+        _checkNewTasks();
+        _checkNewJobs();
+      },
     );
   }
 
   @override
   void dispose() {
-    _taskPollTimer?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -69,6 +75,83 @@ class _AppShellState extends State<AppShell> {
         ),
       );
     };
+    NotificationService.instance.onJobNotificationTap = (jobCode) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => JobDetailScreen(
+            jobCode: jobCode,
+            jobsService: widget.jobsService,
+            tasksService: widget.tasksService,
+          ),
+        ),
+      );
+    };
+  }
+
+  Future<void> _checkNewJobs({bool initial = false}) async {
+    try {
+      final jobs = await widget.jobsService.fetchJobs(scope: 'active');
+      if (!mounted) return;
+
+      if (initial) {
+        _knownJobCodes.clear();
+        for (final j in jobs) {
+          _knownJobCodes.add(j.jobCode);
+        }
+      } else {
+        final newJobs = jobs.where((j) => !_knownJobCodes.contains(j.jobCode)).toList();
+        for (final job in newJobs) {
+          _knownJobCodes.add(job.jobCode);
+          // 1. Android native push notification
+          NotificationService.instance.showJobNotification(
+            jobCode: job.jobCode,
+            customerName: job.customerName,
+            device: job.device,
+          );
+
+          // 2. In-app interactive SnackBar
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.build_circle_rounded, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'New Job Assigned: ${job.jobCode} (${job.device})',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF0F172A),
+                duration: const Duration(seconds: 6),
+                action: SnackBarAction(
+                  label: 'VIEW',
+                  textColor: const Color(0xFF38BDF8),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => JobDetailScreen(
+                          jobCode: job.jobCode,
+                          jobsService: widget.jobsService,
+                          tasksService: widget.tasksService,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore background poll errors silently
+    }
   }
 
   Future<void> _checkNewTasks({bool initial = false}) async {
@@ -149,6 +232,19 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  String _jobsInitialScope = 'active';
+  String _jobsInitialPreset = 'all';
+  int _jobsKeyCounter = 0;
+
+  void _navigateToJobs({String? scope, String? preset}) {
+    setState(() {
+      _jobsInitialScope = scope ?? 'all';
+      _jobsInitialPreset = preset ?? 'all';
+      _jobsKeyCounter++;
+      _currentIndex = 1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
@@ -162,10 +258,14 @@ class _AppShellState extends State<AppShell> {
             _currentIndex = 2;
           });
         },
+        onNavigateToJobs: _navigateToJobs,
       ),
       JobsScreen(
+        key: ValueKey('jobs-$_jobsInitialScope-$_jobsInitialPreset-$_jobsKeyCounter'),
         authService: widget.authService,
         jobsService: widget.jobsService,
+        initialScope: _jobsInitialScope,
+        initialPreset: _jobsInitialPreset,
       ),
       TasksScreen(
         tasksService: widget.tasksService,

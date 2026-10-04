@@ -131,6 +131,10 @@
                             <span class="text-muted small fw-semibold d-block">ASSIGNED TECHNICIAN</span>
                             {% if task.assigned_to %}
                                 <span class="fw-bold text-dark"><i class="fas fa-user-cog text-muted me-1"></i>{{ task.assigned_to.user.username }}</span>
+                            {% elif task.is_open_to_all %}
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
+                                    <i class="fas fa-users me-1"></i>Open to All (Shared Pool)
+                                </span>
                             {% else %}
                                 <span class="badge bg-light text-muted border">Unassigned</span>
                             {% endif %}
@@ -169,12 +173,30 @@
                     <h5 class="card-title mb-0 fw-bold"><i class="fas fa-edit text-muted me-2"></i>Edit Assignment &amp; Priority</h5>
                 </div>
                 <div class="card-body">
-                    <form method="post" action="{% url 'task_update_status' task.id %}" class="row g-3">
+                    <form method="post" action="{% url 'task_update_status' task.id %}" class="row g-3" id="editAssignmentForm">
                         {% csrf_token %}
-                        <div class="col-md-5">
-                            <label class="form-label small fw-semibold">Reassign Technician</label>
-                            <select name="assigned_to" class="form-select form-select-sm">
-                                <option value="">--- Unassign ---</option>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold d-block mb-1">Assignment Mode</label>
+                            <div class="d-flex gap-3 flex-wrap">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="assignment_type" id="detailAssignOpen" value="open" {% if task.is_open_to_all %}checked{% endif %}>
+                                    <label class="form-check-label small fw-bold text-dark" for="detailAssignOpen" style="cursor: pointer;">
+                                        <i class="fas fa-users text-primary me-1"></i> Open to All (Shared Pool)
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="assignment_type" id="detailAssignSpecific" value="specific" {% if not task.is_open_to_all %}checked{% endif %}>
+                                    <label class="form-check-label small fw-bold text-dark" for="detailAssignSpecific" style="cursor: pointer;">
+                                        <i class="fas fa-user-check text-success me-1"></i> Assign to Specific Person
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-5" id="detailSpecificTechCol" {% if task.is_open_to_all %}style="display: none;"{% endif %}>
+                            <label class="form-label small fw-semibold" for="detailAssignedToSelect">Select Technician</label>
+                            <select name="assigned_to" id="detailAssignedToSelect" class="form-select form-select-sm" {% if task.is_open_to_all %}disabled{% endif %}>
+                                <option value="">--- Select Technician ---</option>
                                 {% for tech in technicians %}
                                     <option value="{{ tech.id }}" {% if task.assigned_to_id == tech.id %}selected{% endif %}>
                                         {{ tech.user.username }}
@@ -182,7 +204,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="{% if task.is_open_to_all %}col-md-8{% else %}col-md-4{% endif %}" id="detailPriorityCol">
                             <label class="form-label small fw-semibold">Priority</label>
                             <select name="priority" class="form-select form-select-sm">
                                 <option value="low" {% if task.priority == 'low' %}selected{% endif %}>Low</option>
@@ -191,9 +213,9 @@
                                 <option value="urgent" {% if task.priority == 'urgent' %}selected{% endif %}>Urgent / Rush</option>
                             </select>
                         </div>
-                        <div class="col-md-3 d-flex align-items-end">
+                        <div class="{% if task.is_open_to_all %}col-md-4{% else %}col-md-3{% endif %} d-flex align-items-end" id="detailSaveBtnCol">
                             <button type="submit" class="btn btn-primary btn-sm w-100">
-                                <i class="fas fa-save me-1"></i> Save
+                                <i class="fas fa-save me-1"></i> Save Changes
                             </button>
                         </div>
                     </form>
@@ -528,6 +550,62 @@
                 tempDiv.remove();
                 console.error(err);
             });
+        });
+    }
+
+    // Option A: Edit Assignment Mode Sync
+    const detailAssignOpen = document.getElementById('detailAssignOpen');
+    const detailAssignSpecific = document.getElementById('detailAssignSpecific');
+    const detailSpecificCol = document.getElementById('detailSpecificTechCol');
+    const detailPriorityCol = document.getElementById('detailPriorityCol');
+    const detailSaveBtnCol = document.getElementById('detailSaveBtnCol');
+    const detailAssignedToSelect = document.getElementById('detailAssignedToSelect');
+
+    function syncDetailAssignmentMode() {
+        if (detailAssignOpen && detailAssignOpen.checked) {
+            if (detailSpecificCol) detailSpecificCol.style.display = 'none';
+            if (detailPriorityCol) {
+                detailPriorityCol.className = 'col-md-8';
+            }
+            if (detailSaveBtnCol) {
+                detailSaveBtnCol.className = 'col-md-4 d-flex align-items-end';
+            }
+            if (detailAssignedToSelect) {
+                detailAssignedToSelect.disabled = true;
+                detailAssignedToSelect.value = '';
+            }
+        } else if (detailAssignSpecific && detailAssignSpecific.checked) {
+            if (detailSpecificCol) detailSpecificCol.style.display = 'block';
+            if (detailPriorityCol) {
+                detailPriorityCol.className = 'col-md-4';
+            }
+            if (detailSaveBtnCol) {
+                detailSaveBtnCol.className = 'col-md-3 d-flex align-items-end';
+            }
+            if (detailAssignedToSelect) {
+                detailAssignedToSelect.disabled = false;
+            }
+        }
+    }
+
+    if (detailAssignOpen) detailAssignOpen.addEventListener('change', syncDetailAssignmentMode);
+    if (detailAssignSpecific) detailAssignSpecific.addEventListener('change', syncDetailAssignmentMode);
+
+    const editAssignmentForm = document.getElementById('editAssignmentForm');
+    if (editAssignmentForm) {
+        editAssignmentForm.addEventListener('submit', function(e) {
+            if (detailAssignSpecific && detailAssignSpecific.checked) {
+                if (detailAssignedToSelect && !detailAssignedToSelect.value) {
+                    e.preventDefault();
+                    alert('Please select a specific technician, or switch back to "Open to All".');
+                    return;
+                }
+            } else if (detailAssignOpen && detailAssignOpen.checked) {
+                if (detailAssignedToSelect) {
+                    detailAssignedToSelect.disabled = false;
+                    detailAssignedToSelect.value = '';
+                }
+            }
         });
     }
 

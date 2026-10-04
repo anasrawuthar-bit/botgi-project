@@ -42,8 +42,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   bool get _isBusy =>
       _isActionBusy || _isNotesSaving || _isServiceBusy || _isChecklistSaving;
 
-  TasksService get _tasksService =>
-      widget.tasksService ?? TasksService(widget.jobsService.authService);
+  bool get _isTechnician {
+    final role = (widget.jobsService.authService.currentUser?['role'] ?? '')
+        .toString()
+        .toLowerCase();
+    return role == 'technician';
+  }
 
   @override
   void initState() {
@@ -120,11 +124,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
-      } else {
-        _showError('Unable to open phone dialer.');
+        return;
+      }
+      final launched = await launchUrl(uri);
+      if (!launched) {
+        _copyToClipboard(clean, 'Phone Number');
+        _showError('Unable to open phone dialer. Number copied to clipboard.');
       }
     } catch (_) {
-      _showError('Unable to open phone dialer.');
+      _copyToClipboard(clean, 'Phone Number');
+      _showError('Unable to open phone dialer. Number copied to clipboard.');
     }
   }
 
@@ -137,16 +146,39 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     if (digits.length == 10) {
       digits = '91$digits';
     }
-    final uri = Uri.parse('https://wa.me/$digits');
+
+    // Try 1: Native WhatsApp app intent scheme (opens WhatsApp app directly)
+    final nativeUri = Uri.parse('whatsapp://send?phone=$digits');
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        _showError('WhatsApp is not installed or cannot open link.');
+      if (await canLaunchUrl(nativeUri)) {
+        final ok = await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
+        if (ok) return;
       }
-    } catch (_) {
-      _showError('Unable to open WhatsApp.');
-    }
+    } catch (_) {}
+
+    // Try 2: Universal wa.me link (handled by WhatsApp app or browser)
+    final webUri = Uri.parse('https://wa.me/$digits');
+    try {
+      if (await canLaunchUrl(webUri)) {
+        final ok = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        if (ok) return;
+      }
+    } catch (_) {}
+
+    // Try 3: Direct launch without pre-checking canLaunchUrl (bypasses OEM restrictions)
+    try {
+      final ok = await launchUrl(nativeUri, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    } catch (_) {}
+
+    try {
+      final ok = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    } catch (_) {}
+
+    // Fallback: Copy to clipboard and inform user
+    _copyToClipboard(digits, 'Customer WhatsApp Number');
+    _showError('WhatsApp not detected. Number copied to clipboard.');
   }
 
   void _copyToClipboard(String text, String label) {
@@ -154,7 +186,32 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     _showInfo('$label copied to clipboard');
   }
 
-  Future<void> _runAction(JobActionOption action) async {
+  Future<void> _runAction(JobActionOption action, {JobDetail? detail}) async {
+    // If completing the job, validate required checklist fields locally first
+    if (action.key == 'complete' && detail != null && detail.checklistSchema.isNotEmpty) {
+      final missingRequired = <String>[];
+      for (final field in detail.checklistSchema) {
+        if (!field.required) continue;
+        final val = _checklistAnswers[field.key];
+        if (field.type == 'checkbox') {
+          if (val != true && val != 'true' && val != 1) {
+            missingRequired.add(field.label);
+          }
+        } else {
+          if (val == null || val.toString().trim().isEmpty) {
+            missingRequired.add(field.label);
+          }
+        }
+      }
+
+      if (missingRequired.isNotEmpty) {
+        _showError(
+          'Please complete required tests before finishing: ${missingRequired.take(3).join(', ')}${missingRequired.length > 3 ? '...' : ''}',
+        );
+        return;
+      }
+    }
+
     setState(() {
       _isActionBusy = true;
     });
@@ -162,6 +219,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       final message = await widget.jobsService.performJobAction(
         jobCode: widget.jobCode,
         action: action.key,
+        answers: action.key == 'complete' ? _checklistAnswers : null,
       );
       _showInfo(message);
       await _refresh();
@@ -176,7 +234,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
   }
 
-  void _showAllActionsSheet(List<JobActionOption> actions) {
+  void _showAllActionsSheet(JobDetail detail) {
+    final actions = detail.availableActions;
     showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -214,7 +273,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       child: FilledButton.tonalIcon(
                         onPressed: () {
                           Navigator.of(context).pop();
-                          _runAction(act);
+                          _runAction(act, detail: detail);
                         },
                         icon: const Icon(Icons.bolt_rounded, size: 20),
                         label: Text(act.label),
@@ -381,22 +440,24 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
   }
 
-  Future<void> _openCreateDirectiveSheet() async {
-    final created = await showModalBottomSheet<bool>(
+  Future<void> _openChangeRackSheet(JobDetail detail) async {
+    final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => _CreateJobDirectiveSheet(
-        jobCode: widget.jobCode,
-        tasksService: _tasksService,
+      builder: (context) => _ChangeRackSheet(
+        jobCode: detail.jobCode,
+        currentRackId: detail.rackId,
+        currentColumn: detail.rackColumn,
+        availableRacks: detail.availableRacks,
+        jobsService: widget.jobsService,
       ),
     );
-
-    if (created == true) {
-      _showInfo('Directive created successfully.');
+    if (result == true) {
       await _refresh();
     }
   }
@@ -453,6 +514,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           _syncNotesController(detail);
           _syncChecklistAnswers(detail);
 
+          final isJobFinished = const {'Completed', 'Ready for Pickup', 'Closed'}
+              .contains(detail.status);
+
           return Stack(
             children: [
               RefreshIndicator(
@@ -466,8 +530,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ),
                   children: [
                     _buildHeroCard(detail),
+                    if (isJobFinished) ...[
+                      const SizedBox(height: 12),
+                      _buildCompletedHeroBanner(detail),
+                    ],
                     const SizedBox(height: 12),
-                    _buildBenchAccessCard(detail),
+                    _buildDeviceStorageCard(detail),
                     const SizedBox(height: 12),
                     _buildReportedIssueCard(detail),
                     if (detail.checklistSchema.isNotEmpty) ...[
@@ -478,8 +546,10 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     _buildTasksCard(detail),
                     const SizedBox(height: 12),
                     _buildServiceLinesCard(detail),
-                    const SizedBox(height: 12),
-                    _buildFinancialSummaryCard(detail),
+                    if (!_isTechnician) ...[
+                      const SizedBox(height: 12),
+                      _buildFinancialSummaryCard(detail),
+                    ],
                     const SizedBox(height: 12),
                     _buildTechnicianNotesCard(detail),
                     if (detail.feedbackRating > 0 ||
@@ -663,22 +733,27 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
-  Widget _buildBenchAccessCard(JobDetail detail) {
+  Widget _buildDeviceStorageCard(JobDetail detail) {
     final hasPassword = detail.devicePassword.isNotEmpty;
     final hasRack = detail.rackLocation.isNotEmpty || detail.rackShort.isNotEmpty;
     final rackText = detail.rackLocation.isNotEmpty
         ? detail.rackLocation
         : (detail.rackShort.isNotEmpty ? detail.rackShort : 'Not assigned');
+    final isJobFinished = const {'Completed', 'Ready for Pickup', 'Closed'}.contains(detail.status);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: isJobFinished
+              ? const Color(0xFF10B981).withValues(alpha: 0.4)
+              : AppColors.primary.withValues(alpha: 0.3),
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.04),
+            color: (isJobFinished ? const Color(0xFF10B981) : AppColors.primary).withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -688,27 +763,41 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.build_circle_outlined,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isJobFinished ? const Color(0xFFDCFCE7) : AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      isJobFinished ? Icons.inventory_2_outlined : Icons.devices_other_rounded,
+                      size: 18,
+                      color: isJobFinished ? const Color(0xFF15803D) : AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isJobFinished ? 'FINISHED DEVICE & RACK LOCATION' : 'DEVICE & RACK LOCATION',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: isJobFinished ? const Color(0xFF15803D) : AppColors.primary,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'BENCH ACCESS & LOCATION',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                  letterSpacing: 0.6,
+              TextButton.icon(
+                onPressed: _isBusy ? null : () => _openChangeRackSheet(detail),
+                icon: const Icon(Icons.edit_location_alt_outlined, size: 15),
+                label: const Text('Change Rack', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 ),
               ),
             ],
@@ -756,7 +845,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             child: Text(
                               hasPassword ? detail.devicePassword : 'No PIN / Open',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w800,
                                 color: hasPassword
                                     ? const Color(0xFFB45309)
@@ -787,57 +876,94 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              // Storage Rack column
+              // Storage Rack column (tappable to edit)
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: hasRack
-                        ? const Color(0xFFE0F2FE).withValues(alpha: 0.5)
-                        : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
+                child: InkWell(
+                  onTap: _isBusy ? null : () => _openChangeRackSheet(detail),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
                       color: hasRack
-                          ? const Color(0xFF38BDF8).withValues(alpha: 0.3)
-                          : const Color(0xFFE2E8F0),
+                          ? (isJobFinished
+                              ? const Color(0xFFFEF3C7).withValues(alpha: 0.5)
+                              : const Color(0xFFE0F2FE).withValues(alpha: 0.5))
+                          : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasRack
+                            ? (isJobFinished
+                                ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
+                                : const Color(0xFF38BDF8).withValues(alpha: 0.3))
+                            : const Color(0xFFE2E8F0),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.shelves, size: 14, color: AppColors.ink500),
-                          SizedBox(width: 4),
-                          Text(
-                            'STORAGE SHELF',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.ink500,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.shelves,
+                              size: 14,
+                              color: isJobFinished ? const Color(0xFFD97706) : AppColors.ink500,
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        rackText,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: hasRack
-                              ? const Color(0xFF0369A1)
-                              : AppColors.ink500,
+                            const SizedBox(width: 4),
+                            Text(
+                              isJobFinished ? 'STORAGE RACK' : 'STORAGE SHELF',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: isJobFinished ? const Color(0xFF92400E) : AppColors.ink500,
+                              ),
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          rackText,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: hasRack
+                                ? (isJobFinished ? const Color(0xFF78350F) : const Color(0xFF0369A1))
+                                : AppColors.ink500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ],
           ),
+          if (isJobFinished) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF16A34A)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      hasRack
+                          ? 'Device shelved in $rackText. Ready for front desk pickup.'
+                          : 'Repair complete. Tap "Change Rack" above to assign storage slot.',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -923,6 +1049,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   Widget _buildChecklistCard(JobDetail detail) {
+    final isFinished = const {'Completed', 'Ready for Pickup', 'Closed'}.contains(detail.status);
+    if (isFinished) {
+      return _buildCompletedChecklistCard(detail);
+    }
+
     final schema = detail.checklistSchema;
     final totalCount = schema.length;
     var completedCount = 0;
@@ -1010,12 +1141,26 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               return CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 dense: true,
-                title: Text(
-                  item.label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.label,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (item.required)
+                      const Text(
+                        ' *',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
                 ),
                 subtitle: item.helpText.isNotEmpty
                     ? Text(
@@ -1033,15 +1178,82 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               );
             }
 
-            // Dropdown or text field item
+            // Dropdown selection field
+            if (item.type == 'select') {
+              final currentVal = (_checklistAnswers[item.key] ?? '').toString().trim();
+              final validValue = item.options.contains(currentVal) ? currentVal : null;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: DropdownButtonFormField<String>(
+                  initialValue: validValue,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: item.required ? '${item.label} *' : item.label,
+                    helperText: item.helpText.isNotEmpty ? item.helpText : null,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  items: [
+                    if (!item.required)
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('-- Select --', style: TextStyle(color: AppColors.ink500)),
+                      ),
+                    ...item.options.map(
+                      (opt) => DropdownMenuItem(
+                        value: opt,
+                        child: Text(opt, style: const TextStyle(fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _checklistAnswers[item.key] = val ?? '';
+                    });
+                  },
+                ),
+              );
+            }
+
+            // Numeric field
+            if (item.type == 'number') {
+              final currentVal = (_checklistAnswers[item.key] ?? '').toString();
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: TextFormField(
+                  key: ValueKey('num_${item.key}'),
+                  initialValue: currentVal,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: item.required ? '${item.label} *' : item.label,
+                    hintText: item.placeholder.isNotEmpty ? item.placeholder : null,
+                    helperText: item.helpText.isNotEmpty ? item.helpText : null,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onChanged: (val) {
+                    _checklistAnswers[item.key] = val.trim();
+                  },
+                ),
+              );
+            }
+
+            // Text / Textarea field
             final currentVal = (_checklistAnswers[item.key] ?? '').toString();
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               child: TextFormField(
+                key: ValueKey('txt_${item.key}'),
                 initialValue: currentVal,
+                maxLines: item.type == 'textarea' ? 3 : 1,
                 decoration: InputDecoration(
-                  labelText: item.label,
+                  labelText: item.required ? '${item.label} *' : item.label,
                   hintText: item.placeholder.isNotEmpty ? item.placeholder : null,
+                  helperText: item.helpText.isNotEmpty ? item.helpText : null,
                   isDense: true,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1054,6 +1266,285 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             );
           }),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompletedChecklistCard(JobDetail detail) {
+    final schema = detail.checklistSchema;
+    final totalCount = schema.length;
+    var passedCount = 0;
+
+    for (final item in schema) {
+      final val = _checklistAnswers[item.key];
+      if (item.type == 'checkbox') {
+        if (val == true || val == 'true' || val == 1) {
+          passedCount++;
+        }
+      } else if (val != null && val.toString().trim().isNotEmpty) {
+        passedCount++;
+      }
+    }
+
+    final title = detail.checklistTitle.isNotEmpty
+        ? detail.checklistTitle
+        : 'Quality Inspection & Testing Report';
+
+    return AppSurfaceCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFDCFCE7),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.verified_rounded,
+                  color: Color(0xFF16A34A),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    Text(
+                      '$passedCount of $totalCount QA items verified & recorded',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.ink500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'QA Passed',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF16A34A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          ...schema.map((item) {
+            final rawVal = _checklistAnswers[item.key];
+            final isChecked = rawVal == true || rawVal == 'true' || rawVal == 1;
+
+            if (item.type == 'checkbox') {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Icon(
+                      isChecked ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: isChecked ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        item.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isChecked ? FontWeight.w600 : FontWeight.w400,
+                          color: isChecked ? AppColors.ink900 : AppColors.ink500,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      isChecked ? 'Verified' : 'Not Tested',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isChecked ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final displayVal = (rawVal ?? '').toString().trim();
+            final hasVal = displayVal.isNotEmpty;
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  Icon(
+                    hasVal ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: hasVal ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.label,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.ink900,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: hasVal ? const Color(0xFFF1F5F9) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      hasVal ? displayVal : '—',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: hasVal ? AppColors.ink900 : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompletedHeroBanner(JobDetail detail) {
+    final isReady = detail.status == 'Ready for Pickup';
+    final isClosed = detail.status == 'Closed';
+
+    final Color bgColor = isClosed
+        ? const Color(0xFFF8FAFC)
+        : isReady
+            ? const Color(0xFFF0FDF4)
+            : const Color(0xFFF0FDF4);
+
+    final Color borderColor = isClosed
+        ? const Color(0xFFE2E8F0)
+        : isReady
+            ? const Color(0xFF86EFAC)
+            : const Color(0xFF86EFAC);
+
+    final Color iconColor = isClosed
+        ? const Color(0xFF64748B)
+        : const Color(0xFF16A34A);
+
+    final String title = isClosed
+        ? 'Job Closed & Handed Over'
+        : isReady
+            ? 'Device Ready for Customer Pickup'
+            : 'Repair Completed Successfully';
+
+    final String description = isClosed
+        ? 'Device has been collected by customer and settlement finalized.'
+        : isReady
+            ? 'Repair QA passed. Customer notified for collection & settlement.'
+            : 'Service and testing verified. Device prepared for reception pickup.';
+
+    return AppSurfaceCard(
+      padding: const EdgeInsets.all(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: isClosed ? const Color(0x1F64748B) : const Color(0x1F16A34A),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isClosed
+                        ? Icons.task_alt_rounded
+                        : isReady
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.verified_rounded,
+                    color: iconColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: isClosed ? const Color(0xFF334155) : const Color(0xFF14532D),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isClosed ? const Color(0xFF64748B) : const Color(0xFF166534),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (detail.assignedTo.isNotEmpty)
+                  Text(
+                    'Technician: ${detail.assignedTo}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ink900),
+                  ),
+                Text(
+                  'Updated: ${detail.updatedAt}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.ink500),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1101,14 +1592,6 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ],
                 ],
               ),
-              TextButton.icon(
-                onPressed: _openCreateDirectiveSheet,
-                icon: const Icon(Icons.add_task_rounded, size: 16),
-                label: const Text('Add Directive'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1116,7 +1599,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'No active directives for this job. Tap "+ Add Directive" to assign bench work or part requisitions.',
+                'No active directives for this job. Directives dispatched by management will appear here.',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey.shade600,
@@ -1410,6 +1893,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   Widget _buildFinancialSummaryCard(JobDetail detail) {
+    if (_isTechnician) {
+      return const SizedBox.shrink();
+    }
     return AppSurfaceCard(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1447,7 +1933,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Technician Bench Notes',
+                'Technician Notes',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1476,7 +1962,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               readOnly: !(_isEditingNotes && detail.canEditNotes),
               maxLines: 4,
               decoration: InputDecoration(
-                hintText: 'Add internal bench notes or repair updates...',
+                hintText: 'Add internal repair notes or updates...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -1620,7 +2106,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         children: [
           Expanded(
             child: FilledButton.icon(
-              onPressed: _isBusy ? null : () => _runAction(firstAction),
+              onPressed: _isBusy ? null : () => _runAction(firstAction, detail: detail),
               icon: _isActionBusy
                   ? const SizedBox(
                       width: 18,
@@ -1647,7 +2133,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           if (otherActions.isNotEmpty) ...[
             const SizedBox(width: 10),
             OutlinedButton.icon(
-              onPressed: _isBusy ? null : () => _showAllActionsSheet(actions),
+              onPressed: _isBusy ? null : () => _showAllActionsSheet(detail),
               icon: const Icon(Icons.more_horiz_rounded),
               label: const Text('Actions'),
               style: OutlinedButton.styleFrom(
@@ -1976,51 +2462,64 @@ class _ServiceLineEditorSheetState extends State<_ServiceLineEditorSheet> {
   }
 }
 
-class _CreateJobDirectiveSheet extends StatefulWidget {
-  const _CreateJobDirectiveSheet({
+class _ChangeRackSheet extends StatefulWidget {
+  const _ChangeRackSheet({
     required this.jobCode,
-    required this.tasksService,
+    required this.currentRackId,
+    required this.currentColumn,
+    required this.availableRacks,
+    required this.jobsService,
   });
 
   final String jobCode;
-  final TasksService tasksService;
+  final int? currentRackId;
+  final int? currentColumn;
+  final List<DeviceRackOption> availableRacks;
+  final JobsService jobsService;
 
   @override
-  State<_CreateJobDirectiveSheet> createState() =>
-      _CreateJobDirectiveSheetState();
+  State<_ChangeRackSheet> createState() => _ChangeRackSheetState();
 }
 
-class _CreateJobDirectiveSheetState extends State<_CreateJobDirectiveSheet> {
-  final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _descController = TextEditingController();
-
-  String _priority = 'medium';
-  bool _isSubmitting = false;
+class _ChangeRackSheetState extends State<_ChangeRackSheet> {
+  int? _selectedRackId;
+  int? _selectedColumn;
+  bool _isSaving = false;
 
   @override
-  void dispose() {
-    _titleController.dispose();
-    _descController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _selectedRackId = widget.currentRackId;
+    _selectedColumn = widget.currentColumn;
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-    setState(() {
-      _isSubmitting = true;
-    });
+  DeviceRackOption? get _currentRack {
+    if (_selectedRackId == null) return null;
     try {
-      await widget.tasksService.createTask(
-        title: _titleController.text.trim(),
-        description: _descController.text.trim(),
-        priority: _priority,
+      return widget.availableRacks.firstWhere((r) => r.id == _selectedRackId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final msg = await widget.jobsService.updateJobRack(
         jobCode: widget.jobCode,
-        assignToMe: true,
+        rackId: _selectedRackId,
+        rackColumn: _selectedColumn,
       );
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF10B981),
+            content: Text(msg),
+          ),
+        );
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -2035,7 +2534,7 @@ class _CreateJobDirectiveSheetState extends State<_CreateJobDirectiveSheet> {
     } finally {
       if (mounted) {
         setState(() {
-          _isSubmitting = false;
+          _isSaving = false;
         });
       }
     }
@@ -2044,96 +2543,137 @@ class _CreateJobDirectiveSheetState extends State<_CreateJobDirectiveSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final rack = _currentRack;
+    final totalCols = rack?.totalColumns ?? 0;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, bottomInset + 16),
-      child: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomInset + 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Add Directive for ${widget.jobCode}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                ],
+              Text(
+                'Change Storage Rack',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Directive Title',
-                  hintText: 'e.g. Order replacement display flex cable',
-                ),
-                validator: (val) {
-                  if ((val ?? '').trim().isEmpty) {
-                    return 'Title is required';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _descController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Instructions / Remarks',
-                  hintText: 'e.g. Inspect IC power delivery rails before testing',
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Priority',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'low', label: Text('Low')),
-                  ButtonSegment(value: 'medium', label: Text('Medium')),
-                  ButtonSegment(value: 'high', label: Text('High')),
-                  ButtonSegment(value: 'urgent', label: Text('Urgent')),
-                ],
-                selected: {_priority},
-                onSelectionChanged: (val) {
-                  setState(() {
-                    _priority = val.first;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _isSubmitting ? null : _submit,
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.check_rounded),
-                  label: Text(_isSubmitting ? 'Creating...' : 'Create Directive'),
-                ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(false),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+          if (widget.availableRacks.isEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'No storage racks configured for this shop workspace.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF92400E)),
+              ),
+            ),
+          ] else ...[
+            DropdownButtonFormField<int?>(
+              initialValue: widget.availableRacks.any((r) => r.id == _selectedRackId)
+                  ? _selectedRackId
+                  : null,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Storage Rack / Shelf',
+                prefixIcon: const Icon(Icons.shelves),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('No Rack / Unassigned', style: TextStyle(color: AppColors.ink500)),
+                ),
+                ...widget.availableRacks.map(
+                  (r) => DropdownMenuItem<int?>(
+                    value: r.id,
+                    child: Text(
+                      r.displayName,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (val) {
+                setState(() {
+                  _selectedRackId = val;
+                  if (val == null) {
+                    _selectedColumn = null;
+                  } else {
+                    final newRack = widget.availableRacks.firstWhere(
+                      (r) => r.id == val,
+                      orElse: () => widget.availableRacks.first,
+                    );
+                    if (_selectedColumn != null && _selectedColumn! > newRack.totalColumns) {
+                      _selectedColumn = null;
+                    }
+                  }
+                });
+              },
+            ),
+            if (_selectedRackId != null && totalCols > 0) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int?>(
+                initialValue: (_selectedColumn != null && _selectedColumn! <= totalCols)
+                    ? _selectedColumn
+                    : null,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Column / Slot Number',
+                  prefixIcon: const Icon(Icons.view_column_outlined),
+                  helperText: 'Select slot inside ${rack?.name}',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                items: [
+                  const DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text('General Rack (No specific slot)', style: TextStyle(color: AppColors.ink500)),
+                  ),
+                  for (int i = 1; i <= totalCols; i++)
+                    DropdownMenuItem<int?>(
+                      value: i,
+                      child: Text('Column $i', style: const TextStyle(fontSize: 14)),
+                    ),
+                ],
+                onChanged: (val) {
+                  setState(() {
+                    _selectedColumn = val;
+                  });
+                },
+              ),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _isSaving ? null : _save,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.check_rounded),
+                label: Text(_isSaving ? 'Updating...' : 'Save Rack Location'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 }
+
+

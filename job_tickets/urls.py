@@ -79,6 +79,7 @@ urlpatterns = [
     path('api/mobile/jobs/quick-list/', views.mobile_api_jobs_quicklist, name='mobile_api_jobs_quicklist'),
     path('api/mobile/jobs/<str:job_code>/', views.mobile_api_job_detail, name='mobile_api_job_detail'),
     path('api/mobile/jobs/<str:job_code>/action/', views.mobile_api_job_action, name='mobile_api_job_action'),
+    path('api/mobile/jobs/<str:job_code>/rack/', views.mobile_api_job_rack, name='mobile_api_job_rack'),
     path('api/mobile/jobs/<str:job_code>/technician-update/', views.mobile_api_job_technician_update, name='mobile_api_job_technician_update'),
     path('api/mobile/jobs/<str:job_code>/notes/', views.mobile_api_job_notes, name='mobile_api_job_notes'),
     path('api/mobile/jobs/<str:job_code>/checklist/', views.mobile_api_job_checklist, name='mobile_api_job_checklist'),
@@ -163,11 +164,13 @@ urlpatterns = [
     # Standalone Task Management (Technician)
     path('technician/tasks/', views.technician_task_dashboard, name='technician_task_dashboard'),
     path('technician/tasks/<int:task_id>/', views.technician_task_detail, name='technician_task_detail'),
+    path('technician/tasks/<int:task_id>/accept/', views.technician_task_accept, name='technician_task_accept'),
 
     # Standalone Task Management (Mobile API)
     path('api/mobile/technicians/', views.mobile_api_technicians, name='mobile_api_technicians'),
     path('api/mobile/tasks/', views.mobile_api_tasks, name='mobile_api_tasks'),
     path('api/mobile/tasks/<int:task_id>/', views.mobile_api_task_detail, name='mobile_api_task_detail'),
+    path('api/mobile/tasks/<int:task_id>/accept/', views.mobile_api_task_accept, name='mobile_api_task_accept'),
     path('api/mobile/tasks/<int:task_id>/status/', views.mobile_api_task_update_status, name='mobile_api_task_update_status'),
     path('api/mobile/tasks/<int:task_id>/message/', views.mobile_api_task_message_send, name='mobile_api_task_message_send'),
     path('api/mobile/tasks/<int:task_id>/messages/', views.mobile_api_task_messages, name='mobile_api_task_messages'),

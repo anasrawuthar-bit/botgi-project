@@ -48,19 +48,36 @@ class _ReportsScreenState extends State<ReportsScreen> {
             }
 
             if (snapshot.hasError) {
+              final rawError = snapshot.error.toString().replaceFirst('Exception: ', '');
+              final isForbidden = rawError.toLowerCase().contains('forbidden') ||
+                  rawError.toLowerCase().contains('staff can access');
               return Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        snapshot.error.toString().replaceFirst('Exception: ', ''),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.warningFg),
+                      Icon(
+                        isForbidden ? Icons.lock_outline_rounded : Icons.error_outline_rounded,
+                        size: 48,
+                        color: isForbidden ? AppColors.ink500 : AppColors.warningFg,
                       ),
-                      const SizedBox(height: 10),
-                      FilledButton(onPressed: _reload, child: const Text('Retry')),
+                      const SizedBox(height: 12),
+                      Text(
+                        isForbidden ? 'Staff Access Required' : 'Failed to Load Reports',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        isForbidden
+                            ? 'Financial reports and revenue analytics are restricted to staff and management.'
+                            : rawError,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.ink500),
+                      ),
+                      const SizedBox(height: 14),
+                      if (!isForbidden)
+                        FilledButton(onPressed: _reload, child: const Text('Retry')),
                     ],
                   ),
                 ),

@@ -1578,6 +1578,21 @@ class Task(models.Model):
         related_name='tasks',
         help_text='Optional: link this task to a job ticket for traceability.',
     )
+    is_open_to_all = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='If True, any technician can claim/accept this task from the shared pool.',
+    )
+    has_alarm = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='Sound an audible alarm alert when task is due or assigned.',
+    )
+    alarm_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Specific time to trigger the alarm (defaults to due_date or immediate if blank).',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -1597,8 +1612,19 @@ class Task(models.Model):
         ]
 
     def __str__(self):
-        tech = self.assigned_to.user.username if self.assigned_to else 'Unassigned'
+        tech = self.assigned_to.user.username if self.assigned_to else ('Open Pool' if self.is_open_to_all else 'Unassigned')
         return f"[{self.get_priority_display()}] {self.title} → {tech} ({self.status})"
+
+    @property
+    def is_claimable(self):
+        """Returns True if the task is in the shared pool or unassigned and still active."""
+        return (self.assigned_to_id is None or self.is_open_to_all) and self.status in [self.STATUS_OPEN, self.STATUS_IN_PROGRESS]
+
+    def accept_by_technician(self, technician):
+        """Claim this task for a technician."""
+        self.assigned_to = technician
+        self.is_open_to_all = False
+        self.save(update_fields=['assigned_to', 'is_open_to_all', 'updated_at'])
 
     def mark_in_progress(self):
         self.status = self.STATUS_IN_PROGRESS

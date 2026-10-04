@@ -289,37 +289,64 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 // --- DJANGO CHANNELS / WEBSOCKET LIVE UPDATE ---
 document.addEventListener('DOMContentLoaded', function() {
-    // Determine WebSocket protocol (wss for HTTPS, ws for HTTP)
     var ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    
-    // Connect to the global technician updates endpoint
-    var jobStatusSocket = new WebSocket(
-        ws_scheme + '://' + window.location.host + '/ws/technician_updates/'
-    );
+    var ws_url = ws_scheme + '://' + window.location.host + '/ws/technician_updates/';
+    var jobStatusSocket = null;
+    var reconnectTimer = null;
+    var currentUsername = "{{ username }}";
 
-    jobStatusSocket.onopen = function(e) {
-        console.log("WebSocket connection established for Technician Dashboard.");
-    };
+    function connectTechWs() {
+        try {
+            jobStatusSocket = new WebSocket(ws_url);
 
-    jobStatusSocket.onmessage = function(e) {
-        const data = JSON.parse(e.data);
-        
-        // Check for the job status update type
-        if (data.type === 'job_status_update') {
-            const jobCode = data.job_code;
-            const newStatus = data.status;
-            
-            console.log(`Live update received: Job ${jobCode} status changed to ${newStatus}.`);
-            
-            // Check if this is a new job assignment (job might not exist in active jobs yet)
-            // Fetch updated active jobs list via AJAX
-            fetchActiveJobs();
-        } else if (data.type === 'task_feed_event') {
-            if (data.action === 'task_created' || data.action === 'task_assigned') {
-                showTaskAssignedAlert(data);
-            }
+            jobStatusSocket.onopen = function(e) {
+                console.log("WebSocket connection established for Technician Dashboard.");
+            };
+
+            jobStatusSocket.onmessage = function(e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    
+                    if (data.type === 'job_status_update') {
+                        const jobCode = data.job_code;
+                        const newStatus = data.status;
+                        console.log(`Live update received: Job ${jobCode} status changed to ${newStatus}.`);
+
+                        // If assigned to current technician, alert them
+                        if (data.assigned_tech_username && data.assigned_tech_username === currentUsername) {
+                            showJobAssignedAlert(data);
+                        }
+                        fetchActiveJobs();
+                    } else if (data.type === 'job_assigned' || (data.type === 'task_feed_event' && data.action === 'job_assigned')) {
+                        console.log(`Live job assignment received: Job ${data.job_code}`);
+                        showJobAssignedAlert(data);
+                        fetchActiveJobs();
+                    } else if (data.type === 'task_feed_event') {
+                        if (data.action === 'task_created' || data.action === 'task_assigned') {
+                            showTaskAssignedAlert(data);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error parsing WebSocket message:", err);
+                }
+            };
+
+            jobStatusSocket.onclose = function(e) {
+                console.warn('Technician Dashboard WebSocket closed. Reconnecting in 3s...', e);
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(connectTechWs, 3000);
+            };
+
+            jobStatusSocket.onerror = function(e) {
+                console.error('Technician Dashboard WebSocket error:', e);
+                try { jobStatusSocket.close(); } catch (_) {}
+            };
+        } catch (err) {
+            console.error("Failed to connect technician WebSocket:", err);
+            clearTimeout(reconnectTimer);
+            reconnectTimer = setTimeout(connectTechWs, 5000);
         }
-    };
+    }
 
     function playChime() {
         try {
@@ -331,18 +358,22 @@ document.addEventListener('DOMContentLoaded', function() {
             osc.type = 'sine';
             osc.frequency.setValueAtTime(587.33, ctx.currentTime);
             osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
-            gain.gain.setValueAtTime(0.15, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+            gain.gain.setValueAtTime(0.18, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
             osc.start(ctx.currentTime);
-            osc.stop(ctx.currentTime + 0.4);
+            osc.stop(ctx.currentTime + 0.45);
         } catch (_) {}
     }
 
-    function showTaskAssignedAlert(data) {
+    function showJobAssignedAlert(data) {
         playChime();
+        const jobCode = data.job_code || 'Job';
+        const deviceDesc = data.device || 'New Repair Ticket';
+        const custDesc = data.customer_name ? `Customer: ${data.customer_name}` : '';
+
         if (window.Notification && Notification.permission === 'granted') {
-            new Notification('New Task Assigned: ' + data.title, {
-                body: (data.priority_display ? 'Priority: ' + data.priority_display : '') + (data.description ? '\n' + data.description : ''),
+            new Notification('New Job Assigned: ' + jobCode, {
+                body: `${deviceDesc}\n${custDesc}`,
                 icon: '/static/img/logo.png'
             });
         } else if (window.Notification && Notification.permission === 'default') {
@@ -350,20 +381,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const toast = document.createElement('div');
-        toast.className = 'toast align-items-center text-white bg-dark border-0 show shadow-lg position-fixed top-0 end-0 m-3';
+        toast.className = 'toast align-items-center text-white bg-primary border-0 show shadow-lg position-fixed top-0 end-0 m-3';
         toast.style.zIndex = '9999';
-        toast.style.minWidth = '320px';
-        const taskUrl = `/technician-tasks/${data.task_id}/`;
+        toast.style.minWidth = '340px';
+        const jobUrl = `/technician/job/${jobCode}/`;
         toast.innerHTML = `
             <div class="d-flex p-3">
                 <div class="me-3 fs-3 text-warning">
-                    <i class="fas fa-bell"></i>
+                    <i class="fas fa-tools"></i>
                 </div>
                 <div class="flex-grow-1">
-                    <div class="fw-bold fs-6">New Task Assigned!</div>
-                    <div class="text-light small mt-1">${data.title}</div>
+                    <div class="fw-bold fs-6">New Job Assigned!</div>
+                    <div class="text-white small mt-1"><strong>${jobCode}</strong> &bull; ${deviceDesc}</div>
+                    ${custDesc ? `<div class="text-white-50 small">${custDesc}</div>` : ''}
                     <div class="mt-2 d-flex gap-2">
-                        <a href="${taskUrl}" class="btn btn-sm btn-primary py-0 px-2 fw-semibold">View Task</a>
+                        <a href="${jobUrl}" class="btn btn-sm btn-light text-primary py-0 px-2 fw-semibold">View Job</a>
                         <button type="button" class="btn btn-sm btn-outline-light py-0 px-2 close-btn">Dismiss</button>
                     </div>
                 </div>
@@ -375,6 +407,84 @@ document.addEventListener('DOMContentLoaded', function() {
         toast.querySelector('.close-btn').onclick = dismiss;
         toast.querySelector('.btn-close').onclick = dismiss;
         setTimeout(dismiss, 12000);
+    }
+
+    function playAlarmBuzzer() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            function b(t, f) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(f, t);
+                gain.gain.setValueAtTime(0.25, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(t);
+                osc.stop(t + 0.2);
+            }
+            const now = ctx.currentTime;
+            b(now, 880);
+            b(now + 0.25, 880);
+            b(now + 0.5, 1174.66);
+        } catch (_) {}
+    }
+
+    function showTaskAssignedAlert(data) {
+        if (data.has_alarm) {
+            playAlarmBuzzer();
+        } else {
+            playChime();
+        }
+
+        const isPool = data.is_open_to_all;
+        const alertTitle = data.has_alarm
+            ? '🚨 ALARM: ' + (isPool ? 'Open Pool Task' : 'Task Assigned')
+            : (isPool ? 'New Open Pool Directive' : 'New Task Assigned');
+
+        if (window.Notification && Notification.permission === 'granted') {
+            new Notification(alertTitle + ': ' + data.title, {
+                body: (data.priority_display ? 'Priority: ' + data.priority_display : '') + (data.description ? '\n' + data.description : ''),
+                icon: '/static/img/logo.png'
+            });
+        } else if (window.Notification && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        const toast = document.createElement('div');
+        const bgClass = data.has_alarm ? 'bg-danger' : (isPool ? 'bg-indigo' : 'bg-dark');
+        toast.className = `toast align-items-center text-white ${bgClass} border-0 show shadow-lg position-fixed top-0 end-0 m-3`;
+        toast.style.zIndex = '9999';
+        toast.style.minWidth = '330px';
+        if (isPool && !data.has_alarm) toast.style.backgroundColor = '#4f46e5';
+        const taskUrl = `/technician/tasks/${data.task_id}/`;
+        toast.innerHTML = `
+            <div class="d-flex p-3">
+                <div class="me-3 fs-3 ${data.has_alarm ? 'text-white' : 'text-warning'}">
+                    <i class="fas ${data.has_alarm ? 'fa-bell fa-shake' : (isPool ? 'fa-users' : 'fa-clipboard-list')}"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold fs-6">${escapeHtml(alertTitle)}</div>
+                    <div class="text-white small mt-1"><strong>${escapeHtml(data.title)}</strong></div>
+                    ${data.description ? `<div class="text-white-50 small text-truncate" style="max-width: 240px;">${escapeHtml(data.description)}</div>` : ''}
+                    <div class="mt-2 d-flex gap-2">
+                        <a href="${taskUrl}" class="btn btn-sm btn-light text-dark py-0 px-2 fw-semibold">
+                            ${isPool ? 'View & Claim' : 'View Task'}
+                        </a>
+                        <button type="button" class="btn btn-sm btn-outline-light py-0 px-2 close-btn">Dismiss</button>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Close"></button>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        const dismiss = () => toast.remove();
+        toast.querySelector('.close-btn').onclick = dismiss;
+        toast.querySelector('.btn-close').onclick = dismiss;
+        setTimeout(dismiss, data.has_alarm ? 20000 : 12000);
     }
     
     // Function to fetch and update active jobs list
@@ -399,18 +509,11 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(error => {
             console.error('Error fetching active jobs:', error);
-            // Fallback: reload page on error
             window.location.reload();
         });
     }
 
-    jobStatusSocket.onclose = function(e) {
-        console.error('Technician Dashboard WebSocket closed unexpectedly:', e);
-    };
-
-    jobStatusSocket.onerror = function(e) {
-        console.error('Technician Dashboard WebSocket error:', e);
-    };
+    connectTechWs();
 });
 // ----------------------------------------------------------------------------------
 

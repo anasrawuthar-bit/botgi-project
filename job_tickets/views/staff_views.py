@@ -780,6 +780,37 @@ def staff_dashboard(request):
         racks_qs = racks_qs.filter(workspace=current_workspace)
     active_racks = list(racks_qs.order_by('group', 'name'))
 
+    # Rack occupancy mapping for ticket creation modal
+    rack_occupancy_data = {}
+    for r in active_racks:
+        rack_occupancy_data[str(r.id)] = {
+            'id': r.id,
+            'name': r.name,
+            'group': r.group,
+            'total_columns': max(1, r.total_columns or 10),
+            'occupied': {},
+        }
+
+    if active_racks:
+        active_rack_tickets = JobTicket.objects.filter(
+            rack__in=active_racks,
+            rack_column__isnull=False
+        ).exclude(
+            status__in=['Closed', 'Returned']
+        ).values('rack_id', 'rack_column', 'job_code', 'device_type', 'customer_name')
+
+        for t in active_rack_tickets:
+            rid = str(t['rack_id'])
+            col_str = str(t['rack_column'])
+            if rid in rack_occupancy_data:
+                if col_str not in rack_occupancy_data[rid]['occupied']:
+                    rack_occupancy_data[rid]['occupied'][col_str] = []
+                rack_occupancy_data[rid]['occupied'][col_str].append({
+                    'job_code': t['job_code'],
+                    'device_type': t['device_type'] or '',
+                    'customer_name': t['customer_name'] or '',
+                })
+
     active_checklists = get_active_checklist_templates(workspace=current_workspace)
 
     # FINAL CONTEXT
@@ -789,6 +820,7 @@ def staff_dashboard(request):
         'job_field_presets': get_job_field_presets(),
         'active_checklist_templates': active_checklists,
         'active_checklist_templates_json': json.dumps(active_checklists),
+        'rack_occupancy_data_json': json.dumps(rack_occupancy_data),
         'show_create_job_modal': request.session.pop('show_create_job_modal', False),
         'pending_jobs': pending_jobs,
         'grouped_in_progress_jobs': grouped_in_progress_jobs,
@@ -3013,7 +3045,9 @@ def task_dashboard(request):
 
     # Technician filter
     tech_id = request.GET.get('tech')
-    if tech_id:
+    if tech_id == 'pool':
+        qs = qs.filter(Q(is_open_to_all=True) | Q(assigned_to__isnull=True))
+    elif tech_id:
         qs = qs.filter(assigned_to_id=tech_id)
 
     # Date filter
@@ -3051,6 +3085,14 @@ def task_dashboard(request):
     open_count = base_qs.filter(status=Task.STATUS_OPEN).count()
     in_progress_count = base_qs.filter(status=Task.STATUS_IN_PROGRESS).count()
     done_count = base_qs.filter(status=Task.STATUS_DONE).count()
+    pool_count = base_qs.filter(
+        Q(is_open_to_all=True) | Q(assigned_to__isnull=True),
+        status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS],
+    ).count()
+    alarm_count = base_qs.filter(
+        has_alarm=True,
+        status__in=[Task.STATUS_OPEN, Task.STATUS_IN_PROGRESS],
+    ).count()
     active_count = open_count + in_progress_count
     all_count = base_qs.count()
 
@@ -3065,6 +3107,8 @@ def task_dashboard(request):
         'done_count': done_count,
         'active_count': active_count,
         'all_count': all_count,
+        'pool_count': pool_count,
+        'alarm_count': alarm_count,
         'status_filter': status,
         'priority_filter': priority,
         'tech_filter': tech_id,
@@ -3089,13 +3133,23 @@ def task_create(request):
     workspace = getattr(request, 'current_workspace', None)
     form = TaskCreateForm(request.POST, workspace=workspace)
     if form.is_valid():
+        is_open_to_all = bool(form.cleaned_data.get('is_open_to_all'))
+        assigned_to = None if is_open_to_all else form.cleaned_data.get('assigned_to')
+        has_alarm = bool(form.cleaned_data.get('has_alarm'))
+        alarm_time = form.cleaned_data.get('alarm_time')
+        if has_alarm and not alarm_time:
+            alarm_time = form.cleaned_data.get('due_date') or timezone.now()
+
         task = Task.objects.create(
             workspace=workspace,
             title=form.cleaned_data['title'],
             description=form.cleaned_data.get('description') or '',
             priority=form.cleaned_data['priority'],
             due_date=form.cleaned_data.get('due_date'),
-            assigned_to=form.cleaned_data.get('assigned_to'),
+            assigned_to=assigned_to,
+            is_open_to_all=is_open_to_all,
+            has_alarm=has_alarm,
+            alarm_time=alarm_time,
             job_reference=form.cleaned_data.get('job_reference'),
             created_by=request.user,
         )
@@ -3242,13 +3296,22 @@ def task_update_status(request, task_id):
             task.priority = request.POST['priority']
             task.save(update_fields=['priority', 'updated_at'])
             broadcast_task_status(task, task.status, task.status, request.user)
-        if 'assigned_to' in request.POST:
-            tech_id = request.POST.get('assigned_to')
-            task.assigned_to_id = tech_id if tech_id else None
-            task.save(update_fields=['assigned_to', 'updated_at'])
-            broadcast_task_status(task, task.status, task.status, request.user)
-            if task.assigned_to_id:
-                broadcast_task_created(task)
+        if 'assigned_to' in request.POST or 'is_open_to_all' in request.POST or 'assignment_type' in request.POST:
+            assignment_type = request.POST.get('assignment_type')
+            is_open = assignment_type == 'open' or request.POST.get('is_open_to_all') in ['true', '1', 'on', True]
+            if is_open:
+                task.is_open_to_all = True
+                task.assigned_to = None
+                task.save(update_fields=['assigned_to', 'is_open_to_all', 'updated_at'])
+                broadcast_task_status(task, task.status, task.status, request.user)
+            elif 'assigned_to' in request.POST or assignment_type == 'specific':
+                tech_id = request.POST.get('assigned_to')
+                task.assigned_to_id = tech_id if tech_id else None
+                task.is_open_to_all = False
+                task.save(update_fields=['assigned_to', 'is_open_to_all', 'updated_at'])
+                broadcast_task_status(task, task.status, task.status, request.user)
+                if task.assigned_to_id:
+                    broadcast_task_created(task)
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
         return JsonResponse({

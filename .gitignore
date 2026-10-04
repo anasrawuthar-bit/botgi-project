@@ -19,4 +19,9 @@ whatsapp_bridge/tokens/
 kotlin/.gradle/
 kotlin/**/build/
 kotlin/local.properties
+**/android/build/
+**/android/.gradle/
+**/android/app/build/
+**/android/local.properties
 scratch/
+

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,6 +11,29 @@ import 'auth_service.dart';
 class TasksService {
   TasksService(this._authService);
 
+  /// Converts exceptions and raw server responses into clear, human-friendly error messages.
+  static String formatError(Object error) {
+    if (error is SocketException) {
+      return 'Unable to reach server. Please check your internet connection.';
+    }
+    if (error is TimeoutException) {
+      return 'Server response timed out. Please try again.';
+    }
+    if (error is FormatException) {
+      return 'Server response format was invalid.';
+    }
+    final str = error.toString().replaceFirst('Exception: ', '').trim();
+    if (str.contains('SocketException') ||
+        str.contains('Failed host lookup') ||
+        str.contains('Network is unreachable')) {
+      return 'Network connection lost. Please check your internet connection.';
+    }
+    if (str.contains('Connection refused') || str.contains('Connection timed out')) {
+      return 'Server is temporarily unreachable. Please try again.';
+    }
+    return str.isNotEmpty ? str : 'An unexpected error occurred. Please try again.';
+  }
+
   final AuthService _authService;
   AuthService get authService => _authService;
 
@@ -21,12 +45,14 @@ class TasksService {
     String priority = '',
     String query = '',
     bool mineOnly = false,
+    bool poolOnly = false,
   }) async {
     final queryParams = <String, String>{};
     if (status.isNotEmpty) queryParams['status'] = status;
     if (priority.isNotEmpty) queryParams['priority'] = priority;
     if (query.isNotEmpty) queryParams['q'] = query;
     if (mineOnly) queryParams['mine'] = '1';
+    if (poolOnly) queryParams['pool'] = '1';
 
     final uri = Uri.parse('${AppConfig.baseUrl}/api/mobile/tasks/').replace(
       queryParameters: queryParams.isEmpty ? null : queryParams,
@@ -59,6 +85,7 @@ class TasksService {
             inProgress: tasks.where((t) => t.status == 'in_progress').length,
             open: tasks.where((t) => t.status == 'open').length,
             done: tasks.where((t) => t.status == 'done').length,
+            pool: tasks.where((t) => t.isOpenToAll || t.assignedToId == null).length,
           );
 
     _cachedMetrics = metrics;
@@ -71,12 +98,14 @@ class TasksService {
     String priority = '',
     String query = '',
     bool mineOnly = false,
+    bool poolOnly = false,
   }) async {
     final response = await fetchTasksWithMetrics(
       status: status,
       priority: priority,
       query: query,
       mineOnly: mineOnly,
+      poolOnly: poolOnly,
     );
     return response.tasks;
   }
@@ -105,6 +134,30 @@ class TasksService {
     return TaskModel.fromJson(taskJson);
   }
 
+  Future<TaskModel> acceptTask(int taskId) async {
+    final uri = Uri.parse('${AppConfig.baseUrl}/api/mobile/tasks/$taskId/accept/');
+    final response = await http.post(
+      uri,
+      headers: _authService.authHeaders(),
+    );
+    final body = _safeJsonDecode(response.body);
+
+    if (response.statusCode == 401) {
+      await _authService.logout();
+      throw Exception(body['message'] ?? 'Session expired.');
+    }
+    if (response.statusCode != 200) {
+      throw Exception(body['message'] ?? 'Failed to claim task.');
+    }
+
+    final taskJson = body['task'];
+    if (taskJson is! Map<String, dynamic>) {
+      throw Exception('Malformed task response from server.');
+    }
+
+    return TaskModel.fromJson(taskJson);
+  }
+
   Future<TaskModel> createTask({
     required String title,
     String description = '',
@@ -112,6 +165,9 @@ class TasksService {
     String? dueDate,
     int? assignedToId,
     bool assignToMe = false,
+    bool isOpenToAll = false,
+    bool hasAlarm = false,
+    String? alarmTime,
     int? jobReferenceId,
     String? jobCode,
     String? initialMessage,
@@ -123,8 +179,15 @@ class TasksService {
       'priority': priority,
     };
     if (dueDate != null && dueDate.isNotEmpty) payload['due_date'] = dueDate;
-    if (assignedToId != null) payload['assigned_to_id'] = assignedToId;
-    if (assignToMe) payload['assign_to_me'] = true;
+    if (isOpenToAll) {
+      payload['is_open_to_all'] = true;
+    } else if (assignedToId != null) {
+      payload['assigned_to_id'] = assignedToId;
+    } else if (assignToMe) {
+      payload['assign_to_me'] = true;
+    }
+    if (hasAlarm) payload['has_alarm'] = true;
+    if (alarmTime != null && alarmTime.isNotEmpty) payload['alarm_time'] = alarmTime;
     if (jobReferenceId != null) payload['job_reference_id'] = jobReferenceId;
     if (jobCode != null && jobCode.isNotEmpty) payload['job_code'] = jobCode;
     if (initialMessage != null && initialMessage.isNotEmpty) {
@@ -314,59 +377,91 @@ class TasksService {
     }
   }
 
-  /// Connect to the real-time WebSocket room for a specific task.
+  /// Connect to the real-time WebSocket room for a specific task with automatic reconnection.
   Stream<Map<String, dynamic>> connectToTaskChat(int taskId) async* {
-    final token = _authService.accessToken ?? '';
-    final uri = Uri.parse('${AppConfig.wsBaseUrl}/ws/tasks/$taskId/').replace(
-      queryParameters: token.isNotEmpty ? {'token': token} : null,
-    );
+    int backoff = 2;
+    while (true) {
+      final token = _authService.accessToken ?? '';
+      if (token.isEmpty) break;
 
-    WebSocket? socket;
-    try {
-      socket = await WebSocket.connect(uri.toString());
-      socket.pingInterval = const Duration(seconds: 15);
-      await for (final data in socket) {
-        if (data is String) {
-          try {
-            final decoded = jsonDecode(data);
-            if (decoded is Map<String, dynamic>) {
-              yield decoded;
-            }
-          } catch (_) {}
+      final uri = Uri.parse('${AppConfig.wsBaseUrl}/ws/tasks/$taskId/').replace(
+        queryParameters: {'token': token},
+      );
+
+      WebSocket? socket;
+      try {
+        socket = await WebSocket.connect(uri.toString());
+        socket.pingInterval = const Duration(seconds: 15);
+        backoff = 2; // Reset on successful connection
+
+        await for (final data in socket) {
+          if (data is String) {
+            try {
+              final decoded = jsonDecode(data);
+              if (decoded is Map<String, dynamic>) {
+                yield decoded;
+              }
+            } catch (_) {}
+          }
         }
+      } catch (_) {
+        // Socket or network error; fall through to reconnect
+      } finally {
+        try {
+          await socket?.close();
+        } catch (_) {}
       }
-    } catch (_) {
-      // Connection closed or failed
-    } finally {
-      await socket?.close();
+
+      if (_authService.accessToken == null || _authService.accessToken!.isEmpty) {
+        break;
+      }
+
+      await Future<void>.delayed(Duration(seconds: backoff));
+      backoff = (backoff * 2).clamp(2, 30);
     }
   }
 
-  /// Connect to the real-time WebSocket feed for technician tasks.
+  /// Connect to the real-time WebSocket feed for technician tasks with automatic reconnection.
   Stream<Map<String, dynamic>> connectToTechTasks() async* {
-    final token = _authService.accessToken ?? '';
-    final uri = Uri.parse('${AppConfig.wsBaseUrl}/ws/tech_tasks/').replace(
-      queryParameters: token.isNotEmpty ? {'token': token} : null,
-    );
+    int backoff = 2;
+    while (true) {
+      final token = _authService.accessToken ?? '';
+      if (token.isEmpty) break;
 
-    WebSocket? socket;
-    try {
-      socket = await WebSocket.connect(uri.toString());
-      socket.pingInterval = const Duration(seconds: 15);
-      await for (final data in socket) {
-        if (data is String) {
-          try {
-            final decoded = jsonDecode(data);
-            if (decoded is Map<String, dynamic>) {
-              yield decoded;
-            }
-          } catch (_) {}
+      final uri = Uri.parse('${AppConfig.wsBaseUrl}/ws/tech_tasks/').replace(
+        queryParameters: {'token': token},
+      );
+
+      WebSocket? socket;
+      try {
+        socket = await WebSocket.connect(uri.toString());
+        socket.pingInterval = const Duration(seconds: 15);
+        backoff = 2; // Reset on successful connection
+
+        await for (final data in socket) {
+          if (data is String) {
+            try {
+              final decoded = jsonDecode(data);
+              if (decoded is Map<String, dynamic>) {
+                yield decoded;
+              }
+            } catch (_) {}
+          }
         }
+      } catch (_) {
+        // Socket or network error; fall through to reconnect
+      } finally {
+        try {
+          await socket?.close();
+        } catch (_) {}
       }
-    } catch (_) {
-      // Connection closed or failed
-    } finally {
-      await socket?.close();
+
+      if (_authService.accessToken == null || _authService.accessToken!.isEmpty) {
+        break;
+      }
+
+      await Future<void>.delayed(Duration(seconds: backoff));
+      backoff = (backoff * 2).clamp(2, 30);
     }
   }
 }

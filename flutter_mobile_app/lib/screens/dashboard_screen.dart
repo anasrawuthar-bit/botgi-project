@@ -23,6 +23,7 @@ class DashboardScreen extends StatefulWidget {
     required this.managementService,
     this.tasksService,
     this.onNavigateToTasks,
+    this.onNavigateToJobs,
   });
 
   final AuthService authService;
@@ -30,6 +31,7 @@ class DashboardScreen extends StatefulWidget {
   final ManagementService managementService;
   final TasksService? tasksService;
   final VoidCallback? onNavigateToTasks;
+  final void Function({String? scope, String? preset})? onNavigateToJobs;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -38,12 +40,14 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   late Future<List<JobItem>> _jobsFuture;
   TaskMetrics _taskMetrics = TaskMetrics();
+  int _pendingApprovalsCount = 0;
 
   @override
   void initState() {
     super.initState();
     _jobsFuture = widget.jobsService.fetchJobs();
     _loadTaskMetrics();
+    _loadPendingApprovalsCount();
   }
 
   Future<void> _loadTaskMetrics() async {
@@ -58,6 +62,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadPendingApprovalsCount() async {
+    try {
+      final res = await widget.managementService.fetchPendingApprovals();
+      if (mounted) {
+        setState(() {
+          _pendingApprovalsCount = res.approvals.length;
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _refresh() async {
     setState(() {
       _jobsFuture = widget.jobsService.fetchJobs();
@@ -65,6 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await Future.wait([
       _jobsFuture,
       _loadTaskMetrics(),
+      _loadPendingApprovalsCount(),
     ]);
   }
 
@@ -72,6 +88,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final user = widget.authService.currentUser ?? {};
     final username = (user['username'] ?? '').toString();
+    final roleRaw = (user['role'] ?? '').toString().toLowerCase();
+    final isTechnician = roleRaw == 'technician';
     final role = (user['role'] ?? '').toString().toUpperCase();
 
     return SafeArea(
@@ -93,17 +111,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           }
 
           final jobs = snapshot.data ?? <JobItem>[];
-          final total = jobs.length;
-          final pending = jobs
-              .where(
-                (j) =>
-                    j.status == 'Pending' ||
-                    j.status == 'Under Inspection' ||
-                    j.status == 'Repairing' ||
-                    j.status == 'Specialized Service',
-              )
-              .length;
-          final closed = jobs.where((j) => j.status == 'Closed').length;
           final revenue = jobs.fold<double>(
             0,
             (sum, job) => sum + (double.tryParse(job.total) ?? 0),
@@ -114,124 +121,157 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
               children: [
-                Text(
-                  'Welcome, $username',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 2),
-                Text('Role: $role'),
-                const SizedBox(height: 16),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: _StatCard(
-                        label: 'Total Jobs',
-                        value: '$total',
-                        icon: Icons.receipt_long_rounded,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Welcome, $username',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text('Role: $role', style: TextStyle(color: Colors.grey.shade600)),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _StatCard(
-                        label: 'Open',
-                        value: '$pending',
-                        icon: Icons.build_circle_outlined,
+                    Container(
+                      width: 44,
+                      height: 44,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _StatCard(
-                        label: 'Closed',
-                        value: '$closed',
-                        icon: Icons.verified_rounded,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                _RevenueCard(amount: revenue),
+                const SizedBox(height: 16),
+                if (!isTechnician) ...[
+                  _RevenueCard(amount: revenue),
+                  const SizedBox(height: 12),
+                ],
                 const SizedBox(height: 12),
                 _DirectivesSummaryCard(
                   metrics: _taskMetrics,
                   onTap: widget.onNavigateToTasks,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Operations',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ModuleTile(
-                        icon: Icons.inventory_2_outlined,
-                        title: 'Product Management',
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ProductManagementScreen(
-                                managementService: widget.managementService,
+                if (isTechnician) ...[
+                  const SizedBox(height: 12),
+                  _TechnicianAssignmentCard(
+                    pendingCount: _pendingApprovalsCount,
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PendingApprovalsScreen(
+                            managementService: widget.managementService,
+                            title: 'Job Assignments',
+                          ),
+                        ),
+                      );
+                      if (mounted) {
+                        await _refresh();
+                      }
+                    },
+                  ),
+                ],
+                if (!isTechnician) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Operations',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ModuleTile(
+                          icon: Icons.inventory_2_outlined,
+                          title: 'Product Management',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ProductManagementScreen(
+                                  managementService: widget.managementService,
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _ModuleTile(
-                        icon: Icons.pending_actions_outlined,
-                        title: 'Pending Approvals',
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PendingApprovalsScreen(
-                                managementService: widget.managementService,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _ModuleTile(
+                          icon: Icons.pending_actions_outlined,
+                          title: 'Pending Approvals',
+                          badgeCount: _pendingApprovalsCount,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PendingApprovalsScreen(
+                                  managementService: widget.managementService,
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ModuleTile(
-                        icon: Icons.groups_outlined,
-                        title: 'Client Management',
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ClientManagementScreen(
-                                managementService: widget.managementService,
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ModuleTile(
+                          icon: Icons.groups_outlined,
+                          title: 'Client Management',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ClientManagementScreen(
+                                  managementService: widget.managementService,
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _ModuleTile(
-                        icon: Icons.analytics_outlined,
-                        title: 'Reports',
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ReportsScreen(
-                                managementService: widget.managementService,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _ModuleTile(
+                          icon: Icons.analytics_outlined,
+                          title: 'Reports',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ReportsScreen(
+                                  managementService: widget.managementService,
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 18),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -240,10 +280,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       'Recent Jobs',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    TextButton.icon(
-                      onPressed: _refresh,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Refresh'),
+                    Row(
+                      children: [
+                        if (widget.onNavigateToJobs != null) ...[
+                          TextButton.icon(
+                            onPressed: () => widget.onNavigateToJobs!(scope: 'history', preset: 'this_month'),
+                            icon: const Icon(Icons.history_rounded, size: 16),
+                            label: const Text('History'),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: _refresh,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -305,50 +357,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurfaceCard(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
-}
 
 class _ModuleTile extends StatelessWidget {
   const _ModuleTile({
     required this.icon,
     required this.title,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
   final String title;
   final VoidCallback onTap;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -360,12 +381,131 @@ class _ModuleTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Icon(icon, size: 22),
+                if (badgeCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$badgeCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 10),
             Text(
               title,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TechnicianAssignmentCard extends StatelessWidget {
+  const _TechnicianAssignmentCard({
+    required this.pendingCount,
+    required this.onTap,
+  });
+
+  final int pendingCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPending = pendingCount > 0;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hasPending ? const Color(0xFFFFFBEB) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: hasPending ? const Color(0xFFFDE68A) : Colors.grey.shade200,
+            width: hasPending ? 1.5 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: hasPending ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                hasPending ? Icons.notification_important_rounded : Icons.assignment_ind_outlined,
+                color: hasPending ? const Color(0xFFB45309) : AppColors.ink700,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Job Assignments',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      if (hasPending) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$pendingCount New',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasPending
+                        ? '$pendingCount new job request(s) awaiting your response'
+                        : 'No pending job assignments',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: hasPending ? const Color(0xFF92400E) : Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
           ],
         ),
       ),

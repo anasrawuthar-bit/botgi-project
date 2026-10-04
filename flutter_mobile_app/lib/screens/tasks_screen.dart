@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/task_model.dart';
 import '../services/jobs_service.dart';
+import '../services/notification_service.dart';
 import '../services/tasks_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_surface_card.dart';
@@ -33,6 +34,7 @@ class _TasksScreenState extends State<TasksScreen> {
   String _statusFilter = 'active';
   String _priorityFilter = '';
   bool _mineOnly = false;
+  bool _showPool = false;
   TaskMetrics _metrics = TaskMetrics();
 
   @override
@@ -55,20 +57,51 @@ class _TasksScreenState extends State<TasksScreen> {
       (event) {
         if (!mounted) return;
         final action = event['action'] as String?;
-        final title = (event['task_title'] ?? 'Task').toString();
+        final title = (event['task_title'] ?? event['title'] ?? 'Task').toString();
+        final hasAlarm = event['has_alarm'] == true;
+        final isPool = event['is_open_to_all'] == true;
 
         if (action == 'task_created') {
+          if (hasAlarm) {
+            NotificationService.instance.showAlarmNotification(
+              taskId: event['task_id'] is int ? event['task_id'] : int.tryParse('${event['task_id']}') ?? 0,
+              title: title,
+              priority: (event['priority_display'] ?? event['priority'] ?? '').toString(),
+              description: (event['description'] ?? '').toString(),
+              isOpenPool: isPool,
+            );
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.assignment_ind_rounded, color: Colors.white, size: 20),
+                  Icon(
+                    hasAlarm ? Icons.alarm_rounded : (isPool ? Icons.groups_rounded : Icons.assignment_ind_rounded),
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('New task assigned: $title')),
+                  Expanded(
+                    child: Text(
+                      hasAlarm
+                          ? '🚨 ALARM: $title'
+                          : (isPool ? 'New Open Pool task available: $title' : 'New task assigned: $title'),
+                    ),
+                  ),
                 ],
               ),
-              backgroundColor: const Color(0xFF1565C0),
-              duration: const Duration(seconds: 4),
+              backgroundColor: hasAlarm ? const Color(0xFFDC2626) : (isPool ? const Color(0xFF4F46E5) : const Color(0xFF1565C0)),
+              duration: Duration(seconds: hasAlarm ? 8 : 4),
+            ),
+          );
+          _loadTasks();
+        } else if (action == 'task_accepted') {
+          final techName = (event['assigned_to_name'] ?? 'A technician').toString();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Task "$title" claimed by $techName.'),
+              duration: const Duration(seconds: 3),
             ),
           );
           _loadTasks();
@@ -103,6 +136,7 @@ class _TasksScreenState extends State<TasksScreen> {
         priority: _priorityFilter,
         query: _searchController.text.trim(),
         mineOnly: _mineOnly,
+        poolOnly: _showPool,
       ).then((res) {
         if (mounted) {
           setState(() {
@@ -112,6 +146,28 @@ class _TasksScreenState extends State<TasksScreen> {
         return res;
       });
     });
+  }
+
+  Future<void> _acceptTask(TaskModel task) async {
+    try {
+      final updated = await widget.tasksService.acceptTask(task.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Claimed task: "${updated.title}" successfully!'),
+          backgroundColor: const Color(0xFF16A34A),
+        ),
+      );
+      _loadTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to claim task: ${TasksService.formatError(e)}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _updateStatus(TaskModel task, String newStatus) async {
@@ -130,7 +186,7 @@ class _TasksScreenState extends State<TasksScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.warningFg,
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(TasksService.formatError(e)),
         ),
       );
     }
@@ -147,20 +203,6 @@ class _TasksScreenState extends State<TasksScreen> {
       default:
         return 'Open';
     }
-  }
-
-  void _openCreateTaskModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _CreateTaskSheet(
-        tasksService: widget.tasksService,
-        onCreated: () {
-          _loadTasks();
-        },
-      ),
-    );
   }
 
   @override
@@ -196,11 +238,6 @@ class _TasksScreenState extends State<TasksScreen> {
             onPressed: _loadTasks,
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openCreateTaskModal,
-        icon: const Icon(Icons.add_task_rounded),
-        label: const Text('New Directive'),
       ),
       body: SafeArea(
         child: Column(
@@ -265,26 +302,6 @@ class _TasksScreenState extends State<TasksScreen> {
               ),
             ),
 
-            // Status Filter Chips
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              child: Row(
-                children: [
-                  _filterChip('active', 'Active'),
-                  const SizedBox(width: 6),
-                  _filterChip('open', 'Open'),
-                  const SizedBox(width: 6),
-                  _filterChip('in_progress', 'In Progress'),
-                  const SizedBox(width: 6),
-                  _filterChip('done', 'Done'),
-                  const SizedBox(width: 6),
-                  _filterChip('all', 'All'),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 4),
 
             // Task List
             Expanded(
@@ -305,7 +322,7 @@ class _TasksScreenState extends State<TasksScreen> {
                             const Icon(Icons.error_outline, size: 48, color: AppColors.warningFg),
                             const SizedBox(height: 12),
                             Text(
-                              snapshot.error.toString().replaceFirst('Exception: ', ''),
+                              TasksService.formatError(snapshot.error!),
                               textAlign: TextAlign.center,
                               style: const TextStyle(color: AppColors.warningFg),
                             ),
@@ -457,6 +474,23 @@ class _TasksScreenState extends State<TasksScreen> {
               isActive: _statusFilter == 'done',
             ),
           ),
+          Container(width: 1, height: 32, color: Colors.grey.shade200),
+          Expanded(
+            child: _kpiItem(
+              label: 'Pool',
+              count: _metrics.pool,
+              icon: Icons.groups_rounded,
+              color: const Color(0xFF4F46E5),
+              bgColor: const Color(0xFFEEF2FF),
+              onTap: () {
+                setState(() {
+                  _showPool = !_showPool;
+                });
+                _loadTasks();
+              },
+              isActive: _showPool,
+            ),
+          ),
         ],
       ),
     );
@@ -514,31 +548,6 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Widget _filterChip(String key, String label) {
-    final isSelected = _statusFilter == key;
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) {
-          setState(() {
-            _statusFilter = key;
-          });
-          _loadTasks();
-        }
-      },
-      selectedColor: Theme.of(context).colorScheme.primaryContainer,
-      labelStyle: TextStyle(
-        fontSize: 12,
-        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-        color: isSelected
-            ? Theme.of(context).colorScheme.onPrimaryContainer
-            : Theme.of(context).colorScheme.onSurface,
-      ),
-      visualDensity: VisualDensity.compact,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    );
-  }
 
   Widget _buildTaskCard(TaskModel task) {
     Color leftBorderColor;
@@ -590,8 +599,60 @@ class _TasksScreenState extends State<TasksScreen> {
                         priority: task.priority,
                         label: task.priorityDisplay,
                       ),
+                      if (task.hasAlarm) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFEF4444), width: 0.8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.alarm_rounded, size: 10, color: Color(0xFFDC2626)),
+                              SizedBox(width: 2),
+                              Text(
+                                'ALARM',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (task.isOpenToAll) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF2FF),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFF6366F1), width: 0.8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.groups_rounded, size: 10, color: Color(0xFF4F46E5)),
+                              SizedBox(width: 2),
+                              Text(
+                                'POOL',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF4F46E5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (task.isOverdue) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -746,7 +807,24 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
 
                   // Quick Action Button
-                  if (task.status == 'open')
+                  if (task.canAccept)
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _acceptTask(task),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.assignment_turned_in_rounded, size: 15),
+                          SizedBox(width: 3),
+                          Text('Claim Task', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    )
+                  else if (task.status == 'open')
                     FilledButton.tonal(
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
@@ -827,481 +905,3 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 }
 
-class _CreateTaskSheet extends StatefulWidget {
-  const _CreateTaskSheet({
-    required this.tasksService,
-    required this.onCreated,
-  });
-
-  final TasksService tasksService;
-  final VoidCallback onCreated;
-
-  @override
-  State<_CreateTaskSheet> createState() => _CreateTaskSheetState();
-}
-
-class _CreateTaskSheetState extends State<_CreateTaskSheet> {
-  final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _descController = TextEditingController();
-  final _initialMsgController = TextEditingController();
-
-  String _priority = 'medium';
-  DateTime? _dueDate;
-  TimeOfDay? _dueTime;
-
-  bool _assignToMe = false;
-  int? _selectedTechId;
-  List<TechnicianItem> _technicians = [];
-
-  QuickJobItem? _selectedJob;
-  List<QuickJobItem> _jobs = [];
-
-  bool _isLoadingLookups = true;
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLookups();
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _descController.dispose();
-    _initialMsgController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadLookups() async {
-    try {
-      final techs = await widget.tasksService.fetchTechnicians();
-      final jobs = await widget.tasksService.fetchQuickJobs();
-      if (!mounted) return;
-      setState(() {
-        _technicians = techs;
-        _jobs = jobs;
-        _isLoadingLookups = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _isLoadingLookups = false;
-      });
-    }
-  }
-
-  Future<void> _pickDueDate() async {
-    final now = DateTime.now();
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _dueDate ?? now,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365)),
-    );
-    if (pickedDate == null || !mounted) return;
-
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: _dueTime ?? const TimeOfDay(hour: 18, minute: 0),
-    );
-    if (!mounted) return;
-
-    setState(() {
-      _dueDate = pickedDate;
-      _dueTime = pickedTime ?? const TimeOfDay(hour: 18, minute: 0);
-    });
-  }
-
-  void _quickSetDueToday() {
-    final now = DateTime.now();
-    setState(() {
-      _dueDate = DateTime(now.year, now.month, now.day);
-      _dueTime = const TimeOfDay(hour: 18, minute: 0);
-    });
-  }
-
-  void _quickSetDueTomorrow() {
-    final tomorrow = DateTime.now().add(const Duration(days: 1));
-    setState(() {
-      _dueDate = DateTime(tomorrow.year, tomorrow.month, tomorrow.day);
-      _dueTime = const TimeOfDay(hour: 18, minute: 0);
-    });
-  }
-
-  String _formatPickedDue() {
-    if (_dueDate == null) return 'No Due Date';
-    final d = _dueDate!;
-    final timeStr = _dueTime != null
-        ? ' ${_dueTime!.hour.toString().padLeft(2, '0')}:${_dueTime!.minute.toString().padLeft(2, '0')}'
-        : '';
-    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}$timeStr';
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final dueDateStr = _dueDate != null ? _formatPickedDue() : null;
-
-      await widget.tasksService.createTask(
-        title: _titleController.text.trim(),
-        description: _descController.text.trim(),
-        priority: _priority,
-        dueDate: dueDateStr,
-        assignedToId: _assignToMe ? null : _selectedTechId,
-        assignToMe: _assignToMe,
-        jobReferenceId: _selectedJob?.id,
-        initialMessage: _initialMsgController.text.trim(),
-      );
-
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      widget.onCreated();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Task / Directive created successfully!'),
-          backgroundColor: Color(0xFF16A34A),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
-          backgroundColor: AppColors.warningFg,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.88,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          // Header Bar
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.add_task_rounded, color: Color(0xFF2563EB)),
-                    SizedBox(width: 8),
-                    Text(
-                      'New Directive / Task',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
-
-          // Form Body
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title Field
-                    const Text('Title *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _titleController,
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Replace LCD screen on Dell Inspiron',
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                      ),
-                      validator: (val) {
-                        if (val == null || val.trim().isEmpty) {
-                          return 'Please enter a title.';
-                        }
-                        return null;
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Priority Selector
-                    const Text('Priority Level', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        _priorityChoice('urgent', '⚡ Urgent', const Color(0xFFDC2626)),
-                        const SizedBox(width: 8),
-                        _priorityChoice('high', '↑ High', const Color(0xFFEA580C)),
-                        const SizedBox(width: 8),
-                        _priorityChoice('medium', '● Medium', const Color(0xFF2563EB)),
-                        const SizedBox(width: 8),
-                        _priorityChoice('low', '↓ Low', Colors.grey.shade600),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Due Date
-                    const Text('Due Date & Time', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            onPressed: _pickDueDate,
-                            icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                            label: Text(_formatPickedDue(), style: const TextStyle(fontSize: 13)),
-                          ),
-                        ),
-                        if (_dueDate != null) ...[
-                          const SizedBox(width: 6),
-                          IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              setState(() {
-                                _dueDate = null;
-                                _dueTime = null;
-                              });
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        ActionChip(
-                          label: const Text('Today (6 PM)', style: TextStyle(fontSize: 11)),
-                          onPressed: _quickSetDueToday,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        const SizedBox(width: 8),
-                        ActionChip(
-                          label: const Text('Tomorrow (6 PM)', style: TextStyle(fontSize: 11)),
-                          onPressed: _quickSetDueTomorrow,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Assigned Technician
-                    const Text('Assign To', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Assign to Myself', style: TextStyle(fontSize: 14)),
-                      value: _assignToMe,
-                      onChanged: (val) {
-                        setState(() {
-                          _assignToMe = val;
-                          if (val) _selectedTechId = null;
-                        });
-                      },
-                    ),
-                    if (!_assignToMe) ...[
-                      DropdownButtonFormField<int>(
-                        initialValue: _selectedTechId,
-                        decoration: InputDecoration(
-                          hintText: _isLoadingLookups ? 'Loading technicians...' : 'Select Technician (or unassigned)',
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                        ),
-                        items: [
-                          const DropdownMenuItem<int>(
-                            value: null,
-                            child: Text('Unassigned (Pool)'),
-                          ),
-                          ..._technicians.map((t) => DropdownMenuItem<int>(
-                                value: t.id,
-                                child: Text('${t.name} (${t.username})'),
-                              )),
-                        ],
-                        onChanged: (val) {
-                          setState(() {
-                            _selectedTechId = val;
-                          });
-                        },
-                      ),
-                    ],
-
-                    const SizedBox(height: 16),
-
-                    // Link to Job Ticket
-                    const Text('Link to Job Ticket (Optional)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<QuickJobItem>(
-                      initialValue: _selectedJob,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        hintText: _isLoadingLookups ? 'Loading active jobs...' : 'Select related Job Ticket',
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                      ),
-                      items: [
-                        const DropdownMenuItem<QuickJobItem>(
-                          value: null,
-                          child: Text('None (General Task)'),
-                        ),
-                        ..._jobs.map((j) => DropdownMenuItem<QuickJobItem>(
-                              value: j,
-                              child: Text(
-                                '${j.jobCode} • ${j.customerName} (${j.device})',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            )),
-                      ],
-                      onChanged: (val) {
-                        setState(() {
-                          _selectedJob = val;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Instructions / Directives Description
-                    const Text('Work Directives & Details', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _descController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Detailed technical directives or diagnostic instructions...',
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Initial Chat Note
-                    const Text('Initial Message to Thread (Optional)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _initialMsgController,
-                      decoration: InputDecoration(
-                        hintText: 'e.g., Please prioritize this before 3 PM.',
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Submit Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: FilledButton(
-                        onPressed: _isSubmitting ? null : _submit,
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Text('Create Task / Directive', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _priorityChoice(String key, String label, Color color) {
-    final isSelected = _priority == key;
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() {
-            _priority = key;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: isSelected ? color.withValues(alpha: 0.15) : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? color : Colors.grey.shade300,
-              width: isSelected ? 1.5 : 1,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: isSelected ? color : Colors.grey.shade800,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

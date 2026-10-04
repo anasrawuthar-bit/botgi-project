@@ -44,12 +44,45 @@
 {% block content %}
 <div class="container-fluid py-3 px-4">
     <!-- Header -->
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
         <div>
-            <h2 class="h3 fw-bold mb-1"><i class="fas fa-clipboard-list text-primary me-2"></i>My Tasks</h2>
-            <p class="text-muted mb-0">Prioritized directives assigned to you by staff. Handled in order of urgency.</p>
+            <h2 class="h3 fw-bold mb-1">
+                <i class="fas fa-clipboard-list text-primary me-2"></i>
+                {% if current_tab == 'pool' %}Open Task Pool{% else %}My Tasks{% endif %}
+            </h2>
+            <p class="text-muted mb-0">
+                {% if current_tab == 'pool' %}
+                    Directives open to all technicians. Any technician can claim and start work.
+                {% else %}
+                    Prioritized directives assigned to you by staff. Handled in order of urgency.
+                {% endif %}
+            </p>
         </div>
     </div>
+
+    <!-- Navigation Tabs: My Directives vs Open Pool -->
+    <ul class="nav nav-pills mb-4 gap-2">
+        <li class="nav-item">
+            <a class="nav-link {% if current_tab == 'my' %}active bg-primary text-white{% else %}bg-white border text-dark{% endif %} fw-semibold px-4 py-2 rounded-pill shadow-sm"
+               href="?tab=my">
+                <i class="fas fa-user-check me-2"></i>My Directives
+                <span class="badge {% if current_tab == 'my' %}bg-white text-primary{% else %}bg-primary text-white{% endif %} ms-2 rounded-pill">
+                    {{ open_count|add:in_progress_count }}
+                </span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_tab == 'pool' %}active bg-primary text-white{% else %}bg-white border text-dark{% endif %} fw-semibold px-4 py-2 rounded-pill shadow-sm"
+               href="?tab=pool">
+                <i class="fas fa-users text-primary me-2"></i>Open Pool (Anyone Can Accept)
+                {% if pool_count > 0 %}
+                    <span class="badge bg-danger text-white rounded-pill ms-2">{{ pool_count }} Available</span>
+                {% else %}
+                    <span class="badge bg-light text-muted border rounded-pill ms-2">0</span>
+                {% endif %}
+            </a>
+        </li>
+    </ul>
 
     {% if warning %}
         <div class="alert alert-warning mb-4"><i class="fas fa-exclamation-triangle me-2"></i>{{ warning }}</div>
@@ -177,6 +210,18 @@
                                 {% elif task.status == 'done' %}
                                     <span class="badge bg-success ms-1">Done</span>
                                 {% endif %}
+
+                                {% if task.has_alarm %}
+                                    <span class="badge bg-danger text-white ms-1 px-2 py-1" title="Audible alarm enabled">
+                                        <i class="fas fa-bell me-1"></i>Alarm
+                                    </span>
+                                {% endif %}
+
+                                {% if task.is_open_to_all %}
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1 px-2 py-1">
+                                        <i class="fas fa-users me-1"></i>Open Pool
+                                    </span>
+                                {% endif %}
                             </div>
                             {% if task.due_date %}
                                 <small class="fw-semibold {% if task.due_date < now and task.status != 'done' %}text-danger{% else %}text-muted{% endif %}">
@@ -216,23 +261,32 @@
                                 {% endif %}
                             </div>
 
-                            <div class="d-flex gap-1">
-                                {% if task.status == 'open' %}
-                                    <form method="post" action="{% url 'task_update_status' task.id %}">
+                            <div class="d-flex gap-1 flex-wrap align-items-center">
+                                {% if task.is_claimable and task.assigned_to != technician %}
+                                    <form method="post" action="{% url 'technician_task_accept' task.id %}">
                                         {% csrf_token %}
-                                        <input type="hidden" name="status" value="in_progress">
-                                        <button type="submit" class="btn btn-sm btn-warning">
-                                            <i class="fas fa-play me-1"></i> Start
+                                        <button type="submit" class="btn btn-sm btn-primary fw-bold shadow-sm">
+                                            <i class="fas fa-hand-holding-medical me-1"></i> Accept &amp; Claim
                                         </button>
                                     </form>
-                                {% elif task.status == 'in_progress' %}
-                                    <form method="post" action="{% url 'task_update_status' task.id %}">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="status" value="done">
-                                        <button type="submit" class="btn btn-sm btn-success">
-                                            <i class="fas fa-check me-1"></i> Complete
-                                        </button>
-                                    </form>
+                                {% else %}
+                                    {% if task.status == 'open' %}
+                                        <form method="post" action="{% url 'task_update_status' task.id %}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="status" value="in_progress">
+                                            <button type="submit" class="btn btn-sm btn-warning">
+                                                <i class="fas fa-play me-1"></i> Start
+                                            </button>
+                                        </form>
+                                    {% elif task.status == 'in_progress' %}
+                                        <form method="post" action="{% url 'task_update_status' task.id %}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="status" value="done">
+                                            <button type="submit" class="btn btn-sm btn-success">
+                                                <i class="fas fa-check me-1"></i> Complete
+                                            </button>
+                                        </form>
+                                    {% endif %}
                                 {% endif %}
                                 <a href="{% url 'technician_task_detail' task.id %}" class="btn btn-sm btn-outline-primary">
                                     Details <i class="fas fa-arrow-right ms-1"></i>
@@ -298,14 +352,71 @@
         }
     }
 
+    function playAlarmTone() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            function tone(time, freq, dur) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(freq, time);
+                gain.gain.setValueAtTime(0.3, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + dur);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(time);
+                osc.stop(time + dur);
+            }
+            const t = ctx.currentTime;
+            tone(t, 880, 0.2);
+            tone(t + 0.25, 880, 0.2);
+            tone(t + 0.5, 1174.66, 0.35);
+        } catch(e) {
+            console.warn('Alarm tone error', e);
+        }
+    }
+
+    function showAlarmBanner(data) {
+        playAlarmTone();
+        const banner = document.createElement('div');
+        banner.className = 'alert alert-danger shadow-lg border-2 border-danger position-fixed top-0 start-50 translate-middle-x mt-3 d-flex align-items-center gap-3';
+        banner.style.zIndex = '99999';
+        banner.style.maxWidth = '90vw';
+        banner.innerHTML = `
+            <div class="fs-2 text-danger"><i class="fas fa-bell fa-shake"></i></div>
+            <div class="flex-grow-1">
+                <div class="fw-bold">🚨 ALARM DIRECTIVE: ${escapeHtml(data.title)}</div>
+                <div class="small">${escapeHtml(data.description || 'Audible alarm directive requires immediate action.')}</div>
+            </div>
+            <a href="/technician/tasks/${data.task_id}/" class="btn btn-danger btn-sm fw-bold">View Directive</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(banner);
+    }
+
     function handleFeedEvent(data) {
         if (data.action === 'task_created') {
             updateCounter('metricOpenCount', 1);
             if (data.priority === 'urgent') {
                 updateCounter('metricUrgentCount', 1);
             }
-            showLiveToast(`New Task Assigned: "${data.title}"`, 'warning');
+            if (data.has_alarm) {
+                showAlarmBanner(data);
+            } else if (data.is_open_to_all) {
+                showLiveToast(`New Open Pool Task: "${data.title}" - Anyone can accept!`, 'warning');
+            } else {
+                showLiveToast(`New Task Assigned: "${data.title}"`, 'warning');
+            }
             setTimeout(() => window.location.reload(), 2000);
+        } else if (data.action === 'task_accepted') {
+            const card = document.getElementById(`task-card-${data.task_id}`);
+            if (card) {
+                card.style.opacity = '0.5';
+            }
+            showLiveToast(`Task "${data.title}" was claimed by ${data.assigned_to_name}`, 'info');
+            setTimeout(() => window.location.reload(), 1500);
         } else if (data.action === 'status_change') {
             if (data.old_status === 'open') updateCounter('metricOpenCount', -1);
             else if (data.old_status === 'in_progress') updateCounter('metricInProgressCount', -1);

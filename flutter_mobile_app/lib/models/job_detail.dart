@@ -43,6 +43,10 @@ class JobDetail {
     required this.checklistTitle,
     required this.checklistNotes,
     required this.checklistAnswers,
+    this.receiptUrl = '',
+    this.rackId,
+    this.rackColumn,
+    this.availableRacks = const [],
   });
 
   final String jobCode;
@@ -57,6 +61,9 @@ class JobDetail {
   final String devicePassword;
   final String rackLocation;
   final String rackShort;
+  final int? rackId;
+  final int? rackColumn;
+  final List<DeviceRackOption> availableRacks;
   final String reportedIssue;
   final String additionalItems;
   final String technicianNotes;
@@ -88,6 +95,7 @@ class JobDetail {
   final String checklistTitle;
   final String checklistNotes;
   final Map<String, dynamic> checklistAnswers;
+  final String receiptUrl;
 
   factory JobDetail.fromJson(Map<String, dynamic> json) {
     final job = json['job'] as Map<String, dynamic>? ?? {};
@@ -180,6 +188,19 @@ class JobDetail {
       checklistAnswers: checklistAnswersRaw is Map<String, dynamic>
           ? Map<String, dynamic>.from(checklistAnswersRaw)
           : {},
+      receiptUrl: (job['receipt_url'] ?? '').toString(),
+      rackId: (job['rack_id'] is int)
+          ? job['rack_id'] as int
+          : int.tryParse('${job['rack_id']}'),
+      rackColumn: (job['rack_column'] is int)
+          ? job['rack_column'] as int
+          : int.tryParse('${job['rack_column']}'),
+      availableRacks: (json['available_racks'] is List)
+          ? (json['available_racks'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(DeviceRackOption.fromJson)
+              .toList(growable: false)
+          : const [],
     );
   }
 }
@@ -428,6 +449,35 @@ class LinkedTaskItem {
       assignedTo: (json['assigned_to'] ?? '').toString(),
       createdBy: (json['created_by'] ?? '').toString(),
       createdAt: (json['created_at'] ?? '').toString(),
+    );
+  }
+}
+
+class DeviceRackOption {
+  const DeviceRackOption({
+    required this.id,
+    required this.name,
+    required this.group,
+    required this.totalColumns,
+  });
+
+  final int id;
+  final String name;
+  final String group;
+  final int totalColumns;
+
+  String get displayName => group.isNotEmpty ? '$name ($group)' : name;
+
+  factory DeviceRackOption.fromJson(Map<String, dynamic> json) {
+    return DeviceRackOption(
+      id: (json['id'] is int)
+          ? json['id'] as int
+          : int.tryParse('${json['id']}') ?? 0,
+      name: (json['name'] ?? '').toString(),
+      group: (json['group'] ?? '').toString(),
+      totalColumns: (json['total_columns'] is int)
+          ? json['total_columns'] as int
+          : int.tryParse('${json['total_columns']}') ?? 10,
     );
   }
 }
