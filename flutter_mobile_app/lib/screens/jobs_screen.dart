@@ -27,8 +27,7 @@ class JobsScreen extends StatefulWidget {
   State<JobsScreen> createState() => _JobsScreenState();
 }
 
-class _JobsScreenState extends State<JobsScreen> {
-  late Future<JobsResponse> _jobsResponseFuture;
+class _JobsScreenState extends State<JobsScreen> with AutomaticKeepAliveClientMixin<JobsScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   late String _scope; // 'active', 'history', 'all'
@@ -36,6 +35,13 @@ class _JobsScreenState extends State<JobsScreen> {
   String _customMonth = '';
   String _customMonthLabel = '';
   String _statusFilter = 'ALL';
+
+  JobsResponse? _cachedResponse;
+  bool _isSyncing = false;
+  String? _errorMessage;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -45,10 +51,56 @@ class _JobsScreenState extends State<JobsScreen> {
 
     _scope = widget.initialScope ?? (isTech ? 'active' : 'all');
     _preset = widget.initialPreset ?? 'all';
-    _jobsResponseFuture = _fetchJobs();
+
+    // Synchronous instant cache lookup (0ms perceived latency)
+    _cachedResponse = widget.jobsService.getCachedJobsWithSummary(
+      scope: _scope == 'all' ? null : _scope,
+      preset: _preset == 'custom' ? null : (_preset == 'all' ? null : _preset),
+      reportMonth: _preset == 'custom' ? _customMonth : null,
+      limit: 300,
+    );
+
+    // Silent background sync
+    _loadJobs(silent: _cachedResponse != null);
+
     _searchController.addListener(() {
       setState(() {});
     });
+  }
+
+  @override
+  void didUpdateWidget(JobsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((widget.initialScope != null && widget.initialScope != _scope) ||
+        (widget.initialPreset != null && widget.initialPreset != _preset)) {
+      applyExternalFilters(
+        scope: widget.initialScope,
+        preset: widget.initialPreset,
+      );
+    }
+  }
+
+  void applyExternalFilters({String? scope, String? preset}) {
+    if (!mounted) return;
+    final newScope = scope ?? _scope;
+    final newPreset = preset ?? _preset;
+    if (_scope == newScope && _preset == newPreset) return;
+
+    setState(() {
+      _scope = newScope;
+      _preset = newPreset;
+      _statusFilter = 'ALL';
+      final cached = widget.jobsService.getCachedJobsWithSummary(
+        scope: _scope == 'all' ? null : _scope,
+        preset: _preset == 'custom' ? null : (_preset == 'all' ? null : _preset),
+        reportMonth: _preset == 'custom' ? _customMonth : null,
+        limit: 300,
+      );
+      if (cached != null) {
+        _cachedResponse = cached;
+      }
+    });
+    _loadJobs(silent: _cachedResponse != null);
   }
 
   @override
@@ -57,20 +109,42 @@ class _JobsScreenState extends State<JobsScreen> {
     super.dispose();
   }
 
-  Future<JobsResponse> _fetchJobs() {
-    return widget.jobsService.fetchJobsWithSummary(
-      scope: _scope == 'all' ? null : _scope,
-      preset: _preset == 'custom' ? null : (_preset == 'all' ? null : _preset),
-      reportMonth: _preset == 'custom' ? _customMonth : null,
-      limit: 300,
-    );
-  }
+  Future<void> _loadJobs({bool silent = false}) async {
+    if (!silent && _cachedResponse == null) {
+      setState(() {
+        _isSyncing = true;
+        _errorMessage = null;
+      });
+    } else {
+      if (mounted) {
+        setState(() {
+          _isSyncing = true;
+        });
+      }
+    }
 
-  Future<void> _loadJobs() async {
-    setState(() {
-      _jobsResponseFuture = _fetchJobs();
-    });
-    await _jobsResponseFuture;
+    try {
+      final res = await widget.jobsService.fetchJobsWithSummary(
+        scope: _scope == 'all' ? null : _scope,
+        preset: _preset == 'custom' ? null : (_preset == 'all' ? null : _preset),
+        reportMonth: _preset == 'custom' ? _customMonth : null,
+        limit: 300,
+      );
+      if (!mounted) return;
+      setState(() {
+        _cachedResponse = res;
+        _isSyncing = false;
+        _errorMessage = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSyncing = false;
+        if (_cachedResponse == null) {
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        }
+      });
+    }
   }
 
   void _setScope(String scope) {
@@ -78,8 +152,17 @@ class _JobsScreenState extends State<JobsScreen> {
     setState(() {
       _scope = scope;
       _statusFilter = 'ALL';
-      _jobsResponseFuture = _fetchJobs();
+      final cached = widget.jobsService.getCachedJobsWithSummary(
+        scope: _scope == 'all' ? null : _scope,
+        preset: _preset == 'custom' ? null : (_preset == 'all' ? null : _preset),
+        reportMonth: _preset == 'custom' ? _customMonth : null,
+        limit: 300,
+      );
+      if (cached != null) {
+        _cachedResponse = cached;
+      }
     });
+    _loadJobs(silent: _cachedResponse != null);
   }
 
   void _setPreset(String preset, {String? customMonth, String? customLabel}) {
@@ -89,8 +172,17 @@ class _JobsScreenState extends State<JobsScreen> {
         _customMonth = customMonth;
         _customMonthLabel = customLabel ?? customMonth;
       }
-      _jobsResponseFuture = _fetchJobs();
+      final cached = widget.jobsService.getCachedJobsWithSummary(
+        scope: _scope == 'all' ? null : _scope,
+        preset: _preset == 'custom' ? null : (_preset == 'all' ? null : _preset),
+        reportMonth: _preset == 'custom' ? _customMonth : null,
+        limit: 300,
+      );
+      if (cached != null) {
+        _cachedResponse = cached;
+      }
     });
+    _loadJobs(silent: _cachedResponse != null);
   }
 
   static String _monthName(int month) {
@@ -206,57 +298,130 @@ class _JobsScreenState extends State<JobsScreen> {
     }
   }
 
+  Widget _buildColdSkeleton(BuildContext context, String username, String role) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Jobs & History', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 2),
+                Text('Signed in as $username ($role)'),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...List.generate(
+          4,
+          (index) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: AppSurfaceCard(
+              child: SizedBox(
+                height: 80,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      height: 16,
+                      width: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 12,
+                      width: 200,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final currentUser = widget.authService.currentUser ?? {};
     final username = (currentUser['username'] ?? '').toString();
     final roleRaw = (currentUser['role'] ?? '').toString().toLowerCase();
     final isTechnician = roleRaw == 'technician';
     final role = (currentUser['role'] ?? '').toString().toUpperCase();
 
-    return SafeArea(
-      child: FutureBuilder<JobsResponse>(
-        future: _jobsResponseFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    if (_cachedResponse == null && _isSyncing) {
+      return SafeArea(child: _buildColdSkeleton(context, username, role));
+    }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      snapshot.error.toString().replaceFirst('Exception: ', ''),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.warningFg),
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _loadJobs,
-                      child: const Text('Retry'),
-                    ),
-                  ],
+    if (_cachedResponse == null && _errorMessage != null) {
+      return SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.warningFg),
                 ),
-              ),
-            );
-          }
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => _loadJobs(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
-          final response = snapshot.data ?? const JobsResponse(jobs: [], summary: JobsSummary());
-          final jobs = response.jobs;
-          final summary = response.summary;
-          final filteredJobs = jobs.where(_filterJob).toList(growable: false);
+    final response = _cachedResponse ?? const JobsResponse(jobs: [], summary: JobsSummary());
+    final jobs = response.jobs;
+    final summary = response.summary;
+    final filteredJobs = jobs.where(_filterJob).toList(growable: false);
 
-          final showMonthBar = _scope == 'history' || _scope == 'all';
-          final showSummaryCard = _scope == 'history' || _preset != 'all';
+    final showMonthBar = _scope == 'history' || _scope == 'all';
+    final showSummaryCard = _scope == 'history' || _preset != 'all';
 
-          return RefreshIndicator(
-            onRefresh: _loadJobs,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+    return SafeArea(
+      child: Column(
+        children: [
+          if (_isSyncing)
+            const LinearProgressIndicator(
+              minHeight: 2,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _loadJobs(silent: true),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -596,11 +761,12 @@ class _JobsScreenState extends State<JobsScreen> {
                   ),
               ],
             ),
-          );
-        },
-      ),
-    );
-  }
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   bool _filterJob(JobItem job) {
     final q = _searchController.text.trim().toLowerCase();

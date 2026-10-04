@@ -40,6 +40,39 @@ class TasksService {
   TaskMetrics _cachedMetrics = TaskMetrics();
   TaskMetrics get cachedMetrics => _cachedMetrics;
 
+  final Map<String, TaskListResponse> _tasksCache = {};
+
+  String _buildCacheKey({
+    String status = 'active',
+    String priority = '',
+    String query = '',
+    bool mineOnly = false,
+    bool poolOnly = false,
+  }) {
+    return '${status}_${priority}_${query}_${mineOnly}_$poolOnly';
+  }
+
+  TaskListResponse? getCachedTasksWithMetrics({
+    String status = 'active',
+    String priority = '',
+    String query = '',
+    bool mineOnly = false,
+    bool poolOnly = false,
+  }) {
+    final key = _buildCacheKey(
+      status: status,
+      priority: priority,
+      query: query,
+      mineOnly: mineOnly,
+      poolOnly: poolOnly,
+    );
+    return _tasksCache[key];
+  }
+
+  void invalidateTasksCache() {
+    _tasksCache.clear();
+  }
+
   Future<TaskListResponse> fetchTasksWithMetrics({
     String status = 'active',
     String priority = '',
@@ -50,7 +83,7 @@ class TasksService {
     final queryParams = <String, String>{};
     if (status.isNotEmpty) queryParams['status'] = status;
     if (priority.isNotEmpty) queryParams['priority'] = priority;
-    if (query.isNotEmpty) queryParams['q'] = query;
+    if (query.isNotEmpty) queryParams['query'] = query;
     if (mineOnly) queryParams['mine'] = '1';
     if (poolOnly) queryParams['pool'] = '1';
 
@@ -89,8 +122,17 @@ class TasksService {
           );
 
     _cachedMetrics = metrics;
+    final result = TaskListResponse(tasks: tasks, metrics: metrics);
+    final key = _buildCacheKey(
+      status: status,
+      priority: priority,
+      query: query,
+      mineOnly: mineOnly,
+      poolOnly: poolOnly,
+    );
+    _tasksCache[key] = result;
 
-    return TaskListResponse(tasks: tasks, metrics: metrics);
+    return result;
   }
 
   Future<List<TaskModel>> fetchTasks({
@@ -214,6 +256,7 @@ class TasksService {
       throw Exception('Malformed task response from server.');
     }
 
+    invalidateTasksCache();
     return TaskModel.fromJson(taskJson);
   }
 
@@ -253,6 +296,7 @@ class TasksService {
       throw Exception('Malformed update response.');
     }
 
+    invalidateTasksCache();
     return TaskModel.fromJson(taskJson);
   }
 
@@ -272,6 +316,7 @@ class TasksService {
     if (response.statusCode != 200) {
       throw Exception(body['message'] ?? 'Failed to update task status.');
     }
+    invalidateTasksCache();
   }
 
   Future<TaskMessageModel> sendTaskMessage(int taskId, String bodyText) async {

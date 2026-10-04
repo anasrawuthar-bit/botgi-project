@@ -37,17 +37,26 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
-  late Future<List<JobItem>> _jobsFuture;
+class _DashboardScreenState extends State<DashboardScreen> with AutomaticKeepAliveClientMixin<DashboardScreen> {
+  List<JobItem>? _jobs;
   TaskMetrics _taskMetrics = TaskMetrics();
   int _pendingApprovalsCount = 0;
+  bool _isSyncing = false;
+  String? _errorMessage;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _jobsFuture = widget.jobsService.fetchJobs();
-    _loadTaskMetrics();
-    _loadPendingApprovalsCount();
+    // Synchronous instant cache lookup (0ms perceived latency)
+    _jobs = widget.jobsService.getCachedJobs();
+    if (widget.tasksService != null) {
+      _taskMetrics = widget.tasksService!.cachedMetrics;
+    }
+
+    _refresh(silent: _jobs != null);
   }
 
   Future<void> _loadTaskMetrics() async {
@@ -73,53 +82,141 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
-  Future<void> _refresh() async {
-    setState(() {
-      _jobsFuture = widget.jobsService.fetchJobs();
-    });
+  Future<void> _refresh({bool silent = false}) async {
+    if (!silent && _jobs == null) {
+      setState(() {
+        _isSyncing = true;
+        _errorMessage = null;
+      });
+    } else {
+      if (mounted) {
+        setState(() {
+          _isSyncing = true;
+        });
+      }
+    }
+
+    try {
+      final jobs = await widget.jobsService.fetchJobs();
+      if (mounted) {
+        setState(() {
+          _jobs = jobs;
+          _isSyncing = false;
+          _errorMessage = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+          if (_jobs == null) {
+            _errorMessage = e.toString().replaceFirst('Exception: ', '');
+          }
+        });
+      }
+    }
+
     await Future.wait([
-      _jobsFuture,
       _loadTaskMetrics(),
       _loadPendingApprovalsCount(),
     ]);
   }
 
+  Widget _buildDashboardSkeleton(String username, String role) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Welcome, $username', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 2),
+                Text('Role: $role'),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Container(
+          height: 100,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 70,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 70,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final user = widget.authService.currentUser ?? {};
     final username = (user['username'] ?? '').toString();
     final roleRaw = (user['role'] ?? '').toString().toLowerCase();
     final isTechnician = roleRaw == 'technician';
     final role = (user['role'] ?? '').toString().toUpperCase();
 
+    if (_jobs == null && _isSyncing) {
+      return SafeArea(child: _buildDashboardSkeleton(username, role));
+    }
+
+    if (_jobs == null && _errorMessage != null) {
+      return SafeArea(
+        child: _ErrorBlock(
+          message: _errorMessage!,
+          onRetry: () => _refresh(),
+        ),
+      );
+    }
+
+    final jobs = _jobs ?? <JobItem>[];
+    final revenue = jobs.fold<double>(
+      0,
+      (sum, job) => sum + (double.tryParse(job.total) ?? 0),
+    );
+
     return SafeArea(
-      child: FutureBuilder<List<JobItem>>(
-        future: _jobsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return _ErrorBlock(
-              message: snapshot.error.toString().replaceFirst(
-                'Exception: ',
-                '',
-              ),
-              onRetry: _refresh,
-            );
-          }
-
-          final jobs = snapshot.data ?? <JobItem>[];
-          final revenue = jobs.fold<double>(
-            0,
-            (sum, job) => sum + (double.tryParse(job.total) ?? 0),
-          );
-
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+      child: Column(
+        children: [
+          if (_isSyncing)
+            const LinearProgressIndicator(
+              minHeight: 2,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _refresh(silent: true),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -350,11 +447,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
               ],
             ),
-          );
-        },
-      ),
-    );
-  }
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }
 
 

@@ -234,13 +234,11 @@ class _AppShellState extends State<AppShell> {
 
   String _jobsInitialScope = 'active';
   String _jobsInitialPreset = 'all';
-  int _jobsKeyCounter = 0;
 
   void _navigateToJobs({String? scope, String? preset}) {
     setState(() {
       _jobsInitialScope = scope ?? 'all';
       _jobsInitialPreset = preset ?? 'all';
-      _jobsKeyCounter++;
       _currentIndex = 1;
     });
   }
@@ -261,7 +259,6 @@ class _AppShellState extends State<AppShell> {
         onNavigateToJobs: _navigateToJobs,
       ),
       JobsScreen(
-        key: ValueKey('jobs-$_jobsInitialScope-$_jobsInitialPreset-$_jobsKeyCounter'),
         authService: widget.authService,
         jobsService: widget.jobsService,
         initialScope: _jobsInitialScope,

@@ -26,8 +26,7 @@ class TasksScreen extends StatefulWidget {
   State<TasksScreen> createState() => _TasksScreenState();
 }
 
-class _TasksScreenState extends State<TasksScreen> {
-  late Future<TaskListResponse> _tasksFuture;
+class _TasksScreenState extends State<TasksScreen> with AutomaticKeepAliveClientMixin<TasksScreen> {
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<Map<String, dynamic>>? _feedSubscription;
 
@@ -37,10 +36,29 @@ class _TasksScreenState extends State<TasksScreen> {
   bool _showPool = false;
   TaskMetrics _metrics = TaskMetrics();
 
+  TaskListResponse? _cachedResponse;
+  bool _isSyncing = false;
+  String? _errorMessage;
+
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   void initState() {
     super.initState();
-    _loadTasks();
+    // Synchronous instant cache lookup (0ms perceived latency)
+    _cachedResponse = widget.tasksService.getCachedTasksWithMetrics(
+      status: _statusFilter,
+      priority: _priorityFilter,
+      query: _searchController.text.trim(),
+      mineOnly: _mineOnly,
+      poolOnly: _showPool,
+    );
+    if (_cachedResponse != null) {
+      _metrics = _cachedResponse!.metrics;
+    }
+
+    _loadTasks(silent: _cachedResponse != null);
     _subscribeToFeed();
   }
 
@@ -95,7 +113,7 @@ class _TasksScreenState extends State<TasksScreen> {
               duration: Duration(seconds: hasAlarm ? 8 : 4),
             ),
           );
-          _loadTasks();
+          _loadTasks(silent: true);
         } else if (action == 'task_accepted') {
           final techName = (event['assigned_to_name'] ?? 'A technician').toString();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -104,7 +122,7 @@ class _TasksScreenState extends State<TasksScreen> {
               duration: const Duration(seconds: 3),
             ),
           );
-          _loadTasks();
+          _loadTasks(silent: true);
         } else if (action == 'status_change') {
           final newStatus = (event['status_display'] ?? event['new_status'] ?? '').toString();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -113,7 +131,7 @@ class _TasksScreenState extends State<TasksScreen> {
               duration: const Duration(seconds: 3),
             ),
           );
-          _loadTasks();
+          _loadTasks(silent: true);
         } else if (action == 'new_message') {
           final sender = (event['sender'] ?? 'Staff').toString();
           final preview = (event['preview'] ?? '').toString();
@@ -129,23 +147,58 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  void _loadTasks() {
-    setState(() {
-      _tasksFuture = widget.tasksService.fetchTasksWithMetrics(
+  Future<void> _loadTasks({bool silent = false}) async {
+    final cached = widget.tasksService.getCachedTasksWithMetrics(
+      status: _statusFilter,
+      priority: _priorityFilter,
+      query: _searchController.text.trim(),
+      mineOnly: _mineOnly,
+      poolOnly: _showPool,
+    );
+    if (cached != null) {
+      setState(() {
+        _cachedResponse = cached;
+        _metrics = cached.metrics;
+      });
+    }
+
+    if (!silent && _cachedResponse == null) {
+      setState(() {
+        _isSyncing = true;
+        _errorMessage = null;
+      });
+    } else {
+      if (mounted) {
+        setState(() {
+          _isSyncing = true;
+        });
+      }
+    }
+
+    try {
+      final res = await widget.tasksService.fetchTasksWithMetrics(
         status: _statusFilter,
         priority: _priorityFilter,
         query: _searchController.text.trim(),
         mineOnly: _mineOnly,
         poolOnly: _showPool,
-      ).then((res) {
-        if (mounted) {
-          setState(() {
-            _metrics = res.metrics;
-          });
-        }
-        return res;
+      );
+      if (!mounted) return;
+      setState(() {
+        _cachedResponse = res;
+        _metrics = res.metrics;
+        _isSyncing = false;
+        _errorMessage = null;
       });
-    });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSyncing = false;
+        if (_cachedResponse == null) {
+          _errorMessage = TasksService.formatError(e);
+        }
+      });
+    }
   }
 
   Future<void> _acceptTask(TaskModel task) async {
@@ -207,6 +260,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Directives & Tasks', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -235,9 +289,19 @@ class _TasksScreenState extends State<TasksScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: _loadTasks,
+            onPressed: () => _loadTasks(silent: false),
           ),
         ],
+        bottom: _isSyncing
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(
+                  minHeight: 2,
+                  backgroundColor: Colors.transparent,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
+              )
+            : null,
       ),
       body: SafeArea(
         child: Column(
@@ -305,14 +369,45 @@ class _TasksScreenState extends State<TasksScreen> {
 
             // Task List
             Expanded(
-              child: FutureBuilder<TaskListResponse>(
-                future: _tasksFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+              child: Builder(
+                builder: (context) {
+                  if (_cachedResponse == null && _isSyncing) {
+                    return ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 80),
+                      itemCount: 4,
+                      separatorBuilder: (context, index) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) => AppSurfaceCard(
+                        child: SizedBox(
+                          height: 70,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                height: 14,
+                                width: 140,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                height: 12,
+                                width: 220,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
                   }
 
-                  if (snapshot.hasError) {
+                  if (_cachedResponse == null && _errorMessage != null) {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
@@ -322,13 +417,13 @@ class _TasksScreenState extends State<TasksScreen> {
                             const Icon(Icons.error_outline, size: 48, color: AppColors.warningFg),
                             const SizedBox(height: 12),
                             Text(
-                              TasksService.formatError(snapshot.error!),
+                              _errorMessage!,
                               textAlign: TextAlign.center,
                               style: const TextStyle(color: AppColors.warningFg),
                             ),
                             const SizedBox(height: 12),
                             FilledButton.tonal(
-                              onPressed: _loadTasks,
+                              onPressed: () => _loadTasks(silent: false),
                               child: const Text('Retry'),
                             ),
                           ],
@@ -337,10 +432,10 @@ class _TasksScreenState extends State<TasksScreen> {
                     );
                   }
 
-                  final tasks = snapshot.data?.tasks ?? [];
+                  final tasks = _cachedResponse?.tasks ?? [];
                   if (tasks.isEmpty) {
                     return RefreshIndicator(
-                      onRefresh: () async => _loadTasks(),
+                      onRefresh: () async => _loadTasks(silent: true),
                       child: ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         children: [
@@ -353,7 +448,11 @@ class _TasksScreenState extends State<TasksScreen> {
                                 const SizedBox(height: 16),
                                 Text(
                                   _mineOnly ? 'No tasks assigned to you.' : 'No tasks match your filter.',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade600,
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -369,7 +468,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   }
 
                   return RefreshIndicator(
-                    onRefresh: () async => _loadTasks(),
+                    onRefresh: () async => _loadTasks(silent: true),
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 80),
                       itemCount: tasks.length,

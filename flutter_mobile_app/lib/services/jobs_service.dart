@@ -48,6 +48,59 @@ class JobsService {
   final AuthService _authService;
   AuthService get authService => _authService;
 
+  final Map<String, JobsResponse> _jobsCache = {};
+  final Map<String, JobDetail> _jobDetailCache = {};
+
+  String _buildJobsCacheKey({
+    String? preset,
+    String? reportMonth,
+    String? scope,
+    int limit = 300,
+  }) {
+    return '${scope ?? 'all'}_${preset ?? 'all'}_${reportMonth ?? ''}_$limit';
+  }
+
+  JobsResponse? getCachedJobsWithSummary({
+    String? preset,
+    String? reportMonth,
+    String? scope,
+    int limit = 300,
+  }) {
+    final key = _buildJobsCacheKey(
+      preset: preset,
+      reportMonth: reportMonth,
+      scope: scope,
+      limit: limit,
+    );
+    return _jobsCache[key];
+  }
+
+  List<JobItem>? getCachedJobs({
+    String? preset,
+    String? reportMonth,
+    String? scope,
+    int limit = 300,
+  }) {
+    return getCachedJobsWithSummary(
+      preset: preset,
+      reportMonth: reportMonth,
+      scope: scope,
+      limit: limit,
+    )?.jobs;
+  }
+
+  JobDetail? getCachedJobDetail(String jobCode) {
+    return _jobDetailCache[jobCode];
+  }
+
+  void setCachedJobDetail(JobDetail detail) {
+    _jobDetailCache[detail.jobCode] = detail;
+  }
+
+  void invalidateJobsCache() {
+    _jobsCache.clear();
+  }
+
   Future<List<JobItem>> fetchJobs({
     String? preset,
     String? reportMonth,
@@ -113,7 +166,15 @@ class JobsService {
         ? JobsSummary.fromJson(summaryJson)
         : JobsSummary(count: jobs.length);
 
-    return JobsResponse(jobs: jobs, summary: summary);
+    final result = JobsResponse(jobs: jobs, summary: summary);
+    final key = _buildJobsCacheKey(
+      preset: preset,
+      reportMonth: reportMonth,
+      scope: scope,
+      limit: limit,
+    );
+    _jobsCache[key] = result;
+    return result;
   }
 
   Future<JobDetail> fetchJobDetail(String jobCode) async {
@@ -138,7 +199,9 @@ class JobsService {
       throw Exception(body['message'] ?? 'Failed to load job detail.');
     }
 
-    return JobDetail.fromJson(body);
+    final detail = JobDetail.fromJson(body);
+    _jobDetailCache[jobCode] = detail;
+    return detail;
   }
 
   Future<String> performJobAction({
@@ -167,6 +230,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Unable to perform action.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Action completed.').toString();
   }
 
@@ -201,6 +266,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Failed to update rack location.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Rack updated successfully.').toString();
   }
 
@@ -225,6 +292,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Unable to update notes.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Notes saved.').toString();
   }
 
@@ -257,6 +326,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Unable to add service line.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Service line added.').toString();
   }
 
@@ -292,6 +363,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Unable to update service line.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Service line updated.').toString();
   }
 
@@ -317,6 +390,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Unable to delete service line.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Service line deleted.').toString();
   }
 
@@ -341,6 +416,8 @@ class JobsService {
       throw Exception(body['message'] ?? 'Unable to save checklist.');
     }
 
+    invalidateJobsCache();
+    _jobDetailCache.remove(jobCode);
     return (body['message'] ?? 'Checklist saved successfully.').toString();
   }
 

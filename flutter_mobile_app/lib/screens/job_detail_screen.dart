@@ -27,7 +27,10 @@ class JobDetailScreen extends StatefulWidget {
 }
 
 class _JobDetailScreenState extends State<JobDetailScreen> {
-  late Future<JobDetail> _detailFuture;
+  JobDetail? _currentDetail;
+  bool _isBackgroundSyncing = false;
+  String? _errorMessage;
+
   final TextEditingController _notesController = TextEditingController();
 
   bool _isActionBusy = false;
@@ -52,7 +55,40 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _detailFuture = widget.jobsService.fetchJobDetail(widget.jobCode);
+    // 0ms instant cached render
+    _currentDetail = widget.jobsService.getCachedJobDetail(widget.jobCode);
+    if (_currentDetail != null) {
+      _syncNotesController(_currentDetail!);
+      _syncChecklistAnswers(_currentDetail!);
+    }
+    _loadDetail();
+  }
+
+  Future<void> _loadDetail() async {
+    if (!mounted) return;
+    setState(() {
+      _isBackgroundSyncing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final detail = await widget.jobsService.fetchJobDetail(widget.jobCode);
+      if (mounted) {
+        setState(() {
+          _currentDetail = detail;
+          _isBackgroundSyncing = false;
+        });
+        _syncNotesController(detail);
+        _syncChecklistAnswers(detail);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isBackgroundSyncing = false;
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
   }
 
   @override
@@ -107,11 +143,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _checklistInitialized = false;
-      _detailFuture = widget.jobsService.fetchJobDetail(widget.jobCode);
-    });
-    await _detailFuture;
+    _checklistInitialized = false;
+    await _loadDetail();
   }
 
   Future<void> _makeCall(String phoneNumber) async {
@@ -464,115 +497,156 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final detail = _currentDetail;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(widget.jobCode),
+        bottom: _isBackgroundSyncing
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(
+                  minHeight: 2,
+                  backgroundColor: Colors.transparent,
+                  color: AppColors.primary,
+                ),
+              )
+            : null,
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _isBusy ? null : _refresh,
+            onPressed: (_isBusy || _isBackgroundSyncing) ? null : _refresh,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-      body: FutureBuilder<JobDetail>(
-        future: _detailFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: detail == null
+          ? (_errorMessage != null
+              ? _buildErrorView(_errorMessage!)
+              : _buildSkeletonLoader())
+          : _buildDetailContent(detail),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      snapshot.error.toString().replaceFirst('Exception: ', ''),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.warningFg),
-                    ),
-                    const SizedBox(height: 10),
-                    FilledButton(
-                      onPressed: _refresh,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final detail = snapshot.data;
-          if (detail == null) {
-            return const Center(child: Text('No data found.'));
-          }
-
-          _syncNotesController(detail);
-          _syncChecklistAnswers(detail);
-
-          final isJobFinished = const {'Completed', 'Ready for Pickup', 'Closed'}
-              .contains(detail.status);
-
-          return Stack(
-            children: [
-              RefreshIndicator(
-                onRefresh: _refresh,
-                child: ListView(
-                  padding: EdgeInsets.fromLTRB(
-                    14,
-                    12,
-                    14,
-                    detail.availableActions.isNotEmpty ? 100 : 32,
-                  ),
-                  children: [
-                    _buildHeroCard(detail),
-                    if (isJobFinished) ...[
-                      const SizedBox(height: 12),
-                      _buildCompletedHeroBanner(detail),
-                    ],
-                    const SizedBox(height: 12),
-                    _buildDeviceStorageCard(detail),
-                    const SizedBox(height: 12),
-                    _buildReportedIssueCard(detail),
-                    if (detail.checklistSchema.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _buildChecklistCard(detail),
-                    ],
-                    const SizedBox(height: 12),
-                    _buildTasksCard(detail),
-                    const SizedBox(height: 12),
-                    _buildServiceLinesCard(detail),
-                    if (!_isTechnician) ...[
-                      const SizedBox(height: 12),
-                      _buildFinancialSummaryCard(detail),
-                    ],
-                    const SizedBox(height: 12),
-                    _buildTechnicianNotesCard(detail),
-                    if (detail.feedbackRating > 0 ||
-                        detail.feedbackComment.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _buildFeedbackCard(detail),
-                    ],
-                    const SizedBox(height: 12),
-                    _buildTimelineCard(detail),
-                  ],
-                ),
-              ),
-              if (detail.availableActions.isNotEmpty)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _buildStickyActionBar(detail),
-                ),
-            ],
-          );
-        },
+  Widget _buildErrorView(String msg) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.warningFg),
+            ),
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: _refresh,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildSkeletonLoader() {
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        Container(
+          height: 130,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          height: 80,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          height: 100,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailContent(JobDetail detail) {
+    final isJobFinished = const {'Completed', 'Ready for Pickup', 'Closed'}
+        .contains(detail.status);
+
+    return Stack(
+      children: [
+        RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(
+              14,
+              12,
+              14,
+              detail.availableActions.isNotEmpty ? 100 : 32,
+            ),
+            children: [
+              _buildHeroCard(detail),
+              if (isJobFinished) ...[
+                const SizedBox(height: 12),
+                _buildCompletedHeroBanner(detail),
+              ],
+              const SizedBox(height: 12),
+              _buildDeviceStorageCard(detail),
+              const SizedBox(height: 12),
+              _buildReportedIssueCard(detail),
+              if (detail.checklistSchema.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildChecklistCard(detail),
+              ],
+              const SizedBox(height: 12),
+              _buildTasksCard(detail),
+              const SizedBox(height: 12),
+              _buildServiceLinesCard(detail),
+              if (!_isTechnician) ...[
+                const SizedBox(height: 12),
+                _buildFinancialSummaryCard(detail),
+              ],
+              const SizedBox(height: 12),
+              _buildTechnicianNotesCard(detail),
+              if (detail.feedbackRating > 0 ||
+                  detail.feedbackComment.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildFeedbackCard(detail),
+              ],
+              const SizedBox(height: 12),
+              _buildTimelineCard(detail),
+            ],
+          ),
+        ),
+        if (detail.availableActions.isNotEmpty)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildStickyActionBar(detail),
+          ),
+      ],
     );
   }
 
