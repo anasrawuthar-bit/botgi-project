@@ -5,6 +5,9 @@ const path = require('path');
 const QRCode = require('qrcode');
 const puppeteer = require('puppeteer');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { LoadUtils } = require('whatsapp-web.js/src/util/Injected/Utils');
+const { ExposeStore } = require('whatsapp-web.js/src/util/Injected/Store');
+const { ExposeLegacyStore } = require('whatsapp-web.js/src/util/Injected/LegacyStore');
 
 const PORT = parseInt(process.env.WA_BRIDGE_PORT || '3001', 10);
 const CLIENT_ID = process.env.WA_CLIENT_ID || 'botgi_default';
@@ -143,11 +146,82 @@ async function updateConnectedState() {
     if (state) {
       lastStatus = String(state).toLowerCase();
     }
+    if (connected && state === 'CONNECTED') {
+      latestQrDataUrl = null;
+      ensureWWebJSInjected().catch(() => {});
+    }
   } catch (_error) {
     connected = false;
   }
 
   return connected;
+}
+
+async function ensureWWebJSInjected() {
+  if (!waClient || !waClient.pupPage) {
+    return false;
+  }
+
+  try {
+    const isReady = await waClient.pupPage.evaluate(() => {
+      return (
+        typeof window.WWebJS !== 'undefined' &&
+        typeof window.WWebJS.getChat === 'function' &&
+        typeof window.WWebJS.sendMessage === 'function'
+      );
+    });
+
+    if (isReady) {
+      return true;
+    }
+
+    console.log('[bridge] window.WWebJS missing or incomplete; auto-recovering internal scripts...');
+
+    // 1. Ensure window.Store is injected
+    const hasStore = await waClient.pupPage.evaluate(() => typeof window.Store !== 'undefined');
+    if (!hasStore) {
+      let isCometOrAbove = true;
+      try {
+        const version = (await waClient.getWWebVersion()) || '';
+        isCometOrAbove = parseInt(version.split('.')?.[1] || '0', 10) >= 3000;
+      } catch (_e) {
+        isCometOrAbove = true;
+      }
+
+      if (isCometOrAbove) {
+        await waClient.pupPage.evaluate(ExposeStore);
+      } else {
+        await waClient.pupPage.evaluate(ExposeLegacyStore);
+      }
+
+      let attempts = 0;
+      while (attempts < 15) {
+        const storePresent = await waClient.pupPage.evaluate('typeof window.Store !== "undefined"');
+        if (storePresent) break;
+        await new Promise((r) => setTimeout(r, 200));
+        attempts += 1;
+      }
+    }
+
+    // 2. Inject LoadUtils (exposes window.WWebJS and all helper methods)
+    await waClient.pupPage.evaluate(LoadUtils);
+
+    const verified = await waClient.pupPage.evaluate(() => {
+      return (
+        typeof window.WWebJS !== 'undefined' &&
+        typeof window.WWebJS.getChat === 'function'
+      );
+    });
+
+    if (verified) {
+      console.log('[bridge] Successfully re-injected window.WWebJS.');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[bridge] Failed to ensure WWebJS injection:', err?.message || err);
+    return false;
+  }
 }
 
 async function createClient(generation) {
@@ -457,8 +531,23 @@ app.post('/api/messages/send', async (req, res) => {
     });
   }
 
+  await ensureWWebJSInjected();
+
   try {
-    const response = await waClient.sendMessage(chatId, message);
+    let response;
+    try {
+      response = await waClient.sendMessage(chatId, message);
+    } catch (sendErr) {
+      const errStr = String(sendErr?.message || sendErr);
+      if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('undefined')) {
+        console.warn('[bridge] send error encountered, re-injecting and retrying once:', errStr);
+        await ensureWWebJSInjected();
+        response = await waClient.sendMessage(chatId, message);
+      } else {
+        throw sendErr;
+      }
+    }
+
     const delivery = serializeSendResult(response);
     return res.json({
       ok: true,
@@ -513,11 +602,26 @@ app.post('/api/messages/send-pdf', async (req, res) => {
     });
   }
 
+  await ensureWWebJSInjected();
+
   try {
     const pdfBuffer = await renderPdfFromUrl(pdfUrl);
     const media = new MessageMedia('application/pdf', pdfBuffer.toString('base64'), filename);
     const options = caption ? { caption } : undefined;
-    const response = await waClient.sendMessage(chatId, media, options);
+    let response;
+    try {
+      response = await waClient.sendMessage(chatId, media, options);
+    } catch (sendErr) {
+      const errStr = String(sendErr?.message || sendErr);
+      if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('undefined')) {
+        console.warn('[bridge] send-pdf error encountered, re-injecting and retrying once:', errStr);
+        await ensureWWebJSInjected();
+        response = await waClient.sendMessage(chatId, media, options);
+      } else {
+        throw sendErr;
+      }
+    }
+
     const delivery = serializeSendResult(response);
     return res.json({
       ok: true,
