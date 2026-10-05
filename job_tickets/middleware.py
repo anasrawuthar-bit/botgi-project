@@ -10,9 +10,31 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 
+import threading
 from .models import UserSessionActivity
 from .signals import SESSION_ACTIVITY_KEY
 from .workspaces import get_current_workspace
+
+_thread_locals = threading.local()
+_last_known_base_url = None
+
+
+def get_current_request():
+    return getattr(_thread_locals, 'request', None)
+
+
+def get_last_known_base_url() -> str | None:
+    global _last_known_base_url
+    req = get_current_request()
+    if req:
+        try:
+            url = req.build_absolute_uri('/').rstrip('/')
+            if url:
+                _last_known_base_url = url
+                return url
+        except Exception:
+            pass
+    return _last_known_base_url
 
 
 class CurrentWorkspaceMiddleware:
@@ -20,6 +42,15 @@ class CurrentWorkspaceMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        global _last_known_base_url
+        _thread_locals.request = request
+        try:
+            base = request.build_absolute_uri('/').rstrip('/')
+            if base:
+                _last_known_base_url = base
+        except Exception:
+            pass
+
         request.current_workspace = None
         if getattr(request, 'user', None) and request.user.is_authenticated:
             request.current_workspace = get_current_workspace(request)

@@ -607,19 +607,34 @@ app.post('/api/messages/send-pdf', async (req, res) => {
   try {
     const pdfBuffer = await renderPdfFromUrl(pdfUrl);
     const media = new MessageMedia('application/pdf', pdfBuffer.toString('base64'), filename);
-    const options = caption ? { caption } : undefined;
+    const options = {
+      caption: caption || '',
+      sendMediaAsDocument: true,
+    };
     let response;
+    let mediaSent = false;
     try {
       response = await waClient.sendMessage(chatId, media, options);
+      mediaSent = true;
     } catch (sendErr) {
       const errStr = String(sendErr?.message || sendErr);
-      if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('undefined')) {
-        console.warn('[bridge] send-pdf error encountered, re-injecting and retrying once:', errStr);
+      console.warn('[bridge] send-pdf media error:', errStr);
+      if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('Execution context was destroyed')) {
+        console.warn('[bridge] send-pdf re-injecting scripts and retrying once...');
         await ensureWWebJSInjected();
-        response = await waClient.sendMessage(chatId, media, options);
-      } else {
-        throw sendErr;
+        try {
+          response = await waClient.sendMessage(chatId, media, options);
+          mediaSent = true;
+        } catch (_retryErr) {
+          // fall through to text fallback below
+        }
       }
+    }
+
+    if (!mediaSent) {
+      console.warn('[bridge] send-pdf falling back to text notification with receipt link...');
+      const textFallback = caption || `Job Ticket receipt: ${pdfUrl}`;
+      response = await waClient.sendMessage(chatId, textFallback);
     }
 
     const delivery = serializeSendResult(response);
@@ -631,11 +646,12 @@ app.post('/api/messages/send-pdf', async (req, res) => {
       response,
     });
   } catch (error) {
-    const details = error && error.message ? error.message : String(error);
-    lastError = `Send PDF failed: ${details}`;
+    const details = error && error.stack ? error.stack : (error && error.message ? error.message : String(error));
+    console.error('[bridge] send-pdf fatal error:', details);
+    lastError = `Send PDF failed: ${error && error.message ? error.message : details}`;
     return res.status(500).json({
       ok: false,
-      message: details,
+      message: error && error.message ? error.message : String(error),
     });
   }
 });

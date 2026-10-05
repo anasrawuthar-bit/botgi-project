@@ -42,10 +42,38 @@ def _b64url_decode(encoded_text: str) -> bytes:
     return base64.urlsafe_b64decode(f"{encoded_text}{padding}")
 
 
+def _is_local_or_private_url(url: str) -> bool:
+    try:
+        from urllib.parse import urlparse
+        hostname = (urlparse(url).hostname or '').lower()
+        if not hostname:
+            return True
+        if hostname in {'127.0.0.1', 'localhost', '::1', '0.0.0.0'}:
+            return True
+        if hostname.startswith('192.168.') or hostname.startswith('10.') or hostname.startswith('172.'):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _public_base_url(settings_obj: WhatsAppIntegrationSettings) -> str:
+    from .middleware import get_last_known_base_url
+    current_active = get_last_known_base_url()
+
     raw_url = (settings_obj.public_site_url or '').strip()
+
+    # If the user is currently using a specific domain (e.g. http://192.168.1.2:3000),
+    # and either:
+    # 1. No public_site_url is configured, OR
+    # 2. public_site_url is a local/private network URL that doesn't match current_active,
+    # then automatically replace it with the currently active domain.
+    if current_active:
+        if not raw_url or _is_local_or_private_url(raw_url):
+            return current_active
+
     if not raw_url:
-        raw_url = getattr(django_settings, 'PUBLIC_BASE_URL', '') or 'http://127.0.0.1:8000'
+        raw_url = current_active or getattr(django_settings, 'PUBLIC_BASE_URL', '') or 'http://127.0.0.1:3000'
     if raw_url.startswith('http://') or raw_url.startswith('https://'):
         return raw_url.rstrip('/')
     return f"http://{raw_url}".rstrip('/')
