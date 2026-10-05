@@ -664,6 +664,16 @@ class ProductForm(forms.ModelForm):
             self.fields['vendor_warranty_months'].required = False
         if 'customer_warranty_months' in self.fields:
             self.fields['customer_warranty_months'].required = False
+        if 'cess_rate' in self.fields:
+            self.fields['cess_rate'].required = False
+        if 'stock_quantity' in self.fields:
+            self.fields['stock_quantity'].required = False
+        if 'reserved_stock' in self.fields:
+            self.fields['reserved_stock'].required = False
+        if 'cost_price' in self.fields:
+            self.fields['cost_price'].required = False
+        if 'unit_price' in self.fields:
+            self.fields['unit_price'].required = False
         if not self.is_bound and not getattr(self.instance, 'pk', None):
             if 'vendor_warranty_months' in self.fields:
                 self.fields['vendor_warranty_months'].initial = 0
@@ -694,21 +704,49 @@ class ProductForm(forms.ModelForm):
     def clean_uqc(self):
         return normalize_text_code(self.cleaned_data.get('uqc'))
 
+    def clean_stock_quantity(self):
+        qty = self.cleaned_data.get('stock_quantity')
+        if qty is None:
+            if self.instance and self.instance.pk:
+                return self.instance.stock_quantity or 0
+            return 0
+        return qty
+
+    def clean_cess_rate(self):
+        cess = self.cleaned_data.get('cess_rate')
+        if cess is None:
+            if self.instance and self.instance.pk:
+                return self.instance.cess_rate or Decimal('0.00')
+            return Decimal('0.00')
+        return cess
+
     def clean_cost_price(self):
         cost_price = self.cleaned_data.get('cost_price')
-        if cost_price is not None and cost_price < 0:
+        if cost_price is None:
+            if self.instance and self.instance.pk:
+                return self.instance.cost_price or Decimal('0.00')
+            return Decimal('0.00')
+        if cost_price < 0:
             raise forms.ValidationError('Purchase price cannot be negative.')
         return cost_price
 
     def clean_unit_price(self):
         unit_price = self.cleaned_data.get('unit_price')
-        if unit_price is not None and unit_price < 0:
+        if unit_price is None:
+            if self.instance and self.instance.pk:
+                return self.instance.unit_price or Decimal('0.00')
+            return Decimal('0.00')
+        if unit_price < 0:
             raise forms.ValidationError('Sales price cannot be negative.')
         return unit_price
 
     def clean_reserved_stock(self):
         reserved_stock = self.cleaned_data.get('reserved_stock')
-        if reserved_stock is not None and reserved_stock < 0:
+        if reserved_stock is None:
+            if self.instance and self.instance.pk:
+                return self.instance.reserved_stock or 0
+            return 0
+        if reserved_stock < 0:
             raise forms.ValidationError('Reserved stock cannot be negative.')
         return reserved_stock
 

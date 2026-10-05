@@ -1128,7 +1128,39 @@ def product_dashboard(request):
                 edited_product.save()
                 messages.success(request, f"Product '{edited_product.name}' updated successfully.")
                 return redirect(redirect_target)
-            messages.error(request, "Please fix the errors in the edit form and try again.")
+            else:
+                err_msgs = [f"{field}: {errors[0]}" for field, errors in product_form.errors.items()]
+                messages.error(request, f"Please fix the errors in the edit form: {'; '.join(err_msgs)}")
+        elif 'update_product_price_submit' in request.POST:
+            product_id = request.POST.get('product_id')
+            product = scope_to_workspace(
+                Product.objects.filter(pk=product_id),
+                current_workspace,
+            ).first()
+            if not product:
+                messages.error(request, "Selected product was not found.")
+                return redirect(redirect_target)
+
+            try:
+                raw_cost = Decimal(request.POST.get('cost_price') or '0.00')
+                raw_unit = Decimal(request.POST.get('unit_price') or '0.00')
+            except Exception:
+                messages.error(request, "Please enter valid numeric prices.")
+                return redirect(redirect_target)
+
+            if raw_cost < Decimal('0.00') or raw_unit < Decimal('0.00'):
+                messages.error(request, "Prices cannot be negative.")
+                return redirect(redirect_target)
+
+            purchase_tax_mode = request.POST.get('purchase_price_tax_mode') or 'without_tax'
+            sales_tax_mode = request.POST.get('sales_price_tax_mode') or 'without_tax'
+            gst_rate = effective_tax_rate(product.gst_rate, product.tax_category)
+
+            product.cost_price = _normalize_tax_mode_price(raw_cost, purchase_tax_mode, gst_rate)
+            product.unit_price = _normalize_tax_mode_price(raw_unit, sales_tax_mode, gst_rate)
+            product.save(update_fields=['cost_price', 'unit_price', 'updated_at'])
+            messages.success(request, f"Prices updated for '{product.name}' (Purchase: ₹{product.cost_price:.2f}, Selling: ₹{product.unit_price:.2f}).")
+            return redirect(redirect_target)
         elif 'delete_product_submit' in request.POST:
             product_id = request.POST.get('product_id')
             product = scope_to_workspace(

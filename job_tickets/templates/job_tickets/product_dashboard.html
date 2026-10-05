@@ -87,6 +87,16 @@
   .action-btn-group .btn:hover {
     border-color: #cbd5e1;
   }
+
+  .quick-price-trigger {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 1px 4px;
+    transition: background-color 0.15s;
+  }
+  .quick-price-trigger:hover {
+    background-color: #f1f5f9;
+  }
 </style>
 {% endblock %}
 
@@ -192,9 +202,9 @@
                     <table class="table table-hover align-middle mb-0" id="product-catalog-table">
                         <thead>
                             <tr>
-                                <th style="width: 26%;">Product & Category</th>
+                                <th style="width: 25%;">Product & Category</th>
                                 <th style="width: 12%;">GST / HSN</th>
-                                <th style="width: 14%;">Purchase Price</th>
+                                <th style="width: 15%;">Purchase Price</th>
                                 <th style="width: 16%;">Sales Price & Margin</th>
                                 <th style="width: 14%;">Stock Status</th>
                                 <th style="width: 8%;">Reserved</th>
@@ -249,7 +259,17 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="fw-bold text-dark font-monospace" style="font-size: 0.95rem;">₹{{ product.cost_price|floatformat:2 }}</div>
+                                    <div class="d-flex align-items-center gap-1.5 quick-price-trigger btn-quick-price" 
+                                         title="Click to edit purchase and sales prices"
+                                         data-bs-toggle="modal" 
+                                         data-bs-target="#quickPriceModal" 
+                                         data-product-id="{{ product.id }}" 
+                                         data-product-name="{{ product.name }}" 
+                                         data-cost-price="{{ product.cost_price }}" 
+                                         data-unit-price="{{ product.unit_price }}">
+                                        <span class="fw-bold text-dark font-monospace" style="font-size: 0.95rem;">₹{{ product.cost_price|floatformat:2 }}</span>
+                                        <i class="fas fa-pen text-muted opacity-50 ms-1" style="font-size: 0.72rem;"></i>
+                                    </div>
                                     {% if product.latest_purchase_party %}
                                     <div class="small text-muted text-truncate mt-0.5" style="max-width: 140px; font-size: 0.74rem;" title="Last: {{ product.latest_purchase_party }} on {{ product.latest_purchase_date|date:'d M Y'|default:'-' }}{% if product.latest_purchase_invoice %} (Inv: {{ product.latest_purchase_invoice }}){% endif %}">
                                         <i class="fas fa-truck me-1 text-secondary opacity-75"></i>{{ product.latest_purchase_party }}
@@ -259,7 +279,17 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="fw-bold text-dark font-monospace" style="font-size: 0.95rem;">₹{{ product.unit_price|floatformat:2 }}</div>
+                                    <div class="d-flex align-items-center gap-1.5 quick-price-trigger btn-quick-price" 
+                                         title="Click to edit purchase and sales prices"
+                                         data-bs-toggle="modal" 
+                                         data-bs-target="#quickPriceModal" 
+                                         data-product-id="{{ product.id }}" 
+                                         data-product-name="{{ product.name }}" 
+                                         data-cost-price="{{ product.cost_price }}" 
+                                         data-unit-price="{{ product.unit_price }}">
+                                        <span class="fw-bold text-dark font-monospace" style="font-size: 0.95rem;">₹{{ product.unit_price|floatformat:2 }}</span>
+                                        <i class="fas fa-pen text-muted opacity-50 ms-1" style="font-size: 0.72rem;"></i>
+                                    </div>
                                     {% if product.margin_percent %}
                                     <div class="mt-0.5">
                                         <span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 0.72rem;" title="Gross Profit: ₹{{ product.profit_amount|floatformat:2 }} per unit">
@@ -302,7 +332,7 @@
                                 </td>
                                 <td>
                                     <div class="d-flex align-items-center gap-1">
-                                        <span class="badge bg-light text-dark border px-2 py-1 font-monospace" style="font-size: 0.82rem;" title="Reserved alert threshold">
+                                        <span class="badge bg-light text-dark border px-2 py-1 font-monospace" style="font-size: 0.82rem;" title="Reserved stock threshold">
                                             {{ product.reserved_stock|default:0 }}
                                         </span>
                                         <button type="button" class="btn btn-sm btn-light border-0 text-muted p-1 btn-quick-reserved" title="Adjust reserved stock threshold" data-bs-toggle="modal" data-bs-target="#quickReservedModal" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" data-reserved-stock="{{ product.reserved_stock|default:0 }}">
@@ -312,7 +342,7 @@
                                 </td>
                                 <td class="text-end">
                                     <div class="btn-group btn-group-sm action-btn-group" role="group">
-                                        <button type="button" class="btn btn-outline-primary px-2 py-1 btn-edit-product" title="Edit Product"
+                                        <button type="button" class="btn btn-outline-primary px-2 py-1 btn-edit-product" title="Edit Full Product Details"
                                             data-product-id="{{ product.id }}"
                                             data-name="{{ product.name }}"
                                             data-category="{{ product.category|default:'' }}"
@@ -322,10 +352,10 @@
                                             data-uqc="{{ product.uqc|default:'' }}"
                                             data-tax-category="{{ product.tax_category }}"
                                             data-gst-rate="{{ product.gst_rate }}"
-                                            data-cess-rate="{{ product.cess_rate }}"
+                                            data-cess-rate="{{ product.cess_rate|default:0 }}"
                                             data-cost-price="{{ product.cost_price }}"
                                             data-unit-price="{{ product.unit_price }}"
-                                            data-stock-quantity="{{ product.stock_quantity }}"
+                                            data-stock-quantity="{{ product.stock_quantity|default:0 }}"
                                             data-reserved-stock="{{ product.reserved_stock }}"
                                             data-bin-location="{{ product.bin_location|default:'' }}"
                                             data-has-serial-tracking="{% if product.has_serial_tracking %}1{% else %}0{% endif %}"
@@ -416,6 +446,79 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Modal: Quick Price & Profit Margin Edit -->
+            <div class="modal fade" id="quickPriceModal" tabindex="-1" aria-labelledby="quickPriceModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-md">
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header py-3 px-4 bg-light border-bottom">
+                            <div>
+                                <h6 class="modal-title fw-bold text-dark mb-0" id="quickPriceModalLabel">
+                                    <i class="fas fa-tag me-1.5 text-primary"></i>Update Pricing & Margin
+                                </h6>
+                                <span class="small text-muted" id="quick_price_product_name">Product Name</span>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="product_id" id="quick_price_product_id">
+                            <div class="modal-body p-4">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Purchase / Cost Price (₹) *</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light text-muted font-monospace">₹</span>
+                                            <input type="number" step="0.01" min="0" name="cost_price" id="quick_cost_price_input" class="form-control font-monospace fw-bold" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Purchase Tax Mode</label>
+                                        <select name="purchase_price_tax_mode" id="quick_purchase_tax_mode" class="form-select">
+                                            <option value="without_tax">Without Tax (Net)</option>
+                                            <option value="with_tax">With Tax (Gross)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Selling / Retail Price (₹) *</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light text-muted font-monospace">₹</span>
+                                            <input type="number" step="0.01" min="0" name="unit_price" id="quick_unit_price_input" class="form-control font-monospace fw-bold text-success" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-dark">Sales Tax Mode</label>
+                                        <select name="sales_price_tax_mode" id="quick_sales_tax_mode" class="form-select">
+                                            <option value="without_tax">Without Tax (Net)</option>
+                                            <option value="with_tax">With Tax (Gross)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Live Interactive Profit & Margin Indicator -->
+                                <div class="mt-4 p-3 rounded-3 bg-light border d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                    <div>
+                                        <div class="small text-muted fw-semibold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.04em;">Profit per Unit</div>
+                                        <div class="fw-bold fs-5 text-dark mt-0.5" id="quick_price_profit_display">₹0.00</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="small text-muted fw-semibold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.04em;">Gross Margin</div>
+                                        <div class="mt-0.5" id="quick_price_margin_badge">
+                                            <span class="badge bg-secondary-subtle text-secondary px-2 py-1 font-monospace" style="font-size: 0.85rem;">0.0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer bg-light py-2.5 px-4 border-top">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="update_product_price_submit" class="btn btn-primary fw-semibold shadow-sm">
+                                    <i class="fas fa-check-circle me-1"></i>Save Prices
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
 
@@ -580,6 +683,7 @@
                         <form method="post" id="edit-product-form">
                             {% csrf_token %}
                             <input type="hidden" name="product_id" id="edit_product_id">
+                            <input type="hidden" name="stock_quantity" id="edit_product_stock_quantity" value="0">
                             <div class="modal-body p-4">
                                 <div class="row g-3">
                                     <div class="col-md-6">
@@ -622,22 +726,26 @@
                                         <label class="form-label fw-semibold small text-dark">GST Rate (%)</label>
                                         <input type="number" step="0.01" min="0" name="gst_rate" id="edit_product_gst_rate" class="form-control">
                                     </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label fw-semibold small text-dark">Purchase Price (₹)</label>
-                                        <input type="number" step="0.01" name="cost_price" id="edit_product_cost_price" class="form-control">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">Cess Rate (%)</label>
+                                        <input type="number" step="0.01" min="0" name="cess_rate" id="edit_product_cess_rate" class="form-control" value="0.00">
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold small text-dark">Purchase Price (₹)</label>
+                                        <input type="number" step="0.01" min="0" name="cost_price" id="edit_product_cost_price" class="form-control font-monospace">
+                                    </div>
+                                    <div class="col-md-4">
                                         <label class="form-label fw-semibold small text-dark">Purchase Tax Mode</label>
                                         <select name="purchase_price_tax_mode" id="edit_product_purchase_tax_mode" class="form-select">
                                             <option value="without_tax">Without Tax</option>
                                             <option value="with_tax">With Tax</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label class="form-label fw-semibold small text-dark">Selling Price (₹)</label>
-                                        <input type="number" step="0.01" name="unit_price" id="edit_product_unit_price" class="form-control">
+                                        <input type="number" step="0.01" min="0" name="unit_price" id="edit_product_unit_price" class="form-control font-monospace">
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label class="form-label fw-semibold small text-dark">Sales Tax Mode</label>
                                         <select name="sales_price_tax_mode" id="edit_product_sales_tax_mode" class="form-select">
                                             <option value="without_tax">Without Tax</option>
@@ -646,7 +754,7 @@
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-semibold small text-dark">Reserved Stock Alert</label>
-                                        <input type="number" min="0" step="1" name="reserved_stock" id="edit_product_reserved_stock" class="form-control">
+                                        <input type="number" min="0" step="1" name="reserved_stock" id="edit_product_reserved_stock" class="form-control font-monospace">
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-semibold small text-dark">Rack / Shelf / Bin</label>
@@ -853,8 +961,10 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('edit_product_hsn').value = d.hsn || '';
             document.getElementById('edit_product_tax_category').value = d.taxCategory || 'taxable';
             document.getElementById('edit_product_gst_rate').value = d.gstRate || '18';
+            document.getElementById('edit_product_cess_rate').value = d.cessRate || '0.00';
             document.getElementById('edit_product_cost_price').value = d.costPrice || '0';
             document.getElementById('edit_product_unit_price').value = d.unitPrice || '0';
+            document.getElementById('edit_product_stock_quantity').value = d.stockQuantity || '0';
             document.getElementById('edit_product_reserved_stock').value = d.reservedStock || '0';
             document.getElementById('edit_product_bin_location').value = d.binLocation || '';
             document.getElementById('edit_product_description').value = d.description || '';
@@ -866,7 +976,57 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // 3. Quick Reserved Stock Modal Population
+    // 3. Quick Price Edit Modal & Calculator
+    const quickPriceModalEl = document.getElementById('quickPriceModal');
+    const costInput = document.getElementById('quick_cost_price_input');
+    const unitInput = document.getElementById('quick_unit_price_input');
+
+    function updateQuickPriceCalculator() {
+        const cost = parseFloat(costInput ? costInput.value : '0') || 0;
+        const price = parseFloat(unitInput ? unitInput.value : '0') || 0;
+        const profit = price - cost;
+        const margin = price > 0 ? ((profit / price) * 100).toFixed(1) : 0;
+
+        const profitDisplay = document.getElementById('quick_price_profit_display');
+        const marginBadge = document.getElementById('quick_price_margin_badge');
+
+        if (profitDisplay) {
+            profitDisplay.textContent = '₹' + profit.toFixed(2);
+            if (profit > 0) {
+                profitDisplay.className = 'fw-bold fs-5 text-success mt-0.5';
+            } else if (profit < 0) {
+                profitDisplay.className = 'fw-bold fs-5 text-danger mt-0.5';
+            } else {
+                profitDisplay.className = 'fw-bold fs-5 text-dark mt-0.5';
+            }
+        }
+
+        if (marginBadge) {
+            if (profit > 0) {
+                marginBadge.innerHTML = `<span class="badge bg-success text-white px-2 py-1 font-monospace" style="font-size: 0.85rem;"><i class="fas fa-arrow-trend-up me-1"></i>+${margin}%</span>`;
+            } else if (profit < 0) {
+                marginBadge.innerHTML = `<span class="badge bg-danger text-white px-2 py-1 font-monospace" style="font-size: 0.85rem;"><i class="fas fa-arrow-trend-down me-1"></i>${margin}%</span>`;
+            } else {
+                marginBadge.innerHTML = `<span class="badge bg-secondary-subtle text-secondary px-2 py-1 font-monospace" style="font-size: 0.85rem;">0.0%</span>`;
+            }
+        }
+    }
+
+    if (costInput) costInput.addEventListener('input', updateQuickPriceCalculator);
+    if (unitInput) unitInput.addEventListener('input', updateQuickPriceCalculator);
+
+    document.querySelectorAll('.btn-quick-price').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const d = this.dataset;
+            document.getElementById('quick_price_product_id').value = d.productId || '';
+            document.getElementById('quick_price_product_name').textContent = d.productName || '';
+            if (costInput) costInput.value = parseFloat(d.costPrice || '0').toFixed(2);
+            if (unitInput) unitInput.value = parseFloat(d.unitPrice || '0').toFixed(2);
+            updateQuickPriceCalculator();
+        });
+    });
+
+    // 4. Quick Reserved Stock Modal Population
     document.querySelectorAll('.btn-quick-reserved').forEach(btn => {
         btn.addEventListener('click', function () {
             const d = this.dataset;
@@ -876,7 +1036,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // 4. Delete / Archive Product Modal Population
+    // 5. Delete / Archive Product Modal Population
     const deleteModalEl = document.getElementById('deleteProductModal');
     document.querySelectorAll('.btn-delete-product').forEach(btn => {
         btn.addEventListener('click', function () {
