@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
@@ -17,17 +18,26 @@ class AppConfig {
   static const String _modeKey = 'app_server_mode';
   static const String _customUrlKey = 'app_custom_base_url';
 
-  static String _mode = devMode;
+  static String _mode = kReleaseMode ? prodMode : devMode;
   static String _customBaseUrl = '';
 
   static String get mode => _mode;
   static String get customBaseUrl => _customBaseUrl;
 
   static String get baseUrl {
+    if (_mode == customMode && _customBaseUrl.isNotEmpty) {
+      return _customBaseUrl;
+    }
+    if (_mode == prodMode) {
+      return prodBaseUrl;
+    }
+    if (_mode == devMode) {
+      return devBaseUrl;
+    }
     if (_customBaseUrl.isNotEmpty) {
       return _customBaseUrl;
     }
-    return devBaseUrl;
+    return kReleaseMode ? prodBaseUrl : devBaseUrl;
   }
 
   static String get wsBaseUrl {
@@ -40,7 +50,7 @@ class AppConfig {
 
   static Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
-    _mode = prefs.getString(_modeKey) ?? customMode;
+    _mode = prefs.getString(_modeKey) ?? (kReleaseMode ? prodMode : devMode);
     _customBaseUrl = prefs.getString(_customUrlKey) ?? '';
   }
 
