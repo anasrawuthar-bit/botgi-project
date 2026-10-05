@@ -245,27 +245,33 @@ def inventory_party_dashboard(request):
     parties_with_payables = sum(1 for p in parties if getattr(p, 'credit_payable_amount', Decimal('0.00')) > Decimal('0.00'))
     parties_with_receivables = sum(1 for p in parties if getattr(p, 'credit_receivable_amount', Decimal('0.00')) > Decimal('0.00'))
 
-    actual_supplier_count = 0
-    actual_customer_count = 0
+    supplier_count = 0
+    customer_count = 0
     for party in parties:
         p_count = getattr(party, 'purchase_count', 0)
         s_count = getattr(party, 'sale_count', 0)
-        if p_count > 0 and s_count > 0:
+        base_type = getattr(party, 'party_type', 'both') or 'both'
+
+        is_supplier = (base_type in ('supplier', 'both')) or (p_count > 0)
+        is_customer = (base_type in ('customer', 'both')) or (s_count > 0)
+
+        party.is_supplier = is_supplier
+        party.is_customer = is_customer
+
+        if is_supplier and is_customer:
             party.computed_type = 'both'
             party.computed_type_label = 'Supplier & Customer'
-            actual_supplier_count += 1
-            actual_customer_count += 1
-        elif p_count > 0:
+        elif is_supplier:
             party.computed_type = 'supplier'
             party.computed_type_label = 'Supplier'
-            actual_supplier_count += 1
-        elif s_count > 0:
+        else:
             party.computed_type = 'customer'
             party.computed_type_label = 'Customer'
-            actual_customer_count += 1
-        else:
-            party.computed_type = 'general'
-            party.computed_type_label = 'General'
+
+        if is_supplier:
+            supplier_count += 1
+        if is_customer:
+            customer_count += 1
 
         digits = "".join(ch for ch in (party.phone or '') if ch.isdigit())
         if len(digits) == 10:
@@ -285,8 +291,8 @@ def inventory_party_dashboard(request):
         'legacy_both_count': legacy_both_count,
         'query': query,
         'total_parties': directory_context['total_parties'],
-        'supplier_count': actual_supplier_count or directory_context['supplier_count'],
-        'customer_count': actual_customer_count or directory_context['customer_count'],
+        'supplier_count': supplier_count,
+        'customer_count': customer_count,
         'total_payable': total_payable,
         'total_receivable': total_receivable,
         'parties_with_payables': parties_with_payables,

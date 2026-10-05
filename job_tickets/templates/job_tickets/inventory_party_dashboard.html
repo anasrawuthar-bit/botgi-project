@@ -246,7 +246,7 @@
                             <span class="small text-muted" style="font-size: 0.74rem;">{{ parties_with_payables }} parties with balance</span>
                         </div>
                         <div class="rounded-circle p-2.5 bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-arrow-up-right-dots fa-lg"></i>
+                            <i class="fas fa-arrow-up-wide-short fa-lg"></i>
                         </div>
                     </div>
                 </div>
@@ -258,7 +258,7 @@
                             <span class="small text-muted" style="font-size: 0.74rem;">{{ parties_with_receivables }} parties with balance</span>
                         </div>
                         <div class="rounded-circle p-2.5 bg-success-subtle text-success d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-arrow-down-left-dots fa-lg"></i>
+                            <i class="fas fa-arrow-down-wide-short fa-lg"></i>
                         </div>
                     </div>
                 </div>
@@ -354,6 +354,8 @@
                                 <tr class="party-item-row"
                                     data-party-id="{{ party.id }}"
                                     data-type="{{ party.computed_type }}"
+                                    data-is-supplier="{% if party.is_supplier %}true{% else %}false{% endif %}"
+                                    data-is-customer="{% if party.is_customer %}true{% else %}false{% endif %}"
                                     data-has-payable="{% if party.credit_payable_amount > 0 %}true{% else %}false{% endif %}"
                                     data-has-receivable="{% if party.credit_receivable_amount > 0 %}true{% else %}false{% endif %}"
                                     data-search="{{ party.name|lower }} {{ party.legal_name|lower }} {{ party.phone|default:'' }} {{ party.gstin|lower }} {{ party.city|lower }} {{ party.contact_person|lower }}">
@@ -580,14 +582,13 @@
                                         </div>
                                     </td>
                                 </tr>
-                                {% empty %}
-                                <tr id="party-empty-row">
+                                {% endfor %}
+                                <tr id="party-empty-row" class="{% if parties %}d-none{% endif %}">
                                     <td colspan="6" class="text-center text-muted py-5">
-                                        <i class="fas fa-users-slash fa-2x mb-2 text-secondary"></i>
-                                        <p class="mb-0">No parties found.</p>
+                                        <i class="fas fa-users-slash fa-2x mb-2 text-secondary d-block"></i>
+                                        <p class="mb-0 fw-semibold" id="party-empty-text">No parties found.</p>
                                     </td>
                                 </tr>
-                                {% endfor %}
                             </tbody>
                         </table>
                     </div>
@@ -600,6 +601,8 @@
                         <div class="col-md-6 col-xl-4 party-card-item"
                             data-party-id="{{ party.id }}"
                             data-type="{{ party.computed_type }}"
+                            data-is-supplier="{% if party.is_supplier %}true{% else %}false{% endif %}"
+                            data-is-customer="{% if party.is_customer %}true{% else %}false{% endif %}"
                             data-has-payable="{% if party.credit_payable_amount > 0 %}true{% else %}false{% endif %}"
                             data-has-receivable="{% if party.credit_receivable_amount > 0 %}true{% else %}false{% endif %}"
                             data-search="{{ party.name|lower }} {{ party.legal_name|lower }} {{ party.phone|default:'' }} {{ party.gstin|lower }} {{ party.city|lower }} {{ party.contact_person|lower }}">
@@ -750,12 +753,11 @@
                                 </div>
                             </div>
                         </div>
-                        {% empty %}
-                        <div class="col-12 text-center text-muted py-5">
-                            <i class="fas fa-users-slash fa-2x mb-2 text-secondary"></i>
-                            <p class="mb-0">No parties found.</p>
-                        </div>
                         {% endfor %}
+                        <div id="party-cards-empty" class="col-12 text-center text-muted py-5 {% if parties %}d-none{% endif %}">
+                            <i class="fas fa-users-slash fa-2x mb-2 text-secondary d-block"></i>
+                            <p class="mb-0 fw-semibold" id="party-cards-empty-text">No parties found.</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1076,7 +1078,8 @@
 
             // Filter table rows
             tableRows.forEach(function (row) {
-                const partyType = row.getAttribute('data-type') || '';
+                const isSupplier = row.getAttribute('data-is-supplier') === 'true';
+                const isCustomer = row.getAttribute('data-is-customer') === 'true';
                 const hasPayable = row.getAttribute('data-has-payable') === 'true';
                 const hasReceivable = row.getAttribute('data-has-receivable') === 'true';
                 const searchText = row.getAttribute('data-search') || '';
@@ -1085,9 +1088,9 @@
 
                 let matchesFilter = true;
                 if (currentFilter === 'supplier') {
-                    matchesFilter = (partyType === 'supplier' || partyType === 'both');
+                    matchesFilter = isSupplier;
                 } else if (currentFilter === 'customer') {
-                    matchesFilter = (partyType === 'customer' || partyType === 'both');
+                    matchesFilter = isCustomer;
                 } else if (currentFilter === 'to_pay') {
                     matchesFilter = hasPayable;
                 } else if (currentFilter === 'to_collect') {
@@ -1116,16 +1119,17 @@
 
             // Filter cards
             cardItems.forEach(function (card) {
-                const partyType = card.getAttribute('data-type') || '';
+                const isSupplier = card.getAttribute('data-is-supplier') === 'true';
+                const isCustomer = card.getAttribute('data-is-customer') === 'true';
                 const hasPayable = card.getAttribute('data-has-payable') === 'true';
                 const hasReceivable = card.getAttribute('data-has-receivable') === 'true';
                 const searchText = card.getAttribute('data-search') || '';
 
                 let matchesFilter = true;
                 if (currentFilter === 'supplier') {
-                    matchesFilter = (partyType === 'supplier' || partyType === 'both');
+                    matchesFilter = isSupplier;
                 } else if (currentFilter === 'customer') {
-                    matchesFilter = (partyType === 'customer' || partyType === 'both');
+                    matchesFilter = isCustomer;
                 } else if (currentFilter === 'to_pay') {
                     matchesFilter = hasPayable;
                 } else if (currentFilter === 'to_collect') {
@@ -1140,13 +1144,39 @@
                 }
             });
 
-            // Handle empty state in table
+            // Handle empty state in table & cards
             const emptyRow = page.querySelector('#party-empty-row');
+            const emptyCards = page.querySelector('#party-cards-empty');
+            let emptyMsg = 'No parties found.';
+            if (currentFilter === 'supplier') {
+                emptyMsg = 'No supplier parties found.';
+            } else if (currentFilter === 'customer') {
+                emptyMsg = 'No customer parties found.';
+            } else if (currentFilter === 'to_pay') {
+                emptyMsg = 'No parties with outstanding payables (₹0 to pay).';
+            } else if (currentFilter === 'to_collect') {
+                emptyMsg = 'No parties with outstanding receivables (₹0 to collect).';
+            }
+            if (query) {
+                emptyMsg = 'No parties matching "' + query + '".';
+            }
+
             if (emptyRow) {
-                if (visibleCount === 0 && tableRows.length > 0) {
+                const emptyText = page.querySelector('#party-empty-text');
+                if (emptyText) emptyText.textContent = emptyMsg;
+                if (visibleCount === 0) {
                     emptyRow.classList.remove('d-none');
-                } else if (tableRows.length > 0) {
+                } else {
                     emptyRow.classList.add('d-none');
+                }
+            }
+            if (emptyCards) {
+                const emptyCardsText = page.querySelector('#party-cards-empty-text');
+                if (emptyCardsText) emptyCardsText.textContent = emptyMsg;
+                if (visibleCount === 0) {
+                    emptyCards.classList.remove('d-none');
+                } else {
+                    emptyCards.classList.add('d-none');
                 }
             }
         }
@@ -1171,7 +1201,12 @@
         });
 
         if (searchInput) {
-            searchInput.addEventListener('input', applyPartyFilters);
+            searchInput.addEventListener('input', function () {
+                if (clearSearchBtn) {
+                    clearSearchBtn.classList.toggle('d-none', !searchInput.value);
+                }
+                applyPartyFilters();
+            });
         }
 
         if (clearSearchBtn) {
