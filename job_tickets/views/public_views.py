@@ -121,8 +121,14 @@ def client_status(request, job_code):
     else:
         feedback_form = FeedbackForm()
     
+    company_phone_raw = (company.phone1 or company.phone2 or '') if company else ''
+    company_phone_clean = ''.join(ch for ch in company_phone_raw if ch.isdigit())
+    if company_phone_clean and len(company_phone_clean) == 10:
+        company_phone_clean = f"91{company_phone_clean}"
+
     context = {
         'job_ticket': job_ticket,
+        'access_token': access_token,
         'service_logs': job_ticket.service_logs.all(),
         'total_parts_cost': job_ticket.part_total,
         'total_service_charges': job_ticket.service_total,
@@ -130,6 +136,7 @@ def client_status(request, job_code):
         'amount_paid': amount_paid,
         'balance_due': balance_due,
         'company': company,
+        'company_phone_clean': company_phone_clean,
         'bill_available': bill_available,
         'can_give_feedback': can_give_feedback,
         'feedback_form': feedback_form,
