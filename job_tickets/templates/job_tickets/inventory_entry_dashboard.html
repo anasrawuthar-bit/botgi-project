@@ -474,9 +474,9 @@
                                     {% endif %}
                                     <div class="col-md-4">
                                         <div class="d-flex justify-content-between align-items-center gap-2">
-                                            <div class="d-flex align-items-center">
+                                            <div class="d-flex align-items-center flex-wrap gap-1">
                                                 <label class="form-label mb-0">{{ entry_form.party.label }}</label>
-                                                <span id="selected-party-balance-badge" class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-2 d-none" style="font-size: 0.7rem;"></span>
+                                                <span id="selected-party-balance-badge" class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 d-none" style="font-size: 0.72rem;"></span>
                                             </div>
                                             <div class="d-flex align-items-center gap-2">
                                                 {% if entry_type == 'sale' and walkin_customer_id %}
@@ -591,9 +591,9 @@
                                                 <th>Product / Barcode</th>
                                                 <th style="width: 85px;">Qty</th>
                                                 <th style="width: 115px;">Rate (₹)</th>
-                                                <th style="width: 110px;" class="text-end">Excl Tax</th>
+                                                <th style="width: 110px;" class="text-end">Excl Tax <span class="badge bg-secondary-subtle text-secondary py-0 px-1" style="font-size: 0.65rem;">Auto</span></th>
                                                 <th style="width: 85px;">GST %</th>
-                                                <th style="width: 105px;" class="text-end">Tax (₹)</th>
+                                                <th style="width: 105px;" class="text-end">Tax (₹) <span class="badge bg-secondary-subtle text-secondary py-0 px-1" style="font-size: 0.65rem;">Auto</span></th>
                                                 <th style="width: 120px;" class="text-end">Total (₹)</th>
                                                 {% if not source_bill_mode %}
                                                     <th style="width: 45px;" class="text-center">Action</th>
@@ -635,11 +635,11 @@
                                                     <td>
                                                         <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm" value="{{ line.unit_price|floatformat:2 }}">
                                                     </td>
-                                                    <td class="text-end fw-semibold line-taxable-amount">0.00</td>
+                                                    <td class="text-end"><span class="line-calc-pill line-taxable-amount">0.00</span></td>
                                                     <td>
                                                         <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm" value="{{ line.gst_rate|floatformat:2 }}">
                                                     </td>
-                                                    <td class="text-end fw-semibold line-gst-amount">0.00</td>
+                                                    <td class="text-end"><span class="line-calc-pill line-gst-amount">0.00</span></td>
                                                     <td>
                                                         <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input" value="0.00">
                                                     </td>
@@ -700,11 +700,11 @@
                                                 <td>
                                                     <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm font-monospace" value="0.00">
                                                 </td>
-                                                <td class="text-end fw-semibold font-monospace line-taxable-amount">0.00</td>
+                                                <td class="text-end"><span class="line-calc-pill line-taxable-amount">0.00</span></td>
                                                 <td>
                                                     <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm font-monospace" value="{{ default_gst_rate|floatformat:2 }}">
                                                 </td>
-                                                <td class="text-end fw-semibold font-monospace line-gst-amount">0.00</td>
+                                                <td class="text-end"><span class="line-calc-pill line-gst-amount">0.00</span></td>
                                                 <td>
                                                     <input type="number" min="0" step="0.01" class="form-control form-control-sm font-monospace line-total-amount-input" value="0.00">
                                                 </td>
@@ -845,11 +845,11 @@
                                         <td>
                                             <input type="number" min="0" step="0.01" name="line_unit_price[]" class="form-control form-control-sm font-monospace" value="0.00">
                                         </td>
-                                        <td class="text-end fw-semibold line-taxable-amount font-monospace">0.00</td>
+                                        <td class="text-end"><span class="line-calc-pill line-taxable-amount">0.00</span></td>
                                         <td>
                                             <input type="number" min="0" step="0.01" name="line_gst_rate[]" class="form-control form-control-sm text-center" value="{{ default_gst_rate|floatformat:2 }}">
                                         </td>
-                                        <td class="text-end fw-semibold line-gst-amount font-monospace">0.00</td>
+                                        <td class="text-end"><span class="line-calc-pill line-gst-amount">0.00</span></td>
                                         <td>
                                             <input type="number" min="0" step="0.01" class="form-control form-control-sm line-total-amount-input font-monospace text-end" value="0.00">
                                         </td>
@@ -949,6 +949,24 @@
                                                     <input type="text" name="bill_payment_reference" class="form-control form-control-sm" value="{{ bill_payment_reference_value }}" placeholder="Optional">
                                                 </div>
                                             </div>
+                                            <div id="bill-credit-terms-section" class="row g-2 pt-2 border-top mt-2 {% if bill_payment_status_value == 'paid' %}d-none{% endif %}">
+                                                <div class="col-md-5">
+                                                    <label class="form-label small fw-semibold mb-1">
+                                                        <i class="fas fa-calendar-check text-warning me-1"></i>Credit Due Date
+                                                    </label>
+                                                    <input type="date" id="bill-credit-due-date" name="bill_credit_due_date" class="form-control form-control-sm" value="{{ bill_credit_due_date_value }}">
+                                                </div>
+                                                <div class="col-md-7">
+                                                    <label class="form-label small text-muted mb-1">Credit Terms Preset</label>
+                                                    <div class="btn-group btn-group-sm w-100" role="group" aria-label="Credit terms presets">
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm credit-term-btn" data-days="7">+7 Days</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm credit-term-btn" data-days="15">Net 15</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm credit-term-btn" data-days="30">Net 30</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm credit-term-btn" data-days="45">Net 45</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm credit-term-btn" data-days="60">Net 60</button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                         {% endif %}
                                         <div>
@@ -960,7 +978,12 @@
                                         <div class="card border-0 bg-light p-3 h-100 d-flex flex-column justify-content-between">
                                             <div>
                                                 <div class="mb-2">
-                                                    <label class="form-label small fw-semibold mb-1">Bill Discount (₹)</label>
+                                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                                        <label class="form-label small fw-semibold mb-0">Bill Discount (₹)</label>
+                                                        <button type="button" id="btn-auto-roundoff" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size: 0.72rem;" title="Auto-round bill grand total to nearest whole Rupee">
+                                                            <i class="fas fa-wand-magic-sparkles text-primary me-1"></i>Auto Round-Off
+                                                        </button>
+                                                    </div>
                                                     <input type="number" min="0" step="0.01" name="bill_discount_amount" id="bill-discount-amount" class="form-control form-control-sm" value="{{ bill_discount_value }}">
                                                 </div>
                                                 <div class="d-flex justify-content-between small text-muted mb-1">
@@ -971,9 +994,13 @@
                                                     <span>Discount</span>
                                                     <strong class="text-danger" id="bill-discount-view">0.00</strong>
                                                 </div>
-                                                <div class="d-flex justify-content-between small text-muted mb-2">
+                                                <div class="d-flex justify-content-between small text-muted mb-1">
                                                     <span>Total Tax (GST)</span>
                                                     <strong class="text-body" id="bill-tax-total">0.00</strong>
+                                                </div>
+                                                <div id="bill-roundoff-row" class="d-flex justify-content-between small text-muted mb-2 d-none">
+                                                    <span><i class="fas fa-coins me-1 text-muted"></i>Paise Round-Off</span>
+                                                    <span class="badge bg-light text-muted border font-monospace" id="bill-roundoff-delta">.00</span>
                                                 </div>
                                             </div>
                                             <div class="pt-2 border-top">
@@ -1127,9 +1154,9 @@
                                                 <th>Product</th>
                                                 <th style="width: 85px;">Qty</th>
                                                 <th style="width: 110px;">Rate</th>
-                                                <th style="width: 120px;" class="text-end">Excl Tax</th>
+                                                <th style="width: 120px;" class="text-end">Excl Tax <span class="badge bg-secondary-subtle text-secondary py-0 px-1" style="font-size: 0.65rem;">Auto</span></th>
                                                 <th style="width: 85px;">GST %</th>
-                                                <th style="width: 110px;" class="text-end">Tax</th>
+                                                <th style="width: 110px;" class="text-end">Tax <span class="badge bg-secondary-subtle text-secondary py-0 px-1" style="font-size: 0.65rem;">Auto</span></th>
                                                 <th style="width: 130px;" class="text-end">Total</th>
                                                 <th style="width: 50px;" class="text-center">Action</th>
                                             </tr>
@@ -1167,11 +1194,11 @@
                                         <td>
                                             <input type="number" min="0" step="0.01" name="edit_line_unit_price[]" class="form-control form-control-sm edit-sale-line-rate" value="0.00">
                                         </td>
-                                        <td class="text-end fw-semibold edit-sale-line-taxable">0.00</td>
+                                        <td class="text-end"><span class="line-calc-pill edit-sale-line-taxable">0.00</span></td>
                                         <td>
                                             <input type="number" min="0" step="0.01" name="edit_line_gst_rate[]" class="form-control form-control-sm edit-sale-line-gst" value="{{ default_gst_rate|floatformat:2 }}">
                                         </td>
-                                        <td class="text-end fw-semibold edit-sale-line-tax">0.00</td>
+                                        <td class="text-end"><span class="line-calc-pill edit-sale-line-tax">0.00</span></td>
                                         <td>
                                             <input type="number" min="0" step="0.01" class="form-control form-control-sm edit-sale-line-total" value="0.00">
                                         </td>
@@ -1535,6 +1562,11 @@ function initInventoryEntryDashboard() {
     const billFinancialAccountInput = addEntryModal ? addEntryModal.querySelector('select[name="financial_account"]') : null;
     const billPaymentDateInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_payment_date"]') : null;
     const billPaymentReferenceInput = addEntryModal ? addEntryModal.querySelector('input[name="bill_payment_reference"]') : null;
+    const billCreditDueDateInput = document.getElementById('bill-credit-due-date');
+    const billCreditTermsSection = document.getElementById('bill-credit-terms-section');
+    const btnAutoRoundoff = document.getElementById('btn-auto-roundoff');
+    const billRoundoffRow = document.getElementById('bill-roundoff-row');
+    const billRoundoffDelta = document.getElementById('bill-roundoff-delta');
     const addPartyPickerInput = document.getElementById('add-party-picker');
     const addPartyPickerList = document.getElementById('add-party-options');
     const addPartySelect = addEntryModal ? addEntryModal.querySelector('select[name="party"]') : null;
@@ -1629,6 +1661,9 @@ function initInventoryEntryDashboard() {
         billPaidFields.classList.toggle('d-none', !showFields);
         if (billPartPaidAmountCol) {
             billPartPaidAmountCol.classList.toggle('d-none', status !== 'part_paid');
+        }
+        if (billCreditTermsSection) {
+            billCreditTermsSection.classList.toggle('d-none', status === 'paid');
         }
         if (billAmountPaidInput) {
             billAmountPaidInput.required = (status === 'part_paid');
@@ -2081,6 +2116,19 @@ function initInventoryEntryDashboard() {
             totalInput.value = lineTotal.toFixed(2);
         }
 
+        if (entryType === 'purchase' && rateInput) {
+            const select = row.querySelector('.inventory-line-product');
+            const pId = select ? String(select.value || '') : '';
+            const pData = (pId && productsCatalog[pId]) ? productsCatalog[pId] : null;
+            if (pData && Number(pData.unit_price) > 0 && unitPrice > Number(pData.unit_price)) {
+                rateInput.classList.add('border-warning', 'text-danger');
+                rateInput.title = `Warning: Purchase rate ₹${unitPrice.toFixed(2)} exceeds sales price ₹${Number(pData.unit_price).toFixed(2)}`;
+            } else {
+                rateInput.classList.remove('border-warning', 'text-danger');
+                rateInput.title = '';
+            }
+        }
+
         return {
             rawAmount: taxableAmount,
             gstRate,
@@ -2150,6 +2198,17 @@ function initInventoryEntryDashboard() {
         renderMoney(billTaxTotalEl, totalTax);
         renderMoney(billGrandTotalEl, grandTotal);
         updatePartPaidBalanceHint(grandTotal);
+
+        if (billRoundoffRow && billRoundoffDelta) {
+            const paise = round2(grandTotal - Math.floor(grandTotal));
+            if (paise > 0.001) {
+                billRoundoffRow.classList.remove('d-none');
+                billRoundoffDelta.textContent = `.${Math.round(paise * 100).toString().padStart(2, '0')}`;
+            } else {
+                billRoundoffRow.classList.add('d-none');
+            }
+        }
+
         updateSubmitState();
     }
 
@@ -2343,7 +2402,8 @@ function initInventoryEntryDashboard() {
 
         const costPrice = Number(prod.cost_price || 0);
         const unitPrice = Number(prod.unit_price || 0);
-        if (erpInsightCost) erpInsightCost.textContent = '₹ ' + costPrice.toFixed(2);
+        const enteredRate = parseNumber(row.querySelector('input[name="line_unit_price[]"]')?.value) || (entryType === 'purchase' ? costPrice : unitPrice);
+        if (erpInsightCost) erpInsightCost.textContent = '₹ ' + (entryType === 'purchase' ? enteredRate : costPrice).toFixed(2);
         if (erpInsightRate) erpInsightRate.textContent = '₹ ' + unitPrice.toFixed(2);
 
         if (erpInsightMarginWrap && erpInsightMargin) {
@@ -2351,6 +2411,16 @@ function initInventoryEntryDashboard() {
                 const margin = ((unitPrice - costPrice) / costPrice) * 100;
                 erpInsightMargin.textContent = margin.toFixed(1) + '%';
                 erpInsightMargin.className = 'font-monospace ' + (margin < 0 ? 'text-danger fw-bold' : margin < 10 ? 'text-warning fw-bold' : 'text-success fw-bold');
+                erpInsightMarginWrap.classList.remove('d-none');
+            } else if (entryType === 'purchase' && unitPrice > 0 && enteredRate > 0) {
+                const margin = ((unitPrice - enteredRate) / enteredRate) * 100;
+                if (margin < 0) {
+                    erpInsightMargin.textContent = margin.toFixed(1) + '% (Loss Warning!)';
+                    erpInsightMargin.className = 'font-monospace text-danger fw-bold';
+                } else {
+                    erpInsightMargin.textContent = '+' + margin.toFixed(1) + '%';
+                    erpInsightMargin.className = 'font-monospace text-success fw-bold';
+                }
                 erpInsightMarginWrap.classList.remove('d-none');
             } else {
                 erpInsightMarginWrap.classList.add('d-none');
@@ -2361,10 +2431,20 @@ function initInventoryEntryDashboard() {
             if (entryType === 'sale' && stock <= 5) {
                 const alertText = erpInsightAlert.querySelector('span');
                 if (alertText) {
+                    alertText.className = 'badge bg-danger text-white border border-danger font-monospace';
                     alertText.innerHTML = stock <= 0
                         ? '<i class="fas fa-circle-exclamation me-1"></i>Out of Stock'
                         : `<i class="fas fa-triangle-exclamation me-1"></i>Low Stock (${stock} remaining)`;
                 }
+                erpInsightAlert.classList.remove('d-none');
+            } else if (entryType === 'purchase' && unitPrice > 0 && enteredRate > unitPrice) {
+                let alertSpan = erpInsightAlert.querySelector('span');
+                if (!alertSpan) {
+                    alertSpan = document.createElement('span');
+                    erpInsightAlert.appendChild(alertSpan);
+                }
+                alertSpan.className = 'badge bg-danger text-white border border-danger font-monospace';
+                alertSpan.innerHTML = `<i class="fas fa-triangle-exclamation me-1"></i>Cost ₹${enteredRate.toFixed(2)} exceeds retail price ₹${unitPrice.toFixed(2)}!`;
                 erpInsightAlert.classList.remove('d-none');
             } else {
                 erpInsightAlert.classList.add('d-none');
@@ -2828,6 +2908,7 @@ function initInventoryEntryDashboard() {
             financial_account: billFinancialAccountInput ? billFinancialAccountInput.value : '',
             bill_payment_date: billPaymentDateInput ? billPaymentDateInput.value : '',
             bill_payment_reference: billPaymentReferenceInput ? billPaymentReferenceInput.value.trim() : '',
+            bill_credit_due_date: billCreditDueDateInput ? billCreditDueDateInput.value : '',
             lines: getAddEntryRows().map((row) => ({
                 product_id: (row.querySelector('.inventory-line-product')?.value || '').trim(),
                 quantity: row.querySelector('input[name="line_quantity[]"]')?.value || '1',
@@ -2846,6 +2927,7 @@ function initInventoryEntryDashboard() {
             || draft.bill_payment_status === 'part_paid'
             || parseNumber(draft.bill_amount_paid) > 0
             || draft.bill_payment_reference
+            || draft.bill_credit_due_date
             || draft.lines.some((line) => draftLineHasMeaningfulContent(line))
         );
         return hasMeaningfulContent ? draft : null;
@@ -2928,6 +3010,8 @@ function initInventoryEntryDashboard() {
         if (addInvoiceDateInput && addEntryDateInput) addInvoiceDateInput.value = addEntryDateInput.value;
         syncPurchaseEntryDateFromInvoiceDate();
         if (billPaymentReferenceInput) billPaymentReferenceInput.value = '';
+        if (billCreditDueDateInput) billCreditDueDateInput.value = '';
+        updatePartyBalanceBadge();
         recalculateBill();
     }
 
@@ -2971,12 +3055,16 @@ function initInventoryEntryDashboard() {
         if (billPaymentReferenceInput) {
             billPaymentReferenceInput.value = draft.bill_payment_reference || '';
         }
+        if (billCreditDueDateInput) {
+            billCreditDueDateInput.value = draft.bill_credit_due_date || '';
+        }
         if (addPartySelect) {
             addPartySelect.value = draft.party_id || '';
         }
         if (typeof addPartyPickerController !== 'undefined') {
             addPartyPickerController.setSelectedValue(draft.party_id || '');
         }
+        updatePartyBalanceBadge();
 
         const lines = draft.lines && draft.lines.length ? draft.lines : [{}];
         const rows = ensureEditableLineRows(lines.length);
@@ -3121,19 +3209,102 @@ function initInventoryEntryDashboard() {
     function updatePartyBalanceBadge() {
         if (!partyBalanceBadge || !addPartySelect) return;
         const selectedPartyId = String(addPartySelect.value || '');
-        const balance = (selectedPartyId && partyBalances[selectedPartyId] !== undefined) ? Number(partyBalances[selectedPartyId]) : 0;
-        if (balance > 0) {
-            partyBalanceBadge.textContent = (entryType === 'purchase' ? 'Payable: ₹ ' : 'Due: ₹ ') + balance.toFixed(2);
-            partyBalanceBadge.classList.remove('d-none');
-        } else {
+        if (!selectedPartyId) {
             partyBalanceBadge.classList.add('d-none');
             partyBalanceBadge.textContent = '';
+            return;
+        }
+        const balance = (partyBalances[selectedPartyId] !== undefined) ? Number(partyBalances[selectedPartyId]) : 0;
+        if (balance > 0) {
+            const formatted = '₹ ' + balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const label = entryType === 'purchase' ? 'Payable: ' : 'Due: ';
+            partyBalanceBadge.innerHTML = `<i class="fas fa-wallet me-1"></i>${label}${formatted}`;
+            partyBalanceBadge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 px-2 py-1 align-middle';
+            partyBalanceBadge.title = `Current outstanding balance with this party`;
+            partyBalanceBadge.classList.remove('d-none');
+        } else {
+            partyBalanceBadge.innerHTML = `<i class="fas fa-circle-check text-success me-1"></i>No Due`;
+            partyBalanceBadge.className = 'badge bg-success-subtle text-success border border-success-subtle ms-1 px-2 py-1 align-middle';
+            partyBalanceBadge.title = `No pending dues with this party`;
+            partyBalanceBadge.classList.remove('d-none');
         }
     }
 
     if (addPartySelect) {
         addPartySelect.addEventListener('change', updatePartyBalanceBadge);
     }
+    if (addPartyPickerInput) {
+        addPartyPickerInput.addEventListener('input', function () {
+            window.setTimeout(updatePartyBalanceBadge, 60);
+        });
+        addPartyPickerInput.addEventListener('change', updatePartyBalanceBadge);
+        addPartyPickerInput.addEventListener('blur', updatePartyBalanceBadge);
+    }
+    if (addEntryModal) {
+        addEntryModal.addEventListener('shown.bs.modal', function () {
+            updatePartyBalanceBadge();
+        });
+    }
+
+    if (btnAutoRoundoff) {
+        btnAutoRoundoff.addEventListener('click', function () {
+            const grandTotal = parseNumber(billGrandTotalEl?.textContent);
+            if (grandTotal <= 0) {
+                showToastMessage('Add line items before rounding off.', 'warning');
+                return;
+            }
+            const currentDiscount = Math.max(0, parseNumber(billDiscountInput?.value));
+            const subtotal = parseNumber(billSubtotalEl?.textContent);
+            const totalTax = parseNumber(billTaxTotalEl?.textContent);
+
+            const targetGrandTotal = Math.round(grandTotal);
+            const delta = round2(grandTotal - targetGrandTotal);
+
+            if (Math.abs(delta) < 0.005) {
+                showToastMessage('Grand Total is already an exact whole Rupee.', 'info');
+                return;
+            }
+
+            const taxable = Math.max(1, subtotal - currentDiscount);
+            const taxRateFactor = 1 + (totalTax / taxable);
+            const discountAdjustment = delta / taxRateFactor;
+            let newDiscount = round2(currentDiscount + discountAdjustment);
+            if (newDiscount < 0) newDiscount = 0;
+            if (newDiscount > subtotal) newDiscount = subtotal;
+
+            if (billDiscountInput) {
+                billDiscountInput.value = newDiscount.toFixed(2);
+                recalculateBill();
+                const updatedGrandTotal = parseNumber(billGrandTotalEl?.textContent);
+                const remainingPence = round2(updatedGrandTotal - Math.round(updatedGrandTotal));
+                if (Math.abs(remainingPence) >= 0.01) {
+                    const fineDiscount = Math.max(0, round2(newDiscount + (remainingPence / taxRateFactor)));
+                    billDiscountInput.value = fineDiscount.toFixed(2);
+                    recalculateBill();
+                }
+                schedulePurchaseDraftSave();
+                showToastMessage(`Rounded to ₹ ${Math.round(parseNumber(billGrandTotalEl?.textContent))}.00 (adjustment: ${delta > 0 ? '-' : '+'}₹${Math.abs(delta).toFixed(2)})`, 'success');
+            }
+        });
+    }
+
+    const creditTermBtns = addEntryModal ? Array.from(addEntryModal.querySelectorAll('.credit-term-btn')) : [];
+    creditTermBtns.forEach((btn) => {
+        btn.addEventListener('click', function () {
+            const days = parseInt(btn.dataset.days || '0', 10);
+            if (days <= 0 || !billCreditDueDateInput) return;
+            const baseDateStr = (addInvoiceDateInput?.value || addEntryDateInput?.value || '').trim();
+            const baseDate = baseDateStr ? new Date(baseDateStr) : new Date();
+            baseDate.setDate(baseDate.getDate() + days);
+            const yyyy = baseDate.getFullYear();
+            const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(baseDate.getDate()).padStart(2, '0');
+            billCreditDueDateInput.value = `${yyyy}-${mm}-${dd}`;
+            creditTermBtns.forEach((b) => b.classList.remove('btn-secondary', 'text-white'));
+            btn.classList.add('btn-secondary', 'text-white');
+            schedulePurchaseDraftSave();
+        });
+    });
 
     if (selectWalkinCustomerBtn && addPartyPickerController) {
         selectWalkinCustomerBtn.addEventListener('click', function () {
@@ -3203,6 +3374,7 @@ function initInventoryEntryDashboard() {
                 label: payload.party.label,
             });
             addPartyPickerController.setSelectedValue(String(payload.party.id));
+            updatePartyBalanceBadge();
             resetQuickPartyInputs();
             togglePanel(quickPartyPanel, false, toggleQuickPartyBtn, partyToggleCloseLabel, partyToggleOpenLabel);
             showToastMessage(`${quickPartyLabel} added to the list.`, 'success');

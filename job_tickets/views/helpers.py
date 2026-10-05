@@ -5274,6 +5274,7 @@ def _inventory_entry_dashboard(request, entry_type):
     bill_payment_method_value = InventoryCreditPayment.METHOD_CASH
     bill_payment_date_value = timezone.localdate().isoformat()
     bill_payment_reference_value = ''
+    bill_credit_due_date_value = ''
     if request.method == 'POST':
         if request.POST.get('inventory_entry_submit') == entry_type:
             bill_discount_value = (request.POST.get('bill_discount_amount') or '').strip() or '0.00'
@@ -5282,6 +5283,7 @@ def _inventory_entry_dashboard(request, entry_type):
             bill_payment_method_value = (request.POST.get('bill_payment_method') or bill_payment_method_value).strip()
             bill_payment_date_value = (request.POST.get('bill_payment_date') or bill_payment_date_value).strip()
             bill_payment_reference_value = (request.POST.get('bill_payment_reference') or '').strip()
+            bill_credit_due_date_value = (request.POST.get('bill_credit_due_date') or '').strip()
             entry_form = InventoryEntryForm(request.POST, entry_type=entry_type, workspace=current_workspace)
             if entry_form.is_valid():
                 try:
@@ -5295,6 +5297,10 @@ def _inventory_entry_dashboard(request, entry_type):
                     if entry_type != 'sale':
                         invoice_number = (entry_form.cleaned_data.get('invoice_number') or '').strip()
                     bill_notes = bill_notes_value
+                    if bill_credit_due_date_value and bill_payment_status_value in {'unpaid', 'part_paid'}:
+                        due_tag = f"Payment Due: {bill_credit_due_date_value}"
+                        if due_tag not in bill_notes:
+                            bill_notes = f"{bill_notes}\n{due_tag}".strip() if bill_notes else due_tag
                     bill_discount_amount = _parse_inventory_decimal(
                         bill_discount_value,
                         "Invalid bill discount amount.",
@@ -6048,11 +6054,24 @@ def _inventory_entry_dashboard(request, entry_type):
 
     party_balances_map = {}
     if entry_type in {'purchase', 'sale'}:
-        for bill in register_rows:
-            p_id = bill.get('party_id')
-            bal = bill.get('credit_balance_amount') or Decimal('0.00')
-            if p_id and bal > Decimal('0.00'):
-                party_balances_map[str(p_id)] = float(party_balances_map.get(str(p_id), Decimal('0.00')) + bal)
+        credit_bills = _build_inventory_credit_rows(entry_type, workspace=current_workspace)
+        for cbill in credit_bills:
+            p_id = str(cbill.party_id)
+            party_balances_map[p_id] = round(
+                float(Decimal(str(party_balances_map.get(p_id, 0.0))) + cbill.balance_amount),
+                2,
+            )
+        # Also include active parties with opening balances if not already covered
+        active_parties_qs = InventoryParty.objects.filter(is_active=True)
+        if current_workspace:
+            active_parties_qs = scope_to_workspace(active_parties_qs, current_workspace)
+        for party in active_parties_qs:
+            if party.opening_balance and party.opening_balance > Decimal('0.00'):
+                p_id = str(party.id)
+                party_balances_map[p_id] = round(
+                    float(Decimal(str(party_balances_map.get(p_id, 0.0))) + party.opening_balance),
+                    2,
+                )
     party_balances_json = json.dumps(party_balances_map)
 
     products_catalog_map = {}
@@ -6177,6 +6196,7 @@ def _inventory_entry_dashboard(request, entry_type):
         'bill_payment_method_value': bill_payment_method_value,
         'bill_payment_date_value': bill_payment_date_value,
         'bill_payment_reference_value': bill_payment_reference_value,
+        'bill_credit_due_date_value': bill_credit_due_date_value,
         'source_bill': source_bill,
         'source_bill_lines': source_bill_lines,
         'source_bill_mode': bool(source_bill_lines),

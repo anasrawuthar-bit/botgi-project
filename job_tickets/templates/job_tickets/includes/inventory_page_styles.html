@@ -162,4 +162,24 @@
     font-size: 0.8rem;
     transition: all 0.2s ease;
   }
+
+  /* Derived / Auto-Calculated Table Cells in Modals */
+  .inventory-modal-lines-table .line-calc-pill {
+    display: block;
+    background-color: #f1f5f9;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
+    padding: 0.25rem 0.45rem;
+    color: #334155;
+    font-size: 0.84rem;
+    font-family: var(--bs-font-monospace);
+    font-weight: 600;
+    text-align: right;
+    user-select: text;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .inventory-modal-lines-table tr:hover .line-calc-pill {
+    background-color: #e2e8f0;
+    border-color: #94a3b8;
+  }
 </style>
