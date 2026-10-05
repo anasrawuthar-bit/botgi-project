@@ -281,6 +281,15 @@ def inventory_party_dashboard(request):
         else:
             party.wa_phone = ""
 
+    supplier_payable = sum(
+        (getattr(p, 'credit_payable_amount', Decimal('0.00')) for p in parties if getattr(p, 'is_supplier', False)),
+        Decimal('0.00'),
+    )
+    customer_receivable = sum(
+        (getattr(p, 'credit_receivable_amount', Decimal('0.00')) for p in parties if getattr(p, 'is_customer', False)),
+        Decimal('0.00'),
+    )
+
     context = {
         'party_form': party_form,
         'edit_party_form': edit_party_form,
@@ -293,6 +302,8 @@ def inventory_party_dashboard(request):
         'total_parties': directory_context['total_parties'],
         'supplier_count': supplier_count,
         'customer_count': customer_count,
+        'supplier_payable': supplier_payable,
+        'customer_receivable': customer_receivable,
         'total_payable': total_payable,
         'total_receivable': total_receivable,
         'parties_with_payables': parties_with_payables,

@@ -5,38 +5,127 @@
 {% block extra_css %}
 {% include "job_tickets/includes/inventory_page_styles.html" %}
 <style>
-  .stat-card-clickable {
-    cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-    border: 1px solid rgba(15, 42, 86, 0.08);
-    background: #ffffff;
-    border-radius: 10px;
-    box-shadow: 0 2px 6px rgba(15, 42, 86, 0.04);
-  }
-
-  .stat-card-clickable:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(15, 42, 86, 0.08);
-    border-color: rgba(10, 124, 134, 0.3);
-  }
-
-  .stat-card-clickable.active-filter {
-    border-color: #0A7C86 !important;
-    background: #f0fdfa !important;
-    box-shadow: 0 0 0 2px rgba(10, 124, 134, 0.25) !important;
-  }
-
   .party-catalog-box {
     border: 1px solid rgba(15, 42, 86, 0.08);
     box-shadow: 0 18px 45px rgba(15, 42, 86, 0.06);
     border-radius: 12px;
   }
 
-  .party-filter-btn.active {
-    background-color: #0A7C86 !important;
-    border-color: #0A7C86 !important;
-    color: #ffffff !important;
+  .party-filter-nav {
+    display: inline-flex;
+    align-items: stretch;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 3px;
+    gap: 4px;
+  }
+
+  .party-filter-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 8px;
+    padding: 4px 10px;
+    min-width: 95px;
+    text-align: left;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    line-height: 1.25;
+    user-select: none;
+  }
+
+  .party-filter-btn:hover {
+    background: #f1f5f9;
+  }
+
+  .party-filter-btn .filter-btn-title {
+    font-size: 0.78rem;
     font-weight: 600;
+    color: #475569;
+    white-space: nowrap;
+  }
+
+  .party-filter-btn .filter-count {
+    font-weight: 600;
+    font-size: 0.74rem;
+    opacity: 0.85;
+  }
+
+  .party-filter-btn .filter-btn-amount {
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+    margin-top: 1px;
+  }
+
+  .party-filter-btn .filter-amount-all,
+  .party-filter-btn .filter-amount-supplier,
+  .party-filter-btn .filter-amount-customer {
+    color: #64748b;
+  }
+
+  .party-filter-btn .filter-amount-pay {
+    color: #d97706;
+  }
+
+  .party-filter-btn .filter-amount-collect {
+    color: #16a34a;
+  }
+
+  .party-filter-btn.party-filter-pay {
+    background: rgba(254, 243, 199, 0.35);
+    border-color: rgba(245, 158, 11, 0.15);
+  }
+  .party-filter-btn.party-filter-pay:hover {
+    background: rgba(254, 243, 199, 0.6);
+  }
+
+  .party-filter-btn.party-filter-collect {
+    background: rgba(220, 252, 231, 0.35);
+    border-color: rgba(34, 197, 94, 0.15);
+  }
+  .party-filter-btn.party-filter-collect:hover {
+    background: rgba(220, 252, 231, 0.6);
+  }
+
+  .party-filter-btn.active {
+    background: #ffffff !important;
+    border-color: #0A7C86 !important;
+    box-shadow: 0 1px 4px rgba(10, 124, 134, 0.12), 0 0 0 1.5px rgba(10, 124, 134, 0.25) !important;
+  }
+
+  .party-filter-btn.active .filter-btn-title {
+    color: #0A7C86 !important;
+    font-weight: 700 !important;
+  }
+
+  .party-filter-btn.active.party-filter-pay {
+    border-color: #f59e0b !important;
+    background: #fffbeb !important;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.15), 0 0 0 1.5px rgba(245, 158, 11, 0.3) !important;
+  }
+  .party-filter-btn.active.party-filter-pay .filter-btn-title {
+    color: #b45309 !important;
+  }
+  .party-filter-btn.active.party-filter-pay .filter-amount-pay {
+    color: #b45309 !important;
+  }
+
+  .party-filter-btn.active.party-filter-collect {
+    border-color: #10b981 !important;
+    background: #f0fdf4 !important;
+    box-shadow: 0 1px 4px rgba(16, 185, 129, 0.15), 0 0 0 1.5px rgba(16, 185, 129, 0.3) !important;
+  }
+  .party-filter-btn.active.party-filter-collect .filter-btn-title {
+    color: #047857 !important;
+  }
+  .party-filter-btn.active.party-filter-collect .filter-amount-collect {
+    color: #047857 !important;
   }
 
   .party-table {
@@ -212,70 +301,55 @@
                 </div>
             </div>
 
-            <!-- Top Interactive KPI Stat Cards Row -->
-            <div class="row g-3 mb-4">
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between active-filter" data-party-filter="all" id="stat-card-all" title="Click to show all parties">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Total Parties</span>
-                            <h3 class="mb-0 fw-bold text-dark mt-1">{{ total_parties }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">All Master Records</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-users fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-party-filter="supplier" id="stat-card-supplier" title="Click to filter suppliers">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Suppliers</span>
-                            <h3 class="mb-0 fw-bold text-info mt-1">{{ supplier_count }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">Vendors & Purchases</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-info-subtle text-info d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-truck-field fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-party-filter="to_pay" id="stat-card-to_pay" title="Click to filter parties with payables">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Total To Pay</span>
-                            <h3 class="mb-0 fw-bold text-warning mt-1">&#8377;{{ total_payable|floatformat:2 }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">{{ parties_with_payables }} parties with balance</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-arrow-up-wide-short fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-party-filter="to_collect" id="stat-card-to_collect" title="Click to filter parties with receivables">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Total To Collect</span>
-                            <h3 class="mb-0 fw-bold text-success mt-1">&#8377;{{ total_receivable|floatformat:2 }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">{{ parties_with_receivables }} parties with balance</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-success-subtle text-success d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-arrow-down-wide-short fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Party Catalog Main Container -->
             <div class="card-box h-100 party-catalog-box bg-white p-3">
                 <!-- Controls Bar: Title, Filter Pills, Search, Date Range and View Mode -->
                 <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <h5 class="mb-0 fw-bold text-dark me-2"><i class="fas fa-address-book me-2 text-primary"></i>Party Directory</h5>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Party status filter">
-                            <button type="button" class="btn btn-outline-secondary party-filter-btn active" data-party-filter="all">All ({{ total_parties }})</button>
-                            <button type="button" class="btn btn-outline-secondary party-filter-btn" data-party-filter="supplier">Suppliers ({{ supplier_count }})</button>
-                            <button type="button" class="btn btn-outline-secondary party-filter-btn" data-party-filter="customer">Customers ({{ customer_count }})</button>
-                            <button type="button" class="btn btn-outline-secondary party-filter-btn" data-party-filter="to_pay">To Pay ({{ parties_with_payables }})</button>
-                            <button type="button" class="btn btn-outline-secondary party-filter-btn" data-party-filter="to_collect">To Collect ({{ parties_with_receivables }})</button>
+                        <div class="party-filter-nav d-inline-flex flex-wrap" role="group" aria-label="Party status filter">
+                            <button type="button" class="party-filter-btn active" data-party-filter="all" title="Show all parties">
+                                <span class="filter-btn-title">All <span class="filter-count">({{ total_parties }})</span></span>
+                                <span class="filter-btn-amount filter-amount-all">
+                                    {% if total_payable > 0 and total_receivable > 0 %}
+                                        Pay &#8377;{{ total_payable|floatformat:2 }} · Rec &#8377;{{ total_receivable|floatformat:2 }}
+                                    {% elif total_payable > 0 %}
+                                        Net Pay: &#8377;{{ total_payable|floatformat:2 }}
+                                    {% elif total_receivable > 0 %}
+                                        Net Collect: &#8377;{{ total_receivable|floatformat:2 }}
+                                    {% else %}
+                                        &#8377;0.00
+                                    {% endif %}
+                                </span>
+                            </button>
+                            <button type="button" class="party-filter-btn" data-party-filter="supplier" title="Filter suppliers">
+                                <span class="filter-btn-title">Suppliers <span class="filter-count">({{ supplier_count }})</span></span>
+                                <span class="filter-btn-amount filter-amount-supplier">
+                                    {% if supplier_payable > 0 %}
+                                        Pay: &#8377;{{ supplier_payable|floatformat:2 }}
+                                    {% else %}
+                                        &#8377;0.00 Due
+                                    {% endif %}
+                                </span>
+                            </button>
+                            <button type="button" class="party-filter-btn" data-party-filter="customer" title="Filter customers">
+                                <span class="filter-btn-title">Customers <span class="filter-count">({{ customer_count }})</span></span>
+                                <span class="filter-btn-amount filter-amount-customer">
+                                    {% if customer_receivable > 0 %}
+                                        Collect: &#8377;{{ customer_receivable|floatformat:2 }}
+                                    {% else %}
+                                        &#8377;0.00 Due
+                                    {% endif %}
+                                </span>
+                            </button>
+                            <button type="button" class="party-filter-btn party-filter-pay" data-party-filter="to_pay" title="Filter parties with payables">
+                                <span class="filter-btn-title">To Pay <span class="filter-count">({{ parties_with_payables }})</span></span>
+                                <span class="filter-btn-amount filter-amount-pay">&#8377;{{ total_payable|floatformat:2 }}</span>
+                            </button>
+                            <button type="button" class="party-filter-btn party-filter-collect" data-party-filter="to_collect" title="Filter parties with receivables">
+                                <span class="filter-btn-title">To Collect <span class="filter-count">({{ parties_with_receivables }})</span></span>
+                                <span class="filter-btn-amount filter-amount-collect">&#8377;{{ total_receivable|floatformat:2 }}</span>
+                            </button>
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -1181,7 +1255,7 @@
             }
         }
 
-        // Bind filter clicks (both stat cards and pill buttons)
+        // Bind filter clicks
         filterBtns.forEach(function (btn) {
             btn.addEventListener('click', function () {
                 currentFilter = btn.getAttribute('data-party-filter') || 'all';
@@ -1189,11 +1263,7 @@
                 // Sync button states
                 filterBtns.forEach(function (b) {
                     const isTarget = (b.getAttribute('data-party-filter') === currentFilter);
-                    if (b.classList.contains('stat-card-clickable')) {
-                        b.classList.toggle('active-filter', isTarget);
-                    } else if (b.classList.contains('party-filter-btn')) {
-                        b.classList.toggle('active', isTarget);
-                    }
+                    b.classList.toggle('active', isTarget);
                 });
 
                 applyPartyFilters();
