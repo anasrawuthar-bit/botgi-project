@@ -63,12 +63,6 @@
     margin-top: 1px;
   }
 
-  .party-filter-btn .filter-amount-all,
-  .party-filter-btn .filter-amount-supplier,
-  .party-filter-btn .filter-amount-customer {
-    color: #64748b;
-  }
-
   .party-filter-btn .filter-amount-pay {
     color: #d97706;
   }
@@ -310,37 +304,12 @@
                         <div class="party-filter-nav d-inline-flex flex-wrap" role="group" aria-label="Party status filter">
                             <button type="button" class="party-filter-btn active" data-party-filter="all" title="Show all parties">
                                 <span class="filter-btn-title">All <span class="filter-count">({{ total_parties }})</span></span>
-                                <span class="filter-btn-amount filter-amount-all">
-                                    {% if total_payable > 0 and total_receivable > 0 %}
-                                        Pay &#8377;{{ total_payable|floatformat:2 }} · Rec &#8377;{{ total_receivable|floatformat:2 }}
-                                    {% elif total_payable > 0 %}
-                                        Net Pay: &#8377;{{ total_payable|floatformat:2 }}
-                                    {% elif total_receivable > 0 %}
-                                        Net Collect: &#8377;{{ total_receivable|floatformat:2 }}
-                                    {% else %}
-                                        &#8377;0.00
-                                    {% endif %}
-                                </span>
                             </button>
                             <button type="button" class="party-filter-btn" data-party-filter="supplier" title="Filter suppliers">
                                 <span class="filter-btn-title">Suppliers <span class="filter-count">({{ supplier_count }})</span></span>
-                                <span class="filter-btn-amount filter-amount-supplier">
-                                    {% if supplier_payable > 0 %}
-                                        Pay: &#8377;{{ supplier_payable|floatformat:2 }}
-                                    {% else %}
-                                        &#8377;0.00 Due
-                                    {% endif %}
-                                </span>
                             </button>
                             <button type="button" class="party-filter-btn" data-party-filter="customer" title="Filter customers">
                                 <span class="filter-btn-title">Customers <span class="filter-count">({{ customer_count }})</span></span>
-                                <span class="filter-btn-amount filter-amount-customer">
-                                    {% if customer_receivable > 0 %}
-                                        Collect: &#8377;{{ customer_receivable|floatformat:2 }}
-                                    {% else %}
-                                        &#8377;0.00 Due
-                                    {% endif %}
-                                </span>
                             </button>
                             <button type="button" class="party-filter-btn party-filter-pay" data-party-filter="to_pay" title="Filter parties with payables">
                                 <span class="filter-btn-title">To Pay <span class="filter-count">({{ parties_with_payables }})</span></span>
