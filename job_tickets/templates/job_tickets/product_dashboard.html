@@ -11,26 +11,6 @@
     font-family: "Plus Jakarta Sans", "Inter", sans-serif;
   }
 
-  .stat-card-clickable {
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 12px;
-    border: 1px solid rgba(15, 42, 86, 0.08);
-    background: #ffffff;
-    box-shadow: 0 2px 6px rgba(15, 42, 86, 0.04);
-  }
-
-  .stat-card-clickable:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(15, 42, 86, 0.08);
-    border-color: rgba(10, 124, 134, 0.3);
-  }
-
-  .stat-card-clickable.active-filter {
-    border-color: #0A7C86 !important;
-    background: #f0fdfa !important;
-    box-shadow: 0 0 0 2px rgba(10, 124, 134, 0.25) !important;
-  }
 
   .inventory-product-catalog {
     border: 1px solid rgba(15, 42, 86, 0.08);
@@ -125,57 +105,6 @@
                 </div>
             </div>
 
-            <!-- Interactive KPI Stat Cards Row -->
-            <div class="row g-3 mb-4">
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between active-filter" data-filter-status="all" id="stat-card-all" title="Click to show all products">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Total Products</span>
-                            <h3 class="mb-0 fw-bold text-dark mt-1">{{ total_products }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">All Catalog Items</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-boxes-stacked fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-filter-status="in_stock" id="stat-card-in_stock" title="Click to show in-stock products">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">In Stock</span>
-                            <h3 class="mb-0 fw-bold text-success mt-1">{{ in_stock_count }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">Ready to Bill</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-success-subtle text-success d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-circle-check fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-filter-status="out_of_stock" id="stat-card-out_of_stock" title="Click to show out-of-stock products">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Out of Stock</span>
-                            <h3 class="mb-0 fw-bold text-danger mt-1">{{ out_of_stock_count }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">Zero Quantity</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-danger-subtle text-danger d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-circle-xmark fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-xl-3">
-                    <div class="stat-card stat-card-clickable p-3 h-100 d-flex align-items-center justify-content-between" data-filter-status="reserved_alert" id="stat-card-reserved_alert" title="Click to show reserved alerts">
-                        <div>
-                            <span class="text-uppercase text-muted fw-bold" style="font-size: 0.72rem; letter-spacing: 0.05em;">Reserved Alerts</span>
-                            <h3 class="mb-0 fw-bold text-warning mt-1">{{ reserved_alert_count }}</h3>
-                            <span class="small text-muted" style="font-size: 0.74rem;">≤ Min. Stock Threshold</span>
-                        </div>
-                        <div class="rounded-circle p-2.5 bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-                            <i class="fas fa-triangle-exclamation fa-lg"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Product Catalog Card -->
             <div class="card-box h-100 inventory-product-catalog bg-white p-3">
@@ -860,7 +789,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const tableRows = document.querySelectorAll('#catalog-table-body .product-row');
     const noProductsRow = document.getElementById('no-products-row');
     const filterBtns = document.querySelectorAll('.catalog-filter-btn');
-    const statCards = document.querySelectorAll('.stat-card-clickable');
 
     let currentStatusFilter = 'all';
 
@@ -924,26 +852,12 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
-        statCards.forEach(card => {
-            if (card.getAttribute('data-filter-status') === status) {
-                card.classList.add('active-filter');
-            } else {
-                card.classList.remove('active-filter');
-            }
-        });
-
         applyCatalogFilter();
     }
 
     filterBtns.forEach(btn => {
         btn.addEventListener('click', function () {
             setStatusFilter(this.getAttribute('data-status-filter') || 'all');
-        });
-    });
-
-    statCards.forEach(card => {
-        card.addEventListener('click', function () {
-            setStatusFilter(this.getAttribute('data-filter-status') || 'all');
         });
     });
 
