@@ -38,10 +38,13 @@ function localAuthDir() {
 }
 
 function clearSessionArtifacts() {
+  const dir = localAuthDir();
   try {
-    fs.rmSync(localAuthDir(), { recursive: true, force: true });
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+    }
   } catch (_error) {
-    // ignore
+    // ignore Windows file lock errors during session reset
   }
 }
 
@@ -312,11 +315,25 @@ async function ensureWWebJSInjected() {
 }
 
 async function createClient(generation) {
+  const authStrategy = new LocalAuth({
+    clientId: CLIENT_ID,
+    dataPath: AUTH_ROOT,
+  });
+
+  // Windows lockfile safeguard: prevent unhandled EBUSY unlink crashes during session teardown
+  const originalAuthLogout = typeof authStrategy.logout === 'function' ? authStrategy.logout.bind(authStrategy) : null;
+  if (originalAuthLogout) {
+    authStrategy.logout = async function () {
+      try {
+        await originalAuthLogout();
+      } catch (err) {
+        console.warn('[bridge] Swallowed LocalAuth logout lockfile error on Windows:', err?.message || err);
+      }
+    };
+  }
+
   const client = new Client({
-    authStrategy: new LocalAuth({
-      clientId: CLIENT_ID,
-      dataPath: AUTH_ROOT,
-    }),
+    authStrategy,
     puppeteer: {
       headless: HEADLESS,
       protocolTimeout: 120000,
@@ -787,6 +804,14 @@ async function stopServer() {
   });
   httpServer = null;
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('[bridge] Uncaught exception captured (prevented crash):', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[bridge] Unhandled rejection captured (prevented crash):', reason?.message || reason);
+});
 
 if (require.main === module) {
   startServer();
