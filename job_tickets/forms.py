@@ -140,7 +140,7 @@ class DiscountForm(forms.Form):
 
 class AssignVendorForm(forms.Form):
     vendor = forms.ModelChoiceField(
-        queryset=Vendor.objects.all(),
+        queryset=Vendor.objects.filter(is_active=True),
         label="Assign to Vendor",
         empty_label="-- Select a Vendor --"
     )
@@ -150,7 +150,7 @@ class AssignVendorForm(forms.Form):
     def __init__(self, *args, **kwargs):
         workspace = kwargs.pop('workspace', None)
         super().__init__(*args, **kwargs)
-        queryset = Vendor.objects.all()
+        queryset = Vendor.objects.filter(is_active=True)
         if workspace:
             queryset = queryset.filter(Q(workspace=workspace) | Q(workspace__isnull=True))
         self.fields['vendor'].queryset = queryset.order_by('company_name')

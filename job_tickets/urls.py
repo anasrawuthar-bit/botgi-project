@@ -49,6 +49,7 @@ urlpatterns = [
     path('staff/inventory/track-serial/', views.inventory_track_serial, name='inventory_track_serial'),
     path('staff/vendors/', views.vendor_dashboard, name='vendor_dashboard'),
     path('staff/vendors/<int:vendor_id>/edit/', views.edit_vendor, name='edit_vendor'),
+    path('staff/vendors/<int:vendor_id>/toggle-status/', views.toggle_vendor_status, name='toggle_vendor_status'),
     path('staff/vendors/<int:vendor_id>/delete/', views.delete_vendor, name='delete_vendor'),
     path('staff/vendors/<int:vendor_id>/payment/', views.record_vendor_payment, name='record_vendor_payment'),
     path('job-created/<str:job_code>/', views.job_creation_success, name='job_creation_success'),

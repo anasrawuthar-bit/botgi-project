@@ -237,3 +237,111 @@ class VendorPaymentAccountsTestCase(TestCase):
 
         # Method select dropdown should NOT be present in modal
         self.assertNotIn('name="payment_method"', content)
+
+    def test_toggle_vendor_status_disable_and_enable(self):
+        """Disabling vendor updates is_active=False without deleting any payments/services."""
+        # Record a payment first
+        job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='GI-261006-001',
+            customer_name='John Tester',
+            customer_phone='9876543210',
+            device_type='Laptop',
+            status='Repairing',
+        )
+        service = SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=self.vendor,
+            status='Returned from Vendor',
+            vendor_cost=Decimal('800.00'),
+            vendor_paid_amount=Decimal('800.00'),
+            vendor_balance_amount=Decimal('0.00'),
+            returned_date=timezone.now(),
+        )
+        payment = VendorPayment.objects.create(
+            vendor=self.vendor,
+            specialized_service=service,
+            amount=Decimal('800.00'),
+            payment_date=timezone.localdate(),
+        )
+
+        # Disable the vendor
+        resp = self.client.post(reverse('toggle_vendor_status', args=[self.vendor.id]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.vendor.refresh_from_db()
+        self.assertFalse(self.vendor.is_active)
+
+        # Ensure payment and service are intact
+        self.assertTrue(VendorPayment.objects.filter(id=payment.id, vendor=self.vendor).exists())
+        self.assertTrue(SpecializedService.objects.filter(id=service.id, vendor=self.vendor).exists())
+
+        # Enable the vendor back
+        resp2 = self.client.post(reverse('toggle_vendor_status', args=[self.vendor.id]), follow=True)
+        self.assertEqual(resp2.status_code, 200)
+        self.vendor.refresh_from_db()
+        self.assertTrue(self.vendor.is_active)
+
+    def test_cannot_disable_vendor_with_active_jobs(self):
+        """Vendor cannot be disabled if they currently have jobs out with them."""
+        job = JobTicket.objects.create(
+            workspace=self.workspace,
+            job_code='GI-261006-002',
+            customer_name='Active Job Customer',
+            customer_phone='9876543211',
+            device_type='Laptop',
+            status='Repairing',
+        )
+        SpecializedService.objects.create(
+            job_ticket=job,
+            vendor=self.vendor,
+            status='Sent to Vendor',
+            sent_date=timezone.now(),
+        )
+
+        resp = self.client.post(reverse('toggle_vendor_status', args=[self.vendor.id]), follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.vendor.refresh_from_db()
+        self.assertTrue(self.vendor.is_active)  # Still active because of active job guard
+
+    def test_disabled_vendor_excluded_from_assign_vendor_form(self):
+        """Disabled vendor is not available in AssignVendorForm."""
+        from job_tickets.forms import AssignVendorForm
+        form = AssignVendorForm(workspace=self.workspace)
+        self.assertIn(self.vendor, form.fields['vendor'].queryset)
+
+        # Disable vendor
+        self.vendor.is_active = False
+        self.vendor.save(update_fields=['is_active'])
+
+        form_after = AssignVendorForm(workspace=self.workspace)
+        self.assertNotIn(self.vendor, form_after.fields['vendor'].queryset)
+
+    def test_vendor_dashboard_status_filtering(self):
+        """Vendor dashboard properly filters by status."""
+        v_disabled = Vendor.objects.create(
+            workspace=self.workspace,
+            company_name="Disabled Vendor Ltd",
+            name="Inactive Person",
+            is_active=False,
+        )
+
+        # Filter active
+        resp_active = self.client.get(reverse('vendor_dashboard') + '?status=active')
+        self.assertEqual(resp_active.status_code, 200)
+        vendors_active = resp_active.context['vendors']
+        self.assertIn(self.vendor, vendors_active)
+        self.assertNotIn(v_disabled, vendors_active)
+
+        # Filter disabled
+        resp_disabled = self.client.get(reverse('vendor_dashboard') + '?status=disabled')
+        self.assertEqual(resp_disabled.status_code, 200)
+        vendors_disabled = resp_disabled.context['vendors']
+        self.assertNotIn(self.vendor, vendors_disabled)
+        self.assertIn(v_disabled, vendors_disabled)
+
+        # Filter all
+        resp_all = self.client.get(reverse('vendor_dashboard') + '?status=all')
+        self.assertEqual(resp_all.status_code, 200)
+        vendors_all = resp_all.context['vendors']
+        self.assertIn(self.vendor, vendors_all)
+        self.assertIn(v_disabled, vendors_all)

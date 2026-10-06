@@ -1788,6 +1788,7 @@ class Vendor(models.Model):
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
     specialties = models.TextField(blank=True, help_text="Notes on what this vendor specializes in, e.g., 'Motherboard chip-level repair', 'Data recovery'.")
+    is_active = models.BooleanField(default=True, db_index=True, help_text="Whether this vendor is active and available for new jobs.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

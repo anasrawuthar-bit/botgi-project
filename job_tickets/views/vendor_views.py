@@ -530,13 +530,29 @@ def vendor_dashboard(request):
     else:
         vendor_form = VendorForm() # For GET request or error display
 
+    status_filter = (request.GET.get('status') or 'all').strip().lower()
+    if status_filter not in {'active', 'disabled', 'all'}:
+        status_filter = 'all'
+
     # Get all vendors and annotate them with the count of jobs currently with them
     active_jobs_filter = Q(services__status='Sent to Vendor')
     if current_workspace:
         active_jobs_filter &= Q(services__job_ticket__workspace=current_workspace)
-    vendors = list(scope_to_workspace(Vendor.objects, current_workspace).annotate(
+
+    base_vendors_qs = scope_to_workspace(Vendor.objects, current_workspace).annotate(
         active_jobs_count=Count('services', filter=active_jobs_filter)
-    ).order_by('company_name'))
+    ).order_by('-is_active', 'company_name')
+
+    total_vendors_count = base_vendors_qs.count()
+    active_vendors_count = base_vendors_qs.filter(is_active=True).count()
+    disabled_vendors_count = base_vendors_qs.filter(is_active=False).count()
+
+    if status_filter == 'active':
+        vendors = list(base_vendors_qs.filter(is_active=True))
+    elif status_filter == 'disabled':
+        vendors = list(base_vendors_qs.filter(is_active=False))
+    else:
+        vendors = list(base_vendors_qs)
 
     vendor_by_id = {vendor.id: vendor for vendor in vendors}
     for vendor in vendors:
@@ -630,6 +646,10 @@ def vendor_dashboard(request):
         'today_date': timezone.localdate().strftime('%Y-%m-%d'),
         'vendor_payment_method_choices': VendorPayment.METHOD_CHOICES,
         'financial_accounts': financial_accounts,
+        'status_filter': status_filter,
+        'total_vendors_count': total_vendors_count,
+        'active_vendors_count': active_vendors_count,
+        'disabled_vendors_count': disabled_vendors_count,
     }
     return render(request, 'job_tickets/vendor_dashboard.html', context)
 
@@ -650,6 +670,8 @@ def edit_vendor(request, vendor_id):
     vendor.email = request.POST.get('email', vendor.email)
     vendor.address = request.POST.get('address', vendor.address)
     vendor.specialties = request.POST.get('specialties', vendor.specialties)
+    if 'is_active' in request.POST:
+        vendor.is_active = request.POST.get('is_active') in ['true', 'True', '1', 'on']
     
     try:
         vendor.save()
@@ -661,30 +683,42 @@ def edit_vendor(request, vendor_id):
 
 @login_required
 @require_POST
-def delete_vendor(request, vendor_id):
-    """Delete a vendor (only if no active services)."""
+def toggle_vendor_status(request, vendor_id):
+    """Enable or disable a vendor."""
     denied = _staff_access_required(request, "staff_dashboard")
     if denied:
         return denied
-    
-    vendor = get_object_or_404(scope_to_workspace(Vendor.objects.filter(id=vendor_id), getattr(request, 'current_workspace', None)))
-    
-    # Check if vendor has any active services
-    active_services = scope_to_workspace(
-        SpecializedService.objects.filter(vendor=vendor, status='Sent to Vendor'),
-        getattr(request, 'current_workspace', None),
-        field='job_ticket__workspace',
-    ).count()
-    
-    if active_services > 0:
-        messages.error(request, f"Cannot delete vendor '{vendor.company_name}' because they have {active_services} active job(s). Please mark those jobs as returned first.")
-        return redirect('vendor_dashboard')
-    
-    vendor_name = vendor.company_name
-    vendor.delete()
-    messages.success(request, f"Vendor '{vendor_name}' deleted successfully.")
-    
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    vendor = get_object_or_404(scope_to_workspace(Vendor.objects.filter(id=vendor_id), current_workspace))
+
+    if vendor.is_active:
+        active_services = scope_to_workspace(
+            SpecializedService.objects.filter(vendor=vendor, status='Sent to Vendor'),
+            current_workspace,
+            field='job_ticket__workspace',
+        ).count()
+        if active_services > 0:
+            messages.error(
+                request,
+                f"Cannot disable vendor '{vendor.company_name}' because they have {active_services} active job(s) with them. Please mark those jobs as returned first."
+            )
+            return redirect('vendor_dashboard')
+        vendor.is_active = False
+        vendor.save(update_fields=['is_active'])
+        messages.success(request, f"Vendor '{vendor.company_name}' has been disabled.")
+    else:
+        vendor.is_active = True
+        vendor.save(update_fields=['is_active'])
+        messages.success(request, f"Vendor '{vendor.company_name}' has been enabled.")
+
     return redirect('vendor_dashboard')
+
+@login_required
+@require_POST
+def delete_vendor(request, vendor_id):
+    """Safely disable the vendor instead of deleting historical financial records."""
+    return toggle_vendor_status(request, vendor_id)
 
 def _build_vendor_report_context(request, vendor_id):
     vendor = get_object_or_404(
