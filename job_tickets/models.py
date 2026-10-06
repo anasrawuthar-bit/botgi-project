@@ -2452,6 +2452,46 @@ class WhatsAppNotificationLog(models.Model):
         return f"{prefix} - {self.event_type} - {'ok' if self.was_successful else 'failed'}"
 
 
+class BulkCampaign(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_PAUSED = 'paused'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_PAUSED, 'Paused'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
+    workspace = models.ForeignKey(
+        CompanyWorkspace,
+        on_delete=models.CASCADE,
+        related_name='bulk_campaigns',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    title = models.CharField(max_length=200)
+    target_filter = models.CharField(max_length=50, default='all')
+    message_template = models.TextField()
+    total_recipients = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({self.get_status_display()})"
+
+
 class MessageQueue(models.Model):
     STATUS_PENDING = 'pending'
     STATUS_SENT = 'sent'
@@ -2478,6 +2518,7 @@ class MessageQueue(models.Model):
     EVENT_FEEDBACK = 'feedback'
     EVENT_DAILY_REPORT = 'daily_report'
     EVENT_MANUAL = 'manual'
+    EVENT_BULK = 'bulk'
     EVENT_CHOICES = [
         (EVENT_CREATED, 'Created'),
         (EVENT_COMPLETED, 'Completed'),
@@ -2486,12 +2527,20 @@ class MessageQueue(models.Model):
         (EVENT_FEEDBACK, 'Feedback'),
         (EVENT_DAILY_REPORT, 'Daily Report'),
         (EVENT_MANUAL, 'Manual'),
+        (EVENT_BULK, 'Bulk Broadcast'),
     ]
 
     job_ticket = models.ForeignKey(
         JobTicket,
         on_delete=models.CASCADE,
         related_name='message_queues',
+        null=True,
+        blank=True,
+    )
+    bulk_campaign = models.ForeignKey(
+        BulkCampaign,
+        on_delete=models.SET_NULL,
+        related_name='queued_messages',
         null=True,
         blank=True,
     )

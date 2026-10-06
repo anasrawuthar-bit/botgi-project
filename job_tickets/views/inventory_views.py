@@ -17,6 +17,7 @@ from .helpers import (
     _record_inventory_credit_payment,
     _staff_access_required,
 )
+from ..models import BulkCampaign
 
 
 @login_required
@@ -801,6 +802,7 @@ def client_dashboard(request):
         displayed_clients = client_rows
 
     active_jobs_count = jobs_scope.exclude(status__in=['Closed', 'Delivered', 'Cancelled']).count()
+    recent_campaigns = scope_to_workspace(BulkCampaign.objects.all(), current_workspace).order_by('-created_at')[:5]
 
     context = {
         'clients': displayed_clients,
@@ -812,6 +814,7 @@ def client_dashboard(request):
         'credit_due_clients_count': credit_due_clients_count,
         'repeat_clients_count': repeat_clients_count,
         'active_jobs_count': active_jobs_count,
+        'recent_campaigns': recent_campaigns,
     }
     return render(request, 'job_tickets/client_dashboard.html', context)
 
