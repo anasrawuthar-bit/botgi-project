@@ -56,7 +56,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-3 px-4">
+<div class="section-container">
     <!-- Header -->
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
@@ -64,15 +64,15 @@
                 <i class="fas fa-arrow-left me-1"></i> Back to My Tasks
             </a>
             <div class="d-flex align-items-center gap-2 flex-wrap">
-                <h2 class="h3 fw-bold mb-0">{{ task.title }}</h2>
+                <h2 class="h4 fw-bold mb-0 text-dark">{{ task.title }}</h2>
                 {% if task.priority == 'urgent' %}
-                    <span class="badge priority-badge-urgent px-2 py-1"><i class="fas fa-bolt me-1"></i>URGENT</span>
+                    <span class="badge bg-danger"><i class="fas fa-bolt me-1"></i>Urgent</span>
                 {% elif task.priority == 'high' %}
-                    <span class="badge priority-badge-high px-2 py-1"><i class="fas fa-arrow-up me-1"></i>HIGH</span>
+                    <span class="badge bg-warning text-dark"><i class="fas fa-arrow-up me-1"></i>High</span>
                 {% elif task.priority == 'medium' %}
-                    <span class="badge priority-badge-medium px-2 py-1">MEDIUM</span>
+                    <span class="badge bg-primary">Medium</span>
                 {% else %}
-                    <span class="badge priority-badge-low px-2 py-1">LOW</span>
+                    <span class="badge bg-secondary">Low</span>
                 {% endif %}
 
                 <span id="taskStatusBadge" class="badge {% if task.status == 'open' %}bg-info text-dark{% elif task.status == 'in_progress' %}bg-warning text-dark{% elif task.status == 'done' %}bg-success{% elif task.status == 'cancelled' %}bg-secondary{% endif %}">
@@ -80,11 +80,11 @@
                 </span>
 
                 {% if task.has_alarm %}
-                    <span class="badge bg-danger text-white px-2 py-1"><i class="fas fa-bell me-1 fa-shake"></i>ALARM ENABLED</span>
+                    <span class="badge bg-danger-subtle text-danger border"><i class="fas fa-bell me-1"></i>Alarm Enabled</span>
                 {% endif %}
 
                 {% if task.is_open_to_all %}
-                    <span class="badge bg-primary text-white px-2 py-1"><i class="fas fa-users me-1"></i>OPEN POOL</span>
+                    <span class="badge bg-info-subtle text-info-emphasis border">Open Pool</span>
                 {% endif %}
             </div>
         </div>
@@ -93,28 +93,28 @@
             {% if can_claim %}
                 <form method="post" action="{% url 'technician_task_accept' task.id %}" class="d-inline">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-primary fw-bold">
-                        <i class="fas fa-hand-holding-medical me-1"></i> Accept &amp; Claim Directive
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fas fa-hand-holding-medical me-1"></i> Accept &amp; Claim Task
                     </button>
                 </form>
             {% elif task.status == 'open' %}
                 <form method="post" action="{% url 'task_update_status' task.id %}" class="d-inline status-action-form">
                     {% csrf_token %}
                     <input type="hidden" name="status" value="in_progress">
-                    <button type="submit" class="btn btn-warning">
-                        <i class="fas fa-play me-1"></i> Start Working on Task
+                    <button type="submit" class="btn btn-outline-warning text-dark btn-sm">
+                        <i class="fas fa-play me-1"></i> Start Working
                     </button>
                 </form>
             {% elif task.status == 'in_progress' %}
                 <form method="post" action="{% url 'task_update_status' task.id %}" class="d-inline status-action-form">
                     {% csrf_token %}
                     <input type="hidden" name="status" value="done">
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" class="btn btn-success btn-sm">
                         <i class="fas fa-check-circle me-1"></i> Mark as Completed
                     </button>
                 </form>
             {% elif task.status == 'done' %}
-                <span class="badge bg-success py-2 px-3 fs-6">
+                <span class="badge bg-success py-2 px-3 small">
                     <i class="fas fa-check me-1"></i> Completed on {{ task.completed_at|date:"d M Y, H:i" }}
                 </span>
             {% endif %}
@@ -122,16 +122,16 @@
     </div>
 
     {% if can_claim %}
-        <div class="card border-primary mb-4 bg-primary bg-opacity-10 shadow-sm">
-            <div class="card-body p-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <div class="card border mb-3 bg-light">
+            <div class="card-body p-3 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
                 <div>
-                    <h5 class="fw-bold text-primary mb-1"><i class="fas fa-hand-holding-medical me-2"></i>Open Pool Task Directive</h5>
-                    <p class="mb-0 text-dark">This directive is currently open in the shared pool. Claim and accept this task to take full ownership and begin work.</p>
+                    <h6 class="fw-bold text-dark mb-1"><i class="fas fa-users me-1 text-primary"></i>Open Pool Task</h6>
+                    <p class="mb-0 text-muted small">This task is currently open in the shared pool. Claim and accept this task to begin work.</p>
                 </div>
                 <form method="post" action="{% url 'technician_task_accept' task.id %}" class="flex-shrink-0">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-primary btn-lg shadow fw-bold">
-                        <i class="fas fa-check-circle me-2"></i>Accept &amp; Claim Directive
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fas fa-check-circle me-1"></i>Accept &amp; Claim Task
                     </button>
                 </form>
             </div>
