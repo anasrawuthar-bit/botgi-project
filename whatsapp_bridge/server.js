@@ -84,6 +84,93 @@ function resetSessionState(status = 'idle') {
   initialized = false;
 }
 
+// ============================================================================
+// ANTI-BAN SAFEGUARDS: Human Typing Simulation & Inter-Message Rate Limiting
+// ============================================================================
+
+let dispatchQueue = Promise.resolve();
+let lastDispatchTime = 0;
+
+/**
+ * Enqueue outgoing message dispatches into a sequential queue with randomized
+ * inter-message cooldown (3000ms - 5500ms) to eliminate automated burst signatures.
+ */
+function enqueueDispatch(taskFn) {
+  return new Promise((resolve, reject) => {
+    dispatchQueue = dispatchQueue
+      .then(async () => {
+        const now = Date.now();
+        const elapsed = now - lastDispatchTime;
+        // Natural human cooldown between consecutive messages: 3.0s to 5.5s
+        const minCooldown = Math.floor(Math.random() * 2500 + 3000);
+        if (lastDispatchTime > 0 && elapsed < minCooldown) {
+          const waitTime = minCooldown - elapsed;
+          console.log(`[anti-ban] Inter-message cooldown: waiting ${waitTime}ms before dispatching next message...`);
+          await new Promise((r) => setTimeout(r, waitTime));
+        }
+
+        try {
+          const result = await taskFn();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          lastDispatchTime = Date.now();
+        }
+      })
+      .catch((err) => {
+        console.error('[anti-ban] Queue dispatch unexpected failure:', err);
+      });
+  });
+}
+
+/**
+ * Simulates natural human presence and typing behavior before sending.
+ * 1. Sets presence to Available/Online.
+ * 2. Emulates typing ("composing...") state in the target chat.
+ * 3. Holds typing state for a human-like duration (1.5s - 3.5s + jitter) based on length.
+ * 4. Returns a cleanup function that clears the typing state.
+ */
+async function simulateHumanTyping(chatId, messageText = '') {
+  if (!waClient) {
+    return async () => {};
+  }
+
+  let chat = null;
+  try {
+    if (typeof waClient.sendPresenceAvailable === 'function') {
+      await waClient.sendPresenceAvailable().catch(() => {});
+    }
+  } catch (_e) {}
+
+  try {
+    if (typeof waClient.getChatById === 'function') {
+      chat = await waClient.getChatById(chatId).catch(() => null);
+    }
+    if (chat && typeof chat.sendStateTyping === 'function') {
+      await chat.sendStateTyping().catch(() => {});
+    }
+  } catch (_e) {}
+
+  // Calculate realistic typing duration based on character count:
+  // ~20ms per character, clamped between 1500ms and 3500ms + 500-1200ms randomized jitter
+  const charLength = typeof messageText === 'string' ? messageText.length : 40;
+  const baseDuration = Math.min(3500, Math.max(1500, charLength * 20));
+  const jitter = Math.floor(Math.random() * 700) + 500;
+  const typingDuration = baseDuration + jitter;
+
+  console.log(`[anti-ban] Simulating human typing (${typingDuration}ms) on ${chatId}...`);
+  await new Promise((r) => setTimeout(r, typingDuration));
+
+  return async () => {
+    try {
+      if (chat && typeof chat.clearState === 'function') {
+        await chat.clearState().catch(() => {});
+      }
+    } catch (_e) {}
+  };
+}
+
 function scheduleRestart(delayMs = 8000) {
   if (restartTimer) {
     return;
@@ -531,39 +618,44 @@ app.post('/api/messages/send', async (req, res) => {
     });
   }
 
-  await ensureWWebJSInjected();
+  return enqueueDispatch(async () => {
+    await ensureWWebJSInjected();
 
-  try {
-    let response;
+    const clearTyping = await simulateHumanTyping(chatId, message);
     try {
-      response = await waClient.sendMessage(chatId, message);
-    } catch (sendErr) {
-      const errStr = String(sendErr?.message || sendErr);
-      if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('undefined')) {
-        console.warn('[bridge] send error encountered, re-injecting and retrying once:', errStr);
-        await ensureWWebJSInjected();
+      let response;
+      try {
         response = await waClient.sendMessage(chatId, message);
-      } else {
-        throw sendErr;
+      } catch (sendErr) {
+        const errStr = String(sendErr?.message || sendErr);
+        if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('undefined')) {
+          console.warn('[bridge] send error encountered, re-injecting and retrying once:', errStr);
+          await ensureWWebJSInjected();
+          response = await waClient.sendMessage(chatId, message);
+        } else {
+          throw sendErr;
+        }
       }
-    }
 
-    const delivery = serializeSendResult(response);
-    return res.json({
-      ok: true,
-      to: chatId,
-      messageId: delivery.messageId,
-      delivery,
-      response,
-    });
-  } catch (error) {
-    const details = error && error.message ? error.message : String(error);
-    lastError = `Send failed: ${details}`;
-    return res.status(500).json({
-      ok: false,
-      message: details,
-    });
-  }
+      await clearTyping();
+      const delivery = serializeSendResult(response);
+      return res.json({
+        ok: true,
+        to: chatId,
+        messageId: delivery.messageId,
+        delivery,
+        response,
+      });
+    } catch (error) {
+      await clearTyping();
+      const details = error && error.message ? error.message : String(error);
+      lastError = `Send failed: ${details}`;
+      return res.status(500).json({
+        ok: false,
+        message: details,
+      });
+    }
+  });
 });
 
 app.post('/api/messages/send-pdf', async (req, res) => {
@@ -602,58 +694,63 @@ app.post('/api/messages/send-pdf', async (req, res) => {
     });
   }
 
-  await ensureWWebJSInjected();
+  return enqueueDispatch(async () => {
+    await ensureWWebJSInjected();
 
-  try {
-    const pdfBuffer = await renderPdfFromUrl(pdfUrl);
-    const media = new MessageMedia('application/pdf', pdfBuffer.toString('base64'), filename);
-    const options = {
-      caption: caption || '',
-      sendMediaAsDocument: true,
-    };
-    let response;
-    let mediaSent = false;
+    const clearTyping = await simulateHumanTyping(chatId, caption || filename);
     try {
-      response = await waClient.sendMessage(chatId, media, options);
-      mediaSent = true;
-    } catch (sendErr) {
-      const errStr = String(sendErr?.message || sendErr);
-      console.warn('[bridge] send-pdf media error:', errStr);
-      if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('Execution context was destroyed')) {
-        console.warn('[bridge] send-pdf re-injecting scripts and retrying once...');
-        await ensureWWebJSInjected();
-        try {
-          response = await waClient.sendMessage(chatId, media, options);
-          mediaSent = true;
-        } catch (_retryErr) {
-          // fall through to text fallback below
+      const pdfBuffer = await renderPdfFromUrl(pdfUrl);
+      const media = new MessageMedia('application/pdf', pdfBuffer.toString('base64'), filename);
+      const options = {
+        caption: caption || '',
+        sendMediaAsDocument: true,
+      };
+      let response;
+      let mediaSent = false;
+      try {
+        response = await waClient.sendMessage(chatId, media, options);
+        mediaSent = true;
+      } catch (sendErr) {
+        const errStr = String(sendErr?.message || sendErr);
+        console.warn('[bridge] send-pdf media error:', errStr);
+        if (errStr.includes('getChat') || errStr.includes('WWebJS') || errStr.includes('Execution context was destroyed')) {
+          console.warn('[bridge] send-pdf re-injecting scripts and retrying once...');
+          await ensureWWebJSInjected();
+          try {
+            response = await waClient.sendMessage(chatId, media, options);
+            mediaSent = true;
+          } catch (_retryErr) {
+            // fall through to text fallback below
+          }
         }
       }
-    }
 
-    if (!mediaSent) {
-      console.warn('[bridge] send-pdf falling back to text notification with receipt link...');
-      const textFallback = caption || `Job Ticket receipt: ${pdfUrl}`;
-      response = await waClient.sendMessage(chatId, textFallback);
-    }
+      if (!mediaSent) {
+        console.warn('[bridge] send-pdf falling back to text notification with receipt link...');
+        const textFallback = caption || `Job Ticket receipt: ${pdfUrl}`;
+        response = await waClient.sendMessage(chatId, textFallback);
+      }
 
-    const delivery = serializeSendResult(response);
-    return res.json({
-      ok: true,
-      to: chatId,
-      messageId: delivery.messageId,
-      delivery,
-      response,
-    });
-  } catch (error) {
-    const details = error && error.stack ? error.stack : (error && error.message ? error.message : String(error));
-    console.error('[bridge] send-pdf fatal error:', details);
-    lastError = `Send PDF failed: ${error && error.message ? error.message : details}`;
-    return res.status(500).json({
-      ok: false,
-      message: error && error.message ? error.message : String(error),
-    });
-  }
+      await clearTyping();
+      const delivery = serializeSendResult(response);
+      return res.json({
+        ok: true,
+        to: chatId,
+        messageId: delivery.messageId,
+        delivery,
+        response,
+      });
+    } catch (error) {
+      await clearTyping();
+      const details = error && error.stack ? error.stack : (error && error.message ? error.message : String(error));
+      console.error('[bridge] send-pdf fatal error:', details);
+      lastError = `Send PDF failed: ${error && error.message ? error.message : details}`;
+      return res.status(500).json({
+        ok: false,
+        message: error && error.message ? error.message : String(error),
+      });
+    }
+  });
 });
 
 function startServer() {

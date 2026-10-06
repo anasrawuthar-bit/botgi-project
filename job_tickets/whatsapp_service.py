@@ -23,7 +23,7 @@ _dispatch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='wa_di
 RECEIPT_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24
 GRAPH_API_BASE_URL = 'https://graph.facebook.com'
 DEFAULT_API_TIMEOUT = 15
-DEFAULT_BRIDGE_TIMEOUT = 20
+DEFAULT_BRIDGE_TIMEOUT = 45
 DEFAULT_TEMPLATE_LANGUAGE_CODE = 'en_US'
 DEFAULT_GRAPH_API_VERSION = 'v23.0'
 PLACEHOLDER_PATTERN = re.compile(r'{([a-zA-Z_][a-zA-Z0-9_]*)}')

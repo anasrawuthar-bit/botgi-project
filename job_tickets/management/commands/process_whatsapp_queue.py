@@ -1,4 +1,8 @@
 import logging
+import random
+import sys
+import time
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db.models import F, Q
 from django.utils import timezone
@@ -10,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = 'Process pending and retryable failed WhatsApp messages in MessageQueue.'
+    help = 'Process pending and retryable failed WhatsApp messages in MessageQueue with anti-ban pacing.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -24,10 +28,30 @@ class Command(BaseCommand):
             action='store_true',
             help='Show queued messages eligible for processing without actually sending them.',
         )
+        parser.add_argument(
+            '--min-delay',
+            type=float,
+            default=3.0,
+            help='Minimum inter-message delay in seconds for anti-ban pacing (default 3.0).',
+        )
+        parser.add_argument(
+            '--max-delay',
+            type=float,
+            default=6.0,
+            help='Maximum inter-message delay in seconds for anti-ban pacing (default 6.0).',
+        )
+        parser.add_argument(
+            '--no-delay',
+            action='store_true',
+            help='Disable inter-message delay between queue items (e.g. for testing).',
+        )
 
     def handle(self, *args, **options):
         limit = options['limit']
         dry_run = options['dry_run']
+        min_delay = max(0.0, options.get('min_delay', 3.0))
+        max_delay = max(min_delay, options.get('max_delay', 6.0))
+        no_delay = options.get('no_delay', False) or getattr(settings, 'TESTING', False) or 'test' in sys.argv
         now = timezone.now()
 
         settings_obj = WhatsAppIntegrationSettings.get_settings()
@@ -65,7 +89,7 @@ class Command(BaseCommand):
         sent_count = 0
         failed_count = 0
 
-        for queue in queues:
+        for idx, queue in enumerate(queues):
             queue.retry_count += 1
             queue.save(update_fields=['retry_count', 'updated_at'])
 
@@ -112,6 +136,16 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.ERROR(f" Unexpected error on queue ID={queue.id}: {exc}")
                 )
+
+            # Anti-ban pacing: sleep with random jitter between consecutive messages
+            if idx < total_count - 1 and not dry_run and not no_delay and min_delay > 0:
+                pacing_sleep = random.uniform(min_delay, max_delay)
+                self.stdout.write(
+                    self.style.WARNING(
+                        f" [Anti-ban] Pacing delay: waiting {pacing_sleep:.1f}s before next message..."
+                    )
+                )
+                time.sleep(pacing_sleep)
 
         self.stdout.write(
             self.style.SUCCESS(f"Finished processing. Succeeded: {sent_count}, Failed: {failed_count}.")
