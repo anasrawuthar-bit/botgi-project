@@ -72,10 +72,14 @@ def build_client_context(client: Client, jobs_by_phone: dict[str, list[JobTicket
     c_paid = sum(getattr(j, 'current_paid', getattr(j, 'amount_paid', Decimal('0.00'))) or Decimal('0.00') for j in client_jobs)
     balance = max(Decimal('0.00'), c_billed - c_paid)
 
+    company_name = (client.company_name or '').strip()
+    if not company_name and getattr(client, 'workspace', None):
+        company_name = getattr(client.workspace, 'name', '').strip()
+
     return {
         'name': client.name or 'Valued Customer',
         'phone': client.phone or '',
-        'company': client.company_name or '',
+        'company': company_name or 'our service center',
         'balance': f"{balance:.2f}" if balance > Decimal('0.00') else '0.00',
         'total_jobs': str(len(client_jobs)),
         'device': latest_device or 'your device',
@@ -168,11 +172,13 @@ def create_bulk_campaign_and_queue(
     Creates the BulkCampaign record and pre-populates MessageQueue rows for each recipient.
     Does NOT trigger the messages simultaneously to prevent bridge overflow.
     """
+    recipient_ids = [c.id for c in recipient_clients if getattr(c, 'id', None)]
     campaign = BulkCampaign.objects.create(
         workspace=workspace,
         title=title or f"Broadcast - {timezone.now().strftime('%Y-%m-%d %H:%M')}",
         target_filter=target_filter,
         message_template=template_text,
+        selected_client_ids=recipient_ids,
         total_recipients=len(recipient_clients),
         sent_count=0,
         failed_count=0,

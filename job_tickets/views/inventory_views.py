@@ -804,6 +804,11 @@ def client_dashboard(request):
     active_jobs_count = jobs_scope.exclude(status__in=['Closed', 'Delivered', 'Cancelled']).count()
     recent_campaigns = scope_to_workspace(BulkCampaign.objects.all(), current_workspace).order_by('-created_at')[:5]
 
+    saved_selection = request.session.get('selected_client_ids', [])
+    if not isinstance(saved_selection, list):
+        saved_selection = []
+    saved_selection_ids = [int(x) for x in saved_selection if str(x).isdigit()]
+
     context = {
         'clients': displayed_clients,
         'client_form': client_form,
@@ -815,6 +820,8 @@ def client_dashboard(request):
         'repeat_clients_count': repeat_clients_count,
         'active_jobs_count': active_jobs_count,
         'recent_campaigns': recent_campaigns,
+        'selected_client_ids': saved_selection_ids,
+        'selected_client_count': len(saved_selection_ids),
     }
     return render(request, 'job_tickets/client_dashboard.html', context)
 

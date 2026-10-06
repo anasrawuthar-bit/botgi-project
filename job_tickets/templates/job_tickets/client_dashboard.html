@@ -278,10 +278,10 @@
         </div>
 
         <!-- Selection Action Bar -->
-        <div id="selectionBar" class="alert alert-success py-2 px-3 d-none d-flex justify-content-between align-items-center mb-3 shadow-sm border-success">
+        <div id="selectionBar" class="alert alert-success py-2 px-3 {% if not selected_client_count %}d-none{% endif %} d-flex justify-content-between align-items-center mb-3 shadow-sm border-success">
             <div>
                 <i class="fas fa-check-circle me-1 text-success"></i>
-                <strong><span id="selectedCount">0</span> client(s) selected</strong>
+                <strong><span id="selectedCount">{{ selected_client_count|default:0 }}</span> client(s) selected</strong>
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-success fw-semibold" id="broadcastSelectedBtn">
@@ -313,7 +313,7 @@
                     {% for client in clients %}
                         <tr>
                             <td>
-                                <input type="checkbox" class="form-check-input client-select-box" value="{{ client.id }}" data-name="{{ client.name|escape }}" data-phone="{{ client.phone|escape }}">
+                                <input type="checkbox" class="form-check-input client-select-box" value="{{ client.id }}" data-name="{{ client.name|escape }}" data-phone="{{ client.phone|escape }}" {% if client.id in selected_client_ids %}checked{% endif %}>
                             </td>
                             <!-- Name & Company -->
                             <td>
@@ -558,31 +558,71 @@
                             <div class="col-12 col-md-6">
                                 <label class="form-label fw-semibold">Target Audience</label>
                                 <select class="form-select" name="target_filter" id="campaignAudienceSelect">
-                                    <option value="all" selected>All Active Clients ({{ total_clients }})</option>
-                                    <option value="credit_due">Credit Due Clients with Balance ({{ credit_due_clients_count }})</option>
-                                    <option value="repeat">Repeat Clients with 2+ Jobs ({{ repeat_clients_count }})</option>
-                                    <option value="selected" id="audienceOptionSelected">Selected Clients (<span id="modalSelectedCountBadge">0</span>)</option>
+                                    <option value="all" {% if active_tab == 'all' or not active_tab %}selected{% endif %}>All Active Clients ({{ total_clients }})</option>
+                                    <option value="credit_due" {% if active_tab == 'credit_due' %}selected{% endif %}>Credit Due Clients with Balance ({{ credit_due_clients_count }})</option>
+                                    <option value="repeat" {% if active_tab == 'repeat' %}selected{% endif %}>Repeat Clients with 2+ Jobs ({{ repeat_clients_count }})</option>
+                                    <option value="selected" id="audienceOptionSelected">Selected Clients ({{ selected_client_count|default:0 }})</option>
                                 </select>
                             </div>
                         </div>
 
                         <!-- Template Composer -->
                         <div class="mb-3">
-                            <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+                            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                                 <label class="form-label fw-semibold mb-0">Message Template</label>
-                                <div class="btn-group btn-group-sm flex-wrap gap-1" role="group">
-                                    <button type="button" class="btn btn-outline-secondary insert-tag-btn" data-tag="{{name}}">+ {{name}}</button>
-                                    <button type="button" class="btn btn-outline-secondary insert-tag-btn" data-tag="{{balance}}">+ {{balance}}</button>
-                                    <button type="button" class="btn btn-outline-secondary insert-tag-btn" data-tag="{{device}}">+ {{device}}</button>
-                                    <button type="button" class="btn btn-outline-secondary insert-tag-btn" data-tag="{{ticket_no}}">+ {{ticket_no}}</button>
-                                    <button type="button" class="btn btn-outline-secondary insert-tag-btn" data-tag="{{company}}">+ {{company}}</button>
-                                    <button type="button" class="btn btn-outline-success insert-tag-btn" data-tag="{Hi|Hello|Dear}" title="Add randomized Spintax variation">+ Spintax {Hi|Hello}</button>
+                                
+                                <!-- Preset Templates Dropdown -->
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-primary dropdown-toggle shadow-sm" type="button" id="presetTemplatesDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="fas fa-file-alt me-1"></i>Preset Templates
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="presetTemplatesDropdown" style="z-index: 1060;">
+                                        <li>
+                                            <button type="button" class="dropdown-item preset-template-option text-start" data-template="{Hello|Hi|Dear} {{name}}, greetings from {{company}}! Just a reminder that your pending service balance is Rs {{balance}}. Kindly clear it at your convenience. Thank you!">
+                                                <i class="fas fa-rupee-sign text-danger me-2"></i><strong>Balance Due Reminder</strong>
+                                                <div class="small text-muted ps-4">Friendly reminder with pending amount</div>
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button" class="dropdown-item preset-template-option text-start" data-template="{Hello|Hi} {{name}}! Greetings from {{company}}. Is your {{device}} running smoothly? Please visit us anytime for periodic maintenance or free checkup.">
+                                                <i class="fas fa-tools text-info me-2"></i><strong>Service & Maintenance Follow-up</strong>
+                                                <div class="small text-muted ps-4">Check up on serviced device</div>
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button" class="dropdown-item preset-template-option text-start" data-template="{Hello|Greetings|Dear} {{name}}! Exclusive offer from {{company}}: Enjoy special discount on all repairs & accessories this week. Visit our store or reply to book!">
+                                                <i class="fas fa-gift text-warning me-2"></i><strong>Festival & Promotion Offer</strong>
+                                                <div class="small text-muted ps-4">Special discount & greetings</div>
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button" class="dropdown-item preset-template-option text-start" data-template="{Dear|Hello} {{name}}, greetings from {{company}}! We are open Mon-Sat with high-speed turnaround times for all repairs and spares. Thank you for choosing us!">
+                                                <i class="fas fa-bullhorn text-primary me-2"></i><strong>Store Announcement</strong>
+                                                <div class="small text-muted ps-4">Working hours & service update</div>
+                                            </button>
+                                        </li>
+                                    </ul>
                                 </div>
                             </div>
+
+                            <!-- Quick Insert Tags Buttons -->
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                {% verbatim %}
+                                <button type="button" class="btn btn-outline-secondary btn-sm insert-tag-btn" data-tag="{{name}}">+ {{name}}</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm insert-tag-btn" data-tag="{{balance}}">+ {{balance}}</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm insert-tag-btn" data-tag="{{device}}">+ {{device}}</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm insert-tag-btn" data-tag="{{ticket_no}}">+ {{ticket_no}}</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm insert-tag-btn" data-tag="{{company}}">+ {{company}}</button>
+                                <button type="button" class="btn btn-outline-success btn-sm insert-tag-btn" data-tag="{Hi|Hello|Dear}" title="Add randomized Spintax variation">+ Spintax {Hi|Hello}</button>
+                                {% endverbatim %}
+                            </div>
+
+                            {% verbatim %}
                             <textarea class="form-control font-monospace" name="template" id="campaignTemplate" rows="4" placeholder="Type your broadcast message here...
 Example:
 {Hello|Hi|Dear} {{name}}, greetings from our service center!
 Your pending balance is Rs {{balance}}. Please let us know if you need any assistance." required></textarea>
+                            {% endverbatim %}
                             <div class="d-flex justify-content-between text-muted small mt-1">
                                 <span>💡 <em>Use <code>{choice1|choice2}</code> Spintax to randomize wordings and avoid spam filters.</em></span>
                                 <span id="charCount">0 characters</span>
@@ -652,63 +692,143 @@ document.addEventListener('DOMContentLoaded', function () {
     {% endif %}
 
     // -------------------------------------------------------------
-    // Table Multi-Select & Selection Action Bar
+    // Table Multi-Select & Selection Persistence
     // -------------------------------------------------------------
     const selectAllBox = document.getElementById('selectAllClients');
     const clientBoxes = document.querySelectorAll('.client-select-box');
     const selectionBar = document.getElementById('selectionBar');
     const selectedCountSpan = document.getElementById('selectedCount');
-    const modalSelectedCountBadge = document.getElementById('modalSelectedCountBadge');
     const modalSelectedIdsInput = document.getElementById('modalSelectedIds');
+    const audienceOptionSelected = document.getElementById('audienceOptionSelected');
     const broadcastSelectedBtn = document.getElementById('broadcastSelectedBtn');
     const clearSelectionBtn = document.getElementById('clearSelectionBtn');
     const audienceSelect = document.getElementById('campaignAudienceSelect');
     const bulkModalEl = document.getElementById('bulkCampaignModal');
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
 
-    function getSelectedClientIds() {
-        const ids = [];
+    // Initialize set of selected client IDs from server-rendered list + sessionStorage
+    const selectedIds = new Set({{ selected_client_ids|safe }});
+    try {
+        const stored = JSON.parse(sessionStorage.getItem('selected_client_ids') || '[]');
+        if (Array.isArray(stored)) {
+            stored.forEach(id => {
+                const num = Number(id);
+                if (!isNaN(num) && num > 0) selectedIds.add(num);
+            });
+        }
+    } catch (e) {}
+
+    // Synchronize checkboxes currently visible in DOM with selectedIds
+    function syncCheckboxesWithSet() {
+        let allChecked = clientBoxes.length > 0;
         clientBoxes.forEach(cb => {
-            if (cb.checked) ids.push(cb.value);
+            const id = Number(cb.value);
+            if (selectedIds.has(id)) {
+                cb.checked = true;
+            } else {
+                allChecked = false;
+            }
         });
-        return ids;
+        if (selectAllBox) {
+            selectAllBox.checked = allChecked;
+        }
     }
+    syncCheckboxesWithSet();
 
-    function updateSelectionState() {
-        const selected = getSelectedClientIds();
-        const count = selected.length;
+    function updateSelectionUI() {
+        const count = selectedIds.size;
         if (selectedCountSpan) selectedCountSpan.textContent = count;
-        if (modalSelectedCountBadge) modalSelectedCountBadge.textContent = count;
-        if (modalSelectedIdsInput) modalSelectedIdsInput.value = selected.join(',');
+        if (audienceOptionSelected) audienceOptionSelected.textContent = `Selected Clients (${count})`;
+        if (modalSelectedIdsInput) modalSelectedIdsInput.value = Array.from(selectedIds).join(',');
 
         if (count > 0) {
-            selectionBar.classList.remove('d-none');
+            if (selectionBar) selectionBar.classList.remove('d-none');
         } else {
-            selectionBar.classList.add('d-none');
+            if (selectionBar) selectionBar.classList.add('d-none');
             if (selectAllBox) selectAllBox.checked = false;
         }
     }
+    updateSelectionUI();
 
-    if (selectAllBox) {
-        selectAllBox.addEventListener('change', function () {
-            clientBoxes.forEach(cb => cb.checked = selectAllBox.checked);
-            updateSelectionState();
-        });
+    function persistSelectionToServer(action, ids) {
+        // Save in browser session storage
+        sessionStorage.setItem('selected_client_ids', JSON.stringify(Array.from(selectedIds)));
+
+        // Send to Django backend session
+        fetch('{% url "update_client_selection_api" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({
+                action: action,
+                selected_ids: ids || Array.from(selectedIds),
+            }),
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok && Array.isArray(data.selected_ids)) {
+                selectedIds.clear();
+                data.selected_ids.forEach(id => selectedIds.add(Number(id)));
+                sessionStorage.setItem('selected_client_ids', JSON.stringify(Array.from(selectedIds)));
+                updateSelectionUI();
+                syncCheckboxesWithSet();
+            }
+        })
+        .catch(() => {});
     }
 
+    // Toggle individual checkbox
     clientBoxes.forEach(cb => {
-        cb.addEventListener('change', updateSelectionState);
+        cb.addEventListener('change', function () {
+            const id = Number(this.value);
+            if (this.checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+            updateSelectionUI();
+            persistSelectionToServer('set');
+        });
     });
 
-    if (clearSelectionBtn) {
-        clearSelectionBtn.addEventListener('click', function () {
-            clientBoxes.forEach(cb => cb.checked = false);
-            if (selectAllBox) selectAllBox.checked = false;
-            updateSelectionState();
+    // Select all on current page
+    if (selectAllBox) {
+        selectAllBox.addEventListener('change', function () {
+            clientBoxes.forEach(cb => {
+                const id = Number(cb.value);
+                cb.checked = selectAllBox.checked;
+                if (selectAllBox.checked) {
+                    selectedIds.add(id);
+                } else {
+                    selectedIds.delete(id);
+                }
+            });
+            updateSelectionUI();
+            persistSelectionToServer('set');
         });
     }
 
+    // Clear selection
+    if (clearSelectionBtn) {
+        clearSelectionBtn.addEventListener('click', function () {
+            selectedIds.clear();
+            clientBoxes.forEach(cb => cb.checked = false);
+            if (selectAllBox) selectAllBox.checked = false;
+            sessionStorage.removeItem('selected_client_ids');
+            updateSelectionUI();
+            persistSelectionToServer('clear');
+        });
+    }
+
+    // "Send WhatsApp to Selected" button
     if (broadcastSelectedBtn) {
         broadcastSelectedBtn.addEventListener('click', function () {
+            if (selectedIds.size === 0) {
+                alert('Please select at least one client to send a broadcast.');
+                return;
+            }
             if (audienceSelect) {
                 audienceSelect.value = 'selected';
             }
@@ -729,7 +849,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const previewEstTime = document.getElementById('previewEstTime');
     const previewSpintaxStatus = document.getElementById('previewSpintaxStatus');
     const charCountSpan = document.getElementById('charCount');
+    const bulkForm = document.getElementById('bulkCampaignForm');
     let previewDebounceTimer = null;
+
+    // Preset Templates selector
+    document.querySelectorAll('.preset-template-option').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const tpl = this.getAttribute('data-template');
+            if (tpl && templateTextarea) {
+                templateTextarea.value = tpl;
+                fetchPreview();
+            }
+        });
+    });
 
     // Tag Insertion Buttons
     document.querySelectorAll('.insert-tag-btn').forEach(btn => {
@@ -748,6 +881,17 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    function getActiveAudienceValue() {
+        return audienceSelect ? audienceSelect.value : 'all';
+    }
+
+    function getDefaultTemplateForAudience(audience) {
+        if (audience === 'credit_due' || '{{ active_tab }}' === 'credit_due') {
+            return "{Hello|Hi|Dear} {{name}}, greetings from {{company}}! Just a reminder that your pending service balance is Rs {{balance}}. Kindly clear it at your convenience. Thank you!";
+        }
+        return "{Hello|Hi|Dear} {{name}}, greetings from {{company}}! Thank you for choosing us for your device repairs and services. Please let us know if you need any assistance!";
+    }
+
     function fetchPreview() {
         if (!templateTextarea) return;
         const template = templateTextarea.value;
@@ -761,19 +905,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
         clearTimeout(previewDebounceTimer);
         previewDebounceTimer = setTimeout(() => {
-            const audience = audienceSelect ? audienceSelect.value : 'all';
-            const selectedIds = modalSelectedIdsInput ? modalSelectedIdsInput.value : '';
+            const audience = getActiveAudienceValue();
+            const selectedArr = Array.from(selectedIds);
 
             fetch('{% url "preview_bulk_campaign" %}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
+                    'X-CSRFToken': csrfToken,
                 },
                 body: JSON.stringify({
                     template: template,
                     target_filter: audience,
-                    selected_ids: selectedIds,
+                    selected_ids: selectedArr,
                 }),
             })
             .then(res => res.json())
@@ -788,17 +932,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             })
             .catch(() => {});
-        }, 300);
+        }, 200);
     }
 
     if (templateTextarea) {
         templateTextarea.addEventListener('input', fetchPreview);
     }
     if (audienceSelect) {
-        audienceSelect.addEventListener('change', fetchPreview);
+        audienceSelect.addEventListener('change', function () {
+            if (!templateTextarea.value.trim()) {
+                templateTextarea.value = getDefaultTemplateForAudience(this.value);
+            }
+            fetchPreview();
+        });
     }
 
-    // Set default title when opening modal
+    // Modal show event - initialize title, default template if empty, and trigger preview
     const campaignTitleInput = document.getElementById('campaignTitle');
     if (bulkModalEl) {
         bulkModalEl.addEventListener('show.bs.modal', function () {
@@ -806,7 +955,32 @@ document.addEventListener('DOMContentLoaded', function () {
                 const now = new Date();
                 campaignTitleInput.value = `Broadcast - ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
             }
+
+            if (modalSelectedIdsInput) {
+                modalSelectedIdsInput.value = Array.from(selectedIds).join(',');
+            }
+
+            if (templateTextarea && !templateTextarea.value.trim()) {
+                const aud = getActiveAudienceValue();
+                templateTextarea.value = getDefaultTemplateForAudience(aud);
+            }
+
             fetchPreview();
+        });
+    }
+
+    // Form submit validation
+    if (bulkForm) {
+        bulkForm.addEventListener('submit', function (e) {
+            const aud = getActiveAudienceValue();
+            if (aud === 'selected' && selectedIds.size === 0) {
+                e.preventDefault();
+                alert('Please select at least one client before launching this broadcast.');
+                return false;
+            }
+            if (modalSelectedIdsInput) {
+                modalSelectedIdsInput.value = Array.from(selectedIds).join(',');
+            }
         });
     }
 

@@ -25,6 +25,7 @@ urlpatterns = [
     path('staff/clients/export/vcf/', views.export_clients_vcf, name='export_clients_vcf'),
     path('staff/clients/export/csv/', views.export_clients_csv, name='export_clients_csv'),
     path('staff/clients/sync-history/', views.sync_historical_contacts, name='sync_historical_contacts'),
+    path('staff/clients/selection/update/', views.update_client_selection_api, name='update_client_selection_api'),
     path('staff/clients/campaign/preview/', views.preview_bulk_campaign_view, name='preview_bulk_campaign'),
     path('staff/clients/campaign/create/', views.create_bulk_campaign_view, name='create_bulk_campaign'),
     path('staff/clients/campaign/<int:campaign_id>/status/', views.bulk_campaign_status_api, name='bulk_campaign_status_api'),

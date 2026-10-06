@@ -236,15 +236,18 @@ def export_clients_csv(request):
     return response
 
 
-def _resolve_target_recipients(current_workspace, target_filter: str, selected_ids: list[int] | None = None):
+def _resolve_target_recipients(request, current_workspace, target_filter: str, selected_ids: list[int] | None = None):
     """
     Filters and returns the list of Client records matching target_filter.
+    Supports session persistence fallback for 'selected'.
     """
     clients_qs = scope_to_workspace(Client.objects.filter(is_active=True), current_workspace)
     client_rows, jobs_by_phone = _load_clients_with_financials(current_workspace, clients_qs)
 
-    if target_filter == 'selected' and selected_ids:
-        selected_set = {int(x) for x in selected_ids if str(x).isdigit()}
+    if target_filter == 'selected':
+        if not selected_ids and request:
+            selected_ids = request.session.get('selected_client_ids', [])
+        selected_set = {int(x) for x in (selected_ids or []) if str(x).isdigit()}
         recipients = [c for c in client_rows if c.id in selected_set]
     elif target_filter == 'credit_due':
         recipients = [c for c in client_rows if getattr(c, 'balance_due', Decimal('0.00')) > Decimal('0.00')]
@@ -256,6 +259,61 @@ def _resolve_target_recipients(current_workspace, target_filter: str, selected_i
     # Filter out clients without phones
     recipients = [c for c in recipients if (c.phone or '').strip()]
     return recipients, jobs_by_phone
+
+
+@login_required
+@require_POST
+def update_client_selection_api(request):
+    """
+    Saves and updates selected clients in the session so selection persists
+    across tabs, filters, and searches.
+    """
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    try:
+        data = json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        data = request.POST
+
+    action = (data.get('action') or 'set').strip().lower()
+    incoming_ids = data.get('selected_ids') or []
+    if isinstance(incoming_ids, str):
+        incoming_ids = [s.strip() for s in incoming_ids.split(',') if s.strip()]
+
+    valid_incoming = {int(x) for x in incoming_ids if str(x).isdigit()}
+    current_saved = set(request.session.get('selected_client_ids', []))
+
+    if action == 'clear':
+        current_saved.clear()
+    elif action == 'add':
+        current_saved.update(valid_incoming)
+    elif action == 'remove':
+        current_saved.difference_update(valid_incoming)
+    elif action == 'toggle':
+        for x in valid_incoming:
+            if x in current_saved:
+                current_saved.remove(x)
+            else:
+                current_saved.add(x)
+    else:  # 'set'
+        current_saved = valid_incoming
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    valid_db_ids = list(
+        scope_to_workspace(Client.objects.filter(id__in=current_saved), current_workspace)
+        .values_list('id', flat=True)
+    )
+
+    request.session['selected_client_ids'] = valid_db_ids
+    request.session.modified = True
+
+    return JsonResponse({
+        'ok': True,
+        'count': len(valid_db_ids),
+        'selected_ids': valid_db_ids,
+    })
 
 
 @login_required
@@ -274,29 +332,32 @@ def preview_bulk_campaign_view(request):
     except Exception:
         data = request.POST
 
-    template_text = (data.get('template') or '').strip()
+    raw_template = (data.get('template') or '').strip()
     target_filter = (data.get('target_filter') or 'all').strip()
     selected_ids = data.get('selected_ids') or []
     if isinstance(selected_ids, str):
         selected_ids = [s.strip() for s in selected_ids.split(',') if s.strip()]
 
     current_workspace = getattr(request, 'current_workspace', None)
-    recipients, jobs_by_phone = _resolve_target_recipients(current_workspace, target_filter, selected_ids)
+    recipients, jobs_by_phone = _resolve_target_recipients(request, current_workspace, target_filter, selected_ids)
 
     recipient_count = len(recipients)
     sample_preview = ''
     sample_recipient_name = ''
+
+    # Default template if empty
+    template_text = raw_template or "{Hello|Hi|Dear} {{name}}, greetings from {{company}}! Your pending balance is Rs {{balance}}. Please let us know if you need any assistance."
 
     if recipients:
         sample_client = recipients[0]
         ctx = build_client_context(sample_client, jobs_by_phone)
         sample_preview = render_bulk_message(template_text, ctx)
         sample_recipient_name = sample_client.name
-    elif template_text:
+    else:
         dummy_ctx = {
             'name': 'Rahul Sharma',
             'phone': '9876543210',
-            'company': 'BotGI Solutions',
+            'company': getattr(current_workspace, 'name', '') or 'our service center',
             'balance': '1250.00',
             'total_jobs': '3',
             'device': 'Dell Inspiron 15',
@@ -346,7 +407,7 @@ def create_bulk_campaign_view(request):
         return JsonResponse({'ok': False, 'error': 'Message template cannot be empty.'}, status=400)
 
     current_workspace = getattr(request, 'current_workspace', None)
-    recipients, jobs_by_phone = _resolve_target_recipients(current_workspace, target_filter, selected_ids)
+    recipients, jobs_by_phone = _resolve_target_recipients(request, current_workspace, target_filter, selected_ids)
 
     if not recipients:
         return JsonResponse({'ok': False, 'error': 'No eligible recipients found for this selection.'}, status=400)

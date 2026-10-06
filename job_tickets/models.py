@@ -2477,6 +2477,7 @@ class BulkCampaign(models.Model):
     title = models.CharField(max_length=200)
     target_filter = models.CharField(max_length=50, default='all')
     message_template = models.TextField()
+    selected_client_ids = models.JSONField(default=list, blank=True)
     total_recipients = models.PositiveIntegerField(default=0)
     sent_count = models.PositiveIntegerField(default=0)
     failed_count = models.PositiveIntegerField(default=0)

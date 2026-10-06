@@ -194,3 +194,82 @@ class BulkMessagingServiceTests(TestCase):
         self.assertTrue(data['ok'])
         self.assertEqual(data['sent'], 3)
         self.assertEqual(data['percent'], 60)
+
+    def test_update_client_selection_api(self):
+        self.client.force_login(self.user)
+        # Test set action
+        resp = self.client.post(
+            reverse('update_client_selection_api'),
+            data=json.dumps({
+                'action': 'set',
+                'selected_ids': [self.client1.id],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['selected_ids'], [self.client1.id])
+
+        # Verify session storage
+        session = self.client.session
+        self.assertEqual(session.get('selected_client_ids'), [self.client1.id])
+
+        # Test add action
+        resp2 = self.client.post(
+            reverse('update_client_selection_api'),
+            data=json.dumps({
+                'action': 'add',
+                'selected_ids': [self.client2.id],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(resp2.status_code, 200)
+        data2 = resp2.json()
+        self.assertEqual(data2['count'], 2)
+        self.assertIn(self.client1.id, data2['selected_ids'])
+        self.assertIn(self.client2.id, data2['selected_ids'])
+
+        # Test clear action
+        resp3 = self.client.post(
+            reverse('update_client_selection_api'),
+            data=json.dumps({
+                'action': 'clear',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(resp3.status_code, 200)
+        data3 = resp3.json()
+        self.assertEqual(data3['count'], 0)
+        self.assertEqual(data3['selected_ids'], [])
+
+    def test_create_bulk_campaign_with_selected_clients(self):
+        self.client.force_login(self.user)
+        # Set selection in session first
+        session = self.client.session
+        session['selected_client_ids'] = [self.client1.id]
+        session.save()
+
+        resp = self.client.post(
+            reverse('create_bulk_campaign'),
+            data=json.dumps({
+                'title': 'Targeted Client Broadcast',
+                'template': 'Hello {{name}}',
+                'target_filter': 'selected',
+                'selected_ids': [self.client1.id],
+            }),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data['ok'])
+
+        campaign = BulkCampaign.objects.get(pk=data['campaign_id'])
+        self.assertEqual(campaign.total_recipients, 1)
+        self.assertEqual(campaign.selected_client_ids, [self.client1.id])
+
+        queued = MessageQueue.objects.filter(bulk_campaign=campaign)
+        self.assertEqual(queued.count(), 1)
+        self.assertEqual(queued.first().recipient, self.client1.phone)
