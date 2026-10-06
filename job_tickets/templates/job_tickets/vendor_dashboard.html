@@ -159,7 +159,7 @@
                 </thead>
                 <tbody>
                     {% for vendor in vendors %}
-                    <tr class="{% if not vendor.is_active %}opacity-75 bg-light{% endif %}">
+                    <tr class="{% if not vendor.is_active %}table-light text-muted{% endif %}">
                         <td>
                             <strong>{{ vendor.company_name }}</strong>
                             {% if not vendor.is_active %}
@@ -189,205 +189,212 @@
                                     <i class="fas fa-edit"></i> Edit
                                 </button>
                             </div>
-
-                            <div class="modal fade" id="editVendorModal{{ vendor.id }}" tabindex="-1" aria-labelledby="editVendorModalLabel{{ vendor.id }}" aria-hidden="true">
-                                <div class="modal-dialog">
-                                    <div class="modal-content shadow border-0">
-                                        <div class="modal-header">
-                                            <h5 class="modal-title fw-bold" id="editVendorModalLabel{{ vendor.id }}">
-                                                <i class="fas fa-edit me-1 text-warning"></i>Edit Vendor: {{ vendor.company_name }}
-                                            </h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                        </div>
-                                        <form method="post" action="{% url 'edit_vendor' vendor.id %}">
-                                            {% csrf_token %}
-                                            <div class="modal-body">
-                                                <!-- Vendor Status & Disable Option inside Edit -->
-                                                <div class="p-3 mb-3 rounded-3 border {% if vendor.is_active %}bg-light border-secondary-subtle{% else %}bg-danger bg-opacity-10 border-danger border-opacity-25{% endif %} d-flex justify-content-between align-items-center">
-                                                    <div>
-                                                        <div class="fw-semibold small text-dark mb-0">Vendor Status</div>
-                                                        <div class="small">
-                                                            {% if vendor.is_active %}
-                                                                <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Active</span>
-                                                                <span class="text-muted ms-1">Available for job outsourcing</span>
-                                                            {% else %}
-                                                                <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Disabled</span>
-                                                                <span class="text-danger ms-1">Hidden from new job assignments</span>
-                                                            {% endif %}
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        {% if vendor.is_active %}
-                                                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', false, {{ vendor.active_jobs_count }})">
-                                                                <i class="fas fa-ban me-1"></i>Disable Vendor
-                                                            </button>
-                                                        {% else %}
-                                                            <button type="button" class="btn btn-outline-success btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', true, 0)">
-                                                                <i class="fas fa-check-circle me-1"></i>Enable Vendor
-                                                            </button>
-                                                        {% endif %}
-                                                    </div>
-                                                </div>
-
-                                                <div class="mb-3">
-                                                    <label for="company_name_{{ vendor.id }}" class="form-label">Company Name *</label>
-                                                    <input type="text" class="form-control" id="company_name_{{ vendor.id }}" name="company_name" value="{{ vendor.company_name }}" required>
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="name_{{ vendor.id }}" class="form-label">Contact Person</label>
-                                                    <input type="text" class="form-control" id="name_{{ vendor.id }}" name="name" value="{{ vendor.name }}">
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="phone_{{ vendor.id }}" class="form-label">Phone</label>
-                                                    <input type="text" class="form-control" id="phone_{{ vendor.id }}" name="phone" value="{{ vendor.phone }}">
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="email_{{ vendor.id }}" class="form-label">Email</label>
-                                                    <input type="email" class="form-control" id="email_{{ vendor.id }}" name="email" value="{{ vendor.email }}">
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="address_{{ vendor.id }}" class="form-label">Address</label>
-                                                    <textarea class="form-control" id="address_{{ vendor.id }}" name="address" rows="2">{{ vendor.address }}</textarea>
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="specialties_{{ vendor.id }}" class="form-label">Specialties</label>
-                                                    <textarea class="form-control" id="specialties_{{ vendor.id }}" name="specialties" rows="2">{{ vendor.specialties }}</textarea>
-                                                </div>
-                                            </div>
-                                            <div class="modal-footer d-flex justify-content-between">
-                                                <div>
-                                                    {% if vendor.is_active %}
-                                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', false, {{ vendor.active_jobs_count }})">
-                                                            <i class="fas fa-ban me-1"></i>Disable Vendor
-                                                        </button>
-                                                    {% else %}
-                                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', true, 0)">
-                                                            <i class="fas fa-check-circle me-1"></i>Enable Vendor
-                                                        </button>
-                                                    {% endif %}
-                                                </div>
-                                                <div class="d-flex gap-2">
-                                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-warning btn-sm fw-semibold">
-                                                        <i class="fas fa-save me-1"></i>Save Changes
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {% if vendor.total_balance > 0 %}
-                            <div class="modal fade" id="paymentVendorModal{{ vendor.id }}" tabindex="-1" aria-labelledby="paymentVendorModalLabel{{ vendor.id }}" aria-hidden="true">
-                                <div class="modal-dialog">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                            <h5 class="modal-title" id="paymentVendorModalLabel{{ vendor.id }}">Record Payment - {{ vendor.company_name }}</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                        </div>
-                                        <form method="post" action="{% url 'record_vendor_payment' vendor.id %}">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                            <div class="modal-body">
-                                                <div class="row g-3 mb-3">
-                                                    <div class="col-md-4">
-                                                        <div class="small text-muted">Payable</div>
-                                                        <div class="fw-bold">&#8377;{{ vendor.total_payable|floatformat:2 }}</div>
-                                                    </div>
-                                                    <div class="col-md-4">
-                                                        <div class="small text-muted">Paid</div>
-                                                        <div class="fw-bold text-primary">&#8377;{{ vendor.total_paid|floatformat:2 }}</div>
-                                                    </div>
-                                                    <div class="col-md-4">
-                                                        <div class="small text-muted">Balance</div>
-                                                        <div class="fw-bold text-warning">&#8377;{{ vendor.total_balance|floatformat:2 }}</div>
-                                                    </div>
-                                                </div>
-
-                                                <div class="mb-2">
-                                                    <label class="form-label">Allocation</label>
-                                                    <div class="btn-group w-100" role="group" aria-label="Vendor payment allocation">
-                                                        <input type="radio" class="btn-check payment-scope-radio" name="payment_scope" id="payment_scope_bulk_{{ vendor.id }}" value="bulk" data-vendor-id="{{ vendor.id }}" checked>
-                                                        <label class="btn btn-outline-primary" for="payment_scope_bulk_{{ vendor.id }}">
-                                                            <i class="fas fa-layer-group"></i> Auto Allocate
-                                                        </label>
-                                                        <input type="radio" class="btn-check payment-scope-radio" name="payment_scope" id="payment_scope_single_{{ vendor.id }}" value="single" data-vendor-id="{{ vendor.id }}">
-                                                        <label class="btn btn-outline-secondary" for="payment_scope_single_{{ vendor.id }}">
-                                                            <i class="fas fa-tasks"></i> Specific Job
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                                <div class="small text-muted mb-3">Auto Allocate settles oldest pending job balances first.</div>
-
-                                                <div class="mb-3 d-none" data-payment-specific-job="{{ vendor.id }}">
-                                                    <label class="form-label" for="payment_service_{{ vendor.id }}">Specific Job Balance</label>
-                                                    <select class="form-select" id="payment_service_{{ vendor.id }}" name="specialized_service_id">
-                                                        {% for service in vendor.outstanding_services %}
-                                                            <option value="{{ service.id }}">
-                                                                {{ service.job_ticket.job_code }} - {{ service.job_ticket.customer_name }} - Balance &#8377;{{ service.vendor_balance_amount|floatformat:2 }}
-                                                            </option>
-                                                        {% endfor %}
-                                                    </select>
-                                                </div>
-
-                                                <div class="row g-3">
-                                                    <div class="col-md-6">
-                                                        <label class="form-label" for="payment_amount_{{ vendor.id }}">Payment Amount</label>
-                                                        <div class="input-group">
-                                                            <span class="input-group-text">&#8377;</span>
-                                                            <input type="number" class="form-control" id="payment_amount_{{ vendor.id }}" name="payment_amount" step="0.01" min="0.01" max="{{ vendor.total_balance|floatformat:2 }}" placeholder="{{ vendor.total_balance|floatformat:2 }}" required>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <label class="form-label" for="payment_date_{{ vendor.id }}">Date</label>
-                                                        <input type="date" class="form-control" id="payment_date_{{ vendor.id }}" name="payment_date" value="{{ today_date }}" required>
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <label class="form-label" for="payment_account_{{ vendor.id }}">
-                                                            <i class="fas fa-wallet text-secondary me-1"></i> Paid From Account
-                                                        </label>
-                                                        <select class="form-select payment-account-select" id="payment_account_{{ vendor.id }}" name="financial_account" data-vendor-id="{{ vendor.id }}" required>
-                                                            {% for acc in financial_accounts %}
-                                                                <option value="{{ acc.id }}"
-                                                                        data-type="{{ acc.account_type }}"
-                                                                        data-is-default-cash="{{ acc.is_default_cash|yesno:'1,0' }}"
-                                                                        data-is-default-bank="{{ acc.is_default_bank|yesno:'1,0' }}"
-                                                                        {% if forloop.first %}selected{% endif %}>
-                                                                    {{ acc.name }} (&#8377;{{ acc.current_balance|floatformat:2 }})
-                                                                </option>
-                                                            {% empty %}
-                                                                <option value="">No Accounts Found</option>
-                                                            {% endfor %}
-                                                        </select>
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <label class="form-label" for="reference_no_{{ vendor.id }}">Reference</label>
-                                                        <input type="text" class="form-control" id="reference_no_{{ vendor.id }}" name="reference_no" placeholder="Optional">
-                                                    </div>
-                                                    <div class="col-12">
-                                                        <label class="form-label" for="payment_notes_{{ vendor.id }}">Notes</label>
-                                                        <input type="text" class="form-control" id="payment_notes_{{ vendor.id }}" name="notes" placeholder="Optional">
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                <button type="submit" class="btn btn-success">
-                                                    <i class="fas fa-save"></i> Save Payment
-                                                </button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        <!-- Vendor Modals (Rendered outside table to prevent opacity inheritance and clipping) -->
+        {% for vendor in vendors %}
+            <!-- Edit Vendor Modal -->
+            <div class="modal fade" id="editVendorModal{{ vendor.id }}" tabindex="-1" aria-labelledby="editVendorModalLabel{{ vendor.id }}" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content bg-white shadow-lg border-0" style="background-color: #ffffff !important;">
+                        <div class="modal-header bg-white border-bottom">
+                            <h5 class="modal-title fw-bold text-dark" id="editVendorModalLabel{{ vendor.id }}">
+                                <i class="fas fa-edit me-1 text-warning"></i>Edit Vendor: {{ vendor.company_name }}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post" action="{% url 'edit_vendor' vendor.id %}">
+                            {% csrf_token %}
+                            <div class="modal-body bg-white p-4" style="background-color: #ffffff !important;">
+                                <!-- Vendor Status & Disable Option inside Edit -->
+                                <div class="p-3 mb-3 rounded-3 border {% if vendor.is_active %}bg-light border-secondary-subtle{% else %}bg-danger bg-opacity-10 border-danger border-opacity-25{% endif %} d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <div class="fw-semibold small text-dark mb-0">Vendor Status</div>
+                                        <div class="small">
+                                            {% if vendor.is_active %}
+                                                <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Active</span>
+                                                <span class="text-muted ms-1">Available for job outsourcing</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Disabled</span>
+                                                <span class="text-danger ms-1">Hidden from new job assignments</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        {% if vendor.is_active %}
+                                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', false, {{ vendor.active_jobs_count }})">
+                                                <i class="fas fa-ban me-1"></i>Disable Vendor
+                                            </button>
+                                        {% else %}
+                                            <button type="button" class="btn btn-outline-success btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', true, 0)">
+                                                <i class="fas fa-check-circle me-1"></i>Enable Vendor
+                                            </button>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="company_name_{{ vendor.id }}" class="form-label fw-semibold">Company Name *</label>
+                                    <input type="text" class="form-control" id="company_name_{{ vendor.id }}" name="company_name" value="{{ vendor.company_name }}" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="name_{{ vendor.id }}" class="form-label fw-semibold">Contact Person</label>
+                                    <input type="text" class="form-control" id="name_{{ vendor.id }}" name="name" value="{{ vendor.name }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="phone_{{ vendor.id }}" class="form-label fw-semibold">Phone</label>
+                                    <input type="text" class="form-control" id="phone_{{ vendor.id }}" name="phone" value="{{ vendor.phone }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="email_{{ vendor.id }}" class="form-label fw-semibold">Email</label>
+                                    <input type="email" class="form-control" id="email_{{ vendor.id }}" name="email" value="{{ vendor.email }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="address_{{ vendor.id }}" class="form-label fw-semibold">Address</label>
+                                    <textarea class="form-control" id="address_{{ vendor.id }}" name="address" rows="2">{{ vendor.address }}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="specialties_{{ vendor.id }}" class="form-label fw-semibold">Specialties</label>
+                                    <textarea class="form-control" id="specialties_{{ vendor.id }}" name="specialties" rows="2">{{ vendor.specialties }}</textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer bg-light d-flex justify-content-between">
+                                <div>
+                                    {% if vendor.is_active %}
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', false, {{ vendor.active_jobs_count }})">
+                                            <i class="fas fa-ban me-1"></i>Disable Vendor
+                                        </button>
+                                    {% else %}
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="toggleVendorStatus({{ vendor.id }}, '{{ vendor.company_name|escapejs }}', true, 0)">
+                                            <i class="fas fa-check-circle me-1"></i>Enable Vendor
+                                        </button>
+                                    {% endif %}
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-warning btn-sm fw-semibold">
+                                        <i class="fas fa-save me-1"></i>Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            {% if vendor.total_balance > 0 %}
+            <!-- Payment Vendor Modal -->
+            <div class="modal fade" id="paymentVendorModal{{ vendor.id }}" tabindex="-1" aria-labelledby="paymentVendorModalLabel{{ vendor.id }}" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content bg-white shadow-lg border-0" style="background-color: #ffffff !important;">
+                        <div class="modal-header bg-white border-bottom">
+                            <h5 class="modal-title fw-bold text-dark" id="paymentVendorModalLabel{{ vendor.id }}">
+                                <i class="fas fa-money-bill-wave me-1 text-success"></i>Record Payment - {{ vendor.company_name }}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="post" action="{% url 'record_vendor_payment' vendor.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <div class="modal-body bg-white p-4" style="background-color: #ffffff !important;">
+                                <div class="row g-3 mb-3 p-3 bg-light rounded border">
+                                    <div class="col-md-4">
+                                        <div class="small text-muted">Payable</div>
+                                        <div class="fw-bold">&#8377;{{ vendor.total_payable|floatformat:2 }}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="small text-muted">Paid</div>
+                                        <div class="fw-bold text-primary">&#8377;{{ vendor.total_paid|floatformat:2 }}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="small text-muted">Balance</div>
+                                        <div class="fw-bold text-warning">&#8377;{{ vendor.total_balance|floatformat:2 }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-2">
+                                    <label class="form-label fw-semibold">Allocation</label>
+                                    <div class="btn-group w-100" role="group" aria-label="Vendor payment allocation">
+                                        <input type="radio" class="btn-check payment-scope-radio" name="payment_scope" id="payment_scope_bulk_{{ vendor.id }}" value="bulk" data-vendor-id="{{ vendor.id }}" checked>
+                                        <label class="btn btn-outline-primary" for="payment_scope_bulk_{{ vendor.id }}">
+                                            <i class="fas fa-layer-group me-1"></i> Auto Allocate
+                                        </label>
+                                        <input type="radio" class="btn-check payment-scope-radio" name="payment_scope" id="payment_scope_single_{{ vendor.id }}" value="single" data-vendor-id="{{ vendor.id }}">
+                                        <label class="btn btn-outline-secondary" for="payment_scope_single_{{ vendor.id }}">
+                                            <i class="fas fa-tasks me-1"></i> Specific Job
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="small text-muted mb-3">Auto Allocate settles oldest pending job balances first.</div>
+
+                                <div class="mb-3 d-none" data-payment-specific-job="{{ vendor.id }}">
+                                    <label class="form-label fw-semibold" for="payment_service_{{ vendor.id }}">Specific Job Balance</label>
+                                    <select class="form-select" id="payment_service_{{ vendor.id }}" name="specialized_service_id">
+                                        {% for service in vendor.outstanding_services %}
+                                            <option value="{{ service.id }}">
+                                                {{ service.job_ticket.job_code }} - {{ service.job_ticket.customer_name }} - Balance &#8377;{{ service.vendor_balance_amount|floatformat:2 }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold" for="payment_amount_{{ vendor.id }}">Payment Amount</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">&#8377;</span>
+                                            <input type="number" class="form-control" id="payment_amount_{{ vendor.id }}" name="payment_amount" step="0.01" min="0.01" max="{{ vendor.total_balance|floatformat:2 }}" placeholder="{{ vendor.total_balance|floatformat:2 }}" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold" for="payment_date_{{ vendor.id }}">Date</label>
+                                        <input type="date" class="form-control" id="payment_date_{{ vendor.id }}" name="payment_date" value="{{ today_date }}" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold" for="payment_account_{{ vendor.id }}">
+                                            <i class="fas fa-wallet text-secondary me-1"></i> Paid From Account
+                                        </label>
+                                        <select class="form-select payment-account-select" id="payment_account_{{ vendor.id }}" name="financial_account" data-vendor-id="{{ vendor.id }}" required>
+                                            {% for acc in financial_accounts %}
+                                                <option value="{{ acc.id }}"
+                                                        data-type="{{ acc.account_type }}"
+                                                        data-is-default-cash="{{ acc.is_default_cash|yesno:'1,0' }}"
+                                                        data-is-default-bank="{{ acc.is_default_bank|yesno:'1,0' }}"
+                                                        {% if forloop.first %}selected{% endif %}>
+                                                    {{ acc.name }} (&#8377;{{ acc.current_balance|floatformat:2 }})
+                                                </option>
+                                            {% empty %}
+                                                <option value="">No Accounts Found</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold" for="reference_no_{{ vendor.id }}">Reference</label>
+                                        <input type="text" class="form-control" id="reference_no_{{ vendor.id }}" name="reference_no" placeholder="Optional">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold" for="payment_notes_{{ vendor.id }}">Notes</label>
+                                        <input type="text" class="form-control" id="payment_notes_{{ vendor.id }}" name="notes" placeholder="Optional">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer bg-light">
+                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-success btn-sm fw-semibold">
+                                    <i class="fas fa-save me-1"></i> Save Payment
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        {% endfor %}
         {% else %}
         <div class="alert alert-info">
             <i class="fas fa-info-circle"></i> No vendors found. Add your first vendor using the Add New Vendor button.
