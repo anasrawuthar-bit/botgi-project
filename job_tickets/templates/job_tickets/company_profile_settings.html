@@ -76,6 +76,9 @@
                                 <button type="submit" class="btn btn-primary px-3.5 py-1.5 fw-semibold shadow-sm" id="top-quick-save-btn">
                                     <i class="fas fa-save me-1"></i>Save Changes
                                 </button>
+                                <button type="button" class="btn btn-primary px-3.5 py-1.5 fw-semibold shadow-sm d-none" id="top-upload-apk-btn" data-bs-toggle="modal" data-bs-target="#uploadAppReleaseModal">
+                                    <i class="fa-solid fa-cloud-arrow-up me-1"></i>Upload New APK
+                                </button>
                             </div>
                         </div>
 
@@ -2226,20 +2229,6 @@
 
                                     <!-- Technician App Releases Tab Pane -->
                                     <div class="tab-pane fade" id="app-releases" role="tabpanel" aria-labelledby="tab-app-releases" tabindex="0">
-                                        <div class="d-flex align-items-center justify-content-between mb-4 border-bottom pb-3">
-                                            <div>
-                                                <h5 class="fw-bold text-dark mb-1">
-                                                    <i class="fa-solid fa-mobile-screen-button text-primary me-2"></i>Technician Mobile App Releases
-                                                </h5>
-                                                <p class="text-muted small mb-0">Upload new Android APK builds, manage version codes, and provide download access for technicians.</p>
-                                            </div>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <button type="button" class="btn btn-primary fw-semibold px-3 py-1.5 shadow-sm" data-bs-toggle="modal" data-bs-target="#uploadAppReleaseModal">
-                                                    <i class="fa-solid fa-cloud-arrow-up me-1"></i>Upload New APK
-                                                </button>
-                                            </div>
-                                        </div>
-
                                         <!-- Active Release Highlight Card -->
                                         {% if active_app_release %}
                                         <div class="card shadow-sm border mb-4">
@@ -2304,8 +2293,11 @@
 
                                         <!-- Releases Table -->
                                         <div class="card shadow-sm border mb-4">
-                                            <div class="card-header bg-light py-2 px-3 border-bottom">
+                                            <div class="card-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
                                                 <strong class="text-dark">Release History &amp; Versions</strong>
+                                                <button type="button" class="btn btn-outline-primary btn-sm py-1 px-2" data-bs-toggle="modal" data-bs-target="#uploadAppReleaseModal" style="font-size: 0.78rem;">
+                                                    <i class="fa-solid fa-cloud-arrow-up me-1"></i>Upload APK
+                                                </button>
                                             </div>
                                             <div class="table-responsive">
                                                 <table class="table table-hover align-middle mb-0">
@@ -3459,6 +3451,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const isIntakePresets = (target === '#intake-presets');
         const isAppReleases = (target === '#app-releases');
         const topQuickSave = document.getElementById('top-quick-save-btn');
+        const topUploadApk = document.getElementById('top-upload-apk-btn');
+        if (topUploadApk) {
+            if (isAppReleases) {
+                topUploadApk.classList.remove('d-none');
+            } else {
+                topUploadApk.classList.add('d-none');
+            }
+        }
         if (topQuickSave) {
             if (isDisplayScale || isRackManagement || isIntakePresets || isAppReleases) {
                 topQuickSave.classList.add('d-none');
