@@ -1153,10 +1153,12 @@ def technician_generate_qr_token(request):
         user=request.user,
         expires_at=expires_at,
     )
+    server_url = request.build_absolute_uri('/').rstrip('/')
     qr_payload = json.dumps({
         'action': 'botgi_mobile_qr_login',
         'token': qr_token.token,
         'username': request.user.username,
+        'server_url': server_url,
         'expires_at': qr_token.expires_at.isoformat(),
     })
     qr_image = generate_qr_base64(qr_payload)

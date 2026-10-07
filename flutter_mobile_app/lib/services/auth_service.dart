@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -64,13 +65,36 @@ class AuthService {
     String? deviceName,
   }) async {
     String tokenToSubmit = token.trim();
+    String? detectedServerUrl;
+
     if (tokenToSubmit.startsWith('{') && tokenToSubmit.endsWith('}')) {
       try {
         final parsed = jsonDecode(tokenToSubmit);
-        if (parsed is Map && parsed['token'] != null) {
-          tokenToSubmit = parsed['token'].toString().trim();
+        if (parsed is Map) {
+          if (parsed['token'] != null) {
+            tokenToSubmit = parsed['token'].toString().trim();
+          }
+          if (parsed['server_url'] != null) {
+            final raw = parsed['server_url'].toString().trim();
+            if (raw.isNotEmpty) {
+              detectedServerUrl = AppConfig.normalizeBaseUrl(raw);
+            }
+          }
         }
       } catch (_) {}
+    }
+
+    if (detectedServerUrl != null && detectedServerUrl.isNotEmpty) {
+      await AppConfig.setMode(AppConfig.customMode);
+      await AppConfig.setCustomBaseUrl(detectedServerUrl);
+    }
+
+    // Ensure baseUrl is not an unreachable local LAN address
+    if (AppConfig.baseUrl.contains('192.168.') ||
+        AppConfig.baseUrl.contains('10.0.2.2') ||
+        AppConfig.baseUrl.contains('127.0.0.1') ||
+        AppConfig.baseUrl.contains(':3000')) {
+      await AppConfig.resetToDefault();
     }
 
     final uri = Uri.parse('${AppConfig.baseUrl}/api/mobile/qr-login/');
@@ -78,11 +102,21 @@ class AuthService {
       'token': tokenToSubmit,
       'device_name': deviceName ?? 'Android Technician Device',
     };
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+
+    http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 12));
+    } on TimeoutException {
+      throw Exception('Connection timed out connecting to ${AppConfig.baseUrl}. Please check internet connection.');
+    } catch (e) {
+      throw Exception('Could not connect to ${AppConfig.baseUrl}. (${e.toString().replaceFirst('Exception: ', '')})');
+    }
 
     final body = _safeJsonDecode(response.body);
     if (response.statusCode != 200) {

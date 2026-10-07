@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
@@ -8,17 +7,13 @@ class AppConfig {
   static const String prodMode = 'prod';
   static const String customMode = 'custom';
 
-  // Android emulator: http://10.0.2.2:3000
-  // Edge/Chrome/Desktop: http://127.0.0.1:3000
-  // Physical Android device: http://192.168.1.2:3000
-  static const String devBaseUrl = 'http://192.168.1.2:3000';
   static const String prodBaseUrl = 'https://dir.anasrawuthar.in';
-
+  static const String devBaseUrl = 'https://dir.anasrawuthar.in';
 
   static const String _modeKey = 'app_server_mode';
   static const String _customUrlKey = 'app_custom_base_url';
 
-  static String _mode = kReleaseMode ? prodMode : devMode;
+  static String _mode = prodMode;
   static String _customBaseUrl = '';
 
   static String get mode => _mode;
@@ -28,16 +23,7 @@ class AppConfig {
     if (_mode == customMode && _customBaseUrl.isNotEmpty) {
       return _customBaseUrl;
     }
-    if (_mode == prodMode) {
-      return prodBaseUrl;
-    }
-    if (_mode == devMode) {
-      return devBaseUrl;
-    }
-    if (_customBaseUrl.isNotEmpty) {
-      return _customBaseUrl;
-    }
-    return kReleaseMode ? prodBaseUrl : devBaseUrl;
+    return prodBaseUrl;
   }
 
   static String get wsBaseUrl {
@@ -50,8 +36,24 @@ class AppConfig {
 
   static Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
-    _mode = prefs.getString(_modeKey) ?? (kReleaseMode ? prodMode : devMode);
+    _mode = prefs.getString(_modeKey) ?? prodMode;
     _customBaseUrl = prefs.getString(_customUrlKey) ?? '';
+
+    // Auto-clean stale LAN / local developer IPs from previous versions
+    if (_customBaseUrl.contains('192.168.') ||
+        _customBaseUrl.contains('10.0.2.2') ||
+        _customBaseUrl.contains('127.0.0.1') ||
+        _customBaseUrl.contains(':3000')) {
+      _customBaseUrl = '';
+      _mode = prodMode;
+      await prefs.setString(_modeKey, prodMode);
+      await prefs.setString(_customUrlKey, '');
+    }
+
+    if (_mode == devMode) {
+      _mode = prodMode;
+      await prefs.setString(_modeKey, prodMode);
+    }
   }
 
   static Future<void> setMode(String nextMode) async {
@@ -61,10 +63,10 @@ class AppConfig {
   }
 
   static Future<void> resetToDefault() async {
-    _mode = kReleaseMode ? prodMode : devMode;
+    _mode = prodMode;
     _customBaseUrl = '';
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_modeKey, _mode);
+    await prefs.setString(_modeKey, prodMode);
     await prefs.setString(_customUrlKey, '');
   }
 
@@ -80,10 +82,10 @@ class AppConfig {
       return '';
     }
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-      trimmed = 'http://$trimmed';
+      trimmed = 'https://$trimmed';
     }
     if (trimmed.endsWith('/')) {
-      return trimmed.substring(0, trimmed.length - 1);
+      trimmed = trimmed.substring(0, trimmed.length - 1);
     }
     return trimmed;
   }
