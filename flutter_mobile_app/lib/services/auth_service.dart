@@ -59,6 +59,48 @@ class AuthService {
     await _tokenStore.saveToken(token);
   }
 
+  Future<void> loginWithQrToken({
+    required String token,
+    String? deviceName,
+  }) async {
+    String tokenToSubmit = token.trim();
+    if (tokenToSubmit.startsWith('{') && tokenToSubmit.endsWith('}')) {
+      try {
+        final parsed = jsonDecode(tokenToSubmit);
+        if (parsed is Map && parsed['token'] != null) {
+          tokenToSubmit = parsed['token'].toString().trim();
+        }
+      } catch (_) {}
+    }
+
+    final uri = Uri.parse('${AppConfig.baseUrl}/api/mobile/qr-login/');
+    final payload = <String, dynamic>{
+      'token': tokenToSubmit,
+      'device_name': deviceName ?? 'Android Technician Device',
+    };
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+
+    final body = _safeJsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(body['message'] ?? 'QR Login failed.');
+    }
+
+    final accessToken = (body['access_token'] ?? '').toString();
+    if (accessToken.isEmpty) {
+      throw Exception('Access token missing from QR login response.');
+    }
+
+    _accessToken = accessToken;
+    _currentUser = body['user'] is Map<String, dynamic>
+        ? (body['user'] as Map<String, dynamic>)
+        : null;
+    await _tokenStore.saveToken(accessToken);
+  }
+
   Future<Map<String, dynamic>> fetchMe() async {
     final response = await http.get(
       Uri.parse('${AppConfig.baseUrl}/api/mobile/me/'),

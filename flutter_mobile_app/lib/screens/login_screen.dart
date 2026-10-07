@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_surface_card.dart';
+import 'qr_scan_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -109,6 +110,17 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  void _openQrScanner() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => QrScanLoginScreen(
+          authService: widget.authService,
+          onLoginSuccess: widget.onLoginSuccess,
+        ),
+      ),
+    );
   }
 
   void _openServerSettings() {
@@ -453,6 +465,55 @@ class _LoginScreenState extends State<LoginScreen> {
                                                 Icon(Icons.arrow_forward_rounded, size: 18),
                                               ],
                                             ),
+                                     ),
+                                  ),
+
+                                  const SizedBox(height: 18),
+
+                                  // Divider with 'OR'
+                                  Row(
+                                    children: [
+                                      Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                                        child: Text(
+                                          'OR',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 18),
+
+                                  // Scan QR Code Login Button
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _isSubmitting ? null : _openQrScanner,
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.primary,
+                                        side: const BorderSide(color: AppColors.primary, width: 1.5),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        backgroundColor: AppColors.primarySoft.withValues(alpha: 0.4),
+                                      ),
+                                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                                      label: const Text(
+                                        'Scan QR Code to Login',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
