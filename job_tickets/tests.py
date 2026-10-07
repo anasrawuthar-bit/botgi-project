@@ -6656,4 +6656,31 @@ class TechnicianProfileAndQrMobileTests(TestCase):
         self.assertEqual(del_resp.status_code, 302)
         self.assertFalse(MobileAppRelease.objects.filter(id=release.id).exists())
 
+    def test_staff_cannot_access_technician_profile_or_mobile_app(self):
+        # 1. Staff accessing technician profile is redirected
+        self.client.force_login(self.staff_user)
+        resp = self.client.get(reverse('technician_profile'))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('unauthorized'), resp.url)
+
+        # 2. Staff calling technician QR generation gets 403
+        gen_resp = self.client.get(reverse('technician_generate_qr_token'))
+        self.assertEqual(gen_resp.status_code, 403)
+        self.assertFalse(gen_resp.json()['ok'])
+
+        # 3. Staff trying to log into mobile app via credentials gets 403 technician_only
+        login_resp = self.client.post(
+            reverse('mobile_api_login'),
+            data=json.dumps({'username': 'staff_alex', 'password': 'StaffPassword123!'}),
+            content_type='application/json',
+        )
+        self.assertEqual(login_resp.status_code, 403)
+        self.assertEqual(login_resp.json()['error'], 'technician_only')
+
+        # 4. Staff cannot have a QR token generated for them
+        staff_qr_resp = self.client.get(reverse('staff_generate_qr_token', args=[self.staff_user.id]))
+        self.assertEqual(staff_qr_resp.status_code, 400)
+        self.assertFalse(staff_qr_resp.json()['ok'])
+
+
 

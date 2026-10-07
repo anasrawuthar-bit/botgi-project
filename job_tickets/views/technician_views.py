@@ -1069,7 +1069,7 @@ def technician_task_accept(request, task_id):
 @login_required
 def technician_profile(request):
     """Technician profile view: personal details, password reset, active mobile devices, app download."""
-    if not request.user.groups.filter(name='Technicians').exists() and not request.user.is_staff:
+    if not request.user.groups.filter(name='Technicians').exists():
         return redirect('unauthorized')
 
     technician = TechnicianProfile.objects.filter(user=request.user).first()
@@ -1132,6 +1132,9 @@ def technician_profile(request):
 @login_required
 def technician_generate_qr_token(request):
     """Generates a dynamic 10-minute QR login token for the logged-in technician."""
+    if not request.user.groups.filter(name='Technicians').exists():
+        return JsonResponse({'ok': False, 'message': 'The mobile app is for technicians only.'}, status=403)
+
     token_str = secrets.token_urlsafe(32)
     expires_at = timezone.now() + timezone.timedelta(minutes=10)
     qr_token = MobileQrLoginToken.objects.create(

@@ -84,6 +84,7 @@
                                                 </form>
                                             </li>
                                             <li><hr class="dropdown-divider"></li>
+                                            {% if not member.is_staff %}
                                             <li>
                                                 <button class="dropdown-item" type="button" onclick="openStaffQrModal({{ member.id }}, '{{ member.username|escapejs }}')">
                                                     <i class="fas fa-qrcode text-primary me-2 fw-bold"></i> QR Mobile Login
@@ -94,6 +95,13 @@
                                                     <i class="fas fa-history text-info me-2 fw-bold"></i> Sessions &amp; Devices
                                                 </button>
                                             </li>
+                                            {% else %}
+                                            <li>
+                                                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#loginLogsModal{{ member.id }}">
+                                                    <i class="fas fa-history text-info me-2 fw-bold"></i> Login Logs
+                                                </button>
+                                            </li>
+                                            {% endif %}
                                         </ul>
                                     </div>
 
@@ -102,7 +110,9 @@
                                         <div class="modal-dialog">
                                             <div class="modal-content">
                                                 <div class="modal-header">
-                                                    <h5 class="modal-title" id="loginLogsModalLabel{{ member.id }}">Session &amp; Device Logs: {{ member.username }}</h5>
+                                                    <h5 class="modal-title" id="loginLogsModalLabel{{ member.id }}">
+                                                        {% if not member.is_staff %}Session &amp; Device Logs: {{ member.username }}{% else %}Login Logs: {{ member.username }}{% endif %}
+                                                    </h5>
                                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                                 </div>
                                                 <div class="modal-body">
@@ -151,6 +161,7 @@
                                                         </li>
                                                     </ul>
 
+                                                    {% if not member.is_staff %}
                                                     <!-- Active Mobile Devices Section -->
                                                     <div class="mt-3 border-top pt-3">
                                                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -170,11 +181,14 @@
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    {% endif %}
                                                 </div>
                                                 <div class="modal-footer">
+                                                    {% if not member.is_staff %}
                                                     <button type="button" class="btn btn-primary btn-sm" onclick="openStaffQrModal({{ member.id }}, '{{ member.username|escapejs }}')">
                                                         <i class="fas fa-qrcode me-1"></i>Generate Login QR
                                                     </button>
+                                                    {% endif %}
                                                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
                                                 </div>
                                             </div>

@@ -286,6 +286,9 @@ def staff_generate_qr_token(request, user_id):
     if not target_user.is_active:
         return JsonResponse({'ok': False, 'message': 'Cannot generate login QR for inactive user.'}, status=400)
 
+    if not target_user.groups.filter(name='Technicians').exists():
+        return JsonResponse({'ok': False, 'message': 'The mobile app is for technicians only.'}, status=400)
+
     token_str = secrets.token_urlsafe(32)
     expires_at = timezone.now() + timezone.timedelta(minutes=10)
     qr_token = MobileQrLoginToken.objects.create(
@@ -318,6 +321,9 @@ def staff_user_active_devices(request, user_id):
         return denied
 
     target_user = get_object_or_404(User, id=user_id)
+    if not target_user.groups.filter(name='Technicians').exists():
+        return JsonResponse({'ok': True, 'username': target_user.username, 'devices': []})
+
     active_sessions = UserSessionActivity.objects.filter(
         user=target_user,
         channel=UserSessionActivity.CHANNEL_API,

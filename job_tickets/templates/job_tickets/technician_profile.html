@@ -1,50 +1,34 @@
 {% extends "job_tickets/base.html" %}
 {% load job_tickets_extras %}
 
-{% block title %}Technician Profile &amp; Mobile Settings{% endblock %}
+{% block title %}Profile{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4" style="max-width: 1200px;">
-    <!-- Profile Header Banner -->
-    <div class="card shadow-sm border-0 mb-4" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: #fff; border-radius: 12px;">
-        <div class="card-body p-4">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="d-flex align-items-center gap-3">
-                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary text-white fw-bold shadow" style="width: 64px; height: 64px; font-size: 1.6rem;">
-                        {{ user|user_initials }}
-                    </div>
-                    <div>
-                        <h2 class="h4 mb-1 fw-bold text-white">{{ user.get_full_name|default:user.username }}</h2>
-                        <div class="d-flex flex-wrap align-items-center gap-2 text-white-50 small">
-                            <span><i class="fa-solid fa-user-tag me-1"></i>{{ user.username }}</span>
-                            {% if technician and technician.unique_id %}
-                                <span class="badge bg-info text-dark fw-semibold"><i class="fa-solid fa-id-card me-1"></i>ID: {{ technician.unique_id }}</span>
-                            {% endif %}
-                            {% if technician and technician.workspace %}
-                                <span class="badge bg-secondary"><i class="fa-solid fa-building me-1"></i>{{ technician.workspace.name }}</span>
-                            {% endif %}
-                            <span class="badge bg-success"><i class="fa-solid fa-screwdriver-wrench me-1"></i>Technician</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-light fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#qrPairModal" id="open-qr-modal-btn">
-                        <i class="fa-solid fa-qrcode text-primary me-1"></i> Pair Mobile App (QR)
-                    </button>
-                    {% if active_release %}
-                    <a href="{% url 'download_technician_app' %}" class="btn btn-primary fw-semibold shadow-sm">
-                        <i class="fa-solid fa-download me-1"></i> Download APK v{{ active_release.version_name }}
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
+<div class="section-container">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="section-title mb-1">
+                <i class="fas fa-user-circle me-2"></i>Profile
+            </h1>
+            <p class="text-muted small mb-0">Technician profile details, password reset, and mobile app pairing.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#qrPairModal" id="open-qr-modal-btn">
+                <i class="fas fa-qrcode me-1"></i> Pair Mobile App (QR)
+            </button>
+            {% if active_release %}
+            <a href="{% url 'download_technician_app' %}" class="btn btn-primary btn-sm fw-semibold">
+                <i class="fas fa-download me-1"></i> Download APK v{{ active_release.version_name }}
+            </a>
+            {% endif %}
         </div>
     </div>
 
     {% if messages %}
-    <div class="mb-4">
+    <div class="mb-3">
         {% for message in messages %}
-        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show shadow-sm" role="alert">
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
             {{ message }}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
@@ -56,48 +40,48 @@
         <!-- Left Column: Profile Details & Password Reset -->
         <div class="col-lg-6">
             <!-- Account Details Card -->
-            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
-                <div class="card-header bg-white border-bottom py-3">
-                    <h5 class="card-title mb-0 fw-bold text-dark">
-                        <i class="fa-solid fa-address-card text-primary me-2"></i>Account Information
-                    </h5>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2 px-3 border-bottom d-flex align-items-center">
+                    <strong class="text-dark">
+                        <i class="fas fa-address-card text-primary me-2"></i>Account Information
+                    </strong>
                 </div>
                 <div class="card-body">
                     <ul class="list-group list-group-flush">
-                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
-                            <span class="text-muted"><i class="fa-solid fa-user me-2 text-secondary"></i>Full Name</span>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                            <span class="text-muted"><i class="fas fa-user me-2 text-secondary"></i>Full Name</span>
                             <span class="fw-semibold text-dark">{{ user.get_full_name|default:"-" }}</span>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
-                            <span class="text-muted"><i class="fa-solid fa-at me-2 text-secondary"></i>Username</span>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                            <span class="text-muted"><i class="fas fa-at me-2 text-secondary"></i>Username</span>
                             <span class="fw-semibold text-dark">{{ user.username }}</span>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
-                            <span class="text-muted"><i class="fa-solid fa-envelope me-2 text-secondary"></i>Email Address</span>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                            <span class="text-muted"><i class="fas fa-envelope me-2 text-secondary"></i>Email Address</span>
                             <span class="fw-semibold text-dark">{{ user.email|default:"-" }}</span>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
-                            <span class="text-muted"><i class="fa-solid fa-id-badge me-2 text-secondary"></i>Unique Technician ID</span>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                            <span class="text-muted"><i class="fas fa-id-badge me-2 text-secondary"></i>Unique Technician ID</span>
                             <span class="fw-semibold text-primary">{{ technician.unique_id|default:"-" }}</span>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
-                            <span class="text-muted"><i class="fa-solid fa-building-user me-2 text-secondary"></i>Assigned Workspace</span>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                            <span class="text-muted"><i class="fas fa-building me-2 text-secondary"></i>Assigned Workspace</span>
                             <span class="fw-semibold text-dark">{{ technician.workspace.name|default:"Main Workspace" }}</span>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
-                            <span class="text-muted"><i class="fa-solid fa-calendar me-2 text-secondary"></i>Member Since</span>
-                            <span class="fw-semibold text-muted">{{ user.date_joined|date:"M d, Y" }}</span>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                            <span class="text-muted"><i class="fas fa-calendar-alt me-2 text-secondary"></i>Member Since</span>
+                            <span class="text-muted">{{ user.date_joined|date:"M d, Y" }}</span>
                         </li>
                     </ul>
                 </div>
             </div>
 
             <!-- Password Reset Form Card -->
-            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
-                <div class="card-header bg-white border-bottom py-3">
-                    <h5 class="card-title mb-0 fw-bold text-dark">
-                        <i class="fa-solid fa-key text-warning me-2"></i>Change Password
-                    </h5>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2 px-3 border-bottom d-flex align-items-center">
+                    <strong class="text-dark">
+                        <i class="fas fa-key text-warning me-2"></i>Change Password
+                    </strong>
                 </div>
                 <div class="card-body">
                     <form method="post" action="{% url 'technician_profile' %}" id="change-password-form">
@@ -106,14 +90,14 @@
                         <div class="mb-3">
                             <label for="current_password" class="form-label small fw-semibold text-muted">Current Password *</label>
                             <div class="input-group">
-                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-lock text-muted"></i></span>
-                                <input type="password" class="form-control border-start-0" id="current_password" name="current_password" required autocomplete="current-password" placeholder="Enter your current password">
+                                <span class="input-group-text bg-light border-end-0"><i class="fas fa-lock text-muted"></i></span>
+                                <input type="password" class="form-control border-start-0" id="current_password" name="current_password" required autocomplete="current-password" placeholder="Enter current password">
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="new_password" class="form-label small fw-semibold text-muted">New Password *</label>
                             <div class="input-group">
-                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-shield-halved text-muted"></i></span>
+                                <span class="input-group-text bg-light border-end-0"><i class="fas fa-shield-alt text-muted"></i></span>
                                 <input type="password" class="form-control border-start-0" id="new_password" name="new_password" required autocomplete="new-password" placeholder="Enter new password">
                             </div>
                             <div class="form-text small text-muted">Must be at least 8 characters and not too common.</div>
@@ -121,13 +105,13 @@
                         <div class="mb-3">
                             <label for="confirm_password" class="form-label small fw-semibold text-muted">Confirm New Password *</label>
                             <div class="input-group">
-                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-check-double text-muted"></i></span>
+                                <span class="input-group-text bg-light border-end-0"><i class="fas fa-check-double text-muted"></i></span>
                                 <input type="password" class="form-control border-start-0" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="Re-type new password">
                             </div>
                         </div>
                         <div class="d-flex justify-content-end">
-                            <button type="submit" class="btn btn-warning fw-semibold px-4 shadow-sm" name="change_password_submit">
-                                <i class="fa-solid fa-floppy-disk me-1"></i> Update Password
+                            <button type="submit" class="btn btn-primary fw-semibold px-4" name="change_password_submit">
+                                <i class="fas fa-save me-1"></i> Update Password
                             </button>
                         </div>
                     </form>
@@ -138,16 +122,16 @@
         <!-- Right Column: Active Devices & App Download -->
         <div class="col-lg-6">
             <!-- Active Mobile Devices Card -->
-            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
-                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0 fw-bold text-dark">
-                        <i class="fa-solid fa-mobile-screen-button text-success me-2"></i>Active Mobile Devices
-                    </h5>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
+                    <strong class="text-dark">
+                        <i class="fas fa-mobile-alt text-primary me-2"></i>Active Mobile Devices
+                    </strong>
                     {% if active_sessions %}
                     <form method="post" action="{% url 'technician_logout_all_devices' %}" onsubmit="return confirm('Are you sure you want to log out all your mobile devices?');" class="m-0">
                         {% csrf_token %}
-                        <button type="submit" class="btn btn-outline-danger btn-sm fw-semibold">
-                            <i class="fa-solid fa-arrow-right-from-bracket me-1"></i>Log Out All
+                        <button type="submit" class="btn btn-outline-danger btn-sm py-1 px-2" style="font-size: 0.78rem;">
+                            <i class="fas fa-sign-out-alt me-1"></i>Log Out All
                         </button>
                     </form>
                     {% endif %}
@@ -157,28 +141,28 @@
                         These mobile devices are currently authenticated on the Botgi Technician App. You can remotely revoke any device if needed.
                     </p>
                     {% if active_sessions %}
-                        <div class="list-group list-group-flush border rounded-3 overflow-hidden">
+                        <div class="list-group list-group-flush border rounded overflow-hidden">
                             {% for s in active_sessions %}
                             <div class="list-group-item p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <div class="d-flex align-items-center gap-3">
-                                    <div class="rounded-circle bg-light d-flex align-items-center justify-content-center text-primary" style="width: 44px; height: 44px; font-size: 1.25rem;">
-                                        <i class="fa-solid fa-mobile-screen"></i>
+                                    <div class="bg-light rounded p-2 text-primary">
+                                        <i class="fas fa-mobile-alt fa-lg"></i>
                                     </div>
                                     <div>
                                         <div class="fw-bold text-dark mb-0">{{ s.device_label }}</div>
                                         <div class="text-muted small d-flex flex-wrap gap-2">
-                                            <span><i class="fa-solid fa-network-wired me-1"></i>{{ s.ip_address|default:"-" }}</span>
+                                            <span><i class="fas fa-network-wired me-1"></i>{{ s.ip_address|default:"-" }}</span>
                                             <span>•</span>
-                                            <span><i class="fa-solid fa-clock me-1"></i>Active: {{ s.last_activity_at|date:"M d, h:i A" }}</span>
+                                            <span><i class="fas fa-clock me-1"></i>Active: {{ s.last_activity_at|date:"M d, h:i A" }}</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Active</span>
+                                    <span class="badge bg-success">Active</span>
                                     <form method="post" action="{% url 'technician_logout_device' s.id %}" onsubmit="return confirm('Revoke access for this device?');" class="m-0">
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-outline-danger btn-sm" title="Log out this device">
-                                            <i class="fa-solid fa-power-off"></i>
+                                            <i class="fas fa-power-off"></i>
                                         </button>
                                     </form>
                                 </div>
@@ -186,19 +170,19 @@
                             {% endfor %}
                         </div>
                     {% else %}
-                        <div class="text-center py-4 bg-light rounded-3 border">
-                            <i class="fa-solid fa-mobile-screen text-muted mb-2" style="font-size: 2.2rem;"></i>
+                        <div class="text-center py-4 bg-light rounded border">
+                            <i class="fas fa-mobile-alt text-muted mb-2 fa-2x"></i>
                             <div class="fw-semibold text-dark">No Active Mobile Devices</div>
                             <p class="text-muted small mb-3">You are not currently logged in on any mobile device.</p>
                             <button type="button" class="btn btn-primary btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#qrPairModal">
-                                <i class="fa-solid fa-qrcode me-1"></i> Pair Mobile App Now
+                                <i class="fas fa-qrcode me-1"></i> Pair Mobile App Now
                             </button>
                         </div>
                     {% endif %}
 
                     {% if recent_sessions %}
                     <div class="mt-4">
-                        <h6 class="text-muted small fw-bold text-uppercase mb-2">Recently Logged Out Devices</h6>
+                        <div class="small fw-bold text-uppercase text-muted mb-2">Recently Logged Out Devices</div>
                         <ul class="list-group list-group-flush border-top">
                             {% for rs in recent_sessions %}
                             <li class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center text-muted small">
@@ -207,7 +191,7 @@
                                     <span class="ms-2 text-black-50">({{ rs.ip_address|default:"-" }})</span>
                                 </div>
                                 <div>
-                                    <span class="badge bg-secondary-subtle text-secondary">Logged Out</span>
+                                    <span class="badge bg-secondary">Logged Out</span>
                                     <span class="ms-1">{{ rs.last_activity_at|date:"M d" }}</span>
                                 </div>
                             </li>
@@ -218,18 +202,18 @@
                 </div>
             </div>
 
-            <!-- Technician App Download Card -->
-            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
-                <div class="card-header bg-white border-bottom py-3">
-                    <h5 class="card-title mb-0 fw-bold text-dark">
-                        <i class="fa-brands fa-android text-success me-2"></i>Technician Mobile App
-                    </h5>
+            <!-- Technician Mobile App Card -->
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2 px-3 border-bottom d-flex align-items-center">
+                    <strong class="text-dark">
+                        <i class="fab fa-android text-success me-2"></i>Technician Mobile App
+                    </strong>
                 </div>
                 <div class="card-body">
                     {% if active_release %}
                     <div class="row align-items-center g-3">
                         <div class="col-sm-8">
-                            <div class="d-flex align-items-center gap-2 mb-2">
+                            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                                 <h6 class="fw-bold mb-0 text-dark">Botgi Technician Android App</h6>
                                 <span class="badge bg-primary">v{{ active_release.version_name }}</span>
                                 <span class="badge bg-light text-dark border">Build {{ active_release.version_code }}</span>
@@ -245,11 +229,11 @@
                             </div>
                             {% endif %}
                             <div class="d-flex flex-wrap gap-2">
-                                <a href="{% url 'download_technician_app' %}" class="btn btn-success fw-semibold shadow-sm">
-                                    <i class="fa-solid fa-download me-1"></i> Download APK
+                                <a href="{% url 'download_technician_app' %}" class="btn btn-primary btn-sm fw-semibold">
+                                    <i class="fas fa-download me-1"></i> Download APK
                                 </a>
-                                <a href="{% url 'technician_app_landing' %}" target="_blank" class="btn btn-outline-secondary fw-semibold">
-                                    <i class="fa-solid fa-up-right-from-square me-1"></i> Share Link
+                                <a href="{% url 'technician_app_landing' %}" target="_blank" class="btn btn-outline-secondary btn-sm fw-semibold">
+                                    <i class="fas fa-external-link-alt me-1"></i> Share Link
                                 </a>
                             </div>
                         </div>
@@ -263,8 +247,8 @@
                         </div>
                     </div>
                     {% else %}
-                    <div class="text-center py-4 bg-light rounded-3 border">
-                        <i class="fa-solid fa-mobile-screen-button text-muted mb-2" style="font-size: 2.2rem;"></i>
+                    <div class="text-center py-4 bg-light rounded border">
+                        <i class="fas fa-mobile-alt text-muted mb-2 fa-2x"></i>
                         <div class="fw-semibold text-dark">No APK Uploaded Yet</div>
                         <p class="text-muted small mb-0">Staff can upload the latest technician APK release in Company Settings.</p>
                     </div>
@@ -278,16 +262,16 @@
 <!-- Modal: Pair Mobile App via QR Code -->
 <div class="modal fade" id="qrPairModal" tabindex="-1" aria-labelledby="qrPairModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content shadow-lg border-0" style="border-radius: 16px;">
-            <div class="modal-header border-bottom py-3">
-                <h5 class="modal-title fw-bold text-dark" id="qrPairModalLabel">
-                    <i class="fa-solid fa-qrcode text-primary me-2"></i>Pair Mobile App (Instant Login)
+        <div class="modal-content shadow border-0">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h5 class="modal-title fw-bold text-dark fs-6" id="qrPairModalLabel">
+                    <i class="fas fa-qrcode text-primary me-2"></i>Pair Mobile App (Instant Login)
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body text-center p-4">
                 <p class="text-muted small mb-3">
-                    Open the <strong>Botgi Technician App</strong> on your phone, tap <strong>"Scan QR Login"</strong>, and point your camera at this QR code. No password needed!
+                    Open the <strong>Botgi Technician App</strong> on your phone, tap <strong>"Scan QR Login"</strong>, and point your camera at this QR code.
                 </p>
 
                 <!-- QR Container -->
@@ -299,11 +283,11 @@
                 </div>
 
                 <div id="qr-display-area" style="display: none;">
-                    <div class="p-3 bg-white rounded-3 border d-inline-block shadow-sm mb-3">
+                    <div class="p-3 bg-white rounded border d-inline-block shadow-sm mb-3">
                         <img id="qr-code-img" src="" alt="Login QR Code" style="width: 220px; height: 220px;" class="img-fluid">
                     </div>
                     <div id="qr-timer-badge" class="mb-2">
-                        <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock me-1"></i>Expires in: <span id="qr-countdown">10:00</span></span>
+                        <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Expires in: <span id="qr-countdown">10:00</span></span>
                     </div>
                     <div id="qr-pairing-status" class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-center gap-2">
                         <span class="spinner-grow spinner-grow-sm text-info" role="status"></span>
@@ -313,8 +297,8 @@
 
                 <!-- Success Screen -->
                 <div id="qr-success-area" style="display: none;" class="py-4">
-                    <div class="text-success mb-3" style="font-size: 3.5rem;">
-                        <i class="fa-solid fa-circle-check"></i>
+                    <div class="text-success mb-3" style="font-size: 3rem;">
+                        <i class="fas fa-check-circle"></i>
                     </div>
                     <h5 class="fw-bold text-dark mb-1">Paired Successfully!</h5>
                     <p class="text-muted small mb-3" id="qr-success-device-text">Your mobile device is now authenticated and ready to use.</p>
@@ -323,9 +307,9 @@
                     </button>
                 </div>
             </div>
-            <div class="modal-footer border-top bg-light py-2.5">
+            <div class="modal-footer border-top bg-light py-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="refresh-qr-btn">
-                    <i class="fa-solid fa-rotate-right me-1"></i> Generate New QR
+                    <i class="fas fa-sync-alt me-1"></i> Generate New QR
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
             </div>
@@ -388,7 +372,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearInterval(countdownInterval);
                 clearInterval(pollInterval);
                 document.getElementById('qr-pairing-status').className = 'alert alert-danger py-2 small mb-0';
-                document.getElementById('qr-pairing-status').innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i> QR Code expired. Please generate a new one.';
+                document.getElementById('qr-pairing-status').innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> QR Code expired. Please generate a new one.';
             } else {
                 updateCountdownDisplay();
             }

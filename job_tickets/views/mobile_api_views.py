@@ -64,6 +64,12 @@ def mobile_api_login(request):
     if not user or not user.is_active:
         return JsonResponse({'error': 'invalid_credentials', 'message': 'Invalid username or password.'}, status=401)
 
+    if not user.groups.filter(name='Technicians').exists():
+        return JsonResponse(
+            {'error': 'technician_only', 'message': 'The mobile app is for technicians only.'},
+            status=403,
+        )
+
     session_id = uuid.uuid4().hex
     ip = get_client_ip(request)
     ua = request.META.get('HTTP_USER_AGENT', 'Botgi Mobile App')
@@ -139,6 +145,12 @@ def mobile_api_qr_login(request):
     user = qr_token.user
     if not user.is_active:
         return JsonResponse({'error': 'inactive_user', 'message': 'This account is inactive.'}, status=403)
+
+    if not user.groups.filter(name='Technicians').exists():
+        return JsonResponse(
+            {'error': 'technician_only', 'message': 'The mobile app is for technicians only.'},
+            status=403,
+        )
 
     device_name = (payload.get('device_name') or payload.get('device_model') or '').strip()
     ip = get_client_ip(request)

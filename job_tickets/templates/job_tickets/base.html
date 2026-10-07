@@ -488,8 +488,8 @@
                 </li>
                 <li>
                     <a class="sidebar-link {% if request.resolver_match.url_name == 'technician_profile' %}active{% endif %}"
-                        href="{% url 'technician_profile' %}" data-tooltip="My Profile & App">
-                        <i class="fa-solid fa-user-circle"></i><span class="sidebar-link-label">My Profile &amp; App</span>
+                        href="{% url 'technician_profile' %}" data-tooltip="Profile">
+                        <i class="fa-solid fa-user-circle"></i><span class="sidebar-link-label">Profile</span>
                     </a>
                 </li>
                 {% endif %}
@@ -534,10 +534,12 @@
                             <span>Settings</span>
                         </a>
                         {% endif %}
+                        {% if not user.is_staff %}
                         <a href="{% url 'technician_profile' %}" class="user-menu-link">
-                            <i class="fa-solid fa-id-badge"></i>
-                            <span>Technician Profile &amp; App</span>
+                            <i class="fa-solid fa-user-circle"></i>
+                            <span>Profile</span>
                         </a>
+                        {% endif %}
                         <button type="button" class="user-menu-link border-0 bg-transparent w-100 text-start" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal">
                             <i class="fa-solid fa-text-height"></i>
                             <span>Display &amp; Zoom Scale</span>
