@@ -125,10 +125,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String _getServerBadgeLabel() {
-    final clean = AppConfig.baseUrl
-        .replaceFirst('http://', '')
-        .replaceFirst('https://', '');
-    return clean.isEmpty ? 'Set Server' : clean;
+    if (AppConfig.customBaseUrl.isNotEmpty) {
+      final clean = AppConfig.customBaseUrl
+          .replaceFirst('http://', '')
+          .replaceFirst('https://', '');
+      return clean.isEmpty ? 'Custom Server' : clean;
+    }
+    return 'Server';
   }
 
   @override
@@ -468,10 +471,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.link_rounded, size: 14, color: Colors.grey.shade600),
+                                  Icon(Icons.tune_rounded, size: 13, color: Colors.grey.shade600),
                                   const SizedBox(width: 6),
                                   Text(
-                                    'Connected to: ${AppConfig.baseUrl}',
+                                    AppConfig.customBaseUrl.isNotEmpty
+                                        ? 'Server: ${AppConfig.customBaseUrl}'
+                                        : 'Server Settings',
                                     style: TextStyle(
                                       fontSize: 11.5,
                                       color: Colors.grey.shade600,
@@ -584,10 +589,8 @@ class _ServerSettingsSheetState extends State<_ServerSettingsSheet> {
   @override
   void initState() {
     super.initState();
-    final initialUrl = AppConfig.customBaseUrl.isNotEmpty
-        ? AppConfig.customBaseUrl
-        : AppConfig.baseUrl;
-    _hostPortController = TextEditingController(text: initialUrl);
+    // Do NOT pre-fill with any default domain
+    _hostPortController = TextEditingController(text: AppConfig.customBaseUrl);
   }
 
   @override
@@ -597,37 +600,53 @@ class _ServerSettingsSheetState extends State<_ServerSettingsSheet> {
   }
 
   String _previewCurrentUrl() {
-    final normalized = AppConfig.normalizeBaseUrl(_hostPortController.text);
+    final raw = _hostPortController.text.trim();
+    if (raw.isEmpty) {
+      return 'Default Server';
+    }
+    final normalized = AppConfig.normalizeBaseUrl(raw);
     return normalized.isEmpty ? 'http://<host>:<port>' : normalized;
   }
 
   Future<void> _save() async {
     final raw = _hostPortController.text.trim();
-    final normalized = AppConfig.normalizeBaseUrl(raw);
-    if (normalized.isEmpty) {
-      setState(() {
-        _sheetError = 'Please enter a server host / IP and port.';
-      });
-      return;
-    }
-
     setState(() {
       _isSaving = true;
       _sheetError = null;
     });
 
     try {
-      await AppConfig.setMode(AppConfig.customMode);
-      await AppConfig.setCustomBaseUrl(normalized);
+      if (raw.isEmpty) {
+        await AppConfig.resetToDefault();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connected to default server.'),
+            backgroundColor: Color(0xFF10B981),
+          ),
+        );
+      } else {
+        final normalized = AppConfig.normalizeBaseUrl(raw);
+        if (normalized.isEmpty) {
+          setState(() {
+            _isSaving = false;
+            _sheetError = 'Please enter a valid server host / domain.';
+          });
+          return;
+        }
+        await AppConfig.setMode(AppConfig.customMode);
+        await AppConfig.setCustomBaseUrl(normalized);
 
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Connected to server: ${AppConfig.baseUrl}'),
-          backgroundColor: const Color(0xFF10B981),
-        ),
-      );
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Connected to server: $normalized'),
+            backgroundColor: const Color(0xFF10B981),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {

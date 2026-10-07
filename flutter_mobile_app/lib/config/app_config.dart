@@ -60,6 +60,14 @@ class AppConfig {
     await prefs.setString(_modeKey, _mode);
   }
 
+  static Future<void> resetToDefault() async {
+    _mode = kReleaseMode ? prodMode : devMode;
+    _customBaseUrl = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_modeKey, _mode);
+    await prefs.setString(_customUrlKey, '');
+  }
+
   static Future<void> setCustomBaseUrl(String rawUrl) async {
     _customBaseUrl = normalizeBaseUrl(rawUrl);
     final prefs = await SharedPreferences.getInstance();
