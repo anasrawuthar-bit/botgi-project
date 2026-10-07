@@ -349,6 +349,147 @@ def mark_service_returned(request, service_id):
 
 @login_required
 @require_POST
+def edit_returned_service_amounts(request, service_id):
+    """Edit vendor cost, bill number, return date, and client charge after marking returned."""
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return denied
+
+    service = get_object_or_404(
+        scope_to_workspace(
+            SpecializedService.objects.select_related('job_ticket', 'vendor'),
+            getattr(request, 'current_workspace', None),
+            field='job_ticket__workspace',
+        ),
+        id=service_id,
+    )
+    job = service.job_ticket
+
+    # Block editing if job status is Closed
+    if job.status == 'Closed':
+        err_msg = "Permission denied: Cannot edit vendor bill or client charge for a closed job."
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': False, 'error': err_msg}, status=403)
+        messages.error(request, err_msg)
+        return redirect('staff_job_detail', job_code=job.job_code)
+
+    # Only returned services can be edited
+    if service.status != 'Returned from Vendor':
+        err_msg = "Only jobs returned from a vendor can have their return amounts edited."
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': False, 'error': err_msg}, status=400)
+        messages.error(request, err_msg)
+        return redirect('staff_job_detail', job_code=job.job_code)
+
+    vendor_cost_raw = request.POST.get('vendor_cost')
+    client_charge_raw = request.POST.get('client_charge')
+    vendor_bill_number = (request.POST.get('vendor_bill_number') or '').strip()
+    return_date_str = (request.POST.get('return_date') or '').strip()
+
+    if not vendor_cost_raw or not client_charge_raw:
+        err_msg = "Both Vendor Bill Amount and Client Charge are required."
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': False, 'error': err_msg}, status=400)
+        messages.error(request, err_msg)
+        return redirect('staff_job_detail', job_code=job.job_code)
+
+    if not vendor_bill_number:
+        err_msg = "Vendor Bill / Invoice Number is required."
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': False, 'error': err_msg}, status=400)
+        messages.error(request, err_msg)
+        return redirect('staff_job_detail', job_code=job.job_code)
+
+    return_dt = service.returned_date or timezone.now()
+    if return_date_str:
+        try:
+            parsed_date = datetime.strptime(return_date_str, '%Y-%m-%d').date()
+            now_time = (service.returned_date.time() if service.returned_date else timezone.localtime().time())
+            return_dt = timezone.make_aware(datetime.combine(parsed_date, now_time))
+        except Exception:
+            pass
+
+    try:
+        vendor_cost = _parse_vendor_money(vendor_cost_raw, "vendor cost")
+        client_charge = _parse_vendor_money(client_charge_raw, "client charge")
+    except ValueError as exc:
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
+        messages.error(request, str(exc))
+        return redirect('staff_job_detail', job_code=job.job_code)
+
+    # Validate against amount already paid
+    paid = service.vendor_paid_amount or Decimal('0.00')
+    discount = service.vendor_discount_amount or Decimal('0.00')
+    net_payable = (vendor_cost - discount).quantize(Decimal('0.01'))
+    if net_payable < paid:
+        err_msg = (
+            f"Vendor bill amount (₹{vendor_cost:.2f}) minus discount (₹{discount:.2f}) "
+            f"cannot be less than the amount already paid (₹{paid:.2f})."
+        )
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': False, 'error': err_msg}, status=400)
+        messages.error(request, err_msg)
+        return redirect('staff_job_detail', job_code=job.job_code)
+
+    new_balance = (net_payable - paid).quantize(Decimal('0.01'))
+
+    with transaction.atomic():
+        changes = []
+        if (service.vendor_cost or Decimal('0.00')) != vendor_cost:
+            changes.append(f"Vendor bill ₹{service.vendor_cost or 0} -> ₹{vendor_cost}")
+        if (service.client_charge or Decimal('0.00')) != client_charge:
+            changes.append(f"Client charge ₹{service.client_charge or 0} -> ₹{client_charge}")
+        if (service.vendor_bill_number or '') != vendor_bill_number:
+            changes.append(f"Bill #{service.vendor_bill_number or 'N/A'} -> #{vendor_bill_number}")
+
+        service.vendor_cost = vendor_cost
+        service.vendor_balance_amount = new_balance
+        service.client_charge = client_charge
+        service.vendor_bill_number = vendor_bill_number
+        service.returned_date = return_dt
+        service.save(update_fields=[
+            'vendor_cost', 'vendor_balance_amount', 'client_charge',
+            'vendor_bill_number', 'returned_date'
+        ])
+
+        # Update or create corresponding ServiceLog
+        vendor_name = service.vendor.company_name if service.vendor else "Specialized Service"
+        service_log = ServiceLog.objects.filter(
+            job_ticket=job,
+            description__icontains="Specialized Service"
+        ).first()
+
+        if service_log:
+            service_log.service_charge = client_charge
+            service_log.save(update_fields=['service_charge'])
+        else:
+            ServiceLog.objects.create(
+                job_ticket=job,
+                description=f"Specialized Service - {vendor_name}",
+                part_cost=Decimal('0.00'),
+                service_charge=client_charge
+            )
+
+        details = (
+            f"Vendor return details edited for '{vendor_name}': "
+            + (", ".join(changes) if changes else "Details updated")
+            + f". Vendor balance updated to ₹{new_balance}."
+        )
+        JobTicketLog.objects.create(job_ticket=job, user=request.user, action='STATUS', details=details)
+
+        send_job_update_message(job.job_code, job.status)
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+        return JsonResponse({'ok': True, 'message': 'Vendor return amounts updated successfully.'})
+
+    messages.success(request, f"Vendor return amounts for job {job.job_code} updated successfully.")
+    return redirect('staff_job_detail', job_code=job.job_code)
+
+
+
+@login_required
+@require_POST
 def record_vendor_payment(request, vendor_id):
     denied = _staff_access_required(request, "staff_dashboard")
     if denied:

@@ -79,6 +79,7 @@ urlpatterns = [
     path('technician/service-log/<int:log_id>/delete/', views.technician_delete_service_log, name='technician_delete_service_log'),
     path('job/<str:job_code>/request-specialized-service/', views.request_specialized_service, name='request_specialized_service'), # <
     path('specialized-service/<int:service_id>/mark-returned/', views.mark_service_returned, name='mark_service_returned'), # <--- ADD THIS LINE
+    path('specialized-service/<int:service_id>/edit-returned-amounts/', views.edit_returned_service_amounts, name='edit_returned_service_amounts'),
     path('staff/job/close/<str:job_code>/', views.close_job, name='close_job'),
     path('api/job-status/', views.get_job_status_data, name='get_job_status_data'),
     path('api/app-release/', views.app_release_meta, name='app_release_meta'),

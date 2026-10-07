@@ -523,7 +523,7 @@
                         </button>
                         {% else %}
                         <button type="button" class="btn btn-sm btn-success" onclick="lockVendorDetails()" id="lock-btn">
-                            <i class="fas fa-lock"></i> Lock Details (<span id="countdown">10</span>s)
+                            <i class="fas fa-lock"></i> Lock Details{% if specialized_service.status != 'Returned from Vendor' %} (<span id="countdown">10</span>s){% endif %}
                         </button>
                         {% endif %}
                     </div>
@@ -576,6 +576,22 @@
                                 <tr>
                                     <th>Returned Date</th>
                                     <td>{{ specialized_service.returned_date|date:"Y-m-d" }}</td>
+                                </tr>
+                                {% endif %}
+                                {% if specialized_service.status == 'Returned from Vendor' %}
+                                <tr>
+                                    <th>Actions</th>
+                                    <td>
+                                        {% if job.status == 'Closed' %}
+                                            <span class="badge bg-secondary text-white py-1.5 px-2">
+                                                <i class="fas fa-lock me-1"></i>Job Closed (Amounts Locked)
+                                            </span>
+                                        {% else %}
+                                            <button type="button" class="btn btn-sm btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#editVendorReturnModal">
+                                                <i class="fas fa-edit me-1"></i>Edit Return Amounts
+                                            </button>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 {% endif %}
                             </tbody>
@@ -1563,6 +1579,68 @@
   </div>
 </div>
 
+{% if specialized_service and specialized_service.status == 'Returned from Vendor' and job.status != 'Closed' %}
+<!-- Modal: Edit Vendor Return Details -->
+<div class="modal fade" id="editVendorReturnModal" tabindex="-1" aria-labelledby="editVendorReturnModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow border-0">
+      <div class="modal-header border-bottom">
+        <h5 class="modal-title fw-bold" id="editVendorReturnModalLabel">
+          <i class="fas fa-edit text-primary me-2"></i>Edit Vendor Return Amounts
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'edit_returned_service_amounts' specialized_service.id %}">
+        {% csrf_token %}
+        <div class="modal-body p-4">
+          <div class="alert alert-info py-2 px-3 small mb-3">
+            <i class="fas fa-info-circle me-1"></i>
+            Editing client charge will automatically update the specialized service charge on this ticket.
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Return Date <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" name="return_date" id="edit_return_date" value="{{ specialized_service.returned_date|date:'Y-m-d'|default:'' }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Vendor Bill / Invoice No. <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="vendor_bill_number" id="edit_vendor_bill_number" value="{{ specialized_service.vendor_bill_number|default:'' }}" placeholder="e.g. INV-2024-001" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Vendor Bill Amount (Our Cost) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <span class="input-group-text">&#8377;</span>
+              <input type="number" class="form-control" name="vendor_cost" id="edit_vendor_cost" step="0.01" min="0" value="{{ specialized_service.vendor_cost|default_if_none:'' }}" placeholder="e.g. 2500" required>
+            </div>
+            {% if specialized_service.vendor_paid_amount > 0 %}
+            <small class="text-muted d-block mt-1">
+              Amount already paid to vendor: <strong>&#8377;{{ specialized_service.vendor_paid_amount|floatformat:2 }}</strong>. Bill amount cannot be lower than paid amount.
+            </small>
+            {% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Client Charge (Customer Price) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <span class="input-group-text">&#8377;</span>
+              <input type="number" class="form-control" name="client_charge" id="edit_client_charge" step="0.01" min="0" value="{{ specialized_service.client_charge|default_if_none:'' }}" placeholder="e.g. 3500" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-top">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary fw-semibold">
+            <i class="fas fa-save me-1"></i> Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Modal: Add Job Expense -->
 <div class="modal fade" id="addJobExpenseModal" tabindex="-1" aria-labelledby="addJobExpenseModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1843,24 +1921,55 @@ document.getElementById('unlock-vendor-form').addEventListener('submit', functio
                             <th>Client Charge</th>
                             <td class="text-success fw-bold">₹${data.client_charge.toFixed(2)}</td>
                         </tr>
+                        ${data.vendor_bill_number ? `<tr><th>Vendor Bill Number</th><td class="fw-bold text-dark font-monospace">${data.vendor_bill_number}</td></tr>` : ''}
                         ${data.sent_date ? `<tr><th>Sent Date</th><td>${data.sent_date}</td></tr>` : ''}
                         ${data.returned_date ? `<tr><th>Returned Date</th><td>${data.returned_date}</td></tr>` : ''}
+                        ${data.is_returned ? `
+                            <tr>
+                                <th>Actions</th>
+                                <td>
+                                    ${data.is_closed ? `
+                                        <span class="badge bg-secondary text-white py-1.5 px-2">
+                                            <i class="fas fa-lock me-1"></i>Job Closed (Amounts Locked)
+                                        </span>
+                                    ` : `
+                                        <button type="button" class="btn btn-sm btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#editVendorReturnModal">
+                                            <i class="fas fa-edit me-1"></i>Edit Return Amounts
+                                        </button>
+                                    `}
+                                </td>
+                            </tr>
+                        ` : ''}
                     </tbody>
                 </table>
             `;
+
+            const editCost = document.getElementById('edit_vendor_cost');
+            if (editCost && data.vendor_cost !== undefined) editCost.value = data.vendor_cost;
+            const editCharge = document.getElementById('edit_client_charge');
+            if (editCharge && data.client_charge !== undefined) editCharge.value = data.client_charge;
+            const editBill = document.getElementById('edit_vendor_bill_number');
+            if (editBill && data.vendor_bill_number !== undefined) editBill.value = data.vendor_bill_number;
+            const editDate = document.getElementById('edit_return_date');
+            if (editDate && data.returned_date) editDate.value = data.returned_date;
             
             // Update the unlock button to lock button with countdown
             const unlockButton = document.querySelector('[data-bs-target="#vendorDetailsModal"]');
             if (unlockButton) {
                 unlockButton.className = 'btn btn-sm btn-success';
-                unlockButton.innerHTML = '<i class="fas fa-lock"></i> Lock Details (<span id="countdown">10</span>s)';
                 unlockButton.removeAttribute('data-bs-toggle');
                 unlockButton.removeAttribute('data-bs-target');
                 unlockButton.onclick = lockVendorDetails;
                 unlockButton.id = 'lock-btn';
                 
-                // Start countdown
-                startCountdown();
+                if (data.is_returned) {
+                    // Disable auto-relock countdown when editing return amounts
+                    unlockButton.innerHTML = '<i class="fas fa-lock"></i> Lock Details';
+                    stopCountdown();
+                } else {
+                    unlockButton.innerHTML = '<i class="fas fa-lock"></i> Lock Details (<span id="countdown">10</span>s)';
+                    startCountdown();
+                }
             }
             
             // Close modal
@@ -1886,19 +1995,36 @@ document.getElementById('unlock-vendor-form').addEventListener('submit', functio
 let countdownTimer;
 let countdownSeconds = 10;
 
+function stopCountdown() {
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+    }
+    const countdownElement = document.getElementById('countdown');
+    if (countdownElement) {
+        countdownElement.remove();
+    }
+    const lockBtn = document.getElementById('lock-btn');
+    if (lockBtn) {
+        lockBtn.innerHTML = '<i class="fas fa-lock"></i> Lock Details';
+    }
+}
+
 function startCountdown() {
     const countdownElement = document.getElementById('countdown');
     if (!countdownElement) return;
     
+    stopCountdown();
     countdownSeconds = 10;
     countdownElement.textContent = countdownSeconds;
     
     countdownTimer = setInterval(() => {
         countdownSeconds--;
-        countdownElement.textContent = countdownSeconds;
+        const el = document.getElementById('countdown');
+        if (el) el.textContent = countdownSeconds;
         
         if (countdownSeconds <= 0) {
-            clearInterval(countdownTimer);
+            stopCountdown();
             lockVendorDetails();
         }
     }, 1000);
@@ -1924,8 +2050,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     const lockBtn = document.getElementById('lock-btn');
-    if (lockBtn) {
+    const countdownEl = document.getElementById('countdown');
+    if (lockBtn && countdownEl) {
         startCountdown();
+    }
+
+    // Disable auto-relock countdown when opening Edit Return Amounts modal
+    const editReturnModalEl = document.getElementById('editVendorReturnModal');
+    if (editReturnModalEl) {
+        editReturnModalEl.addEventListener('show.bs.modal', function() {
+            stopCountdown();
+        });
     }
 
     const reminderDateInput = document.querySelector('input[name="reminder_date"]');
@@ -1982,8 +2117,10 @@ window.addEventListener('beforeunload', function() {
 
 // Also lock on page visibility change (tab switch, minimize)
 document.addEventListener('visibilitychange', function() {
-    if (document.hidden && countdownTimer) {
-        clearInterval(countdownTimer);
+    const editReturnModalEl = document.getElementById('editVendorReturnModal');
+    const isEditingOpen = editReturnModalEl && editReturnModalEl.classList.contains('show');
+    if (document.hidden && countdownTimer && !isEditingOpen) {
+        stopCountdown();
         lockVendorDetails();
     }
 });

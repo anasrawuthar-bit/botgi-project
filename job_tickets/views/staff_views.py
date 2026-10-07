@@ -2724,7 +2724,11 @@ def unlock_vendor_details(request, job_code):
                 'vendor_payment_status': specialized_service.vendor_payment_status if specialized_service else 'N/A',
                 'client_charge': float(specialized_service.client_charge) if specialized_service and specialized_service.client_charge else 0,
                 'sent_date': specialized_service.sent_date.strftime('%Y-%m-%d') if specialized_service and specialized_service.sent_date else None,
-                'returned_date': specialized_service.returned_date.strftime('%Y-%m-%d') if specialized_service and specialized_service.returned_date else None
+                'returned_date': specialized_service.returned_date.strftime('%Y-%m-%d') if specialized_service and specialized_service.returned_date else None,
+                'vendor_bill_number': specialized_service.vendor_bill_number if specialized_service and specialized_service.vendor_bill_number else '',
+                'service_id': specialized_service.id if specialized_service else None,
+                'is_returned': (specialized_service.status == 'Returned from Vendor') if specialized_service else False,
+                'is_closed': (job.status == 'Closed'),
             })
         messages.success(request, 'Vendor details unlocked.')
     else:
