@@ -286,42 +286,42 @@
                     <button class="nav-link active d-inline-flex align-items-center gap-2" id="pending-tab" data-bs-toggle="tab" data-bs-target="#tab-pending" type="button" role="tab" aria-controls="tab-pending" aria-selected="true">
                         <i class="fa-regular fa-clock"></i>
                         <span>Pending Intake</span>
-                        <span class="badge rounded-pill {% if pending_count %}bg-warning text-dark{% else %}bg-light text-muted border{% endif %}">{{ pending_count }}</span>
+                        <span class="badge rounded-pill tab-badge-count {% if pending_count %}bg-warning text-dark{% else %}bg-light text-muted border{% endif %}" data-badge-tab="pending">{{ pending_count }}</span>
                     </button>
                 </li>
                 <li class="nav-item tab-draggable" role="presentation" data-tab-id="in-progress-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="in-progress-tab" data-bs-toggle="tab" data-bs-target="#tab-in-progress" type="button" role="tab" aria-controls="tab-in-progress" aria-selected="false">
                         <i class="fa-solid fa-screwdriver-wrench"></i>
                         <span>In Progress</span>
-                        <span class="badge rounded-pill {% if in_progress_jobs_count %}bg-primary{% else %}bg-light text-muted border{% endif %}">{{ in_progress_jobs_count }}</span>
+                        <span class="badge rounded-pill tab-badge-count {% if in_progress_jobs_count %}bg-primary{% else %}bg-light text-muted border{% endif %}" data-badge-tab="in-progress">{{ in_progress_jobs_count }}</span>
                     </button>
                 </li>
                 <li class="nav-item tab-draggable" role="presentation" data-tab-id="ready-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="ready-tab" data-bs-toggle="tab" data-bs-target="#tab-ready" type="button" role="tab" aria-controls="tab-ready" aria-selected="false">
                         <i class="fa-solid fa-circle-check"></i>
                         <span>Ready for Pickup</span>
-                        <span class="badge rounded-pill {% if ready_count %}bg-success{% else %}bg-light text-muted border{% endif %}">{{ ready_count }}</span>
+                        <span class="badge rounded-pill tab-badge-count {% if ready_count %}bg-success{% else %}bg-light text-muted border{% endif %}" data-badge-tab="ready">{{ ready_count }}</span>
                     </button>
                 </li>
                 <li class="nav-item tab-draggable" role="presentation" data-tab-id="specialized-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="specialized-tab" data-bs-toggle="tab" data-bs-target="#tab-specialized" type="button" role="tab" aria-controls="tab-specialized" aria-selected="false">
                         <i class="fa-solid fa-share-nodes"></i>
                         <span>Specialized Routing</span>
-                        <span class="badge rounded-pill {% if awaiting_assignment_jobs %}bg-info text-dark{% else %}bg-light text-muted border{% endif %}">{{ awaiting_assignment_jobs|length }}</span>
+                        <span class="badge rounded-pill tab-badge-count {% if awaiting_assignment_jobs %}bg-info text-dark{% else %}bg-light text-muted border{% endif %}" data-badge-tab="specialized">{{ awaiting_assignment_jobs|length }}</span>
                     </button>
                 </li>
                 <li class="nav-item tab-draggable" role="presentation" data-tab-id="completed-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="completed-tab" data-bs-toggle="tab" data-bs-target="#tab-completed" type="button" role="tab" aria-controls="tab-completed" aria-selected="false">
                         <i class="fa-solid fa-check-double"></i>
                         <span>Completed</span>
-                        <span class="badge rounded-pill bg-light text-muted border">{{ completed_count }}</span>
+                        <span class="badge rounded-pill tab-badge-count bg-light text-muted border" data-badge-tab="completed">{{ completed_count }}</span>
                     </button>
                 </li>
                 <li class="nav-item tab-draggable" role="presentation" data-tab-id="returned-tab" draggable="true" title="Drag to reorder tabs">
                     <button class="nav-link d-inline-flex align-items-center gap-2" id="returned-tab" data-bs-toggle="tab" data-bs-target="#tab-returned" type="button" role="tab" aria-controls="tab-returned" aria-selected="false">
                         <i class="fa-solid fa-arrow-rotate-left"></i>
                         <span>Returned</span>
-                        <span class="badge rounded-pill bg-light text-muted border">{{ returned_count }}</span>
+                        <span class="badge rounded-pill tab-badge-count bg-light text-muted border" data-badge-tab="returned">{{ returned_count }}</span>
                     </button>
                 </li>
             </ul>
@@ -330,408 +330,32 @@
             <div class="tab-content" id="dashboardTabsContent">
                 <!-- TAB 1: PENDING INTAKE -->
                 <div class="tab-pane fade show active p-3 p-md-4" id="tab-pending" role="tabpanel" aria-labelledby="pending-tab">
-                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                        <div>
-                            <h5 class="fw-bold text-dark mb-0">Pending Intake Queue</h5>
-                            <small class="text-muted">Devices received at reception awaiting technician bench assignment.</small>
-                        </div>
-                        <span class="badge bg-warning-subtle text-dark border border-warning-subtle fw-semibold px-2.5 py-1">
-                            {{ pending_count }} pending intake
-                        </span>
-                    </div>
-                    {% if pending_jobs %}
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Job Code</th>
-                                    <th>Customer</th>
-                                    <th>Phone</th>
-                                    <th>Device</th>
-                                    <th class="text-end">Estimate</th>
-                                    <th class="text-center">Assign</th>
-                                    <th class="text-center">Receipt</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pending-jobs-body">
-                                {% for job in pending_jobs %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-primary text-decoration-none">
-                                            {{ job.job_code }}
-                                        </a>
-                                        {% if job.is_new_assignment %}
-                                        <span class="badge bg-danger ms-1">NEW</span>
-                                        {% endif %}
-                                    </td>
-                                    <td><span class="fw-semibold text-dark">{{ job.customer_name }}</span></td>
-                                    <td><span class="text-secondary small">{{ job.customer_phone }}</span></td>
-                                    <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
-                                    <td class="text-end fw-semibold text-dark">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                                    <td class="text-center">
-                                        <button type="button" class="btn btn-primary btn-sm open-assign-modal d-inline-flex align-items-center gap-1"
-                                            data-bs-toggle="modal" data-bs-target="#assignJobModal"
-                                            data-job-code="{{ job.job_code }}"
-                                            data-customer="{{ job.customer_name }}"
-                                            data-device="{{ job.device_type }}">
-                                            <i class="fa-solid fa-user-check"></i> Assign
-                                        </button>
-                                    </td>
-                                    <td class="text-center">
-                                        <a href="{% url 'job_creation_receipt_print' job_code=job.job_code %}"
-                                            class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
-                                            title="Print intake receipt">
-                                            <i class="fa-solid fa-print"></i> Print
-                                        </a>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="dashboard-empty-state">
-                        <div class="dashboard-empty-icon" style="background: #fef3c7; color: #d97706;">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </div>
-                        <h5 class="fw-bold text-dark mb-1">Intake Queue is Clear</h5>
-                        <p class="text-muted small mb-3">No pending tickets awaiting technician assignment.</p>
-                        <button type="button" class="btn btn-primary btn-sm px-3" data-bs-toggle="modal" data-bs-target="#createJobTicketModal">
-                            <i class="fa-solid fa-plus me-1"></i> Create New Ticket
-                        </button>
-                    </div>
-                    {% endif %}
+                    {% include "job_tickets/staff_tabs/tab_pending.html" %}
                 </div>
 
                 <!-- TAB 2: IN PROGRESS -->
                 <div class="tab-pane fade p-3 p-md-4" id="tab-in-progress" role="tabpanel" aria-labelledby="in-progress-tab">
-                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                        <div>
-                            <h5 class="fw-bold text-dark mb-0">Active Bench Repairs</h5>
-                            <small class="text-muted">Jobs currently being serviced by technicians grouped by assigned bench.</small>
-                        </div>
-                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold px-2.5 py-1">
-                            {{ in_progress_jobs_count }} active job{{ in_progress_jobs_count|pluralize }}
-                        </span>
-                    </div>
-                    {% if grouped_in_progress_jobs %}
-                    <div class="accordion modern-accordion" id="technicianAccordion">
-                        {% for technician_name, jobs in grouped_in_progress_jobs.items %}
-                        <div class="accordion-item mb-2 border rounded-3 overflow-hidden shadow-none">
-                            <h2 class="accordion-header" id="heading-tech-{{ forloop.counter }}">
-                                <button class="accordion-button {% if not forloop.first %}collapsed{% endif %} bg-light py-2.5 px-3" type="button" data-bs-toggle="collapse"
-                                    data-bs-target="#collapse-tech-{{ forloop.counter }}">
-                                    <div class="d-flex align-items-center gap-2 w-100 me-2">
-                                        <span class="badge bg-primary-subtle text-primary rounded-circle p-2" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;">
-                                            <i class="fa-solid fa-user-gear small"></i>
-                                        </span>
-                                        <strong class="text-dark">{{ technician_name }}</strong>
-                                        <span class="badge bg-white text-dark border ms-auto">{{ jobs|length }} ticket{{ jobs|length|pluralize }}</span>
-                                    </div>
-                                </button>
-                            </h2>
-                            <div id="collapse-tech-{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}"
-                                data-bs-parent="#technicianAccordion">
-                                <div class="accordion-body p-0">
-                                    <div class="table-responsive">
-                                        <table class="table table-hover align-middle mb-0">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th>Job Code</th>
-                                                    <th>Customer</th>
-                                                    <th>Device</th>
-                                                    <th>Status</th>
-                                                    <th class="text-end">Amount</th>
-                                                    <th class="text-center">Action</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% for job in jobs %}
-                                                <tr>
-                                                    <td>
-                                                        <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-primary text-decoration-none">
-                                                            {{ job.job_code }}
-                                                        </a>
-                                                    </td>
-                                                    <td><span class="fw-semibold text-dark">{{ job.customer_name }}</span></td>
-                                                    <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
-                                                    <td><span class="badge badge-status badge-info">{{ job.status }}</span></td>
-                                                    <td class="text-end fw-semibold text-dark">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                                                    <td class="text-center">
-                                                        <a href="{% url 'staff_job_detail' job.job_code %}" class="btn btn-outline-primary btn-sm py-1 px-2.5">
-                                                            <i class="fa-solid fa-eye me-1"></i> View
-                                                        </a>
-                                                    </td>
-                                                </tr>
-                                                {% endfor %}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <div class="dashboard-empty-state">
-                        <div class="dashboard-empty-icon" style="background: #e0e7ff; color: #4f46e5;">
-                            <i class="fa-solid fa-screwdriver-wrench"></i>
-                        </div>
-                        <h5 class="fw-bold text-dark mb-1">No Active Bench Repairs</h5>
-                        <p class="text-muted small mb-0">Technicians are currently clear of active work.</p>
-                    </div>
-                    {% endif %}
+                    {% include "job_tickets/staff_tabs/tab_in_progress.html" %}
                 </div>
 
                 <!-- TAB 3: READY FOR PICKUP -->
                 <div class="tab-pane fade p-3 p-md-4" id="tab-ready" role="tabpanel" aria-labelledby="ready-tab">
-                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                        <div>
-                            <h5 class="fw-bold text-dark mb-0">Ready for Pickup</h5>
-                            <small class="text-muted">Repairs completed and awaiting customer handover & final settlement.</small>
-                        </div>
-                        <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2.5 py-1">
-                            {{ ready_count }} ready for pickup
-                        </span>
-                    </div>
-                    {% if ready_for_pickup_jobs %}
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Job Code</th>
-                                    <th>Customer</th>
-                                    <th>Device</th>
-                                    <th>Status</th>
-                                    <th class="text-end">Amount</th>
-                                    <th class="text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for job in ready_for_pickup_jobs %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-primary text-decoration-none">
-                                            {{ job.job_code }}
-                                        </a>
-                                    </td>
-                                    <td><span class="fw-semibold text-dark">{{ job.customer_name }}</span></td>
-                                    <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
-                                    <td><span class="badge badge-status badge-success">{{ job.status }}</span></td>
-                                    <td class="text-end fw-semibold text-dark">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                                    <td class="text-center">
-                                        <a href="{% url 'job_billing_staff' job.job_code %}" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1">
-                                            <i class="fa-solid fa-receipt"></i> View Bill
-                                        </a>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="dashboard-empty-state">
-                        <div class="dashboard-empty-icon" style="background: #dcfce7; color: #16a34a;">
-                            <i class="fa-solid fa-circle-check"></i>
-                        </div>
-                        <h5 class="fw-bold text-dark mb-1">No Jobs Awaiting Pickup</h5>
-                        <p class="text-muted small mb-0">All ready devices have been handed over or none are staged yet.</p>
-                    </div>
-                    {% endif %}
+                    {% include "job_tickets/staff_tabs/tab_ready.html" %}
                 </div>
 
                 <!-- TAB 4: SPECIALIZED ROUTING -->
                 <div class="tab-pane fade p-3 p-md-4" id="tab-specialized" role="tabpanel" aria-labelledby="specialized-tab">
-                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                        <div>
-                            <h5 class="fw-bold text-dark mb-0">Specialized Service Routing</h5>
-                            <small class="text-muted">Jobs requiring external third-party vendor diagnostics or micro-soldering.</small>
-                        </div>
-                        <span class="badge bg-info-subtle text-info border border-info-subtle fw-semibold px-2.5 py-1">
-                            {{ awaiting_assignment_jobs|length }} awaiting vendor
-                        </span>
-                    </div>
-                    {% if awaiting_assignment_jobs %}
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Job Code</th>
-                                    <th>Customer</th>
-                                    <th>Device</th>
-                                    <th>Reported Issue</th>
-                                    <th class="text-end">Amount</th>
-                                    <th style="min-width: 220px;">Assign Vendor</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for service in awaiting_assignment_jobs %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'staff_job_detail' service.job_ticket.job_code %}" class="fw-bold text-primary text-decoration-none">
-                                            {{ service.job_ticket.job_code }}
-                                        </a>
-                                    </td>
-                                    <td><span class="fw-semibold text-dark">{{ service.job_ticket.customer_name }}</span></td>
-                                    <td><span class="badge bg-light text-dark border">{{ service.job_ticket.device_type }}</span></td>
-                                    <td><span class="text-muted small">{{ service.job_ticket.reported_issue|truncatewords:8 }}</span></td>
-                                    <td class="text-end fw-semibold text-dark">&#8377;{{ service.job_ticket.net_total|default_if_none:0|floatformat:2 }}</td>
-                                    <td>
-                                        <form method="post" class="d-flex align-items-center gap-2">
-                                            {% csrf_token %}
-                                            {{ service.form.specialized_service_id }}
-                                            <div class="flex-grow-1">
-                                                {{ service.form.vendor|add_class:"form-select form-select-sm" }}
-                                            </div>
-                                            <button type="submit" name="assign_vendor_form_submit" class="btn btn-primary btn-sm flex-shrink-0">
-                                                <i class="fa-solid fa-paper-plane me-1"></i> Send
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="dashboard-empty-state">
-                        <div class="dashboard-empty-icon" style="background: #f1f5f9; color: #64748b;">
-                            <i class="fa-solid fa-share-nodes"></i>
-                        </div>
-                        <h5 class="fw-bold text-dark mb-1">No Specialized Services Pending</h5>
-                        <p class="text-muted small mb-0">There are no external vendor dispatches queued.</p>
-                    </div>
-                    {% endif %}
+                    {% include "job_tickets/staff_tabs/tab_specialized.html" %}
                 </div>
 
                 <!-- TAB 5: COMPLETED -->
                 <div class="tab-pane fade p-3 p-md-4" id="tab-completed" role="tabpanel" aria-labelledby="completed-tab">
-                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                        <div>
-                            <h5 class="fw-bold text-dark mb-0">Completed Services</h5>
-                            <small class="text-muted">Jobs repaired by technicians awaiting pickup marking or final invoicing.</small>
-                        </div>
-                        <span class="badge bg-light text-dark border fw-semibold px-2.5 py-1">
-                            {{ completed_count }} completed
-                        </span>
-                    </div>
-                    {% if completed_jobs %}
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Job Code</th>
-                                    <th>Customer</th>
-                                    <th>Device</th>
-                                    <th>Status</th>
-                                    <th class="text-end">Amount</th>
-                                    <th class="text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for job in completed_jobs %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-primary text-decoration-none">
-                                            {{ job.job_code }}
-                                        </a>
-                                        {% if job.is_new_assignment %}
-                                        <span class="badge bg-danger ms-1">NEW</span>
-                                        {% endif %}
-                                    </td>
-                                    <td><span class="fw-semibold text-dark">{{ job.customer_name }}</span></td>
-                                    <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
-                                    <td><span class="badge badge-status badge-success">{{ job.status }}</span></td>
-                                    <td class="text-end fw-semibold text-dark">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                                    <td class="text-center">
-                                        <div class="d-inline-flex align-items-center gap-1.5">
-                                            <a href="{% url 'job_billing_staff' job.job_code %}" class="btn btn-outline-primary btn-sm py-1 px-2.5">
-                                                <i class="fa-solid fa-file-invoice me-1"></i> Bill
-                                            </a>
-                                            {% if staff_access.job_status_change %}
-                                            <a href="{% url 'mark_ready_for_pickup' job_code=job.job_code %}" class="btn btn-success btn-sm py-1 px-2.5">
-                                                <i class="fa-solid fa-hand-point-right me-1"></i> Mark Ready
-                                            </a>
-                                            {% endif %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="dashboard-empty-state">
-                        <div class="dashboard-empty-icon" style="background: #f1f5f9; color: #64748b;">
-                            <i class="fa-solid fa-check-double"></i>
-                        </div>
-                        <h5 class="fw-bold text-dark mb-1">No Completed Services Pending</h5>
-                        <p class="text-muted small mb-0">No jobs currently staged in completed status.</p>
-                    </div>
-                    {% endif %}
+                    {% include "job_tickets/staff_tabs/tab_completed.html" %}
                 </div>
 
                 <!-- TAB 6: RETURNED -->
                 <div class="tab-pane fade p-3 p-md-4" id="tab-returned" role="tabpanel" aria-labelledby="returned-tab">
-                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-                        <div>
-                            <h5 class="fw-bold text-dark mb-0">Returned Jobs</h5>
-                            <small class="text-muted">Unrepairable or customer-cancelled devices awaiting final closure.</small>
-                        </div>
-                        <span class="badge bg-light text-dark border fw-semibold px-2.5 py-1">
-                            {{ returned_count }} returned
-                        </span>
-                    </div>
-                    {% if returned_jobs %}
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Job Code</th>
-                                    <th>Customer</th>
-                                    <th>Device</th>
-                                    <th>Status</th>
-                                    <th class="text-end">Amount</th>
-                                    <th class="text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for job in returned_jobs %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-primary text-decoration-none">
-                                            {{ job.job_code }}
-                                        </a>
-                                    </td>
-                                    <td><span class="fw-semibold text-dark">{{ job.customer_name }}</span></td>
-                                    <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
-                                    <td><span class="badge badge-status badge-warning">{{ job.status }}</span></td>
-                                    <td class="text-end fw-semibold text-dark">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
-                                    <td class="text-center">
-                                        <button type="button"
-                                            class="btn btn-outline-danger btn-sm close-job-modal-btn d-inline-flex align-items-center gap-1"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#dashboardCloseJobModal"
-                                            data-job-code="{{ job.job_code }}"
-                                            data-close-url="{% url 'close_job' job.job_code %}"
-                                            data-next-url="{% url 'staff_dashboard' %}">
-                                            <i class="fa-solid fa-circle-xmark"></i> Close Job
-                                        </button>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="dashboard-empty-state">
-                        <div class="dashboard-empty-icon" style="background: #f1f5f9; color: #64748b;">
-                            <i class="fa-solid fa-arrow-rotate-left"></i>
-                        </div>
-                        <h5 class="fw-bold text-dark mb-1">No Returned Jobs</h5>
-                        <p class="text-muted small mb-0">There are no devices marked as returned at this time.</p>
-                    </div>
-                    {% endif %}
+                    {% include "job_tickets/staff_tabs/tab_returned.html" %}
                 </div>
             </div>
         </div>
@@ -1251,7 +875,115 @@
 <div id="reminder-prompt-stack" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;"></div>
 
 <script>
-    // --- DJANGO CHANNELS / WEBSOCKET LIVE UPDATE FOR STAFF OPERATIONS HUB ---
+    // --- SILENT TAB RELOAD & DJANGO CHANNELS WEBSOCKET FOR STAFF OPERATIONS HUB ---
+    const TAB_PARTIAL_URL = "{% url 'staff_dashboard_tab_partial' %}";
+
+    function statusToTabId(status) {
+        if (!status) return null;
+        const s = String(status).trim().toLowerCase();
+        if (s === 'pending') return 'pending';
+        if (s === 'under inspection' || s === 'repairing' || s === 'in progress') return 'in-progress';
+        if (s === 'ready for pickup' || s === 'ready') return 'ready';
+        if (s === 'specialized service' || s === 'awaiting assignment' || s === 'sent to vendor') return 'specialized';
+        if (s === 'completed') return 'completed';
+        if (s === 'returned') return 'returned';
+        return null;
+    }
+
+    function updateTabBadge(tabKey, count) {
+        const badge = document.querySelector(`[data-badge-tab="${tabKey}"]`);
+        if (!badge) return;
+        const num = parseInt(count, 10) || 0;
+        badge.textContent = num;
+
+        // Contextual styling matching initial render
+        if (tabKey === 'pending') {
+            badge.className = `badge rounded-pill tab-badge-count ${num ? 'bg-warning text-dark' : 'bg-light text-muted border'}`;
+        } else if (tabKey === 'in-progress') {
+            badge.className = `badge rounded-pill tab-badge-count ${num ? 'bg-primary' : 'bg-light text-muted border'}`;
+        } else if (tabKey === 'ready') {
+            badge.className = `badge rounded-pill tab-badge-count ${num ? 'bg-success' : 'bg-light text-muted border'}`;
+        } else if (tabKey === 'specialized') {
+            badge.className = `badge rounded-pill tab-badge-count ${num ? 'bg-info text-dark' : 'bg-light text-muted border'}`;
+        } else {
+            badge.className = 'badge rounded-pill tab-badge-count bg-light text-muted border';
+        }
+    }
+
+    let isReloadingTabs = false;
+    let pendingReloadSet = new Set();
+    let pendingHighlightCode = null;
+
+    async function silentReloadStaffTabs(tabKeys = [], highlightJobCode = null) {
+        tabKeys.forEach(t => t && pendingReloadSet.add(t));
+        if (highlightJobCode) pendingHighlightCode = highlightJobCode;
+
+        if (isReloadingTabs) {
+            return;
+        }
+
+        isReloadingTabs = true;
+        const currentTabsToFetch = Array.from(pendingReloadSet);
+        pendingReloadSet.clear();
+        const codeToHighlight = pendingHighlightCode;
+        pendingHighlightCode = null;
+
+        try {
+            const url = `${TAB_PARTIAL_URL}?tab=${encodeURIComponent(currentTabsToFetch.join(','))}`;
+            const res = await fetch(url, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                }
+            });
+
+            if (!res.ok) {
+                console.warn('Silent tab reload fetch failed with status:', res.status);
+                return;
+            }
+
+            const data = await res.json();
+            if (!data.ok) return;
+
+            // 1. Update all tab badges
+            if (data.counts) {
+                Object.keys(data.counts).forEach(key => {
+                    updateTabBadge(key, data.counts[key]);
+                });
+            }
+
+            // 2. Silently update DOM for affected tabs
+            if (data.tabs) {
+                Object.keys(data.tabs).forEach(key => {
+                    const pane = document.getElementById(`tab-${key}`);
+                    if (pane && data.tabs[key].html !== undefined) {
+                        pane.innerHTML = data.tabs[key].html;
+                    }
+                });
+            }
+
+            // 3. Highlight newly arrived or updated job row
+            if (codeToHighlight) {
+                const targetRow = document.querySelector(`tr[data-job-code="${codeToHighlight}"]`);
+                if (targetRow) {
+                    targetRow.classList.add('table-warning');
+                    setTimeout(() => {
+                        targetRow.classList.remove('table-warning');
+                    }, 2500);
+                }
+            }
+        } catch (err) {
+            console.error('Error during silent tab reload:', err);
+        } finally {
+            isReloadingTabs = false;
+            if (pendingReloadSet.size > 0) {
+                silentReloadStaffTabs([], pendingHighlightCode);
+            }
+        }
+    }
+
+    window.silentReloadStaffTabs = silentReloadStaffTabs;
+
     document.addEventListener('DOMContentLoaded', function() {
         var ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
         var ws_url = ws_scheme + '://' + window.location.host + '/ws/staff_updates/';
@@ -1270,14 +1002,41 @@
                     try {
                         const data = JSON.parse(e.data);
                         if (data.type === 'job_status_update' || data.type === 'job_assigned' || data.action === 'job_assigned') {
-                            console.log(`Live update received: Job ${data.job_code} status changed. Updating hub...`);
-                            // Check if a modal is currently open to avoid disrupting active staff work
-                            const activeModal = document.querySelector('.modal.show');
-                            if (activeModal) {
-                                console.log('Staff modal is actively open; deferring auto-reload to avoid wiping input.');
-                                return;
+                            console.log(`Live update received for Job ${data.job_code}: ${data.status || data.action}`);
+
+                            // Target tab (where job moved to)
+                            const targetTab = statusToTabId(data.status);
+                            // Previous tab (where job moved from)
+                            const oldTab = statusToTabId(data.old_status);
+
+                            // Active tab currently viewed by staff
+                            const activeTabBtn = document.querySelector('#dashboardTabs .nav-link.active');
+                            const activeTab = activeTabBtn ? activeTabBtn.id.replace('-tab', '') : null;
+
+                            // Collect affected tabs
+                            const tabsToRefresh = new Set();
+                            if (targetTab) tabsToRefresh.add(targetTab);
+                            if (oldTab) tabsToRefresh.add(oldTab);
+                            if (activeTab) tabsToRefresh.add(activeTab);
+
+                            // For job assignments, ensure intake and in-progress are both refreshed
+                            if (data.action === 'job_assigned' || data.type === 'job_assigned') {
+                                tabsToRefresh.add('pending');
+                                tabsToRefresh.add('in-progress');
                             }
-                            window.location.reload();
+
+                            if (tabsToRefresh.size === 0 && activeTab) {
+                                tabsToRefresh.add(activeTab);
+                            }
+
+                            // Silently reload the specific affected tabs without full page flicker
+                            silentReloadStaffTabs(Array.from(tabsToRefresh), data.job_code);
+
+                            // Unobtrusive feedback toast
+                            if (typeof showToast === 'function' && data.job_code) {
+                                const statusLabel = data.status || 'Assigned';
+                                showToast(`Job ${data.job_code} updated: ${statusLabel}`, 'Live Hub Update', 'info', 3000);
+                            }
                         }
                     } catch (err) {
                         console.error("Error processing staff WebSocket message:", err);
@@ -2150,8 +1909,17 @@
             }
             stopAllCameras();
 
-            // Refresh the dashboard page so the pending queue, badges, and metrics are completely up-to-date
-            window.location.reload();
+            // Silently refresh the pending intake queue, badges, and metrics without full page reload
+            if (typeof window.silentReloadStaffTabs === 'function') {
+                switchDashboardTab('pending-tab');
+                const primaryCode = (data.job_codes && data.job_codes[0]) || null;
+                window.silentReloadStaffTabs(['pending'], primaryCode);
+                if (typeof showToast === 'function') {
+                    showToast(data.message || 'Job ticket created successfully.', 'Intake Complete', 'success', 3500);
+                }
+            } else {
+                window.location.reload();
+            }
         } catch (error) {
             if (receiptWindow && !receiptWindow.closed) {
                 receiptWindow.close();
@@ -2523,18 +2291,18 @@ document.addEventListener('DOMContentLoaded', function () {
     const closeJobForm = document.getElementById('dashboard-close-job-form');
     const closeJobTitle = document.getElementById('dashboardCloseJobModalLabel');
     const closeJobNext = document.getElementById('dashboard-close-next');
-    document.querySelectorAll('.close-job-modal-btn').forEach((button) => {
-        button.addEventListener('click', function () {
-            if (closeJobForm) {
-                closeJobForm.action = this.dataset.closeUrl || '';
-            }
-            if (closeJobTitle) {
-                closeJobTitle.textContent = `Close Job ${this.dataset.jobCode || ''}`;
-            }
-            if (closeJobNext) {
-                closeJobNext.value = this.dataset.nextUrl || "{% url 'staff_dashboard' %}";
-            }
-        });
+    document.addEventListener('click', function (e) {
+        const button = e.target.closest('.close-job-modal-btn');
+        if (!button) return;
+        if (closeJobForm) {
+            closeJobForm.action = button.dataset.closeUrl || '';
+        }
+        if (closeJobTitle) {
+            closeJobTitle.textContent = `Close Job ${button.dataset.jobCode || ''}`;
+        }
+        if (closeJobNext) {
+            closeJobNext.value = button.dataset.nextUrl || "{% url 'staff_dashboard' %}";
+        }
     });
 
     const stack = document.getElementById('reminder-prompt-stack');

@@ -1,0 +1,63 @@
+{% if grouped_in_progress_jobs %}
+<div class="accordion" id="technicianAccordion">
+    {% for technician_name, jobs in grouped_in_progress_jobs.items %}
+    <div class="accordion-item mb-2 border rounded">
+        <h2 class="accordion-header" id="heading-tech-{{ forloop.counter }}">
+            <button class="accordion-button {% if not forloop.first %}collapsed{% endif %} py-2 px-3" type="button" data-bs-toggle="collapse"
+                data-bs-target="#collapse-tech-{{ forloop.counter }}">
+                <div class="d-flex align-items-center justify-content-between w-100 me-3">
+                    <div>
+                        <i class="fas fa-user-cog me-2 text-secondary"></i>
+                        <strong>{{ technician_name }}</strong>
+                    </div>
+                    <span class="badge bg-secondary">{{ jobs|length }} ticket{{ jobs|length|pluralize }}</span>
+                </div>
+            </button>
+        </h2>
+        <div id="collapse-tech-{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}"
+            data-bs-parent="#technicianAccordion">
+            <div class="accordion-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Job Code</th>
+                                <th>Customer</th>
+                                <th>Device</th>
+                                <th>Status</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in jobs %}
+                            <tr data-job-code="{{ job.job_code }}">
+                                <td>
+                                    <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold">
+                                        {{ job.job_code }}
+                                    </a>
+                                </td>
+                                <td>{{ job.customer_name }}</td>
+                                <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
+                                <td><span class="badge bg-info text-dark">{{ job.status }}</span></td>
+                                <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'staff_job_detail' job.job_code %}" class="btn btn-outline-primary btn-sm">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-4 text-muted">
+    <p class="mb-0">No active bench repairs in progress.</p>
+</div>
+{% endif %}

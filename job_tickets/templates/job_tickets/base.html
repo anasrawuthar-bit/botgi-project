@@ -199,7 +199,7 @@
             {% endif %}
             <strong>{{ company.company_name|default:"GI Hostings" }}</strong>
         </a>
-        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto d-flex align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#supportHelpModal" title="Help & Support" aria-label="Help and Support" style="width: 38px; height: 38px; border-radius: 8px;">
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto d-flex align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#supportHelpModal" title="Help & Support" aria-label="Help and Support">
             <i class="fa-solid fa-headset fs-6 text-primary"></i>
         </button>
     </div>
@@ -1149,7 +1149,7 @@
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header border-bottom py-3 px-4">
                     <div class="d-flex align-items-center gap-2">
-                        <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle" style="width: 38px; height: 38px;">
+                        <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle" style="width:38px;height:38px;">
                             <i class="fa-solid fa-headset fs-5"></i>
                         </div>
                         <div>
@@ -1164,7 +1164,7 @@
                         <!-- Direct Phone Support -->
                         <div class="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
                             <div class="d-flex align-items-center gap-3">
-                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border flex-shrink-0" style="width:42px;height:42px;">
                                     <i class="fa-solid fa-phone text-primary"></i>
                                 </div>
                                 <div>
@@ -1180,7 +1180,7 @@
                         <!-- WhatsApp Support -->
                         <div class="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
                             <div class="d-flex align-items-center gap-3">
-                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border flex-shrink-0" style="width:42px;height:42px;">
                                     <i class="fa-brands fa-whatsapp text-success fs-5"></i>
                                 </div>
                                 <div>
@@ -1202,7 +1202,7 @@
                         <!-- Official Website / Documentation -->
                         <div class="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
                             <div class="d-flex align-items-center gap-3">
-                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                <div class="d-flex align-items-center justify-content-center bg-white rounded-circle shadow-sm border flex-shrink-0" style="width:42px;height:42px;">
                                     <i class="fa-solid fa-globe text-secondary fs-5"></i>
                                 </div>
                                 <div>
@@ -1216,7 +1216,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light py-2.5 px-4 d-flex justify-content-between align-items-center">
+                <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between align-items-center">
                     <span class="small text-muted">
                         Service Billing platform by <strong class="text-dark">{{ platform.billing_author_name|default:"GI HOSTINGS" }}</strong>
                     </span>
@@ -1244,39 +1244,39 @@
                 <div class="modal-body p-4">
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <button type="button" class="btn btn-outline-secondary w-100 p-2.5 text-start scale-quick-btn" data-scale="85" onclick="setUiScale('85')">
+                            <button type="button" class="btn btn-outline-secondary w-100 p-2 text-start scale-quick-btn" data-scale="85" onclick="setUiScale('85')">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <strong class="text-dark">85% Compact</strong>
                                     <i class="fa-solid fa-compress small text-muted"></i>
                                 </div>
-                                <div class="small text-muted" style="font-size: 0.75rem;">Max density, smallest text</div>
+                                <div class="small text-muted">Max density, smallest text</div>
                             </button>
                         </div>
                         <div class="col-6">
-                            <button type="button" class="btn btn-outline-primary w-100 p-2.5 text-start scale-quick-btn" data-scale="90" onclick="setUiScale('90')">
+                            <button type="button" class="btn btn-outline-primary w-100 p-2 text-start scale-quick-btn" data-scale="90" onclick="setUiScale('90')">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <strong class="text-dark">90% SaaS (Default)</strong>
                                     <i class="fa-solid fa-star text-warning small"></i>
                                 </div>
-                                <div class="small text-muted" style="font-size: 0.75rem;">Clean, modern zoomed-out</div>
+                                <div class="small text-muted">Clean, modern zoomed-out</div>
                             </button>
                         </div>
                         <div class="col-6">
-                            <button type="button" class="btn btn-outline-secondary w-100 p-2.5 text-start scale-quick-btn" data-scale="100" onclick="setUiScale('100')">
+                            <button type="button" class="btn btn-outline-secondary w-100 p-2 text-start scale-quick-btn" data-scale="100" onclick="setUiScale('100')">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <strong class="text-dark">100% Standard</strong>
                                     <i class="fa-solid fa-expand small text-muted"></i>
                                 </div>
-                                <div class="small text-muted" style="font-size: 0.75rem;">Default web browser size</div>
+                                <div class="small text-muted">Default web browser size</div>
                             </button>
                         </div>
                         <div class="col-6">
-                            <button type="button" class="btn btn-outline-secondary w-100 p-2.5 text-start scale-quick-btn" data-scale="110" onclick="setUiScale('110')">
+                            <button type="button" class="btn btn-outline-secondary w-100 p-2 text-start scale-quick-btn" data-scale="110" onclick="setUiScale('110')">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <strong class="text-dark">110% Large</strong>
                                     <i class="fa-solid fa-magnifying-glass-plus small text-muted"></i>
                                 </div>
-                                <div class="small text-muted" style="font-size: 0.75rem;">High-res 4K / readability</div>
+                                <div class="small text-muted">High-res 4K / readability</div>
                             </button>
                         </div>
                     </div>
@@ -1287,7 +1287,7 @@
                             <span id="quick-scale-badge" class="badge bg-primary">90%</span>
                         </label>
                         <input type="range" class="form-range" id="quick-scale-slider" min="80" max="115" step="5" value="90" oninput="setUiScale(this.value)">
-                        <div class="d-flex justify-content-between text-muted" style="font-size: 0.72rem;">
+                        <div class="d-flex justify-content-between text-muted small">
                             <span>80% Dense</span>
                             <span>90% Default</span>
                             <span>100% Standard</span>

@@ -1,0 +1,52 @@
+{% if pending_jobs %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Job Code</th>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th>Device</th>
+                <th class="text-end">Estimate</th>
+                <th class="text-center">Assign</th>
+                <th class="text-center">Receipt</th>
+            </tr>
+        </thead>
+        <tbody id="pending-jobs-body">
+            {% for job in pending_jobs %}
+            <tr data-job-code="{{ job.job_code }}">
+                <td>
+                    <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold">
+                        {{ job.job_code }}
+                    </a>
+                </td>
+                <td>{{ job.customer_name }}</td>
+                <td class="text-muted small">{{ job.customer_phone }}</td>
+                <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
+                <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-primary btn-sm open-assign-modal"
+                        data-bs-toggle="modal" data-bs-target="#assignJobModal"
+                        data-job-code="{{ job.job_code }}"
+                        data-customer="{{ job.customer_name }}"
+                        data-device="{{ job.device_type }}">
+                        <i class="fas fa-user-check me-1"></i>Assign
+                    </button>
+                </td>
+                <td class="text-center">
+                    <a href="{% url 'job_creation_receipt_print' job_code=job.job_code %}"
+                        class="btn btn-outline-secondary btn-sm"
+                        title="Print intake receipt">
+                        <i class="fas fa-print me-1"></i>Print
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-4 text-muted">
+    <p class="mb-0">No pending jobs in the intake queue.</p>
+</div>
+{% endif %}

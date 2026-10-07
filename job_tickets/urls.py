@@ -19,6 +19,7 @@ urlpatterns = [
 
     # Staff-facing views
     path('staff-dashboard/', views.staff_dashboard, name='staff_dashboard'),
+    path('staff-dashboard/tab-partial/', views.staff_dashboard_tab_partial, name='staff_dashboard_tab_partial'),
     path('staff/clients/', views.client_dashboard, name='client_dashboard'),
     path('staff/clients/<int:client_id>/', views.client_detail, name='client_detail'),
     path('staff/clients/<int:client_id>/edit/', views.edit_client, name='edit_client'),

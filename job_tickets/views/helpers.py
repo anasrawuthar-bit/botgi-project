@@ -1551,7 +1551,7 @@ def get_phone_service_snapshot(phone, workspace=None):
 
 # --- HELPER FUNCTION FOR WEBSOCKET UPDATES ---
 
-def send_job_update_message(job_code, new_status):
+def send_job_update_message(job_code, new_status, old_status=None):
     """Utility to send a real-time status update to all clients watching jobs."""
     try:
         from channels.layers import get_channel_layer
@@ -1582,6 +1582,7 @@ def send_job_update_message(job_code, new_status):
                 'type': 'job_status_update',
                 'job_code': job_code,
                 'status': new_status,
+                'old_status': old_status,
                 'customer_name': job.customer_name,
                 'device': device_str,
                 'assigned_tech_id': tech_id,

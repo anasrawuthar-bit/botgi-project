@@ -1,0 +1,48 @@
+{% load job_tickets_extras %}
+{% if awaiting_assignment_jobs %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Job Code</th>
+                <th>Customer</th>
+                <th>Device</th>
+                <th>Reported Issue</th>
+                <th class="text-end">Amount</th>
+                <th style="min-width: 220px;">Assign Vendor</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for service in awaiting_assignment_jobs %}
+            <tr data-job-code="{{ service.job_ticket.job_code }}">
+                <td>
+                    <a href="{% url 'staff_job_detail' service.job_ticket.job_code %}" class="fw-bold text-decoration-none">
+                        {{ service.job_ticket.job_code }}
+                    </a>
+                </td>
+                <td>{{ service.job_ticket.customer_name }}</td>
+                <td><span class="badge bg-light text-dark border">{{ service.job_ticket.device_type }}</span></td>
+                <td><span class="text-muted small">{{ service.job_ticket.reported_issue|truncatewords:8 }}</span></td>
+                <td class="text-end fw-semibold">&#8377;{{ service.job_ticket.net_total|default_if_none:0|floatformat:2 }}</td>
+                <td>
+                    <form method="post" class="d-flex align-items-center gap-2">
+                        {% csrf_token %}
+                        {{ service.form.specialized_service_id }}
+                        <div class="flex-grow-1">
+                            {{ service.form.vendor|add_class:"form-select form-select-sm" }}
+                        </div>
+                        <button type="submit" name="assign_vendor_form_submit" class="btn btn-primary btn-sm flex-shrink-0">
+                            <i class="fa-solid fa-paper-plane me-1"></i>Send
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-4 text-muted">
+    <p class="mb-0">No specialized services are pending vendor assignment.</p>
+</div>
+{% endif %}

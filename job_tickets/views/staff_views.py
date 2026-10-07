@@ -15,6 +15,9 @@ from .helpers import (
     _staff_access_required,
 )
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.template.loader import render_to_string
+from django.http import JsonResponse
+from django.db.models import Count, Q
 from ..whatsapp_service import (
     _phone_to_international,
     create_message_queue,
@@ -640,7 +643,7 @@ def staff_dashboard(request):
                 JobTicketLog.objects.create(job_ticket=job_to_assign, user=request.user, action='ASSIGNED', details=details)
 
             # Send WebSocket update for real-time job assignment notification
-            send_job_update_message(job_to_assign.job_code, job_to_assign.status)
+            send_job_update_message(job_to_assign.job_code, job_to_assign.status, old_status=old_status)
 
             messages.success(request, f"Job {job_to_assign.job_code} assigned to {technician.user.username}.")
             return redirect('staff_dashboard')
@@ -844,6 +847,147 @@ def staff_dashboard(request):
         'active_racks': active_racks,
     }
     return render(request, 'job_tickets/staff_dashboard.html', context)
+
+
+@login_required
+def staff_dashboard_tab_partial(request):
+    """
+    Returns HTML snippets and latest counts for specific dashboard tabs.
+    Used for silent, real-time background refreshing without full page reloads.
+    Query params:
+        - tab: comma-separated list of tabs (e.g. 'pending', 'in-progress', 'ready', 'specialized', 'completed', 'returned', 'all')
+    """
+    denied = _staff_access_required(request, "staff_dashboard")
+    if denied:
+        return JsonResponse({'ok': False, 'error': 'Unauthorized'}, status=403)
+
+    current_workspace = getattr(request, 'current_workspace', None)
+    tab_param = (request.GET.get('tab') or '').strip().lower()
+    requested_tabs = set(t.strip() for t in tab_param.split(',') if t.strip())
+
+    # Base tickets queryset scoped to workspace
+    job_tickets = JobTicket.objects.all().order_by('-created_at')
+    if current_workspace:
+        job_tickets = job_tickets.filter(workspace=current_workspace)
+    job_tickets = job_tickets.defer('technician_notes', 'technician_checklist', 'feedback_followup_note')
+
+    def prepare_dashboard_jobs(qs):
+        jobs = list(qs.select_related('assigned_to__user').prefetch_related('service_logs'))
+        calculate_job_totals(jobs)
+        for job in jobs:
+            job.discount_total = _money_or_zero(job.discount_amount)
+            job.net_total = _net_amount_after_discount(job.total, job.discount_total)
+        return jobs
+
+    # 1. Fast live counts for all tabs
+    status_counts_raw = dict(
+        job_tickets.values('status').annotate(total=Count('id')).values_list('status', 'total')
+    )
+    pending_count = status_counts_raw.get('Pending', 0)
+    in_progress_count = (
+        status_counts_raw.get('Under Inspection', 0) +
+        status_counts_raw.get('Repairing', 0)
+    )
+    ready_count = status_counts_raw.get('Ready for Pickup', 0)
+    completed_count = status_counts_raw.get('Completed', 0)
+    returned_count = status_counts_raw.get('Returned', 0)
+
+    specialized_qs = SpecializedService.objects.filter(status='Awaiting Assignment')
+    if current_workspace:
+        specialized_qs = specialized_qs.filter(job_ticket__workspace=current_workspace)
+    specialized_count = specialized_qs.count()
+
+    all_counts = {
+        'pending': pending_count,
+        'in-progress': in_progress_count,
+        'ready': ready_count,
+        'specialized': specialized_count,
+        'completed': completed_count,
+        'returned': returned_count,
+    }
+
+    # 2. Render HTML only for the requested tabs
+    rendered_tabs = {}
+
+    if 'all' in requested_tabs or 'pending' in requested_tabs:
+        pending_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Pending'))
+        html = render_to_string(
+            'job_tickets/staff_tabs/tab_pending.html',
+            {'pending_jobs': pending_jobs, 'pending_count': len(pending_jobs)},
+            request=request,
+        )
+        rendered_tabs['pending'] = {'html': html, 'count': len(pending_jobs)}
+
+    if 'all' in requested_tabs or 'in-progress' in requested_tabs:
+        in_progress_jobs = prepare_dashboard_jobs(job_tickets.filter(Q(status='Under Inspection') | Q(status='Repairing')))
+        grouped_in_progress_jobs = {}
+        for job in in_progress_jobs:
+            key = job.assigned_to.user.username if job.assigned_to and job.assigned_to.user else "Unassigned"
+            if key not in grouped_in_progress_jobs:
+                grouped_in_progress_jobs[key] = []
+            grouped_in_progress_jobs[key].append(job)
+        html = render_to_string(
+            'job_tickets/staff_tabs/tab_in_progress.html',
+            {
+                'grouped_in_progress_jobs': grouped_in_progress_jobs,
+                'in_progress_jobs_count': len(in_progress_jobs),
+            },
+            request=request,
+        )
+        rendered_tabs['in-progress'] = {'html': html, 'count': len(in_progress_jobs)}
+
+    if 'all' in requested_tabs or 'ready' in requested_tabs:
+        ready_for_pickup_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Ready for Pickup'))
+        html = render_to_string(
+            'job_tickets/staff_tabs/tab_ready.html',
+            {'ready_for_pickup_jobs': ready_for_pickup_jobs, 'ready_count': len(ready_for_pickup_jobs)},
+            request=request,
+        )
+        rendered_tabs['ready'] = {'html': html, 'count': len(ready_for_pickup_jobs)}
+
+    if 'all' in requested_tabs or 'specialized' in requested_tabs:
+        awaiting_assignment = list(
+            specialized_qs.select_related('job_ticket').prefetch_related('job_ticket__service_logs')
+        )
+        for service in awaiting_assignment:
+            calculate_job_totals([service.job_ticket])
+            service.job_ticket.discount_total = _money_or_zero(service.job_ticket.discount_amount)
+            service.job_ticket.net_total = _net_amount_after_discount(service.job_ticket.total, service.job_ticket.discount_total)
+            service.form = AssignVendorForm(
+                initial={'specialized_service_id': service.id},
+                workspace=current_workspace or service.job_ticket.workspace,
+            )
+        html = render_to_string(
+            'job_tickets/staff_tabs/tab_specialized.html',
+            {'awaiting_assignment_jobs': awaiting_assignment},
+            request=request,
+        )
+        rendered_tabs['specialized'] = {'html': html, 'count': len(awaiting_assignment)}
+
+    if 'all' in requested_tabs or 'completed' in requested_tabs:
+        completed_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Completed'))
+        html = render_to_string(
+            'job_tickets/staff_tabs/tab_completed.html',
+            {'completed_jobs': completed_jobs, 'completed_count': len(completed_jobs)},
+            request=request,
+        )
+        rendered_tabs['completed'] = {'html': html, 'count': len(completed_jobs)}
+
+    if 'all' in requested_tabs or 'returned' in requested_tabs:
+        returned_jobs = prepare_dashboard_jobs(job_tickets.filter(status='Returned'))
+        html = render_to_string(
+            'job_tickets/staff_tabs/tab_returned.html',
+            {'returned_jobs': returned_jobs, 'returned_count': len(returned_jobs)},
+            request=request,
+        )
+        rendered_tabs['returned'] = {'html': html, 'count': len(returned_jobs)}
+
+    return JsonResponse({
+        'ok': True,
+        'counts': all_counts,
+        'tabs': rendered_tabs,
+    })
+
 
 # job_tickets/views.py
 

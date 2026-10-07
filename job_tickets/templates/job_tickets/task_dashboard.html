@@ -3,169 +3,73 @@
 
 {% block title %}Task Management - Staff Dashboard{% endblock %}
 
-{% block extra_css %}
-<style>
-.task-count-badge {
-    display: inline-block;
-    padding: 0.15rem 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    line-height: 1;
-    border-radius: 10px;
-    margin-left: 0.35rem;
-    background: #e2e8f0;
-    color: #475569;
-    transition: all 0.15s ease;
-}
-.task-filter-pill.active .task-count-badge {
-    background: rgba(255, 255, 255, 0.28);
-    color: #ffffff;
-}
-.priority-pill-urgent {
-    background-color: #ef4444;
-    color: #fff;
-}
-.priority-pill-high {
-    background-color: #f97316;
-    color: #fff;
-}
-.priority-pill-medium {
-    background-color: #4f46e5;
-    color: #fff;
-}
-.priority-pill-low {
-    background-color: #64748b;
-    color: #fff;
-}
-.task-row-urgent {
-    border-left: 4px solid #ef4444 !important;
-}
-.task-row-high {
-    border-left: 4px solid #f97316 !important;
-}
-.task-row-medium {
-    border-left: 4px solid #4f46e5 !important;
-}
-.task-row-low {
-    border-left: 4px solid #cbd5e1 !important;
-}
-.task-filter-pill {
-    text-decoration: none;
-    padding: 0.4rem 0.85rem;
-    border-radius: 20px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s ease;
-    border: 1px solid transparent;
-}
-.task-filter-pill.active {
-    background-color: var(--primary, #4f46e5);
-    color: #fff;
-    box-shadow: 0 1px 3px rgba(79, 70, 229, 0.25);
-}
-.task-filter-pill:not(.active) {
-    background-color: #f1f5f9;
-    color: #475569;
-    border-color: #e2e8f0;
-}
-.task-filter-pill:not(.active):hover {
-    background-color: #e2e8f0;
-    color: #1e293b;
-}
-.task-table thead th {
-    background-color: #f8fafc;
-    color: #475569;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    border-bottom: 1px solid #e2e8f0;
-    padding: 0.75rem 1rem;
-    white-space: nowrap;
-}
-.task-table tbody td {
-    padding: 0.85rem 1rem;
-    border-bottom: 1px solid #f1f5f9;
-    vertical-align: middle;
-}
-.task-table tbody tr:hover td {
-    background-color: #f8fafc;
-}
-</style>
-{% endblock %}
-
 {% block content %}
 <div class="section-container">
-    <!-- Hero Header -->
+    <!-- Header -->
     <div class="card-box mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
         <div>
             <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1 small fw-semibold" style="font-size: 0.75rem;">
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1 small fw-semibold">
                     <i class="fa-solid fa-layer-group me-1"></i>OPERATIONS DIRECTIVES
                 </span>
-                <span class="badge bg-light text-muted border px-2 py-1 small fw-semibold" style="font-size: 0.75rem;">
+                <span class="badge bg-light text-muted border px-2 py-1 small fw-semibold">
                     <span id="metricAllHeaderCount">{{ all_count }}</span> Total Directives
                 </span>
                 {% if urgent_count > 0 %}
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 small fw-semibold" style="font-size: 0.75rem;">
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 small fw-semibold">
                     <i class="fas fa-bolt me-1"></i><span id="metricUrgentCount">{{ urgent_count }}</span> Urgent
                 </span>
                 {% endif %}
             </div>
-            <h1 class="h3 fw-bold text-dark mb-1 section-title" style="letter-spacing: -0.02em;">
+            <h1 class="h3 fw-bold text-dark mb-1">
                 <i class="fa-solid fa-list-check text-primary me-2"></i>Tasks Dashboard
             </h1>
-            <p class="text-muted mb-0 small">
-                Prioritized technician directives independent of job workflow.
-            </p>
+            <p class="text-muted mb-0 small">Prioritized technician directives independent of job workflow.</p>
         </div>
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-2 px-3.5 py-2 shadow-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#createTaskModal">
-                <i class="fa-solid fa-plus"></i>
-                <span>New Task</span>
+        <div>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTaskModal">
+                <i class="fa-solid fa-plus me-1"></i>New Task
             </button>
         </div>
     </div>
 
-    <!-- Filters, Status Tabs & Search Toolbar -->
+    <!-- Filters & Search -->
     <div class="card-box mb-4 p-3">
         <form method="get" class="row g-2 align-items-center">
-            <!-- Hidden status filter -->
             <input type="hidden" name="status" value="{{ status_filter }}">
 
             <!-- Status filter pills row -->
             <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2 pb-2 mb-2 border-bottom">
-                <div class="d-flex flex-wrap gap-1.5 align-items-center">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+
                     <a href="?status=active{% if priority_filter %}&priority={{ priority_filter }}{% endif %}{% if tech_filter %}&tech={{ tech_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if date_by %}&date_by={{ date_by }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
-                       class="task-filter-pill {% if status_filter == 'active' %}active{% endif %}">
-                        Active <span class="task-count-badge" id="metricActiveCount">{{ active_count }}</span>
+                       class="btn btn-sm {% if status_filter == 'active' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        Active <span class="badge {% if status_filter == 'active' %}bg-white text-primary{% else %}bg-secondary{% endif %} ms-1" id="metricActiveCount">{{ active_count }}</span>
                     </a>
                     <a href="?status=open{% if priority_filter %}&priority={{ priority_filter }}{% endif %}{% if tech_filter %}&tech={{ tech_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if date_by %}&date_by={{ date_by }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
-                       class="task-filter-pill {% if status_filter == 'open' %}active{% endif %}">
-                        Open <span class="task-count-badge" id="metricOpenCount">{{ open_count }}</span>
+                       class="btn btn-sm {% if status_filter == 'open' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        Open <span class="badge {% if status_filter == 'open' %}bg-white text-primary{% else %}bg-secondary{% endif %} ms-1" id="metricOpenCount">{{ open_count }}</span>
                     </a>
                     <a href="?status=in_progress{% if priority_filter %}&priority={{ priority_filter }}{% endif %}{% if tech_filter %}&tech={{ tech_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if date_by %}&date_by={{ date_by }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
-                       class="task-filter-pill {% if status_filter == 'in_progress' %}active{% endif %}">
-                        In Progress <span class="task-count-badge" id="metricInProgressCount">{{ in_progress_count }}</span>
+                       class="btn btn-sm {% if status_filter == 'in_progress' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        In Progress <span class="badge {% if status_filter == 'in_progress' %}bg-white text-primary{% else %}bg-secondary{% endif %} ms-1" id="metricInProgressCount">{{ in_progress_count }}</span>
                     </a>
                     <a href="?status=done{% if priority_filter %}&priority={{ priority_filter }}{% endif %}{% if tech_filter %}&tech={{ tech_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if date_by %}&date_by={{ date_by }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
-                       class="task-filter-pill {% if status_filter == 'done' %}active{% endif %}">
-                        Done <span class="task-count-badge" id="metricDoneCount">{{ done_count }}</span>
+                       class="btn btn-sm {% if status_filter == 'done' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        Done <span class="badge {% if status_filter == 'done' %}bg-white text-primary{% else %}bg-secondary{% endif %} ms-1" id="metricDoneCount">{{ done_count }}</span>
                     </a>
                     <a href="?status=all{% if priority_filter %}&priority={{ priority_filter }}{% endif %}{% if tech_filter %}&tech={{ tech_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}{% if date_by %}&date_by={{ date_by }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
-                       class="task-filter-pill {% if status_filter == 'all' %}active{% endif %}">
-                        All <span class="task-count-badge" id="metricAllCount">{{ all_count }}</span>
+                       class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        All <span class="badge {% if status_filter == 'all' %}bg-white text-primary{% else %}bg-secondary{% endif %} ms-1" id="metricAllCount">{{ all_count }}</span>
                     </a>
-                </div>
 
+                </div>
                 <div class="text-muted small">
                     Showing <strong class="text-dark">{{ tasks|length }}</strong> directive{{ tasks|length|pluralize }}
                 </div>
             </div>
 
-            <!-- Second row: Dropdowns, Date Filter & Search Input -->
+            <!-- Dropdowns, Date Filter & Search -->
             <div class="col-6 col-md-auto">
                 <select name="priority" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">All Priorities</option>
@@ -190,7 +94,6 @@
                 </select>
             </div>
 
-            <!-- Date Type -->
             <div class="col-6 col-md-auto">
                 <select name="date_by" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="created" {% if date_by == 'created' %}selected{% endif %}>Created Date</option>
@@ -198,7 +101,6 @@
                 </select>
             </div>
 
-            <!-- Date Range -->
             <div class="col-6 col-md-auto">
                 <div class="input-group input-group-sm">
                     <input type="date" name="start_date" value="{{ start_date }}" class="form-control" title="From Date">
@@ -206,7 +108,6 @@
                 </div>
             </div>
 
-            <!-- Search query -->
             <div class="col-12 col-md">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-search"></i></span>
@@ -214,7 +115,6 @@
                 </div>
             </div>
 
-            <!-- Submit / Clear -->
             <div class="col-auto d-flex gap-1">
                 <button class="btn btn-sm btn-primary px-3" type="submit" title="Apply Filters">
                     <i class="fas fa-filter me-1"></i>Filter
@@ -228,9 +128,9 @@
         </form>
     </div>
 
-    <!-- Tasks List Table Card -->
+    <!-- Tasks List Table -->
     <div class="card-box p-0 overflow-hidden mb-4">
-        <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-white flex-wrap gap-2">
+        <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center gap-2">
                 <h5 class="fw-bold mb-0 text-dark">Tasks &amp; Directives</h5>
                 <span class="badge bg-light text-muted border small">{{ tasks|length }} Listed</span>
@@ -238,14 +138,14 @@
             {% if start_date or end_date %}
             <div class="d-flex align-items-center gap-1 small text-muted">
                 <i class="fas fa-calendar-alt text-primary me-1"></i>
-                Date Filter: <span class="fw-semibold text-dark">{{ start_date|default:"Start" }} to {{ end_date|default:"Today" }} ({{ date_by|capfirst }})</span>
+                Date Filter: <span class="fw-semibold text-dark ms-1">{{ start_date|default:"Start" }} to {{ end_date|default:"Today" }} ({{ date_by|capfirst }})</span>
             </div>
             {% endif %}
         </div>
 
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 task-table">
-                <thead>
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
                     <tr>
                         <th class="ps-4" style="width: 100px;">Priority</th>
                         <th>Task Title &amp; Details</th>
@@ -258,16 +158,16 @@
                 </thead>
                 <tbody id="taskTableBody">
                     {% for task in tasks %}
-                    <tr class="task-row-{{ task.priority }}" id="task-row-{{ task.id }}">
+                    <tr class="task-priority-row" id="task-row-{{ task.id }}">
                         <td class="ps-4">
                             {% if task.priority == 'urgent' %}
-                                <span class="badge priority-pill-urgent px-2 py-1"><i class="fas fa-bolt me-1"></i>Urgent</span>
+                                <span class="badge bg-danger"><i class="fas fa-bolt me-1"></i>Urgent</span>
                             {% elif task.priority == 'high' %}
-                                <span class="badge priority-pill-high px-2 py-1"><i class="fas fa-arrow-up me-1"></i>High</span>
+                                <span class="badge bg-warning text-dark"><i class="fas fa-arrow-up me-1"></i>High</span>
                             {% elif task.priority == 'medium' %}
-                                <span class="badge priority-pill-medium px-2 py-1">Medium</span>
+                                <span class="badge bg-primary">Medium</span>
                             {% else %}
-                                <span class="badge priority-pill-low px-2 py-1">Low</span>
+                                <span class="badge bg-secondary">Low</span>
                             {% endif %}
                         </td>
                         <td>
@@ -305,7 +205,7 @@
                             {% if task.assigned_to %}
                                 <span class="fw-semibold text-dark"><i class="fas fa-user-cog text-muted me-1"></i>{{ task.assigned_to.user.username }}</span>
                             {% elif task.is_open_to_all %}
-                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="fas fa-users me-1"></i>Open Pool (Anyone)</span>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="fas fa-users me-1"></i>Open Pool</span>
                             {% else %}
                                 <span class="badge bg-light text-muted border">Unassigned</span>
                             {% endif %}
@@ -333,17 +233,17 @@
                         </td>
                         <td>
                             {% if task.status == 'open' %}
-                                <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1">Open</span>
+                                <span class="badge bg-info-subtle text-info border border-info-subtle">Open</span>
                             {% elif task.status == 'in_progress' %}
-                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1">In Progress</span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">In Progress</span>
                             {% elif task.status == 'done' %}
-                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Done</span>
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Done</span>
                             {% elif task.status == 'cancelled' %}
-                                <span class="badge bg-secondary-subtle text-secondary-emphasis border px-2 py-1">Cancelled</span>
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis border">Cancelled</span>
                             {% endif %}
                         </td>
                         <td class="text-end pe-4">
-                            <a href="{% url 'task_detail' task.id %}" class="btn btn-outline-primary btn-sm px-2.5 py-1 rounded-2" title="View Detail">
+                            <a href="{% url 'task_detail' task.id %}" class="btn btn-outline-primary btn-sm" title="View Detail">
                                 <i class="fas fa-eye me-1"></i>View
                             </a>
                         </td>
@@ -355,7 +255,7 @@
                             <h6 class="fw-semibold text-dark">No tasks found matching your filters.</h6>
                             <p class="small text-muted mb-3">Try adjusting your date range, search query, or status filters.</p>
                             <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createTaskModal">
-                                <i class="fas fa-plus me-1"></i> Create First Task
+                                <i class="fas fa-plus me-1"></i>Create First Task
                             </button>
                         </td>
                     </tr>
@@ -372,7 +272,7 @@
         <div class="modal-content">
             <form method="post" action="{% url 'task_create' %}" enctype="multipart/form-data">
                 {% csrf_token %}
-                <div class="modal-header bg-light">
+                <div class="modal-header">
                     <h5 class="modal-title" id="createTaskModalLabel">
                         <i class="fas fa-plus-circle text-primary me-2"></i>Create New Task
                     </h5>
@@ -402,22 +302,22 @@
                             {{ create_form.job_reference }}
                         </div>
 
-                        <!-- Option A: Assignment Type Radio Toggle (Mutually Exclusive) -->
+                        <!-- Assignment Type -->
                         <div class="col-12">
                             <label class="form-label fw-semibold d-block mb-1">
                                 Assignment Type <span class="text-danger">*</span>
                             </label>
-                            <div class="card border rounded-3 p-3 bg-light">
+                            <div class="border rounded-3 p-3 bg-light">
                                 <div class="d-none">
                                     {{ create_form.is_open_to_all }}
                                 </div>
                                 <div class="row g-3">
                                     <div class="col-md-6">
-                                        <div class="card h-100 p-3 border-2 border-primary bg-white shadow-sm position-relative assignment-mode-card" id="cardAssignOpen" style="cursor: pointer; transition: all 0.2s ease;">
+                                        <div class="card h-100 p-3 border-2 border-primary bg-white position-relative assignment-mode-card" id="cardAssignOpen" style="cursor: pointer;">
                                             <div class="form-check mb-0">
                                                 <input class="form-check-input" type="radio" name="assignment_mode" id="modeOpenToAll" value="open" checked>
                                                 <label class="form-check-label fw-bold text-dark stretched-link" for="modeOpenToAll" style="cursor: pointer;">
-                                                    <i class="fas fa-users text-primary me-1"></i> Open to All (Shared Pool)
+                                                    <i class="fas fa-users text-primary me-1"></i>Open to All (Shared Pool)
                                                 </label>
                                             </div>
                                             <div class="small text-muted mt-2 ps-4">
@@ -426,11 +326,11 @@
                                         </div>
                                     </div>
                                     <div class="col-md-6">
-                                        <div class="card h-100 p-3 border bg-white position-relative assignment-mode-card" id="cardAssignSpecific" style="cursor: pointer; transition: all 0.2s ease;">
+                                        <div class="card h-100 p-3 border bg-white position-relative assignment-mode-card" id="cardAssignSpecific" style="cursor: pointer;">
                                             <div class="form-check mb-0">
                                                 <input class="form-check-input" type="radio" name="assignment_mode" id="modeSpecificPerson" value="specific">
                                                 <label class="form-check-label fw-bold text-dark stretched-link" for="modeSpecificPerson" style="cursor: pointer;">
-                                                    <i class="fas fa-user-check text-success me-1"></i> Assign to Specific Person
+                                                    <i class="fas fa-user-check text-success me-1"></i>Assign to Specific Person
                                                 </label>
                                             </div>
                                             <div class="small text-muted mt-2 ps-4">
@@ -440,10 +340,9 @@
                                     </div>
                                 </div>
 
-                                <!-- Specific Assignee Selection (Only visible when Specific Person is chosen) -->
                                 <div id="specificPersonWrapper" class="mt-3 pt-3 border-top" style="display: none;">
                                     <label class="form-label fw-semibold small text-dark mb-1" for="task-assigned-to-select">
-                                        <i class="fas fa-user-cog text-muted me-1"></i> Select Technician <span class="text-danger">*</span>
+                                        <i class="fas fa-user-cog text-muted me-1"></i>Select Technician <span class="text-danger">*</span>
                                     </label>
                                     {{ create_form.assigned_to }}
                                     <div class="form-text small">Select the technician responsible for executing this task.</div>
@@ -452,11 +351,11 @@
                         </div>
 
                         <div class="col-12">
-                            <div class="card p-3 bg-light border-0 rounded-3">
+                            <div class="border rounded-3 p-3 bg-light">
                                 <div class="form-check form-switch mb-1">
                                     {{ create_form.has_alarm }}
                                     <label class="form-check-label fw-bold text-danger" for="task-has-alarm">
-                                        <i class="fas fa-bell me-1"></i> Trigger Audible Alarm Alert
+                                        <i class="fas fa-bell me-1"></i>Trigger Audible Alarm Alert
                                     </label>
                                 </div>
                                 <div class="small text-muted">High priority audible chime on web and vibrating alarm push alert.</div>
@@ -477,10 +376,10 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
+                <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-check me-1"></i> Create &amp; Dispatch Task
+                        <i class="fas fa-check me-1"></i>Create &amp; Dispatch Task
                     </button>
                 </div>
             </form>
@@ -527,7 +426,7 @@
     function showAlarmBanner(data) {
         playAlarmTone();
         const banner = document.createElement('div');
-        banner.className = 'alert alert-danger shadow-lg border-2 border-danger position-fixed top-0 start-50 translate-middle-x mt-3 d-flex align-items-center gap-3';
+        banner.className = 'alert alert-danger shadow-lg border-danger position-fixed top-0 start-50 translate-middle-x mt-3 d-flex align-items-center gap-3';
         banner.style.zIndex = '99999';
         banner.style.maxWidth = '90vw';
         banner.innerHTML = `
@@ -579,9 +478,14 @@
             const current = parseInt(el.textContent.trim(), 10) || 0;
             const updated = Math.max(0, current + delta);
             el.textContent = updated;
-            el.classList.add('text-primary');
-            setTimeout(() => el.classList.remove('text-primary'), 1000);
         }
+    }
+
+    function priorityBadgeHtml(priority, label) {
+        if (priority === 'urgent') return `<span class="badge bg-danger"><i class="fas fa-bolt me-1"></i>${label}</span>`;
+        if (priority === 'high') return `<span class="badge bg-warning text-dark"><i class="fas fa-arrow-up me-1"></i>${label}</span>`;
+        if (priority === 'medium') return `<span class="badge bg-primary">${label}</span>`;
+        return `<span class="badge bg-secondary">${label}</span>`;
     }
 
     function handleFeedEvent(data) {
@@ -600,14 +504,13 @@
             } else {
                 showLiveToast(`New Task: "${data.title}" created with ${data.priority_display} priority.`, 'primary');
             }
-            // Dynamically insert or reload if on all/active view
             const tbody = document.getElementById('taskTableBody');
             if (tbody) {
                 const row = document.createElement('tr');
-                row.className = `task-row-${data.priority} table-warning`;
+                row.className = 'table-warning';
                 row.id = `task-row-${data.task_id}`;
                 row.innerHTML = `
-                    <td class="ps-4"><span class="badge priority-pill-${data.priority} px-2 py-1">${data.priority_display}</span></td>
+                    <td class="ps-4">${priorityBadgeHtml(data.priority, data.priority_display)}</td>
                     <td>
                         <a href="/tasks/${data.task_id}/" class="fw-bold text-decoration-none text-dark d-block">${escapeHtml(data.title)}</a>
                         ${data.description ? `<small class="text-muted text-truncate d-inline-block" style="max-width: 420px;">${escapeHtml(data.description)}</small>` : ''}
@@ -616,43 +519,29 @@
                     <td><span class="badge bg-light text-dark border">${escapeHtml(data.assigned_to_name || 'Unassigned')}</span></td>
                     <td><span class="text-muted small">&mdash;</span></td>
                     <td><span class="text-muted small">${escapeHtml(data.due_date || 'No due date')}</span></td>
-                    <td><span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1">Open</span></td>
-                    <td class="text-end pe-4"><a href="/tasks/${data.task_id}/" class="btn btn-outline-primary btn-sm px-2.5 py-1 rounded-2">View</a></td>
+                    <td><span class="badge bg-info-subtle text-info border border-info-subtle">Open</span></td>
+                    <td class="text-end pe-4"><a href="/tasks/${data.task_id}/" class="btn btn-outline-primary btn-sm">View</a></td>
                 `;
                 tbody.prepend(row);
                 setTimeout(() => row.classList.remove('table-warning'), 3000);
             }
         } else if (data.action === 'status_change') {
-            if (data.old_status === 'open') {
-                updateCounter('metricOpenCount', -1);
-                updateCounter('metricActiveCount', -1);
-            } else if (data.old_status === 'in_progress') {
-                updateCounter('metricInProgressCount', -1);
-                updateCounter('metricActiveCount', -1);
-            } else if (data.old_status === 'done') {
-                updateCounter('metricDoneCount', -1);
-            }
+            if (data.old_status === 'open') { updateCounter('metricOpenCount', -1); updateCounter('metricActiveCount', -1); }
+            else if (data.old_status === 'in_progress') { updateCounter('metricInProgressCount', -1); updateCounter('metricActiveCount', -1); }
+            else if (data.old_status === 'done') { updateCounter('metricDoneCount', -1); }
 
-            if (data.new_status === 'open') {
-                updateCounter('metricOpenCount', 1);
-                updateCounter('metricActiveCount', 1);
-            } else if (data.new_status === 'in_progress') {
-                updateCounter('metricInProgressCount', 1);
-                updateCounter('metricActiveCount', 1);
-            } else if (data.new_status === 'done') {
-                updateCounter('metricDoneCount', 1);
-            }
+            if (data.new_status === 'open') { updateCounter('metricOpenCount', 1); updateCounter('metricActiveCount', 1); }
+            else if (data.new_status === 'in_progress') { updateCounter('metricInProgressCount', 1); updateCounter('metricActiveCount', 1); }
+            else if (data.new_status === 'done') { updateCounter('metricDoneCount', 1); }
 
             const row = document.getElementById(`task-row-${data.task_id}`);
             if (row) {
-                const statusBadge = row.querySelector('td:nth-child(6) span');
-                if (statusBadge) {
-                    statusBadge.textContent = data.status_display;
-                    statusBadge.className = 'badge';
-                    if (data.new_status === 'open') statusBadge.classList.add('bg-info', 'text-dark');
-                    else if (data.new_status === 'in_progress') statusBadge.classList.add('bg-warning', 'text-dark');
-                    else if (data.new_status === 'done') statusBadge.classList.add('bg-success');
-                    else if (data.new_status === 'cancelled') statusBadge.classList.add('bg-secondary');
+                const statusCell = row.querySelector('td:nth-child(6)');
+                if (statusCell) {
+                    if (data.new_status === 'open') statusCell.innerHTML = `<span class="badge bg-info-subtle text-info border border-info-subtle">Open</span>`;
+                    else if (data.new_status === 'in_progress') statusCell.innerHTML = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">In Progress</span>`;
+                    else if (data.new_status === 'done') statusCell.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle">Done</span>`;
+                    else if (data.new_status === 'cancelled') statusCell.innerHTML = `<span class="badge bg-secondary-subtle text-secondary-emphasis border">Cancelled</span>`;
                 }
             }
         } else if (data.action === 'task_accepted') {
@@ -676,10 +565,10 @@
 
     function showLiveToast(text, type) {
         const toastContainer = document.createElement('div');
-        toastContainer.className = `alert alert-${type} alert-dismissible fade show position-fixed bottom-0 end-0 m-3 shadow-lg`;
+        toastContainer.className = `alert alert-${type} alert-dismissible fade show position-fixed bottom-0 end-0 m-3 shadow`;
         toastContainer.style.zIndex = '9999';
         toastContainer.innerHTML = `
-            <i class="fas fa-bell me-2"></i><strong>Real-time Update:</strong> ${escapeHtml(text)}
+            <i class="fas fa-bell me-2"></i><strong>Update:</strong> ${escapeHtml(text)}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
         document.body.appendChild(toastContainer);
@@ -702,73 +591,48 @@
         });
     }
 
-    // Option A: Mutually Exclusive Assignment Mode Handler
     const isModalOpenToAllCheckbox = document.getElementById('task-is-open-to-all');
     const radioOpen = document.getElementById('modeOpenToAll');
     const radioSpecific = document.getElementById('modeSpecificPerson');
     const cardOpen = document.getElementById('cardAssignOpen');
     const cardSpecific = document.getElementById('cardAssignSpecific');
     const specificWrapper = document.getElementById('specificPersonWrapper');
-    const assignedToSelect = document.getElementById('task-assigned-to-select') || (createTaskModalEl ? createTaskModalEl.querySelector('select[name="assigned_to"]') : null);
+
+    function getAssignedToSelect() {
+        const createTaskModalEl = document.getElementById('createTaskModal');
+        return document.getElementById('task-assigned-to-select') ||
+            (createTaskModalEl ? createTaskModalEl.querySelector('select[name="assigned_to"]') : null);
+    }
 
     function setAssignmentMode(mode) {
+        const assignedToSelect = getAssignedToSelect();
         if (mode === 'open') {
             if (radioOpen) radioOpen.checked = true;
             if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = true;
-            if (cardOpen) {
-                cardOpen.classList.add('border-2', 'border-primary', 'shadow-sm');
-                cardOpen.classList.remove('border');
-            }
-            if (cardSpecific) {
-                cardSpecific.classList.remove('border-2', 'border-primary', 'shadow-sm');
-                cardSpecific.classList.add('border');
-            }
+            if (cardOpen) { cardOpen.classList.add('border-2', 'border-primary'); cardOpen.classList.remove('border'); }
+            if (cardSpecific) { cardSpecific.classList.remove('border-2', 'border-primary'); cardSpecific.classList.add('border'); }
             if (specificWrapper) specificWrapper.style.display = 'none';
-            if (assignedToSelect) {
-                assignedToSelect.value = '';
-                assignedToSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            if (assignedToSelect) { assignedToSelect.value = ''; assignedToSelect.dispatchEvent(new Event('change', { bubbles: true })); }
         } else {
             if (radioSpecific) radioSpecific.checked = true;
             if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = false;
-            if (cardSpecific) {
-                cardSpecific.classList.add('border-2', 'border-primary', 'shadow-sm');
-                cardSpecific.classList.remove('border');
-            }
-            if (cardOpen) {
-                cardOpen.classList.remove('border-2', 'border-primary', 'shadow-sm');
-                cardOpen.classList.add('border');
-            }
+            if (cardSpecific) { cardSpecific.classList.add('border-2', 'border-primary'); cardSpecific.classList.remove('border'); }
+            if (cardOpen) { cardOpen.classList.remove('border-2', 'border-primary'); cardOpen.classList.add('border'); }
             if (specificWrapper) specificWrapper.style.display = 'block';
         }
     }
 
-    if (radioOpen) {
-        radioOpen.addEventListener('change', function() {
-            if (this.checked) setAssignmentMode('open');
-        });
-    }
-    if (radioSpecific) {
-        radioSpecific.addEventListener('change', function() {
-            if (this.checked) setAssignmentMode('specific');
-        });
-    }
-    if (cardOpen) {
-        cardOpen.addEventListener('click', function(e) {
-            setAssignmentMode('open');
-        });
-    }
-    if (cardSpecific) {
-        cardSpecific.addEventListener('click', function(e) {
-            setAssignmentMode('specific');
-        });
-    }
+    if (radioOpen) radioOpen.addEventListener('change', function() { if (this.checked) setAssignmentMode('open'); });
+    if (radioSpecific) radioSpecific.addEventListener('change', function() { if (this.checked) setAssignmentMode('specific'); });
+    if (cardOpen) cardOpen.addEventListener('click', function() { setAssignmentMode('open'); });
+    if (cardSpecific) cardSpecific.addEventListener('click', function() { setAssignmentMode('specific'); });
 
     const createTaskModalEl = document.getElementById('createTaskModal');
     if (createTaskModalEl) {
         const createForm = createTaskModalEl.querySelector('form');
         if (createForm) {
             createForm.addEventListener('submit', function(e) {
+                const assignedToSelect = getAssignedToSelect();
                 if (radioOpen && radioOpen.checked) {
                     if (isModalOpenToAllCheckbox) isModalOpenToAllCheckbox.checked = true;
                     if (assignedToSelect) assignedToSelect.value = '';

@@ -1,0 +1,50 @@
+{% if completed_jobs %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Job Code</th>
+                <th>Customer</th>
+                <th>Device</th>
+                <th>Status</th>
+                <th class="text-end">Amount</th>
+                <th class="text-center">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in completed_jobs %}
+            <tr data-job-code="{{ job.job_code }}">
+                <td>
+                    <a href="{% url 'staff_job_detail' job.job_code %}" class="fw-bold text-decoration-none">
+                        {{ job.job_code }}
+                    </a>
+                    {% if job.is_new_assignment %}
+                    <span class="badge bg-danger ms-1">NEW</span>
+                    {% endif %}
+                </td>
+                <td>{{ job.customer_name }}</td>
+                <td><span class="badge bg-light text-dark border">{{ job.device_type }}</span></td>
+                <td><span class="badge bg-success-subtle text-success border border-success-subtle">{{ job.status }}</span></td>
+                <td class="text-end fw-semibold">&#8377;{{ job.net_total|default_if_none:0|floatformat:2 }}</td>
+                <td class="text-center">
+                    <div class="d-inline-flex align-items-center gap-1">
+                        <a href="{% url 'job_billing_staff' job.job_code %}" class="btn btn-outline-primary btn-sm">
+                            <i class="fa-solid fa-file-invoice me-1"></i>Bill
+                        </a>
+                        {% if staff_access.job_status_change %}
+                        <a href="{% url 'mark_ready_for_pickup' job_code=job.job_code %}" class="btn btn-success btn-sm">
+                            <i class="fa-solid fa-hand-point-right me-1"></i>Mark Ready
+                        </a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-4 text-muted">
+    <p class="mb-0">No completed jobs are currently awaiting pickup or invoicing.</p>
+</div>
+{% endif %}
