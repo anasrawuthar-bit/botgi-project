@@ -401,8 +401,11 @@ def company_profile_settings(request):
     ):
         if not initial_tab:
             initial_tab = '#bank-details'
-    elif not initial_tab and (request.GET.get('preset_field') or request.GET.get('checklist_template_id')):
-        initial_tab = '#intake-presets'
+    # App Releases data
+    app_releases_context = _build_app_releases_context(request, workspace)
+
+    if not initial_tab and request.GET.get('tab') == 'app-releases':
+        initial_tab = '#app-releases'
 
     context = {
         'form': form,
@@ -420,6 +423,7 @@ def company_profile_settings(request):
         'unassigned_jobs': unassigned_jobs,
         **accounts_context,
         **presets_context,
+        **app_releases_context,
     }
     return render(request, 'job_tickets/company_profile_settings.html', context)
 
@@ -1337,6 +1341,121 @@ def checklist_field_delete(request, field_id):
         return _JsonResponse({'ok': True, 'message': msg})
     messages.success(request, msg)
     return redirect(f"{reverse('company_profile_settings')}?tab=intake-presets&checklist_template_id={template_id}")
+
+
+def _build_app_releases_context(request, workspace):
+    """Context builder for technician mobile app version management."""
+    releases_qs = MobileAppRelease.objects.all().order_by('-version_code', '-created_at')
+    active_release = releases_qs.filter(is_active=True).first()
+    download_url = request.build_absolute_uri(reverse('download_technician_app'))
+    download_qr_base64 = generate_qr_base64(download_url) if download_url else ''
+
+    return {
+        'app_releases': list(releases_qs),
+        'active_app_release': active_release,
+        'app_download_url': download_url,
+        'app_download_qr_base64': download_qr_base64,
+    }
+
+
+@login_required
+@require_POST
+def app_release_upload(request):
+    """Upload a new technician mobile app release (APK) or external download URL."""
+    denied = _staff_access_required(request, "company_settings")
+    if denied:
+        return denied
+
+    workspace = getattr(request, 'current_workspace', None)
+    version_name = (request.POST.get('version_name') or '').strip()
+    release_notes = (request.POST.get('release_notes') or '').strip()
+    download_url = (request.POST.get('download_url') or '').strip()
+    is_active = request.POST.get('is_active') in ['on', 'true', '1']
+
+    try:
+        version_code = int(request.POST.get('version_code') or 1)
+    except (ValueError, TypeError):
+        version_code = 1
+
+    try:
+        min_version_code = int(request.POST.get('min_version_code') or 1)
+    except (ValueError, TypeError):
+        min_version_code = 1
+
+    if not version_name:
+        messages.error(request, 'Version name is required (e.g. 1.0.4).')
+        return redirect(f"{reverse('company_profile_settings')}?tab=app-releases")
+
+    apk_file = request.FILES.get('apk_file')
+    if not apk_file and not download_url:
+        messages.error(request, 'Please provide an APK file or an external download URL.')
+        return redirect(f"{reverse('company_profile_settings')}?tab=app-releases")
+
+    if apk_file and not apk_file.name.lower().endswith('.apk'):
+        messages.error(request, 'Uploaded file must have an .apk extension.')
+        return redirect(f"{reverse('company_profile_settings')}?tab=app-releases")
+
+    if is_active:
+        MobileAppRelease.objects.filter(platform=MobileAppRelease.PLATFORM_ANDROID).update(is_active=False)
+
+    release = MobileAppRelease.objects.create(
+        workspace=workspace,
+        platform=MobileAppRelease.PLATFORM_ANDROID,
+        version_name=version_name,
+        version_code=version_code,
+        min_version_code=min_version_code,
+        release_notes=release_notes,
+        is_active=is_active,
+        apk_file=apk_file,
+        download_url=download_url,
+        uploaded_by=request.user,
+    )
+
+    messages.success(request, f'Mobile App release v{release.version_name} (Build {release.version_code}) saved successfully.')
+    return redirect(f"{reverse('company_profile_settings')}?tab=app-releases")
+
+
+@login_required
+@require_POST
+def app_release_toggle_active(request, release_id):
+    """Toggle or set a specific release as the active version."""
+    denied = _staff_access_required(request, "company_settings")
+    if denied:
+        return denied
+
+    release = get_object_or_404(MobileAppRelease, id=release_id)
+    if not release.is_active:
+        MobileAppRelease.objects.filter(platform=release.platform).update(is_active=False)
+        release.is_active = True
+        messages.success(request, f'Release v{release.version_name} is now the active release.')
+    else:
+        release.is_active = False
+        messages.info(request, f'Release v{release.version_name} is now inactive.')
+
+    release.save(update_fields=['is_active'])
+    return redirect(f"{reverse('company_profile_settings')}?tab=app-releases")
+
+
+@login_required
+@require_POST
+def app_release_delete(request, release_id):
+    """Delete a mobile app release and its uploaded APK file."""
+    denied = _staff_access_required(request, "company_settings")
+    if denied:
+        return denied
+
+    release = get_object_or_404(MobileAppRelease, id=release_id)
+    version_label = f"v{release.version_name} ({release.version_code})"
+    if release.apk_file:
+        try:
+            release.apk_file.delete(save=False)
+        except Exception:
+            pass
+    release.delete()
+
+    messages.success(request, f'App release {version_label} deleted.')
+    return redirect(f"{reverse('company_profile_settings')}?tab=app-releases")
+
 
 
 

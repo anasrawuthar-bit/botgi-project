@@ -85,8 +85,13 @@
                                             </li>
                                             <li><hr class="dropdown-divider"></li>
                                             <li>
-                                                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#loginLogsModal{{ member.id }}">
-                                                    <i class="fas fa-history text-info me-2 fw-bold"></i> Login Logs
+                                                <button class="dropdown-item" type="button" onclick="openStaffQrModal({{ member.id }}, '{{ member.username|escapejs }}')">
+                                                    <i class="fas fa-qrcode text-primary me-2 fw-bold"></i> QR Mobile Login
+                                                </button>
+                                            </li>
+                                            <li>
+                                                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#loginLogsModal{{ member.id }}" onclick="loadStaffMemberDevices({{ member.id }})">
+                                                    <i class="fas fa-history text-info me-2 fw-bold"></i> Sessions &amp; Devices
                                                 </button>
                                             </li>
                                         </ul>
@@ -97,7 +102,7 @@
                                         <div class="modal-dialog">
                                             <div class="modal-content">
                                                 <div class="modal-header">
-                                                    <h5 class="modal-title" id="loginLogsModalLabel{{ member.id }}">Session Logs: {{ member.username }}</h5>
+                                                    <h5 class="modal-title" id="loginLogsModalLabel{{ member.id }}">Session &amp; Device Logs: {{ member.username }}</h5>
                                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                                 </div>
                                                 <div class="modal-body">
@@ -145,9 +150,32 @@
                                                             <span class="text-muted mt-1 small" style="word-break: break-word;">{{ member.latest_session_device|default:"-" }}</span>
                                                         </li>
                                                     </ul>
+
+                                                    <!-- Active Mobile Devices Section -->
+                                                    <div class="mt-3 border-top pt-3">
+                                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                                            <strong class="text-dark small text-uppercase">
+                                                                <i class="fa-solid fa-mobile-screen-button text-success me-1"></i>Active Mobile Devices
+                                                            </strong>
+                                                            <form method="post" action="{% url 'staff_logout_all_devices' member.id %}" onsubmit="return confirm('Log out all mobile devices for {{ member.username }}?');" class="m-0">
+                                                                {% csrf_token %}
+                                                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size: 0.72rem;">
+                                                                    Log Out All
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                        <div id="staff-active-devices-{{ member.id }}" class="small">
+                                                            <div class="text-muted text-center py-2">
+                                                                <span class="spinner-border spinner-border-sm me-1"></span>Loading devices...
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 <div class="modal-footer">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                                    <button type="button" class="btn btn-primary btn-sm" onclick="openStaffQrModal({{ member.id }}, '{{ member.username|escapejs }}')">
+                                                        <i class="fas fa-qrcode me-1"></i>Generate Login QR
+                                                    </button>
+                                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -481,5 +509,145 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 });
+</script>
+
+<!-- Staff QR Code Modal for Pair Mobile App -->
+<div class="modal fade" id="staffQrLoginModal" tabindex="-1" aria-labelledby="staffQrLoginModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0" style="border-radius: 16px;">
+            <div class="modal-header border-bottom py-3">
+                <h5 class="modal-title fw-bold text-dark" id="staffQrLoginModalLabel">
+                    <i class="fa-solid fa-qrcode text-primary me-2"></i>QR Mobile Login: <span id="staff-qr-username"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center p-4">
+                <p class="text-muted small mb-3">
+                    Have the technician scan this QR code with the <strong>Botgi Mobile App</strong> to sign in immediately without typing credentials.
+                </p>
+                <div id="staff-qr-loading" class="py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="text-muted small mt-2">Generating single-use login code...</div>
+                </div>
+                <div id="staff-qr-content" style="display: none;">
+                    <div class="p-3 bg-white rounded-3 border d-inline-block shadow-sm mb-3">
+                        <img id="staff-qr-img" src="" alt="QR Login" style="width: 210px; height: 210px;" class="img-fluid">
+                    </div>
+                    <div class="mb-2">
+                        <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock me-1"></i>Expires in: 10 minutes</span>
+                    </div>
+                    <div id="staff-qr-pairing-status" class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-center gap-2">
+                        <span class="spinner-grow spinner-grow-sm text-info" role="status"></span>
+                        <span>Waiting for device scan...</span>
+                    </div>
+                </div>
+                <div id="staff-qr-success" style="display: none;" class="py-3">
+                    <div class="text-success mb-2" style="font-size: 3rem;">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark">Device Connected!</h5>
+                    <p class="text-muted small mb-0" id="staff-qr-success-text">Mobile app was authenticated successfully.</p>
+                </div>
+            </div>
+            <div class="modal-footer border-top bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let staffQrPollInterval = null;
+
+function openStaffQrModal(userId, username) {
+    document.getElementById('staff-qr-username').textContent = username;
+    document.getElementById('staff-qr-loading').style.display = 'block';
+    document.getElementById('staff-qr-content').style.display = 'none';
+    document.getElementById('staff-qr-success').style.display = 'none';
+
+    clearInterval(staffQrPollInterval);
+
+    const modal = new bootstrap.Modal(document.getElementById('staffQrLoginModal'));
+    modal.show();
+
+    fetch(`/staff/technicians/${userId}/qr-token/`)
+    .then(res => res.json())
+    .then(data => {
+        if (data.ok) {
+            document.getElementById('staff-qr-img').src = data.qr_image;
+            document.getElementById('staff-qr-loading').style.display = 'none';
+            document.getElementById('staff-qr-content').style.display = 'block';
+
+            staffQrPollInterval = setInterval(() => {
+                fetch(`/api/auth/qr-token/status/${data.token}/`)
+                .then(r => r.json())
+                .then(st => {
+                    if (st.ok && st.status === 'used') {
+                        clearInterval(staffQrPollInterval);
+                        document.getElementById('staff-qr-content').style.display = 'none';
+                        document.getElementById('staff-qr-success').style.display = 'block';
+                        if (st.device_info) {
+                            document.getElementById('staff-qr-success-text').textContent =
+                                `Authenticated on ${st.device_info}.`;
+                        }
+                    } else if (st.status === 'expired') {
+                        clearInterval(staffQrPollInterval);
+                    }
+                });
+            }, 2500);
+        } else {
+            alert('Failed to generate QR: ' + (data.message || 'Error'));
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        document.getElementById('staff-qr-loading').style.display = 'none';
+    });
+}
+
+document.getElementById('staffQrLoginModal').addEventListener('hidden.bs.modal', function() {
+    clearInterval(staffQrPollInterval);
+});
+
+function loadStaffMemberDevices(userId) {
+    const container = document.getElementById(`staff-active-devices-${userId}`);
+    if (!container) return;
+
+    fetch(`/staff/technicians/${userId}/active-devices/`)
+    .then(res => res.json())
+    .then(data => {
+        if (data.ok && data.devices) {
+            if (data.devices.length === 0) {
+                container.innerHTML = '<div class="text-muted text-center py-2">No active mobile devices.</div>';
+                return;
+            }
+            let html = '<div class="list-group list-group-flush border rounded-2 mt-2">';
+            data.devices.forEach(d => {
+                html += `
+                    <div class="list-group-item p-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold text-dark">${d.device_label}</div>
+                            <div class="text-muted" style="font-size: 0.72rem;">IP: ${d.ip_address} • Active: ${d.last_activity_at}</div>
+                        </div>
+                        <form method="post" action="/staff/technicians/session/${d.id}/logout/" onsubmit="return confirm('Revoke this device?');" class="m-0">
+                            <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size: 0.72rem;" title="Log out device">
+                                Revoke
+                            </button>
+                        </form>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="text-danger text-center py-2">Could not load devices.</div>';
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        container.innerHTML = '<div class="text-danger text-center py-2">Error loading devices.</div>';
+    });
+}
 </script>
 {% endblock %}

@@ -1065,3 +1065,152 @@ def technician_task_accept(request, task_id):
     messages.success(request, f"Task '{task.title}' claimed successfully and added to your queue.")
     return redirect('technician_task_detail', task_id=task.id)
 
+
+@login_required
+def technician_profile(request):
+    """Technician profile view: personal details, password reset, active mobile devices, app download."""
+    if not request.user.groups.filter(name='Technicians').exists() and not request.user.is_staff:
+        return redirect('unauthorized')
+
+    technician = TechnicianProfile.objects.filter(user=request.user).first()
+    
+    if request.method == 'POST':
+        action = request.POST.get('action') or ('change_password' if 'change_password_submit' in request.POST else '')
+        if action == 'change_password':
+            current_password = (request.POST.get('current_password') or '').strip()
+            new_password = (request.POST.get('new_password') or '').strip()
+            confirm_password = (request.POST.get('confirm_password') or '').strip()
+
+            if not current_password or not new_password or not confirm_password:
+                messages.error(request, 'All password fields are required.')
+            elif not request.user.check_password(current_password):
+                messages.error(request, 'Current password is incorrect.')
+            elif new_password != confirm_password:
+                messages.error(request, 'New password and confirm password do not match.')
+            else:
+                try:
+                    validate_password(new_password, user=request.user)
+                    request.user.set_password(new_password)
+                    request.user.save(update_fields=['password'])
+                    update_session_auth_hash(request, request.user)
+                    messages.success(request, 'Your password has been changed successfully.')
+                    return redirect('technician_profile')
+                except ValidationError as exc:
+                    messages.error(request, " ".join(exc.messages))
+
+    active_sessions = list(
+        UserSessionActivity.objects.filter(
+            user=request.user,
+            channel=UserSessionActivity.CHANNEL_API,
+            status=UserSessionActivity.STATUS_ACTIVE,
+        ).order_by('-last_activity_at')
+    )
+
+    recent_sessions = list(
+        UserSessionActivity.objects.filter(
+            user=request.user,
+            channel=UserSessionActivity.CHANNEL_API,
+        ).exclude(status=UserSessionActivity.STATUS_ACTIVE).order_by('-last_activity_at')[:5]
+    )
+
+    active_release = MobileAppRelease.objects.filter(platform=MobileAppRelease.PLATFORM_ANDROID, is_active=True).first()
+    download_url = request.build_absolute_uri(reverse('download_technician_app'))
+    download_qr_base64 = generate_qr_base64(download_url) if download_url else ''
+
+    context = {
+        'technician': technician,
+        'user': request.user,
+        'active_sessions': active_sessions,
+        'recent_sessions': recent_sessions,
+        'active_release': active_release,
+        'download_url': download_url,
+        'download_qr_base64': download_qr_base64,
+    }
+    return render(request, 'job_tickets/technician_profile.html', context)
+
+
+@login_required
+def technician_generate_qr_token(request):
+    """Generates a dynamic 10-minute QR login token for the logged-in technician."""
+    token_str = secrets.token_urlsafe(32)
+    expires_at = timezone.now() + timezone.timedelta(minutes=10)
+    qr_token = MobileQrLoginToken.objects.create(
+        token=token_str,
+        user=request.user,
+        expires_at=expires_at,
+    )
+    qr_payload = json.dumps({
+        'action': 'botgi_mobile_qr_login',
+        'token': qr_token.token,
+        'username': request.user.username,
+        'expires_at': qr_token.expires_at.isoformat(),
+    })
+    qr_image = generate_qr_base64(qr_payload)
+    return JsonResponse({
+        'ok': True,
+        'token': qr_token.token,
+        'qr_image': qr_image,
+        'expires_at': qr_token.expires_at.isoformat(),
+        'expires_in_seconds': 600,
+    })
+
+
+@never_cache
+@require_GET
+def qr_login_token_status(request, token):
+    """Checks the live scanning status of a generated QR login token."""
+    qr_token = MobileQrLoginToken.objects.filter(token=token).first()
+    if not qr_token:
+        return JsonResponse({'ok': False, 'status': 'not_found'}, status=404)
+
+    if qr_token.is_used:
+        return JsonResponse({
+            'ok': True,
+            'status': 'used',
+            'device_info': qr_token.device_info or 'Mobile Device',
+            'used_at': qr_token.used_at.isoformat() if qr_token.used_at else '',
+        })
+    elif not qr_token.is_valid:
+        return JsonResponse({'ok': True, 'status': 'expired'})
+    else:
+        return JsonResponse({'ok': True, 'status': 'pending'})
+
+
+@login_required
+@require_POST
+def technician_logout_device(request, session_id):
+    """Remotely logs out a specific mobile device belonging to the logged-in user."""
+    session = get_object_or_404(UserSessionActivity, id=session_id, user=request.user)
+    session.status = UserSessionActivity.STATUS_LOGGED_OUT
+    session.logout_at = timezone.now()
+    session.logout_reason = 'user_revoked'
+    session.save(update_fields=['status', 'logout_at', 'logout_reason'])
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in (request.content_type or ''):
+        return JsonResponse({'ok': True, 'message': 'Device logged out successfully.'})
+
+    messages.success(request, 'Mobile device logged out successfully.')
+    return redirect('technician_profile')
+
+
+@login_required
+@require_POST
+def technician_logout_all_devices(request):
+    """Remotely logs out all active mobile devices belonging to the logged-in user."""
+    count = UserSessionActivity.objects.filter(
+        user=request.user,
+        channel=UserSessionActivity.CHANNEL_API,
+        status=UserSessionActivity.STATUS_ACTIVE,
+    ).update(
+        status=UserSessionActivity.STATUS_LOGGED_OUT,
+        logout_at=timezone.now(),
+        logout_reason='user_revoked_all',
+    )
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in (request.content_type or ''):
+        return JsonResponse({'ok': True, 'message': f'{count} device(s) logged out successfully.'})
+
+    messages.success(request, f'{count} mobile device(s) logged out successfully.')
+    return redirect('technician_profile')
+
+

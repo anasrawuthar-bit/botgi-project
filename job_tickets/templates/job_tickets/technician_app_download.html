@@ -1,0 +1,83 @@
+{% extends "job_tickets/base.html" %}
+
+{% block title %}Download Botgi Technician App{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 780px;">
+    <div class="card shadow-lg border-0" style="border-radius: 18px; overflow: hidden;">
+        <div class="card-body p-4 p-md-5 text-center">
+            <!-- App Icon -->
+            <div class="rounded-4 bg-primary text-white d-inline-flex align-items-center justify-content-center shadow mb-3" style="width: 80px; height: 80px; font-size: 2.5rem;">
+                <i class="fa-solid fa-screwdriver-wrench"></i>
+            </div>
+
+            <h2 class="fw-bold text-dark mb-1">Botgi Technician App</h2>
+            <p class="text-muted mb-4">Official mobile application for service technicians, field diagnostics, and job management.</p>
+
+            {% if active_release %}
+            <div class="d-inline-flex align-items-center gap-2 mb-4">
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 rounded-pill">
+                    <i class="fa-brands fa-android me-1"></i> Version {{ active_release.version_name }} (Build {{ active_release.version_code }})
+                </span>
+                <span class="badge bg-light text-dark border px-3 py-2 fs-6 rounded-pill">
+                    {{ active_release.file_size_display }}
+                </span>
+            </div>
+
+            <div class="row align-items-center justify-content-center g-4 my-2">
+                <div class="col-md-6 text-md-start">
+                    <h5 class="fw-bold text-dark mb-2">Direct APK Download</h5>
+                    <p class="text-muted small mb-3">
+                        Download the installer package directly to your Android device or tablet.
+                    </p>
+                    <div class="d-grid gap-2 mb-3">
+                        <a href="{{ download_url }}" class="btn btn-primary btn-lg fw-bold shadow-sm py-3">
+                            <i class="fa-solid fa-download me-2"></i> Download APK Now
+                        </a>
+                    </div>
+                    <div class="text-muted small">
+                        <i class="fa-solid fa-shield-check text-success me-1"></i> Safe &amp; Verified Build • Last updated {{ active_release.updated_at|date:"M d, Y" }}
+                    </div>
+                </div>
+
+                <div class="col-md-5 text-center">
+                    {% if qr_image %}
+                    <div class="p-3 bg-white rounded-4 border d-inline-block shadow-sm">
+                        <img src="{{ qr_image }}" alt="Scan QR to Download" style="width: 170px; height: 170px;" class="img-fluid">
+                    </div>
+                    <div class="text-muted small mt-2 fw-semibold">
+                        <i class="fa-solid fa-camera me-1"></i> Scan with Phone Camera
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if active_release.release_notes %}
+            <div class="mt-4 text-start p-3 bg-light rounded-3 border">
+                <h6 class="fw-bold text-dark mb-2"><i class="fa-solid fa-sparkles text-warning me-1"></i> What's New in this Release:</h6>
+                <div class="text-muted small" style="white-space: pre-line;">{{ active_release.release_notes }}</div>
+            </div>
+            {% endif %}
+
+            <!-- Installation Help -->
+            <div class="mt-4 text-start p-3 rounded-3 border border-dashed text-muted small bg-white">
+                <h6 class="fw-semibold text-dark mb-1"><i class="fa-solid fa-circle-info text-info me-1"></i> How to Install on Android:</h6>
+                <ol class="mb-0 ps-3">
+                    <li>Tap <strong>Download APK Now</strong> or scan the QR code using your phone camera.</li>
+                    <li>Once downloaded, tap the notification or open your device's <strong>Downloads</strong> folder.</li>
+                    <li>If prompted, allow your browser to <strong>"Install unknown apps"</strong>.</li>
+                    <li>Tap <strong>Install</strong>, then launch the app and sign in with your credentials or QR login!</li>
+                </ol>
+            </div>
+
+            {% else %}
+            <div class="alert alert-warning py-4 my-3 text-center">
+                <i class="fa-solid fa-triangle-exclamation mb-2" style="font-size: 2rem;"></i>
+                <h5 class="fw-bold">No APK Release Available Yet</h5>
+                <p class="mb-0">The staff team has not uploaded an active Android build yet. Please check back later or contact your administrator.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

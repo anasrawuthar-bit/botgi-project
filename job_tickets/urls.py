@@ -74,6 +74,10 @@ urlpatterns = [
     # Technician-facing views
     path('technician-dashboard/', views.technician_dashboard, name='technician_dashboard'),
     path('technician-dashboard/<str:job_code>/', views.job_detail_technician, name='job_detail_technician'),
+    path('technician/profile/', views.technician_profile, name='technician_profile'),
+    path('technician/qr-token/generate/', views.technician_generate_qr_token, name='technician_generate_qr_token'),
+    path('technician/session/<int:session_id>/logout/', views.technician_logout_device, name='technician_logout_device'),
+    path('technician/sessions/logout-all/', views.technician_logout_all_devices, name='technician_logout_all_devices'),
     path('technician/job/<str:job_code>/acknowledge/', views.technician_acknowledge_assignment, name='technician_acknowledge_assignment'),
     path('technician/job/<str:job_code>/return-to-staff/', views.technician_return_to_staff, name='technician_return_to_staff'),
     path('technician/service-log/<int:log_id>/delete/', views.technician_delete_service_log, name='technician_delete_service_log'),
@@ -83,8 +87,12 @@ urlpatterns = [
     path('staff/job/close/<str:job_code>/', views.close_job, name='close_job'),
     path('api/job-status/', views.get_job_status_data, name='get_job_status_data'),
     path('api/app-release/', views.app_release_meta, name='app_release_meta'),
+    path('download/technician-app/', views.download_technician_app, name='download_technician_app'),
+    path('technician-app/', views.technician_app_landing, name='technician_app_landing'),
     path('api/client-phone-lookup/', views.client_phone_lookup, name='client_phone_lookup'),
     path('api/mobile/login/', views.mobile_api_login, name='mobile_api_login'),
+    path('api/mobile/qr-login/', views.mobile_api_qr_login, name='mobile_api_qr_login'),
+    path('api/auth/qr-token/status/<str:token>/', views.qr_login_token_status, name='qr_login_token_status'),
     path('api/mobile/me/', views.mobile_api_me, name='mobile_api_me'),
     path('api/mobile/jobs/', views.mobile_api_jobs, name='mobile_api_jobs'),
     path('api/mobile/jobs/quick-list/', views.mobile_api_jobs_quicklist, name='mobile_api_jobs_quicklist'),
@@ -163,6 +171,15 @@ urlpatterns = [
     path('staff/technicians/<int:user_id>/edit/', views.edit_user, name='edit_user'),
     path('staff/technicians/<int:user_id>/change-password/', views.change_user_password, name='change_user_password'),
     path('staff/technicians/<int:user_id>/delete/', views.delete_user, name='delete_user'),
+    path('staff/technicians/<int:user_id>/qr-token/', views.staff_generate_qr_token, name='staff_generate_qr_token'),
+    path('staff/technicians/<int:user_id>/active-devices/', views.staff_user_active_devices, name='staff_user_active_devices'),
+    path('staff/technicians/session/<int:session_id>/logout/', views.staff_logout_device, name='staff_logout_device'),
+    path('staff/technicians/<int:user_id>/sessions/logout-all/', views.staff_logout_all_devices, name='staff_logout_all_devices'),
+
+    # Mobile App Releases Management
+    path('staff/app-releases/upload/', views.app_release_upload, name='app_release_upload'),
+    path('staff/app-releases/<int:release_id>/toggle-active/', views.app_release_toggle_active, name='app_release_toggle_active'),
+    path('staff/app-releases/<int:release_id>/delete/', views.app_release_delete, name='app_release_delete'),
 
     # Standalone Task Management (Staff)
     path('staff/tasks/', views.task_dashboard, name='task_dashboard'),

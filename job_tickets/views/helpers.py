@@ -55,13 +55,16 @@ from ..models import (
     Vendor,
     VendorPayment,
     WhatsAppIntegrationSettings,
+    MobileAppRelease,
+    MobileQrLoginToken,
 )
 from ..forms import JobTicketForm, AssignJobForm, ServiceLogForm, ReworkForm, DiscountForm, AssignVendorForm, ReturnVendorServiceForm, ReassignTechnicianForm, TaskCreateForm, TaskMessageForm, ExpenseForm, VendorForm, FeedbackForm, CompanyProfileForm, ClientForm, ProductForm, InventoryPartyForm, InventoryEntryForm, WhatsAppIntegrationSettingsForm, get_assignable_technician_queryset, FinancialAccountForm, AccountTransferForm
 from ..gst_utils import effective_tax_rate
 from ..phone_utils import normalize_indian_phone, phone_lookup_variants
 from ..whatsapp_service import verify_receipt_access_token
 from django.db import transaction, OperationalError, ProgrammingError
-from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest, HttpResponse
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest, HttpResponse, FileResponse, HttpResponseNotFound, Http404
+import secrets
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.views.decorators.csrf import csrf_exempt
@@ -458,7 +461,35 @@ def _b64url_decode(encoded_text):
     padding = '=' * (-len(encoded_text) % 4)
     return base64.urlsafe_b64decode(f"{encoded_text}{padding}")
 
-def issue_mobile_jwt(user):
+def get_client_ip(request):
+    """Extract client IP address from X-Forwarded-For or REMOTE_ADDR."""
+    forwarded_for = (request.META.get('HTTP_X_FORWARDED_FOR') or '').split(',')[0].strip()
+    return forwarded_for or request.META.get('REMOTE_ADDR') or ''
+
+def generate_qr_base64(data_text):
+    """Generates a high-resolution base64 PNG data URI for a QR code."""
+    try:
+        import io
+        import base64
+        import qrcode
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(data_text)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode('utf-8')
+    except Exception as exc:
+        logger.error(f"Failed to generate QR code: {exc}")
+        return ""
+
+
+def issue_mobile_jwt(user, session_id=None):
     now_ts = int(timezone.now().timestamp())
     payload = {
         'sub': str(user.id),
@@ -467,6 +498,8 @@ def issue_mobile_jwt(user):
         'iat': now_ts,
         'exp': now_ts + MOBILE_JWT_EXP_SECONDS,
     }
+    if session_id:
+        payload['jti'] = str(session_id)
     header = {'alg': MOBILE_JWT_ALGORITHM, 'typ': 'JWT'}
     header_b64 = _b64url_encode(json.dumps(header, separators=(',', ':')).encode('utf-8'))
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(',', ':')).encode('utf-8'))
@@ -474,6 +507,7 @@ def issue_mobile_jwt(user):
     signature = hmac.new(settings.SECRET_KEY.encode('utf-8'), signing_input, hashlib.sha256).digest()
     signature_b64 = _b64url_encode(signature)
     return f"{header_b64}.{payload_b64}.{signature_b64}"
+
 
 def decode_mobile_jwt(token):
     token = (token or '').strip()
@@ -507,6 +541,7 @@ def decode_mobile_jwt(token):
 
     return payload, None
 
+
 def authenticate_mobile_request(request):
     auth_header = (request.headers.get('Authorization') or '').strip()
     if not auth_header.startswith('Bearer '):
@@ -525,6 +560,20 @@ def authenticate_mobile_request(request):
         user = User.objects.get(id=int(user_id), is_active=True)
     except (TypeError, ValueError, User.DoesNotExist):
         return None, JsonResponse({'error': 'invalid_user', 'message': 'Token user no longer exists.'}, status=401)
+
+    # Check if device session was remotely logged out / revoked
+    jti = payload.get('jti')
+    if jti:
+        session = UserSessionActivity.objects.filter(session_key=jti).first()
+        if session:
+            if session.status == UserSessionActivity.STATUS_LOGGED_OUT:
+                return None, JsonResponse(
+                    {'error': 'session_revoked', 'message': 'This device has been logged out from the panel.'},
+                    status=401,
+                )
+            # Update last activity
+            session.last_activity_at = timezone.now()
+            session.save(update_fields=['last_activity_at'])
 
     return user, None
 

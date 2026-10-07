@@ -2656,6 +2656,13 @@ class UserSessionActivity(models.Model):
         else:
             os_name = 'Unknown OS'
 
+        if 'botgi mobile' in user_agent or 'botgi' in user_agent or self.channel == self.CHANNEL_API:
+            if '(' in (self.user_agent or ''):
+                prefix = self.user_agent.split('(')[0].strip()
+                if prefix and prefix.lower() not in ['botgi mobile app', 'botgi mobile app (qr login)', 'botgi mobile']:
+                    return f"{prefix} (Mobile App)"
+            return f"Botgi Mobile App ({os_name})"
+
         if 'edg/' in user_agent:
             browser = 'Edge'
         elif 'chrome/' in user_agent and 'edg/' not in user_agent:
@@ -3198,5 +3205,82 @@ class AccountTransaction(models.Model):
 
     def __str__(self):
         return f"{self.transaction_date} [{self.get_transaction_type_display()}] {self.account.name}: ₹{self.amount} (Bal: ₹{self.balance_after})"
+
+
+class MobileAppRelease(models.Model):
+    PLATFORM_ANDROID = 'android'
+    PLATFORM_IOS = 'ios'
+    PLATFORM_CHOICES = [
+        (PLATFORM_ANDROID, 'Android (APK)'),
+        (PLATFORM_IOS, 'iOS'),
+    ]
+
+    workspace = models.ForeignKey(
+        'CompanyWorkspace',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='app_releases',
+    )
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, default=PLATFORM_ANDROID)
+    version_name = models.CharField(max_length=50, help_text="e.g. 1.2.0")
+    version_code = models.PositiveIntegerField(help_text="Numeric build number, e.g. 12")
+    apk_file = models.FileField(upload_to='app_releases/', blank=True, null=True)
+    download_url = models.URLField(max_length=500, blank=True, help_text="External download URL if APK not uploaded directly.")
+    release_notes = models.TextField(blank=True, help_text="What's new in this version.")
+    min_version_code = models.PositiveIntegerField(default=1, help_text="Older builds below this will be forced to update.")
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='uploaded_app_releases')
+
+    class Meta:
+        ordering = ['-version_code', '-created_at']
+
+    def __str__(self):
+        return f"{self.get_platform_display()} v{self.version_name} ({self.version_code})"
+
+    @property
+    def file_size_display(self):
+        try:
+            if self.apk_file and hasattr(self.apk_file, 'size') and self.apk_file.size:
+                size_mb = self.apk_file.size / (1024 * 1024)
+                return f"{size_mb:.1f} MB"
+        except Exception:
+            pass
+        return "N/A"
+
+    def get_download_url(self, request=None):
+        if self.apk_file:
+            try:
+                url = self.apk_file.url
+                if request:
+                    return request.build_absolute_uri(url)
+                return url
+            except Exception:
+                pass
+        return self.download_url or ''
+
+
+class MobileQrLoginToken(models.Model):
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='qr_login_tokens')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    is_used = models.BooleanField(default=False, db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    device_info = models.CharField(max_length=255, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"QR Login Token for {self.user.username} ({'Used' if self.is_used else 'Pending'})"
+
+    @property
+    def is_valid(self):
+        return (not self.is_used) and (self.expires_at > timezone.now())
+
 
 

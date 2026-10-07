@@ -62,6 +62,8 @@ from .models import (
     Vendor,
     VendorPayment,
     WhatsAppIntegrationSettings,
+    MobileAppRelease,
+    MobileQrLoginToken,
 )
 from .phone_utils import normalize_indian_phone
 from .whatsapp_service import create_receipt_access_token, send_job_whatsapp_notification
@@ -6422,5 +6424,236 @@ class InventorySerialTrackingPhase2Tests(TestCase):
         miss_data = miss_resp.json()
         self.assertTrue(miss_data['ok'])
         self.assertFalse(miss_data['found'])
+
+
+class TechnicianProfileAndQrMobileTests(TestCase):
+    def setUp(self):
+        self.tech_group, _ = Group.objects.get_or_create(name='Technicians')
+        self.staff_group, _ = Group.objects.get_or_create(name='Staff')
+
+        self.tech_user = User.objects.create_user(
+            username='tech_sam',
+            password='InitialPassword123!',
+            first_name='Sam',
+            last_name='Tech',
+            email='sam@example.com',
+        )
+        self.tech_user.groups.add(self.tech_group)
+        self.tech_profile = TechnicianProfile.objects.create(
+            user=self.tech_user,
+            unique_id='TECH-007',
+        )
+
+        self.staff_user = User.objects.create_user(
+            username='staff_alex',
+            password='StaffPassword123!',
+            is_staff=True,
+        )
+        self.staff_user.groups.add(self.staff_group)
+        apply_staff_access(self.staff_user, {'team_management', 'company_settings', 'staff_dashboard'})
+
+    def test_technician_profile_get_and_password_change(self):
+        self.client.force_login(self.tech_user)
+        resp = self.client.get(reverse('technician_profile'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'TECH-007')
+        self.assertContains(resp, 'Sam Tech')
+        self.assertContains(resp, 'Change Password')
+
+        # Change password POST with invalid current password
+        resp_err = self.client.post(reverse('technician_profile'), {
+            'action': 'change_password',
+            'current_password': 'WrongPassword123',
+            'new_password': 'NewStrongPassword456!',
+            'confirm_password': 'NewStrongPassword456!',
+        }, follow=True)
+        self.assertEqual(resp_err.status_code, 200)
+        self.assertContains(resp_err, 'Current password is incorrect.')
+
+        # Change password POST success
+        resp_ok = self.client.post(reverse('technician_profile'), {
+            'action': 'change_password',
+            'current_password': 'InitialPassword123!',
+            'new_password': 'NewStrongPassword456!',
+            'confirm_password': 'NewStrongPassword456!',
+        }, follow=True)
+        self.assertEqual(resp_ok.status_code, 200)
+        self.assertContains(resp_ok, 'Your password has been changed successfully.')
+
+        self.tech_user.refresh_from_db()
+        self.assertTrue(self.tech_user.check_password('NewStrongPassword456!'))
+
+    def test_technician_generate_qr_token_and_status_polling(self):
+        self.client.force_login(self.tech_user)
+        gen_resp = self.client.get(reverse('technician_generate_qr_token'))
+        self.assertEqual(gen_resp.status_code, 200)
+        gen_data = gen_resp.json()
+        self.assertTrue(gen_data['ok'])
+        token_str = gen_data['token']
+        self.assertIn('data:image/png;base64,', gen_data['qr_image'])
+
+        # Poll status -> should be pending
+        status_resp = self.client.get(reverse('qr_login_token_status', args=[token_str]))
+        self.assertEqual(status_resp.status_code, 200)
+        self.assertEqual(status_resp.json()['status'], 'pending')
+
+    def test_mobile_api_qr_login_success_and_replay_protection(self):
+        # Create token
+        token_str = 'test-qr-token-12345'
+        qr_tok = MobileQrLoginToken.objects.create(
+            token=token_str,
+            user=self.tech_user,
+            expires_at=timezone.now() + timezone.timedelta(minutes=10),
+        )
+
+        # Login via mobile API using token
+        login_resp = self.client.post(
+            reverse('mobile_api_qr_login'),
+            data=json.dumps({'qr_token': token_str, 'device_name': 'Pixel 8 Pro'}),
+            content_type='application/json',
+        )
+        self.assertEqual(login_resp.status_code, 200)
+        login_data = login_resp.json()
+        self.assertIn('access_token', login_data)
+        self.assertEqual(login_data['user']['username'], 'tech_sam')
+        self.assertEqual(login_data['user']['technician_id'], 'TECH-007')
+
+        qr_tok.refresh_from_db()
+        self.assertTrue(qr_tok.is_used)
+        self.assertIsNotNone(qr_tok.used_at)
+
+        # Check status endpoint now reports used
+        status_resp = self.client.get(reverse('qr_login_token_status', args=[token_str]))
+        self.assertEqual(status_resp.json()['status'], 'used')
+
+        # Second attempt with same token fails (replay protection)
+        replay_resp = self.client.post(
+            reverse('mobile_api_qr_login'),
+            data=json.dumps({'qr_token': token_str}),
+            content_type='application/json',
+        )
+        self.assertEqual(replay_resp.status_code, 401)
+        self.assertEqual(replay_resp.json()['error'], 'expired_token')
+
+    def test_mobile_session_tracking_and_remote_logout(self):
+        # 1. Login via mobile API
+        login_resp = self.client.post(
+            reverse('mobile_api_login'),
+            data=json.dumps({'username': 'tech_sam', 'password': 'InitialPassword123!', 'device_name': 'Samsung Galaxy Tab'}),
+            content_type='application/json',
+        )
+        self.assertEqual(login_resp.status_code, 200)
+        access_token = login_resp.json()['access_token']
+
+        # 2. Access authenticated mobile endpoint
+        me_resp = self.client.get(
+            reverse('mobile_api_me'),
+            HTTP_AUTHORIZATION=f'Bearer {access_token}',
+        )
+        self.assertEqual(me_resp.status_code, 200)
+
+        # 3. Verify session was recorded in UserSessionActivity
+        session = UserSessionActivity.objects.filter(user=self.tech_user, channel='api', status='active').first()
+        self.assertIsNotNone(session)
+        self.assertIn('Samsung Galaxy Tab', session.user_agent)
+
+        # 4. Technician remotely logs out device from panel
+        self.client.force_login(self.tech_user)
+        logout_resp = self.client.post(
+            reverse('technician_logout_device', args=[session.id]),
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(logout_resp.status_code, 200)
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, UserSessionActivity.STATUS_LOGGED_OUT)
+
+        # 5. Mobile API request with that token now immediately rejected
+        revoked_resp = self.client.get(
+            reverse('mobile_api_me'),
+            HTTP_AUTHORIZATION=f'Bearer {access_token}',
+        )
+        self.assertEqual(revoked_resp.status_code, 401)
+        self.assertEqual(revoked_resp.json()['error'], 'session_revoked')
+
+    def test_staff_generate_qr_token_and_remote_device_management(self):
+        self.client.force_login(self.staff_user)
+
+        # Staff generates QR for tech
+        staff_qr_resp = self.client.get(reverse('staff_generate_qr_token', args=[self.tech_user.id]))
+        self.assertEqual(staff_qr_resp.status_code, 200)
+        data = staff_qr_resp.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['username'], 'tech_sam')
+
+        # Simulate device logging in
+        session = UserSessionActivity.objects.create(
+            user=self.tech_user,
+            session_key='session-key-staff-test',
+            channel=UserSessionActivity.CHANNEL_API,
+            status=UserSessionActivity.STATUS_ACTIVE,
+            user_agent='Motorola Edge 40 (Botgi Mobile App)',
+            login_at=timezone.now(),
+            last_activity_at=timezone.now(),
+        )
+
+        # Staff fetches active devices for tech
+        dev_resp = self.client.get(reverse('staff_user_active_devices', args=[self.tech_user.id]))
+        self.assertEqual(dev_resp.status_code, 200)
+        self.assertEqual(len(dev_resp.json()['devices']), 1)
+
+        # Staff logs out all devices for tech
+        logout_resp = self.client.post(
+            reverse('staff_logout_all_devices', args=[self.tech_user.id]),
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(logout_resp.status_code, 200)
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, UserSessionActivity.STATUS_LOGGED_OUT)
+
+    def test_app_release_management_and_download(self):
+        self.client.force_login(self.staff_user)
+
+        # Upload release with external URL
+        upload_resp = self.client.post(reverse('app_release_upload'), {
+            'version_name': '2.1.0',
+            'version_code': '21',
+            'min_version_code': '10',
+            'download_url': 'https://example.com/builds/app-v2.1.0.apk',
+            'release_notes': 'Fixed camera scan and job status sync.',
+            'is_active': 'on',
+        })
+        self.assertEqual(upload_resp.status_code, 302)
+
+        release = MobileAppRelease.objects.filter(version_code=21).first()
+        self.assertIsNotNone(release)
+        self.assertTrue(release.is_active)
+        self.assertEqual(release.version_name, '2.1.0')
+
+        # Check public meta endpoint
+        meta_resp = self.client.get(reverse('app_release_meta'))
+        self.assertEqual(meta_resp.status_code, 200)
+        meta_data = meta_resp.json()
+        self.assertTrue(meta_data['ok'])
+        self.assertIn('technician_app', meta_data)
+        self.assertEqual(meta_data['technician_app']['version_name'], '2.1.0')
+        self.assertEqual(meta_data['technician_app']['version_code'], 21)
+
+        # Check download redirect
+        dl_resp = self.client.get(reverse('download_technician_app'))
+        self.assertEqual(dl_resp.status_code, 302)
+        self.assertEqual(dl_resp.url, 'https://example.com/builds/app-v2.1.0.apk')
+
+        # Toggle release active
+        toggle_resp = self.client.post(reverse('app_release_toggle_active', args=[release.id]))
+        self.assertEqual(toggle_resp.status_code, 302)
+        release.refresh_from_db()
+        self.assertFalse(release.is_active)
+
+        # Delete release
+        del_resp = self.client.post(reverse('app_release_delete', args=[release.id]))
+        self.assertEqual(del_resp.status_code, 302)
+        self.assertFalse(MobileAppRelease.objects.filter(id=release.id).exists())
 
 

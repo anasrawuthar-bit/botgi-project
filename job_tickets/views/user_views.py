@@ -273,3 +273,113 @@ def change_user_password(request, user_id):
 
     messages.success(request, f'Password updated successfully for "{user.username}".')
     return redirect('staff_technicians')
+
+
+@login_required
+def staff_generate_qr_token(request, user_id):
+    """Generates a dynamic 10-minute QR login token for a team member by staff."""
+    denied = _staff_access_required(request, "team_management")
+    if denied:
+        return denied
+
+    target_user = get_object_or_404(User, id=user_id)
+    if not target_user.is_active:
+        return JsonResponse({'ok': False, 'message': 'Cannot generate login QR for inactive user.'}, status=400)
+
+    token_str = secrets.token_urlsafe(32)
+    expires_at = timezone.now() + timezone.timedelta(minutes=10)
+    qr_token = MobileQrLoginToken.objects.create(
+        token=token_str,
+        user=target_user,
+        expires_at=expires_at,
+    )
+    qr_payload = json.dumps({
+        'action': 'botgi_mobile_qr_login',
+        'token': qr_token.token,
+        'username': target_user.username,
+        'expires_at': qr_token.expires_at.isoformat(),
+    })
+    qr_image = generate_qr_base64(qr_payload)
+    return JsonResponse({
+        'ok': True,
+        'username': target_user.username,
+        'token': qr_token.token,
+        'qr_image': qr_image,
+        'expires_at': qr_token.expires_at.isoformat(),
+        'expires_in_seconds': 600,
+    })
+
+
+@login_required
+def staff_user_active_devices(request, user_id):
+    """Returns active mobile app devices for a team member."""
+    denied = _staff_access_required(request, "team_management")
+    if denied:
+        return denied
+
+    target_user = get_object_or_404(User, id=user_id)
+    active_sessions = UserSessionActivity.objects.filter(
+        user=target_user,
+        channel=UserSessionActivity.CHANNEL_API,
+        status=UserSessionActivity.STATUS_ACTIVE,
+    ).order_by('-last_activity_at')
+
+    devices = [
+        {
+            'id': s.id,
+            'device_label': s.device_label,
+            'ip_address': s.ip_address or '-',
+            'login_at': s.login_at.strftime('%b %d, %Y %I:%M %p') if s.login_at else '-',
+            'last_activity_at': s.last_activity_at.strftime('%b %d, %Y %I:%M %p') if s.last_activity_at else '-',
+        }
+        for s in active_sessions
+    ]
+    return JsonResponse({'ok': True, 'username': target_user.username, 'devices': devices})
+
+
+@login_required
+@require_POST
+def staff_logout_device(request, session_id):
+    """Staff remotely revokes/logs out a technician or user's mobile session."""
+    denied = _staff_access_required(request, "team_management")
+    if denied:
+        return denied
+
+    session = get_object_or_404(UserSessionActivity, id=session_id)
+    session.status = UserSessionActivity.STATUS_LOGGED_OUT
+    session.logout_at = timezone.now()
+    session.logout_reason = f'staff_revoked_by_{request.user.username}'
+    session.save(update_fields=['status', 'logout_at', 'logout_reason'])
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in (request.content_type or ''):
+        return JsonResponse({'ok': True, 'message': 'Device logged out successfully.'})
+
+    messages.success(request, f'Device for {session.user.username} was logged out.')
+    return redirect('staff_technicians')
+
+
+@login_required
+@require_POST
+def staff_logout_all_devices(request, user_id):
+    """Staff remotely logs out all active mobile sessions for a team member."""
+    denied = _staff_access_required(request, "team_management")
+    if denied:
+        return denied
+
+    target_user = get_object_or_404(User, id=user_id)
+    count = UserSessionActivity.objects.filter(
+        user=target_user,
+        channel=UserSessionActivity.CHANNEL_API,
+        status=UserSessionActivity.STATUS_ACTIVE,
+    ).update(
+        status=UserSessionActivity.STATUS_LOGGED_OUT,
+        logout_at=timezone.now(),
+        logout_reason=f'staff_revoked_all_by_{request.user.username}',
+    )
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in (request.content_type or ''):
+        return JsonResponse({'ok': True, 'message': f'{count} device(s) logged out for {target_user.username}.'})
+
+    messages.success(request, f'{count} active device(s) logged out for "{target_user.username}".')
+    return redirect('staff_technicians')
+

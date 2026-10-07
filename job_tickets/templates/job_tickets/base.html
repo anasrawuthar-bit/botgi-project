@@ -377,6 +377,11 @@
                         <i class="fa-solid fa-desktop"></i><span class="sidebar-link-label">Display & Scale</span>
                     </a>
                 </li>
+                <li>
+                    <a class="sidebar-link settings-nav-link" href="#app-releases" data-settings-tab="#app-releases" data-tooltip="Technician App Releases">
+                        <i class="fa-solid fa-mobile-screen-button"></i><span class="sidebar-link-label">App Releases</span>
+                    </a>
+                </li>
                 {% elif user.is_staff %}
                 {% if staff_access.staff_dashboard %}
                 <li>
@@ -481,6 +486,12 @@
                         <i class="fa-solid fa-list-check"></i><span class="sidebar-link-label">Tasks</span>
                     </a>
                 </li>
+                <li>
+                    <a class="sidebar-link {% if request.resolver_match.url_name == 'technician_profile' %}active{% endif %}"
+                        href="{% url 'technician_profile' %}" data-tooltip="My Profile & App">
+                        <i class="fa-solid fa-user-circle"></i><span class="sidebar-link-label">My Profile &amp; App</span>
+                    </a>
+                </li>
                 {% endif %}
             </ul>
         </nav>
@@ -523,6 +534,10 @@
                             <span>Settings</span>
                         </a>
                         {% endif %}
+                        <a href="{% url 'technician_profile' %}" class="user-menu-link">
+                            <i class="fa-solid fa-id-badge"></i>
+                            <span>Technician Profile &amp; App</span>
+                        </a>
                         <button type="button" class="user-menu-link border-0 bg-transparent w-100 text-start" data-bs-toggle="modal" data-bs-target="#uiScaleQuickModal">
                             <i class="fa-solid fa-text-height"></i>
                             <span>Display &amp; Zoom Scale</span>

@@ -1,0 +1,445 @@
+{% extends "job_tickets/base.html" %}
+{% load job_tickets_extras %}
+
+{% block title %}Technician Profile &amp; Mobile Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1200px;">
+    <!-- Profile Header Banner -->
+    <div class="card shadow-sm border-0 mb-4" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: #fff; border-radius: 12px;">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary text-white fw-bold shadow" style="width: 64px; height: 64px; font-size: 1.6rem;">
+                        {{ user|user_initials }}
+                    </div>
+                    <div>
+                        <h2 class="h4 mb-1 fw-bold text-white">{{ user.get_full_name|default:user.username }}</h2>
+                        <div class="d-flex flex-wrap align-items-center gap-2 text-white-50 small">
+                            <span><i class="fa-solid fa-user-tag me-1"></i>{{ user.username }}</span>
+                            {% if technician and technician.unique_id %}
+                                <span class="badge bg-info text-dark fw-semibold"><i class="fa-solid fa-id-card me-1"></i>ID: {{ technician.unique_id }}</span>
+                            {% endif %}
+                            {% if technician and technician.workspace %}
+                                <span class="badge bg-secondary"><i class="fa-solid fa-building me-1"></i>{{ technician.workspace.name }}</span>
+                            {% endif %}
+                            <span class="badge bg-success"><i class="fa-solid fa-screwdriver-wrench me-1"></i>Technician</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-light fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#qrPairModal" id="open-qr-modal-btn">
+                        <i class="fa-solid fa-qrcode text-primary me-1"></i> Pair Mobile App (QR)
+                    </button>
+                    {% if active_release %}
+                    <a href="{% url 'download_technician_app' %}" class="btn btn-primary fw-semibold shadow-sm">
+                        <i class="fa-solid fa-download me-1"></i> Download APK v{{ active_release.version_name }}
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="mb-4">
+        {% for message in messages %}
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show shadow-sm" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        <!-- Left Column: Profile Details & Password Reset -->
+        <div class="col-lg-6">
+            <!-- Account Details Card -->
+            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h5 class="card-title mb-0 fw-bold text-dark">
+                        <i class="fa-solid fa-address-card text-primary me-2"></i>Account Information
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
+                            <span class="text-muted"><i class="fa-solid fa-user me-2 text-secondary"></i>Full Name</span>
+                            <span class="fw-semibold text-dark">{{ user.get_full_name|default:"-" }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
+                            <span class="text-muted"><i class="fa-solid fa-at me-2 text-secondary"></i>Username</span>
+                            <span class="fw-semibold text-dark">{{ user.username }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
+                            <span class="text-muted"><i class="fa-solid fa-envelope me-2 text-secondary"></i>Email Address</span>
+                            <span class="fw-semibold text-dark">{{ user.email|default:"-" }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
+                            <span class="text-muted"><i class="fa-solid fa-id-badge me-2 text-secondary"></i>Unique Technician ID</span>
+                            <span class="fw-semibold text-primary">{{ technician.unique_id|default:"-" }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
+                            <span class="text-muted"><i class="fa-solid fa-building-user me-2 text-secondary"></i>Assigned Workspace</span>
+                            <span class="fw-semibold text-dark">{{ technician.workspace.name|default:"Main Workspace" }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5">
+                            <span class="text-muted"><i class="fa-solid fa-calendar me-2 text-secondary"></i>Member Since</span>
+                            <span class="fw-semibold text-muted">{{ user.date_joined|date:"M d, Y" }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Password Reset Form Card -->
+            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h5 class="card-title mb-0 fw-bold text-dark">
+                        <i class="fa-solid fa-key text-warning me-2"></i>Change Password
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'technician_profile' %}" id="change-password-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="change_password">
+                        <div class="mb-3">
+                            <label for="current_password" class="form-label small fw-semibold text-muted">Current Password *</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-lock text-muted"></i></span>
+                                <input type="password" class="form-control border-start-0" id="current_password" name="current_password" required autocomplete="current-password" placeholder="Enter your current password">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label small fw-semibold text-muted">New Password *</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-shield-halved text-muted"></i></span>
+                                <input type="password" class="form-control border-start-0" id="new_password" name="new_password" required autocomplete="new-password" placeholder="Enter new password">
+                            </div>
+                            <div class="form-text small text-muted">Must be at least 8 characters and not too common.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label small fw-semibold text-muted">Confirm New Password *</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-check-double text-muted"></i></span>
+                                <input type="password" class="form-control border-start-0" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="Re-type new password">
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-end">
+                            <button type="submit" class="btn btn-warning fw-semibold px-4 shadow-sm" name="change_password_submit">
+                                <i class="fa-solid fa-floppy-disk me-1"></i> Update Password
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Active Devices & App Download -->
+        <div class="col-lg-6">
+            <!-- Active Mobile Devices Card -->
+            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0 fw-bold text-dark">
+                        <i class="fa-solid fa-mobile-screen-button text-success me-2"></i>Active Mobile Devices
+                    </h5>
+                    {% if active_sessions %}
+                    <form method="post" action="{% url 'technician_logout_all_devices' %}" onsubmit="return confirm('Are you sure you want to log out all your mobile devices?');" class="m-0">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-danger btn-sm fw-semibold">
+                            <i class="fa-solid fa-arrow-right-from-bracket me-1"></i>Log Out All
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        These mobile devices are currently authenticated on the Botgi Technician App. You can remotely revoke any device if needed.
+                    </p>
+                    {% if active_sessions %}
+                        <div class="list-group list-group-flush border rounded-3 overflow-hidden">
+                            {% for s in active_sessions %}
+                            <div class="list-group-item p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="rounded-circle bg-light d-flex align-items-center justify-content-center text-primary" style="width: 44px; height: 44px; font-size: 1.25rem;">
+                                        <i class="fa-solid fa-mobile-screen"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold text-dark mb-0">{{ s.device_label }}</div>
+                                        <div class="text-muted small d-flex flex-wrap gap-2">
+                                            <span><i class="fa-solid fa-network-wired me-1"></i>{{ s.ip_address|default:"-" }}</span>
+                                            <span>•</span>
+                                            <span><i class="fa-solid fa-clock me-1"></i>Active: {{ s.last_activity_at|date:"M d, h:i A" }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Active</span>
+                                    <form method="post" action="{% url 'technician_logout_device' s.id %}" onsubmit="return confirm('Revoke access for this device?');" class="m-0">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Log out this device">
+                                            <i class="fa-solid fa-power-off"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4 bg-light rounded-3 border">
+                            <i class="fa-solid fa-mobile-screen text-muted mb-2" style="font-size: 2.2rem;"></i>
+                            <div class="fw-semibold text-dark">No Active Mobile Devices</div>
+                            <p class="text-muted small mb-3">You are not currently logged in on any mobile device.</p>
+                            <button type="button" class="btn btn-primary btn-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#qrPairModal">
+                                <i class="fa-solid fa-qrcode me-1"></i> Pair Mobile App Now
+                            </button>
+                        </div>
+                    {% endif %}
+
+                    {% if recent_sessions %}
+                    <div class="mt-4">
+                        <h6 class="text-muted small fw-bold text-uppercase mb-2">Recently Logged Out Devices</h6>
+                        <ul class="list-group list-group-flush border-top">
+                            {% for rs in recent_sessions %}
+                            <li class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center text-muted small">
+                                <div>
+                                    <span>{{ rs.device_label }}</span>
+                                    <span class="ms-2 text-black-50">({{ rs.ip_address|default:"-" }})</span>
+                                </div>
+                                <div>
+                                    <span class="badge bg-secondary-subtle text-secondary">Logged Out</span>
+                                    <span class="ms-1">{{ rs.last_activity_at|date:"M d" }}</span>
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Technician App Download Card -->
+            <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px;">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h5 class="card-title mb-0 fw-bold text-dark">
+                        <i class="fa-brands fa-android text-success me-2"></i>Technician Mobile App
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if active_release %}
+                    <div class="row align-items-center g-3">
+                        <div class="col-sm-8">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <h6 class="fw-bold mb-0 text-dark">Botgi Technician Android App</h6>
+                                <span class="badge bg-primary">v{{ active_release.version_name }}</span>
+                                <span class="badge bg-light text-dark border">Build {{ active_release.version_code }}</span>
+                            </div>
+                            <div class="text-muted small mb-2">
+                                <strong>File Size:</strong> {{ active_release.file_size_display }} •
+                                <strong>Updated:</strong> {{ active_release.updated_at|date:"M d, Y" }}
+                            </div>
+                            {% if active_release.release_notes %}
+                            <div class="p-2 bg-light rounded border text-muted small mb-3" style="max-height: 90px; overflow-y: auto;">
+                                <strong>What's New:</strong><br>
+                                {{ active_release.release_notes|linebreaksbr }}
+                            </div>
+                            {% endif %}
+                            <div class="d-flex flex-wrap gap-2">
+                                <a href="{% url 'download_technician_app' %}" class="btn btn-success fw-semibold shadow-sm">
+                                    <i class="fa-solid fa-download me-1"></i> Download APK
+                                </a>
+                                <a href="{% url 'technician_app_landing' %}" target="_blank" class="btn btn-outline-secondary fw-semibold">
+                                    <i class="fa-solid fa-up-right-from-square me-1"></i> Share Link
+                                </a>
+                            </div>
+                        </div>
+                        <div class="col-sm-4 text-center">
+                            {% if download_qr_base64 %}
+                            <div class="p-2 bg-white rounded border d-inline-block shadow-sm">
+                                <img src="{{ download_qr_base64 }}" alt="Scan to Download APK" style="width: 120px; height: 120px;" class="img-fluid">
+                            </div>
+                            <div class="text-muted small mt-1">Scan to Download</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 bg-light rounded-3 border">
+                        <i class="fa-solid fa-mobile-screen-button text-muted mb-2" style="font-size: 2.2rem;"></i>
+                        <div class="fw-semibold text-dark">No APK Uploaded Yet</div>
+                        <p class="text-muted small mb-0">Staff can upload the latest technician APK release in Company Settings.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Pair Mobile App via QR Code -->
+<div class="modal fade" id="qrPairModal" tabindex="-1" aria-labelledby="qrPairModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0" style="border-radius: 16px;">
+            <div class="modal-header border-bottom py-3">
+                <h5 class="modal-title fw-bold text-dark" id="qrPairModalLabel">
+                    <i class="fa-solid fa-qrcode text-primary me-2"></i>Pair Mobile App (Instant Login)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center p-4">
+                <p class="text-muted small mb-3">
+                    Open the <strong>Botgi Technician App</strong> on your phone, tap <strong>"Scan QR Login"</strong>, and point your camera at this QR code. No password needed!
+                </p>
+
+                <!-- QR Container -->
+                <div id="qr-loading-spinner" class="py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Generating QR Code...</span>
+                    </div>
+                    <div class="text-muted small mt-2">Generating secure dynamic login code...</div>
+                </div>
+
+                <div id="qr-display-area" style="display: none;">
+                    <div class="p-3 bg-white rounded-3 border d-inline-block shadow-sm mb-3">
+                        <img id="qr-code-img" src="" alt="Login QR Code" style="width: 220px; height: 220px;" class="img-fluid">
+                    </div>
+                    <div id="qr-timer-badge" class="mb-2">
+                        <span class="badge bg-warning text-dark"><i class="fa-solid fa-clock me-1"></i>Expires in: <span id="qr-countdown">10:00</span></span>
+                    </div>
+                    <div id="qr-pairing-status" class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-center gap-2">
+                        <span class="spinner-grow spinner-grow-sm text-info" role="status"></span>
+                        <span>Waiting for phone to scan...</span>
+                    </div>
+                </div>
+
+                <!-- Success Screen -->
+                <div id="qr-success-area" style="display: none;" class="py-4">
+                    <div class="text-success mb-3" style="font-size: 3.5rem;">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark mb-1">Paired Successfully!</h5>
+                    <p class="text-muted small mb-3" id="qr-success-device-text">Your mobile device is now authenticated and ready to use.</p>
+                    <button type="button" class="btn btn-primary fw-semibold px-4" onclick="window.location.reload();">
+                        Done &amp; Refresh Devices
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer border-top bg-light py-2.5">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="refresh-qr-btn">
+                    <i class="fa-solid fa-rotate-right me-1"></i> Generate New QR
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let currentToken = null;
+    let pollInterval = null;
+    let countdownInterval = null;
+    let expireSeconds = 600;
+
+    const modalEl = document.getElementById('qrPairModal');
+    const loadingSpinner = document.getElementById('qr-loading-spinner');
+    const displayArea = document.getElementById('qr-display-area');
+    const successArea = document.getElementById('qr-success-area');
+    const qrImg = document.getElementById('qr-code-img');
+    const countdownEl = document.getElementById('qr-countdown');
+    const refreshBtn = document.getElementById('refresh-qr-btn');
+
+    function generateQrToken() {
+        clearInterval(pollInterval);
+        clearInterval(countdownInterval);
+        loadingSpinner.style.display = 'block';
+        displayArea.style.display = 'none';
+        successArea.style.display = 'none';
+
+        fetch("{% url 'technician_generate_qr_token' %}", {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                currentToken = data.token;
+                qrImg.src = data.qr_image;
+                expireSeconds = data.expires_in_seconds || 600;
+
+                loadingSpinner.style.display = 'none';
+                displayArea.style.display = 'block';
+
+                startCountdown();
+                startPolling();
+            } else {
+                alert('Failed to generate QR code: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            console.error('Error generating QR:', err);
+            loadingSpinner.style.display = 'none';
+        });
+    }
+
+    function startCountdown() {
+        updateCountdownDisplay();
+        countdownInterval = setInterval(() => {
+            expireSeconds--;
+            if (expireSeconds <= 0) {
+                clearInterval(countdownInterval);
+                clearInterval(pollInterval);
+                document.getElementById('qr-pairing-status').className = 'alert alert-danger py-2 small mb-0';
+                document.getElementById('qr-pairing-status').innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i> QR Code expired. Please generate a new one.';
+            } else {
+                updateCountdownDisplay();
+            }
+        }, 1000);
+    }
+
+    function updateCountdownDisplay() {
+        const mins = Math.floor(expireSeconds / 60);
+        const secs = expireSeconds % 60;
+        countdownEl.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+
+    function startPolling() {
+        if (!currentToken) return;
+        pollInterval = setInterval(() => {
+            fetch(`/api/auth/qr-token/status/${currentToken}/`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok && data.status === 'used') {
+                    clearInterval(pollInterval);
+                    clearInterval(countdownInterval);
+                    displayArea.style.display = 'none';
+                    successArea.style.display = 'block';
+                    if (data.device_info) {
+                        document.getElementById('qr-success-device-text').textContent =
+                            `Logged in on ${data.device_info}. Tap below to update your active devices list.`;
+                    }
+                } else if (data.status === 'expired') {
+                    clearInterval(pollInterval);
+                    clearInterval(countdownInterval);
+                }
+            })
+            .catch(err => console.error('Poll error:', err));
+        }, 2500);
+    }
+
+    if (modalEl) {
+        modalEl.addEventListener('show.bs.modal', function() {
+            generateQrToken();
+        });
+        modalEl.addEventListener('hidden.bs.modal', function() {
+            clearInterval(pollInterval);
+            clearInterval(countdownInterval);
+        });
+    }
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            generateQrToken();
+        });
+    }
+});
+</script>
+{% endblock %}

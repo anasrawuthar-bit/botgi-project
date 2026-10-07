@@ -60,6 +60,9 @@
                                 <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#display-scale">
                                     <i class="fa-solid fa-desktop me-1"></i>Display
                                 </button>
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 settings-mobile-pill" type="button" data-settings-tab="#app-releases">
+                                    <i class="fa-solid fa-mobile-screen-button me-1"></i>App Releases
+                                </button>
                             </div>
                         </div>
 
@@ -2220,6 +2223,159 @@
                                             </div>
                                         </div>
                                     </div>
+
+                                    <!-- Technician App Releases Tab Pane -->
+                                    <div class="tab-pane fade" id="app-releases" role="tabpanel" aria-labelledby="tab-app-releases" tabindex="0">
+                                        <div class="d-flex align-items-center justify-content-between mb-4 border-bottom pb-3">
+                                            <div>
+                                                <h5 class="fw-bold text-dark mb-1">
+                                                    <i class="fa-solid fa-mobile-screen-button text-primary me-2"></i>Technician Mobile App Releases
+                                                </h5>
+                                                <p class="text-muted small mb-0">Upload new Android APK builds, manage version codes, and provide download access for technicians.</p>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <button type="button" class="btn btn-primary fw-semibold px-3 py-1.5 shadow-sm" data-bs-toggle="modal" data-bs-target="#uploadAppReleaseModal">
+                                                    <i class="fa-solid fa-cloud-arrow-up me-1"></i>Upload New APK
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Active Release Highlight Card -->
+                                        {% if active_app_release %}
+                                        <div class="card border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff; border-radius: 12px;">
+                                            <div class="card-body p-4">
+                                                <div class="row align-items-center g-3">
+                                                    <div class="col-md-8">
+                                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                                            <span class="badge bg-success text-white px-2.5 py-1 fw-bold">ACTIVE BUILD</span>
+                                                            <h4 class="fw-bold mb-0 text-white">Version {{ active_app_release.version_name }}</h4>
+                                                            <span class="badge bg-secondary">Build {{ active_app_release.version_code }}</span>
+                                                        </div>
+                                                        <div class="text-white-50 small mb-3">
+                                                            <span><i class="fa-solid fa-file-arrow-down me-1"></i>Size: {{ active_app_release.file_size_display }}</span>
+                                                            <span class="mx-2">•</span>
+                                                            <span><i class="fa-solid fa-code-compare me-1"></i>Min Required Build: {{ active_app_release.min_version_code }}</span>
+                                                            <span class="mx-2">•</span>
+                                                            <span><i class="fa-solid fa-calendar me-1"></i>Published: {{ active_app_release.created_at|date:"M d, Y h:i A" }}</span>
+                                                            {% if active_app_release.uploaded_by %}
+                                                            <span class="mx-2">•</span>
+                                                            <span><i class="fa-solid fa-user me-1"></i>By: {{ active_app_release.uploaded_by.username }}</span>
+                                                            {% endif %}
+                                                        </div>
+                                                        {% if active_app_release.release_notes %}
+                                                        <div class="p-2.5 rounded bg-black bg-opacity-25 border border-white border-opacity-10 text-white-50 small mb-3" style="max-height: 80px; overflow-y: auto;">
+                                                            <strong class="text-white">Release Notes:</strong><br>
+                                                            {{ active_app_release.release_notes|linebreaksbr }}
+                                                        </div>
+                                                        {% endif %}
+                                                        <div class="d-flex flex-wrap gap-2">
+                                                            <a href="{{ app_download_url }}" class="btn btn-success fw-semibold btn-sm shadow-sm">
+                                                                <i class="fa-solid fa-download me-1"></i>Download APK
+                                                            </a>
+                                                            <a href="{% url 'technician_app_landing' %}" target="_blank" class="btn btn-outline-light btn-sm fw-semibold">
+                                                                <i class="fa-solid fa-up-right-from-square me-1"></i>Public Download Page
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4 text-center">
+                                                        {% if app_download_qr_base64 %}
+                                                        <div class="p-2.5 bg-white rounded-3 d-inline-block shadow">
+                                                            <img src="{{ app_download_qr_base64 }}" alt="QR to Download APK" style="width: 125px; height: 125px;" class="img-fluid">
+                                                        </div>
+                                                        <div class="text-white-50 small mt-1">Scan from phone camera</div>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <div class="alert alert-warning d-flex align-items-center gap-3 p-3 mb-4 rounded-3 border">
+                                            <i class="fa-solid fa-triangle-exclamation fs-3 text-warning"></i>
+                                            <div>
+                                                <strong>No Active APK Release!</strong> Technicians cannot download the app from the panel until an active APK release is uploaded.
+                                            </div>
+                                        </div>
+                                        {% endif %}
+
+                                        <!-- Releases Table -->
+                                        <div class="card shadow-sm border-0 rounded-3">
+                                            <div class="card-header bg-white py-3 border-bottom">
+                                                <h6 class="fw-bold mb-0 text-dark">Release History &amp; Versions</h6>
+                                            </div>
+                                            <div class="table-responsive">
+                                                <table class="table table-hover align-middle mb-0">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Version</th>
+                                                            <th>Build Code</th>
+                                                            <th>Min Code</th>
+                                                            <th>File Size</th>
+                                                            <th>Release Notes</th>
+                                                            <th>Uploaded</th>
+                                                            <th>Status</th>
+                                                            <th class="text-end">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for rel in app_releases %}
+                                                        <tr>
+                                                            <td>
+                                                                <span class="fw-bold text-dark">v{{ rel.version_name }}</span>
+                                                                {% if rel.is_active %}
+                                                                <span class="badge bg-success ms-1">Active</span>
+                                                                {% endif %}
+                                                            </td>
+                                                            <td><span class="badge bg-light text-dark border">{{ rel.version_code }}</span></td>
+                                                            <td><span class="text-muted small">{{ rel.min_version_code }}</span></td>
+                                                            <td><span class="text-muted small">{{ rel.file_size_display }}</span></td>
+                                                            <td>
+                                                                <span class="text-muted small text-truncate d-inline-block" style="max-width: 200px;" title="{{ rel.release_notes }}">
+                                                                    {{ rel.release_notes|default:"-" }}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <div class="small text-dark">{{ rel.created_at|date:"M d, Y" }}</div>
+                                                                <div class="text-muted" style="font-size: 0.72rem;">{{ rel.uploaded_by.username|default:"Staff" }}</div>
+                                                            </td>
+                                                            <td>
+                                                                {% if rel.is_active %}
+                                                                <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
+                                                                {% else %}
+                                                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactive</span>
+                                                                {% endif %}
+                                                            </td>
+                                                            <td class="text-end">
+                                                                <div class="d-inline-flex gap-1">
+                                                                    {% if not rel.is_active %}
+                                                                    <button type="button" class="btn btn-outline-success btn-sm py-0.5 px-2" onclick="toggleAppRelease('{% url 'app_release_toggle_active' rel.id %}')" title="Make this the active build">
+                                                                        Set Active
+                                                                    </button>
+                                                                    {% endif %}
+                                                                    <a href="{{ rel.get_download_url }}" class="btn btn-outline-primary btn-sm py-0.5 px-2" title="Download APK" download>
+                                                                        <i class="fa-solid fa-download"></i>
+                                                                    </a>
+                                                                    <button type="button" class="btn btn-outline-danger btn-sm py-0.5 px-2" onclick="deleteAppRelease('{% url 'app_release_delete' rel.id %}', 'v{{ rel.version_name }}')" title="Delete release">
+                                                                        <i class="fa-solid fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                        {% empty %}
+                                                        <tr>
+                                                            <td colspan="8" class="text-center py-4 text-muted">
+                                                                <i class="fa-solid fa-mobile-screen mb-2 fs-3 text-muted"></i>
+                                                                <div>No APK releases uploaded yet.</div>
+                                                                <button type="button" class="btn btn-primary btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#uploadAppReleaseModal">
+                                                                    <i class="fa-solid fa-cloud-arrow-up me-1"></i>Upload First Build
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                     </form>
                 </div>
@@ -3093,6 +3249,89 @@
     </div>
 </div>
 
+<!-- Upload App Release Modal -->
+<div class="modal fade" id="uploadAppReleaseModal" tabindex="-1" aria-labelledby="uploadAppReleaseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title fw-bold text-dark" id="uploadAppReleaseModalLabel">
+                    <i class="fa-solid fa-cloud-arrow-up text-primary me-2"></i>Upload Technician Mobile App (APK)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'app_release_upload' %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="modal-body p-4">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small">Version Name <span class="text-danger">*</span></label>
+                            <input type="text" name="version_name" class="form-control" placeholder="e.g. 1.0.4" required autofocus>
+                            <small class="text-muted">Semantic version (e.g. 1.0.4)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small">Version Code <span class="text-danger">*</span></label>
+                            <input type="number" name="version_code" class="form-control" placeholder="e.g. 5" min="1" required>
+                            <small class="text-muted">Numeric build number</small>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">APK File (.apk)</label>
+                        <input type="file" name="apk_file" class="form-control" accept=".apk">
+                        <small class="text-muted">Upload the Android release .apk file directly</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">External Download URL (optional)</label>
+                        <input type="url" name="download_url" class="form-control" placeholder="https://... (if hosted externally)">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Minimum Supported Build Code</label>
+                        <input type="number" name="min_version_code" class="form-control" value="1" min="1">
+                        <small class="text-muted">Older app versions below this will prompt a mandatory update</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small">Release Notes / Changelog</label>
+                        <textarea name="release_notes" class="form-control" rows="3" placeholder="What's new or fixed in this build..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="release-is-active" checked>
+                        <label class="form-check-label fw-semibold text-dark small" for="release-is-active">
+                            Set as Active Release immediately
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold shadow-sm">
+                        <i class="fa-solid fa-cloud-arrow-up me-1"></i>Publish Release
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<form id="global-toggle-release-form" method="post" action="" class="d-none">{% csrf_token %}</form>
+<form id="global-delete-release-form" method="post" action="" class="d-none">{% csrf_token %}</form>
+
+<script>
+function toggleAppRelease(url) {
+    const f = document.getElementById('global-toggle-release-form');
+    if (f) {
+        f.action = url;
+        f.submit();
+    }
+}
+function deleteAppRelease(url, label) {
+    if (confirm('Are you sure you want to delete app release ' + label + '?')) {
+        const f = document.getElementById('global-delete-release-form');
+        if (f) {
+            f.action = url;
+            f.submit();
+        }
+    }
+}
+</script>
+
 <style>
 .settings-top-banner {
     background: transparent;
@@ -3201,6 +3440,10 @@ document.addEventListener('DOMContentLoaded', function () {
         '#display-scale': {
             title: 'Display & Zoom Scale',
             subtitle: 'Workspace density, typography scaling, and high-DPI monitor settings.'
+        },
+        '#app-releases': {
+            title: 'Technician App Releases',
+            subtitle: 'Upload and manage Android APK builds, release notes, and mobile distribution.'
         }
     };
 
@@ -3209,9 +3452,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const isDisplayScale = (target === '#display-scale');
         const isRackManagement = (target === '#rack-management');
         const isIntakePresets = (target === '#intake-presets');
+        const isAppReleases = (target === '#app-releases');
         const topQuickSave = document.getElementById('top-quick-save-btn');
         if (topQuickSave) {
-            if (isDisplayScale || isRackManagement || isIntakePresets) {
+            if (isDisplayScale || isRackManagement || isIntakePresets || isAppReleases) {
                 topQuickSave.classList.add('d-none');
             } else if (isWhatsapp) {
                 topQuickSave.classList.remove('d-none');

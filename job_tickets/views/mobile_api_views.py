@@ -1,3 +1,4 @@
+import uuid
 from .helpers import *  # noqa: F401,F403
 from .helpers import (
     _build_checklist_schema_for_job,
@@ -63,7 +64,108 @@ def mobile_api_login(request):
     if not user or not user.is_active:
         return JsonResponse({'error': 'invalid_credentials', 'message': 'Invalid username or password.'}, status=401)
 
-    access_token = issue_mobile_jwt(user)
+    session_id = uuid.uuid4().hex
+    ip = get_client_ip(request)
+    ua = request.META.get('HTTP_USER_AGENT', 'Botgi Mobile App')
+    device_name = (payload.get('device_name') or payload.get('device_model') or '').strip()
+    if device_name:
+        ua = f"{device_name} ({ua})"
+
+    UserSessionActivity.objects.create(
+        user=user,
+        session_key=session_id,
+        channel=UserSessionActivity.CHANNEL_API,
+        status=UserSessionActivity.STATUS_ACTIVE,
+        ip_address=ip,
+        user_agent=ua,
+        login_at=timezone.now(),
+        last_activity_at=timezone.now(),
+        expires_at=timezone.now() + timezone.timedelta(seconds=MOBILE_JWT_EXP_SECONDS),
+    )
+
+    access_token = issue_mobile_jwt(user, session_id=session_id)
+    role = 'staff' if user.is_staff else 'technician'
+    tech_id = ''
+    if hasattr(user, 'technician_profile'):
+        tech_id = user.technician_profile.unique_id or ''
+
+    return JsonResponse(
+        {
+            'access_token': access_token,
+            'token_type': 'Bearer',
+            'expires_in': MOBILE_JWT_EXP_SECONDS,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'is_staff': user.is_staff,
+                'role': role,
+                'technician_id': tech_id,
+            },
+        }
+    )
+
+
+@csrf_exempt
+@require_POST
+def mobile_api_qr_login(request):
+    """Logs in a mobile device using a verified QR login token."""
+    payload = {}
+    if 'application/json' in (request.content_type or ''):
+        try:
+            payload = json.loads((request.body or b'{}').decode('utf-8'))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({'error': 'invalid_payload', 'message': 'Invalid JSON body.'}, status=400)
+    else:
+        payload = request.POST
+
+    token_str = (payload.get('token') or payload.get('qr_token') or '').strip()
+    if token_str.startswith('{') and token_str.endswith('}'):
+        try:
+            parsed = json.loads(token_str)
+            token_str = (parsed.get('token') or token_str).strip()
+        except Exception:
+            pass
+    if not token_str:
+        return JsonResponse({'error': 'missing_token', 'message': 'QR token is required.'}, status=400)
+
+    qr_token = MobileQrLoginToken.objects.select_related('user').filter(token=token_str).first()
+    if not qr_token:
+        return JsonResponse({'error': 'invalid_token', 'message': 'Invalid QR code.'}, status=401)
+
+    if not qr_token.is_valid:
+        msg = 'QR code has already been used.' if qr_token.is_used else 'QR code has expired. Please generate a new one.'
+        return JsonResponse({'error': 'expired_token', 'message': msg}, status=401)
+
+    user = qr_token.user
+    if not user.is_active:
+        return JsonResponse({'error': 'inactive_user', 'message': 'This account is inactive.'}, status=403)
+
+    device_name = (payload.get('device_name') or payload.get('device_model') or '').strip()
+    ip = get_client_ip(request)
+    ua = request.META.get('HTTP_USER_AGENT', 'Botgi Mobile App (QR Login)')
+    if device_name:
+        ua = f"{device_name} ({ua})"
+
+    qr_token.is_used = True
+    qr_token.used_at = timezone.now()
+    qr_token.device_info = device_name or ua[:250]
+    qr_token.ip_address = ip
+    qr_token.save(update_fields=['is_used', 'used_at', 'device_info', 'ip_address'])
+
+    session_id = uuid.uuid4().hex
+    UserSessionActivity.objects.create(
+        user=user,
+        session_key=session_id,
+        channel=UserSessionActivity.CHANNEL_API,
+        status=UserSessionActivity.STATUS_ACTIVE,
+        ip_address=ip,
+        user_agent=ua,
+        login_at=timezone.now(),
+        last_activity_at=timezone.now(),
+        expires_at=timezone.now() + timezone.timedelta(seconds=MOBILE_JWT_EXP_SECONDS),
+    )
+
+    access_token = issue_mobile_jwt(user, session_id=session_id)
     role = 'staff' if user.is_staff else 'technician'
     tech_id = ''
     if hasattr(user, 'technician_profile'):

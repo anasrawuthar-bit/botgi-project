@@ -182,14 +182,66 @@ def client_bill_view(request, job_code):
 @never_cache
 @require_GET
 def app_release_meta(request):
+    active_app = MobileAppRelease.objects.filter(platform=MobileAppRelease.PLATFORM_ANDROID, is_active=True).first()
+    mobile_data = None
+    if active_app:
+        mobile_data = {
+            'platform': active_app.platform,
+            'version_name': active_app.version_name,
+            'version_code': active_app.version_code,
+            'min_version_code': active_app.min_version_code,
+            'release_notes': active_app.release_notes,
+            'file_size': active_app.file_size_display,
+            'download_url': active_app.get_download_url(request) or request.build_absolute_uri(reverse('download_technician_app')),
+            'updated_at': active_app.updated_at.isoformat(),
+        }
+
     return JsonResponse(
         {
             'ok': True,
             'web_version': getattr(settings, 'WEB_RELEASE_VERSION', 'dev'),
             'poll_interval_seconds': max(getattr(settings, 'WEB_RELEASE_POLL_INTERVAL_SECONDS', 300), 60),
             'generated_at': timezone.now().isoformat(),
+            'technician_app': mobile_data,
         }
     )
+
+
+@never_cache
+def download_technician_app(request):
+    """Directly downloads the active Android APK file for technicians."""
+    active_release = MobileAppRelease.objects.filter(platform=MobileAppRelease.PLATFORM_ANDROID, is_active=True).first()
+    if not active_release:
+        return HttpResponseNotFound("No active technician mobile app release found.")
+
+    if active_release.apk_file:
+        try:
+            response = FileResponse(
+                active_release.apk_file.open('rb'),
+                content_type='application/vnd.android.package-archive',
+            )
+            response['Content-Disposition'] = f'attachment; filename="botgi-technician-v{active_release.version_name}.apk"'
+            return response
+        except Exception:
+            pass
+
+    if active_release.download_url:
+        return redirect(active_release.download_url)
+
+    return HttpResponseNotFound("No APK file or download URL configured for this release.")
+
+
+def technician_app_landing(request):
+    """Public landing page with QR code and download button for the technician app."""
+    active_release = MobileAppRelease.objects.filter(platform=MobileAppRelease.PLATFORM_ANDROID, is_active=True).first()
+    download_url = request.build_absolute_uri(reverse('download_technician_app'))
+    qr_image = generate_qr_base64(download_url) if download_url else ''
+
+    return render(request, 'job_tickets/technician_app_download.html', {
+        'active_release': active_release,
+        'download_url': download_url,
+        'qr_image': qr_image,
+    })
 
 
 def get_job_status_data(request):
