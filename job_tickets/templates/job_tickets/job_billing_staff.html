@@ -320,6 +320,7 @@
                                     id="vyapar-invoice-input" 
                                     readonly> 
                                 
+                                {% if job.status != 'Closed' %}
                                 <button type="button" 
                                         id="edit-invoice-btn" 
                                         class="btn btn-outline-secondary"
@@ -327,7 +328,9 @@
                                         title="Click to Edit">
                                     <i class="fas fa-pen"></i>
                                 </button>
+                                {% endif %}
                             </div>
+                            {% if job.status != 'Closed' %}
                             <div class="d-flex flex-wrap gap-2 mt-1.5">
                                 <button type="submit"
                                         id="save-invoice-btn"
@@ -342,6 +345,7 @@
                                     <i class="fas fa-xmark me-1"></i>Cancel
                                 </button>
                             </div>
+                            {% endif %}
                         </div>
 
                         <div>
@@ -366,6 +370,7 @@
                 <a href="{% url 'inventory_product_dashboard' %}" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
                     <i class="fas fa-boxes-stacked me-1"></i>Manage Products
                 </a>
+                {% if job.status != 'Closed' %}
                 <button type="button" 
                         id="edit-master-btn" 
                         class="btn btn-outline-primary btn-sm">
@@ -384,8 +389,22 @@
                         style="display: none;">
                     <i class="fas fa-undo me-1"></i>Cancel / Redo
                 </button>
+                {% else %}
+                <span class="badge bg-secondary d-inline-flex align-items-center gap-1.5 px-3 py-2 fs-6">
+                    <i class="fas fa-lock me-1"></i>Job Closed (Amounts Locked)
+                </span>
+                {% endif %}
             </div>
         </div>
+
+        {% if job.status == 'Closed' %}
+        <div class="alert alert-secondary border d-flex align-items-center gap-2 mb-3 py-2.5">
+            <i class="fas fa-lock text-secondary fs-5"></i>
+            <div>
+                <strong>Job Closed — Billing Locked:</strong> Service charges, spare parts, inventory sales, and discounts cannot be edited after closing.
+            </div>
+        </div>
+        {% endif %}
 
         <div id="validation-warning" class="alert alert-warning" style="display: none;">
             <i class="fas fa-exclamation-triangle"></i> Please fill in all fields of the current service before adding a new one.
@@ -1014,6 +1033,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let isInvoiceEditing = false;
     let originalInvoiceValue = vyaparInput ? vyaparInput.value : '';
     const pendingDeletions = new Map();
+    const isJobClosed = {% if job.status == 'Closed' %}true{% else %}false{% endif %};
 
     function formatCurrency(val) {
         return `\u20B9${(parseFloat(val) || 0).toFixed(2)}`;
@@ -1046,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateInvoiceControls() {
         if (!vyaparInput) return;
-        const invoiceEditable = isEditingMode || isInvoiceEditing;
+        const invoiceEditable = !isJobClosed && (isEditingMode || isInvoiceEditing);
         vyaparInput.readOnly = !invoiceEditable;
         vyaparInput.style.backgroundColor = invoiceEditable ? '#fffbe6' : '';
 
@@ -1062,7 +1082,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function openInvoiceEditing() {
-        if (!vyaparInput || isEditingMode || isInvoiceEditing) return;
+        if (isJobClosed || !vyaparInput || isEditingMode || isInvoiceEditing) return;
         originalInvoiceValue = vyaparInput.value;
         isInvoiceEditing = true;
         updateInvoiceControls();
@@ -1108,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function queueServiceDeletion(serviceId, row) {
-        if (!row || pendingDeletions.has(serviceId)) return;
+        if (isJobClosed || !row || pendingDeletions.has(serviceId)) return;
 
         // Hidden input for form submit
         if (formEl && !formEl.querySelector(`input[name="delete_service_ids[]"][value="${serviceId}"]`)) {
@@ -1157,6 +1177,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function setEditingState(isEditing) {
+        if (isJobClosed && isEditing) return;
         isEditingMode = isEditing;
 
         if (editBtn) editBtn.style.display = isEditing ? 'none' : 'inline-flex';
@@ -1596,6 +1617,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Form submit validation
     if (formEl) {
         formEl.addEventListener('submit', function(e) {
+            if (isJobClosed) {
+                e.preventDefault();
+                showWarning('Cannot edit billing amounts for a closed job.');
+                return;
+            }
+
             if (document.activeElement === saveInvoiceBtn) return;
 
             const newServiceRows = document.querySelectorAll('.appended-new-service-row');

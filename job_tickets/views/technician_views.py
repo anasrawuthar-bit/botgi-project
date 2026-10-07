@@ -733,6 +733,10 @@ def job_mark_completed(request, job_code):
     if not (is_assigned_tech or is_staff_actor):
         return HttpResponseForbidden("You are not permitted to mark this job as completed.")
 
+    if job.status == 'Closed':
+        messages.error(request, "Permission denied: Cannot modify or complete an already closed job.")
+        return redirect("job_detail_technician", job_code=job.job_code)
+
     if not is_staff_actor:
         checklist_schema, _, _ = _build_checklist_schema_for_job(job)
         missing_required = _missing_required_checklist_labels(job, checklist_schema)

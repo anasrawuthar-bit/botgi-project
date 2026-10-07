@@ -263,6 +263,10 @@ def mark_service_returned(request, service_id):
     )
     job = service.job_ticket
 
+    if job.status == 'Closed':
+        messages.error(request, "Permission denied: Cannot return service for an already closed job.")
+        return redirect('vendor_dashboard')
+
     # Handle POST request with cost data
     if request.method == 'POST':
         vendor_cost = request.POST.get('vendor_cost')

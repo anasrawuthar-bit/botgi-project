@@ -1004,6 +1004,13 @@ def job_billing_staff(request, job_code):
     if request.method == 'POST':
         # --- Handle Billing/Invoice Submission (Includes Job and Log Updates) ---
         if 'update_amounts_submit' in request.POST:
+            if job.status == 'Closed':
+                err_msg = "Permission denied: Cannot edit billing amounts for a closed job."
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'fetch':
+                    return JsonResponse({'ok': False, 'error': err_msg}, status=403)
+                messages.error(request, err_msg)
+                return redirect('job_billing_staff', job_code=job_code)
+
             try:
                 with transaction.atomic():
                     raw_delete_service_ids = request.POST.getlist('delete_service_ids[]')

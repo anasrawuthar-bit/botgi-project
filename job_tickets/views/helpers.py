@@ -670,6 +670,10 @@ def mobile_can_manage_service_lines(user, job):
     if job.status == 'Specialized Service':
         return False
 
+    # Do not allow editing billing lines for closed jobs.
+    if job.status == 'Closed':
+        return False
+
     # Staff can manage billing lines across statuses when needed.
     if permissions['is_staff']:
         return True
