@@ -103,6 +103,8 @@ def mobile_api_login(request):
             'user': {
                 'id': user.id,
                 'username': user.username,
+                'full_name': user.get_full_name() or '',
+                'email': user.email or '',
                 'is_staff': user.is_staff,
                 'role': role,
                 'technician_id': tech_id,
@@ -191,6 +193,8 @@ def mobile_api_qr_login(request):
             'user': {
                 'id': user.id,
                 'username': user.username,
+                'full_name': user.get_full_name() or '',
+                'email': user.email or '',
                 'is_staff': user.is_staff,
                 'role': role,
                 'technician_id': tech_id,
@@ -215,6 +219,8 @@ def mobile_api_me(request):
             'user': {
                 'id': user.id,
                 'username': user.username,
+                'full_name': user.get_full_name() or '',
+                'email': user.email or '',
                 'is_staff': user.is_staff,
                 'role': role,
                 'technician_id': tech_id,

@@ -35,7 +35,12 @@
                         <tbody>
                             {% for member in managed_users %}
                             <tr>
-                                <td><strong>{{ member.username }}</strong></td>
+                                <td>
+                                    <strong>{{ member.username }}</strong>
+                                    {% if member.get_full_name %}
+                                        <div class="small text-muted">{{ member.get_full_name }}</div>
+                                    {% endif %}
+                                </td>
                                 <td>{{ member.display_unique_id|default:"-" }}</td>
                                 <td>{{ member.email|default:"-" }}</td>
                                 <td>
@@ -205,6 +210,10 @@
                                                 <form method="post" action="{% url 'edit_user' member.id %}">
                                                     {% csrf_token %}
                                                     <div class="modal-body">
+                                                        <div class="mb-3">
+                                                            <label for="full_name_{{ member.id }}" class="form-label">Full Name</label>
+                                                            <input type="text" class="form-control" id="full_name_{{ member.id }}" name="full_name" value="{{ member.get_full_name }}" placeholder="e.g. John Doe">
+                                                        </div>
                                                         <div class="mb-3">
                                                             <label for="username_{{ member.id }}" class="form-label">Username *</label>
                                                             <input type="text" class="form-control" id="username_{{ member.id }}" name="username" value="{{ member.username }}" required>

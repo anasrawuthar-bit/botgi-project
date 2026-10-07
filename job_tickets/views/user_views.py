@@ -143,6 +143,12 @@ def edit_user(request, user_id):
         return redirect('staff_technicians')
     
     # Update user fields
+    if 'full_name' in request.POST:
+        full_name = request.POST.get('full_name', '').strip()
+        parts = full_name.split(maxsplit=1)
+        user.first_name = parts[0] if parts else ''
+        user.last_name = parts[1] if len(parts) > 1 else ''
+
     new_username = request.POST.get('username', '').strip()
     if new_username and new_username != user.username:
         # Check if username is already taken

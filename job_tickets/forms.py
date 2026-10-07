@@ -38,6 +38,7 @@ class TechnicianCreationForm(UserCreationForm):
         ('staff', 'Staff Member')
     ]
     
+    full_name = forms.CharField(max_length=150, required=False, label='Full Name', help_text='Full name of the user')
     unique_id = forms.CharField(max_length=10, required=True, help_text='Unique identifier for the user')
     role = forms.ChoiceField(choices=ROLE_CHOICES, required=True, help_text='Select whether this user is a technician or staff member')
     
@@ -45,9 +46,23 @@ class TechnicianCreationForm(UserCreationForm):
         model = User
         fields = ['username', 'email']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.order_fields(['username', 'full_name', 'email', 'unique_id', 'role'])
+
     def save(self, commit=False):
-        # We'll handle the commit and group assignment in the view
-        return super().save(commit=False)
+        user = super().save(commit=False)
+        full_name = (self.cleaned_data.get('full_name') or '').strip()
+        if full_name:
+            parts = full_name.split(maxsplit=1)
+            user.first_name = parts[0]
+            user.last_name = parts[1] if len(parts) > 1 else ''
+        else:
+            user.first_name = ''
+            user.last_name = ''
+        if commit:
+            user.save()
+        return user
 
 class JobTicketForm(forms.ModelForm):
     class Meta:

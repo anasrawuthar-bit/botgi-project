@@ -6458,7 +6458,23 @@ class TechnicianProfileAndQrMobileTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'TECH-007')
         self.assertContains(resp, 'Sam Tech')
+        self.assertContains(resp, 'Role')
+        self.assertContains(resp, 'Technician')
+        self.assertNotContains(resp, 'Assigned Workspace')
         self.assertContains(resp, 'Change Password')
+
+        # Update profile POST
+        update_resp = self.client.post(reverse('technician_profile'), {
+            'action': 'update_profile',
+            'full_name': 'Samuel Technical',
+            'email': 'samuel.tech@example.com',
+        }, follow=True)
+        self.assertEqual(update_resp.status_code, 200)
+        self.assertContains(update_resp, 'Profile updated successfully.')
+        self.tech_user.refresh_from_db()
+        self.assertEqual(self.tech_user.first_name, 'Samuel')
+        self.assertEqual(self.tech_user.last_name, 'Technical')
+        self.assertEqual(self.tech_user.email, 'samuel.tech@example.com')
 
         # Change password POST with invalid current password
         resp_err = self.client.post(reverse('technician_profile'), {

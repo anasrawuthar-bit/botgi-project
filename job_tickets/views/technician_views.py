@@ -1097,6 +1097,17 @@ def technician_profile(request):
                     return redirect('technician_profile')
                 except ValidationError as exc:
                     messages.error(request, " ".join(exc.messages))
+        elif action == 'update_profile':
+            full_name = (request.POST.get('full_name') or '').strip()
+            email = (request.POST.get('email') or '').strip()
+
+            parts = full_name.split(maxsplit=1)
+            request.user.first_name = parts[0] if parts else ''
+            request.user.last_name = parts[1] if len(parts) > 1 else ''
+            request.user.email = email
+            request.user.save(update_fields=['first_name', 'last_name', 'email'])
+            messages.success(request, 'Profile updated successfully.')
+            return redirect('technician_profile')
 
     active_sessions = list(
         UserSessionActivity.objects.filter(
