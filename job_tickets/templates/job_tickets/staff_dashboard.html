@@ -443,7 +443,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="job_ticket_form_submit" value="true">
 
-                    <div id="job-form-messages" class="mb-2"></div>
+                    <div id="job-form-messages"></div>
 
                     <!-- Step Content Panes -->
                     <div class="tab-content" id="intakeStepTabContent">
@@ -1559,6 +1559,12 @@
     }
 
     function showMessage(type, text) {
+        if (!text) return;
+        if (typeof showToast === 'function') {
+            const toastType = type === 'success' ? 'success' : (type === 'error' ? 'danger' : 'warning');
+            showToast(text, '', toastType, 3000);
+            return;
+        }
         if (!messagesContainer) return;
         const alertDiv = document.createElement('div');
         alertDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} mb-2`;
@@ -1995,14 +2001,12 @@
         // Client-side validation BEFORE showing loading state
         const customerHasErrors = validateCustomerFields();
         if (customerHasErrors) {
-            showMessage('error', 'Please fix the highlighted customer details.');
             focusFirstInvalidField();
             return;
         }
 
         const clientErrors = validateDevices();
         if (clientErrors.length) {
-            showMessage('error', 'Please fill in the highlighted fields.');
             clientErrors.forEach(err => {
                 const block = container.querySelectorAll('.device-form-block')[err.device_index];
                 if (block) addFieldError(block, err.field, err.message);
@@ -2059,9 +2063,8 @@
                     const block = container.querySelectorAll('.device-form-block')[err.device_index];
                     if (block) addFieldError(block, err.field, err.message);
                 });
-                showMessage('error', data.message || 'Please review the highlighted fields.');
-                if (messagesContainer) {
-                    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (typeof showToast === 'function' && data.message) {
+                    showToast(data.message, 'Notice', 'danger', 3500);
                 }
                 focusFirstInvalidField();
                 return;
@@ -2683,7 +2686,6 @@
         nextToDeviceBtn.addEventListener('click', function () {
             const customerHasErrors = validateCustomerFields();
             if (customerHasErrors) {
-                showMessage('error', 'Please fill in customer phone and name before proceeding to device details.');
                 focusFirstInvalidField();
                 return;
             }
@@ -2712,7 +2714,6 @@
         nextToTurnaroundBtn.addEventListener('click', function () {
             const devErrors = validateDevices();
             if (devErrors.length) {
-                showMessage('error', 'Please complete required device specifications before proceeding.');
                 devErrors.forEach(err => {
                     const block = container.querySelectorAll('.device-form-block')[err.device_index];
                     if (block) addFieldError(block, err.field, err.message);
@@ -2746,7 +2747,6 @@
             const customerHasErrors = validateCustomerFields();
             if (customerHasErrors) {
                 e.preventDefault();
-                showMessage('error', 'Please complete customer phone and name before moving to device details.');
                 focusFirstInvalidField();
             } else {
                 updateStepPillStatus();
@@ -2759,7 +2759,6 @@
             const customerHasErrors = validateCustomerFields();
             if (customerHasErrors) {
                 e.preventDefault();
-                showMessage('error', 'Please complete customer information first.');
                 if (stepCustomerTab && window.bootstrap) bootstrap.Tab.getOrCreateInstance(stepCustomerTab).show();
                 focusFirstInvalidField();
                 return;
@@ -2767,7 +2766,6 @@
             const devErrors = validateDevices();
             if (devErrors.length) {
                 e.preventDefault();
-                showMessage('error', 'Please complete required device details first.');
                 if (stepDeviceTab && window.bootstrap) bootstrap.Tab.getOrCreateInstance(stepDeviceTab).show();
                 devErrors.forEach(err => {
                     const block = container.querySelectorAll('.device-form-block')[err.device_index];
