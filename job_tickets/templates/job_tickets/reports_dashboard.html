@@ -3,116 +3,66 @@
 {% block content %}
 <div class="section-container" id="reports-dashboard-page">
     <style>
-        #reports-dashboard-page {
-            --bs-link-color: var(--primary);
-            --bs-link-hover-color: var(--primary-hover);
-        }
-        #reports-dashboard-page .reports-heading-icon {
-            color: var(--primary);
-        }
-        #reports-dashboard-page .reports-period {
+        #reports-dashboard-page .reports-nav-tabs {
+            border-bottom: 1px solid var(--border-color, #e2e8f0);
+            gap: 0.25rem;
             background: #ffffff;
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            padding: 1rem 1.25rem;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--shadow-sm);
+            border-radius: 8px 8px 0 0;
+            padding: 0 0.5rem;
         }
-        #reports-dashboard-page .form-label {
-            color: var(--text-secondary);
-            font-size: 0.8125rem;
-            font-weight: 600;
-        }
-        #reports-dashboard-page .nav-pills {
-            --bs-nav-link-color: var(--muted-text);
-            --bs-nav-link-hover-color: var(--primary);
-            --bs-nav-pills-link-active-bg: var(--primary);
-            --bs-nav-pills-link-active-color: #ffffff;
-            --bs-nav-pills-border-radius: 8px;
-        }
-        #reports-dashboard-page .nav-link {
-            font-weight: 600;
-            padding: 0.45rem 1rem;
+        #reports-dashboard-page .reports-nav-tabs .nav-link {
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary, #64748b);
+            font-weight: 500;
             font-size: 0.875rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0;
             transition: all 0.15s ease;
+            background: transparent;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
         }
-        #reports-dashboard-page .nav-link:not(.active):hover {
-            background: var(--primary-light);
-            color: var(--primary);
+        #reports-dashboard-page .reports-nav-tabs .nav-link:hover {
+            color: var(--text-primary, #1e293b);
+            border-bottom-color: #cbd5e1;
         }
-        #reports-dashboard-page a:focus-visible,
-        #reports-dashboard-page button:focus-visible {
-            outline: 3px solid var(--border-focus);
-            outline-offset: 2px;
-            box-shadow: none;
-        }
-        #reports-dashboard-page .btn-outline-secondary {
-            border-color: #cbd5e1;
-            color: var(--text-secondary);
-            background: #ffffff;
-            border-radius: var(--radius-sm);
+        #reports-dashboard-page .reports-nav-tabs .nav-link.active {
+            color: var(--primary, #0d6efd);
+            border-bottom-color: var(--primary, #0d6efd);
             font-weight: 600;
         }
-        #reports-dashboard-page .btn-outline-secondary:hover {
-            background: #f8fafc;
-            color: var(--text-primary);
-            border-color: #94a3b8;
-        }
-        #reports-dashboard-page .btn-primary {
-            background-color: var(--primary);
-            border-color: var(--primary);
-            color: #ffffff !important;
-        }
-        #reports-dashboard-page .btn-primary:hover {
-            background-color: var(--primary-hover);
-            border-color: var(--primary-hover);
-            color: #ffffff !important;
-        }
-        #reports-dashboard-page .card-box .display-6 {
-            color: var(--text-primary);
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-weight: 800;
-        }
-        #reports-dashboard-page .card-box .display-6:hover {
-            text-decoration: underline !important;
-            text-decoration-color: var(--primary) !important;
-            text-underline-offset: 0.2em;
-        }
-        #reports-dashboard-page .list-group-item-action {
-            color: var(--text-secondary);
-            border-color: var(--border-color);
-            transition: all 0.15s ease;
-        }
-        #reports-dashboard-page .list-group-item-action:hover {
-            background: var(--primary-light);
-            color: var(--primary);
-        }
-        .workload-stat-card {
+        .workload-stat-item {
             border: 1px solid var(--border-color, #e2e8f0);
-            border-radius: 10px;
+            border-radius: 8px;
             background: #ffffff;
-            padding: 0.85rem 0.75rem;
+            padding: 0.75rem 0.5rem;
             text-align: center;
             text-decoration: none;
-            transition: all 0.18s ease-in-out;
+            transition: border-color 0.15s ease, background-color 0.15s ease;
             display: block;
         }
-        .workload-stat-card:hover {
-            transform: translateY(-2px);
-            border-color: var(--primary, #3b82f6);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        .workload-stat-item:hover {
+            border-color: var(--primary, #0d6efd);
+            background: #f8fafc;
         }
     </style>
 
-    <!-- Top Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <!-- 1. Header Toolbar -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
-            <h1 class="section-title mb-1"><i class="fas fa-chart-line reports-heading-icon me-2" aria-hidden="true"></i>Company Reports</h1>
-            <p class="text-muted mb-0">Track live daily activity, review financials, and compare technician performance.</p>
+            <div class="d-inline-flex align-items-center gap-2 px-2.5 py-1 rounded-pill bg-primary-subtle text-primary border border-primary-subtle small fw-semibold mb-2" style="font-size: 0.78rem;">
+                <i class="fa-solid fa-chart-line"></i> Analytics &amp; Reports
+            </div>
+            <h1 class="h3 fw-bold text-dark mb-1">Company Reports</h1>
+            <p class="text-muted mb-0 small">Track live daily activity, review financials, and compare technician performance.</p>
         </div>
         {% if staff_access.staff_dashboard %}
-        <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+        <a href="{% url 'staff_dashboard' %}" class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-arrow-left"></i>
+            <span>Back to Dashboard</span>
         </a>
         {% endif %}
     </div>
@@ -124,67 +74,87 @@
     <div class="mb-4">
         <!-- Today's Activity -->
         <section aria-labelledby="daily-heading" class="mb-4">
-            <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
-                <h2 id="daily-heading" class="h5 fw-bold text-dark mb-0">
-                    <i class="fas fa-sun text-warning me-2"></i>Today's activity
-                    <span class="badge bg-light text-muted border ms-2 fw-normal fs-6">{{ today_date_str }}</span>
-                </h2>
-                <span class="small text-muted">Live counters for today &middot; Independent of period filter</span>
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <h2 id="daily-heading" class="h6 fw-bold text-dark mb-0 text-uppercase" style="letter-spacing: 0.04em;">
+                        <i class="fa-regular fa-clock text-primary me-1.5"></i>Today's activity
+                    </h2>
+                    <span class="badge bg-light text-secondary border small">{{ today_date_str }}</span>
+                </div>
+                <span class="small text-muted">Live counters for today</span>
             </div>
             
             <div class="row g-3">
                 <!-- Received -->
                 <div class="col-md-4">
-                    <div class="card-box h-100 p-3">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <h3 class="h6 text-muted mb-0">Jobs Received</h3>
-                            <span class="badge bg-info-subtle text-info border border-info-subtle">Intake</span>
+                    <div class="card h-100 shadow-sm border">
+                        <div class="card-body p-3.5 d-flex flex-column justify-content-between">
+                            <div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small text-muted fw-semibold text-uppercase" style="font-size: 0.75rem;">Jobs Received</span>
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle">Intake</span>
+                                </div>
+                                <a class="h2 fw-bold text-decoration-none text-dark d-block my-2" href="{% url 'daily_jobs_report' today_date_str 'in' %}">
+                                    {{ todays_jobs_in }}
+                                </a>
+                            </div>
+                            <div class="small text-muted pt-2 border-top mt-2">
+                                <i class="fa-solid fa-arrow-down-long text-info me-1"></i>New device tickets logged today
+                            </div>
                         </div>
-                        <a class="display-6 fw-bold text-decoration-none text-dark d-block my-1" href="{% url 'daily_jobs_report' today_date_str 'in' %}">
-                            {{ todays_jobs_in }}
-                        </a>
-                        <p class="small text-muted mt-2 pt-2 border-top mb-0">
-                            <i class="fas fa-arrow-down-long text-info me-1"></i>New device tickets logged today
-                        </p>
                     </div>
                 </div>
 
                 <!-- Completed -->
                 <div class="col-md-4">
-                    <div class="card-box h-100 p-3">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <h3 class="h6 text-muted mb-0">Jobs Completed</h3>
-                            <span class="badge bg-success-subtle text-success border border-success-subtle">Completed</span>
-                        </div>
-                        <a class="display-6 fw-bold text-decoration-none text-dark d-block my-1" href="{% url 'daily_jobs_report' today_date_str 'completed' %}">
-                            {{ todays_jobs_completed }}
-                        </a>
-                        <div class="small text-muted mt-2 pt-2 border-top d-flex flex-wrap align-items-center gap-1">
-                            <span>Parts: <strong class="text-dark">&#8377;{{ todays_completed_spare|floatformat:2 }}</strong></span>
-                            <span class="fw-bold text-muted mx-1">+</span>
-                            <span>Service: <strong class="text-dark">&#8377;{{ todays_completed_service|floatformat:2 }}</strong></span>
-                            <span class="fw-bold text-muted mx-1">=</span>
-                            <span class="fw-bold text-success">&#8377;{{ todays_completed_total|floatformat:2 }}</span>
+                    <div class="card h-100 shadow-sm border">
+                        <div class="card-body p-3.5 d-flex flex-column justify-content-between">
+                            <div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small text-muted fw-semibold text-uppercase" style="font-size: 0.75rem;">Jobs Completed</span>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle">Completed</span>
+                                </div>
+                                <a class="h2 fw-bold text-decoration-none text-dark d-block my-2" href="{% url 'daily_jobs_report' today_date_str 'completed' %}">
+                                    {{ todays_jobs_completed }}
+                                </a>
+                            </div>
+                            <div class="pt-2 border-top mt-2">
+                                <div class="d-flex justify-content-between align-items-center small text-muted">
+                                    <span>Total Billed:</span>
+                                    <strong class="text-success fs-6">&#8377;{{ todays_completed_total|floatformat:2 }}</strong>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center text-muted mt-1" style="font-size: 0.78rem;">
+                                    <span>Parts: &#8377;{{ todays_completed_spare|floatformat:2 }}</span>
+                                    <span>Labor: &#8377;{{ todays_completed_service|floatformat:2 }}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Closed -->
                 <div class="col-md-4">
-                    <div class="card-box h-100 p-3">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <h3 class="h6 text-muted mb-0">Jobs Closed</h3>
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Delivered</span>
-                        </div>
-                        <a class="display-6 fw-bold text-decoration-none text-dark d-block my-1" href="{% url 'daily_jobs_report' today_date_str 'out' %}">
-                            {{ todays_jobs_out }}
-                        </a>
-                        <div class="small text-muted mt-2 pt-2 border-top d-flex flex-wrap align-items-center gap-1">
-                            <span>Parts: <strong class="text-dark">&#8377;{{ todays_closed_spare|floatformat:2 }}</strong></span>
-                            <span class="fw-bold text-muted mx-1">+</span>
-                            <span>Service: <strong class="text-dark">&#8377;{{ todays_closed_service|floatformat:2 }}</strong></span>
-                            <span class="fw-bold text-muted mx-1">=</span>
-                            <span class="fw-bold text-primary">&#8377;{{ todays_closed_total|floatformat:2 }}</span>
+                    <div class="card h-100 shadow-sm border">
+                        <div class="card-body p-3.5 d-flex flex-column justify-content-between">
+                            <div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small text-muted fw-semibold text-uppercase" style="font-size: 0.75rem;">Jobs Closed</span>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Delivered</span>
+                                </div>
+                                <a class="h2 fw-bold text-decoration-none text-dark d-block my-2" href="{% url 'daily_jobs_report' today_date_str 'out' %}">
+                                    {{ todays_jobs_out }}
+                                </a>
+                            </div>
+                            <div class="pt-2 border-top mt-2">
+                                <div class="d-flex justify-content-between align-items-center small text-muted">
+                                    <span>Total Settled:</span>
+                                    <strong class="text-primary fs-6">&#8377;{{ todays_closed_total|floatformat:2 }}</strong>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center text-muted mt-1" style="font-size: 0.78rem;">
+                                    <span>Parts: &#8377;{{ todays_closed_spare|floatformat:2 }}</span>
+                                    <span>Labor: &#8377;{{ todays_closed_service|floatformat:2 }}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -192,58 +162,63 @@
         </section>
 
         <!-- Current Workload Backlog -->
-        <section aria-labelledby="workload-heading" class="mb-2">
-            <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-2">
-                <div>
-                    <h2 id="workload-heading" class="h5 fw-bold text-dark mb-0">
-                        <i class="fas fa-layer-group text-primary me-2"></i>Current Workload Backlog
-                    </h2>
-                    <span class="small text-muted">Real-time status distribution across all dates</span>
+        <section aria-labelledby="workload-heading" class="mb-4">
+            <div class="card shadow-sm border">
+                <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <h2 id="workload-heading" class="h6 fw-bold text-dark mb-0 text-uppercase" style="letter-spacing: 0.04em;">
+                            <i class="fa-solid fa-layer-group text-primary me-1.5"></i>Live Workload Backlog
+                        </h2>
+                        <span class="text-muted small">&bull; Status distribution across all dates</span>
+                    </div>
+                    <a class="btn btn-outline-secondary btn-sm py-1 px-2.5 shadow-sm" href="{% url 'print_active_workload_report' %}">
+                        <i class="fa-solid fa-print me-1"></i>Print Workload
+                    </a>
                 </div>
-                <a class="btn btn-outline-primary btn-sm" href="{% url 'print_active_workload_report' %}">
-                    <i class="fas fa-print me-1"></i>Print active workload
-                </a>
+                <div class="card-body p-3">
+                    <div class="row g-2">
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <a class="workload-stat-item text-decoration-none" href="{% url 'staff_job_archive_view' %}">
+                                <span class="small text-muted d-block">All Jobs</span>
+                                <strong class="fs-5 text-dark d-block mt-1">{{ all_jobs_count }}</strong>
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <a class="workload-stat-item text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Pending' %}">
+                                <span class="small text-muted d-block">Pending</span>
+                                <strong class="fs-5 text-warning d-block mt-1">{{ pending_count }}</strong>
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <a class="workload-stat-item text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Active' %}">
+                                <span class="small text-muted d-block">In Progress</span>
+                                <strong class="fs-5 text-info d-block mt-1">{{ in_progress_count }}</strong>
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <a class="workload-stat-item text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'CompletedReady' %}">
+                                <span class="small text-muted d-block">Ready / Pickup</span>
+                                <strong class="fs-5 text-success d-block mt-1">{{ completed_awaiting_billing_count }}</strong>
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <a class="workload-stat-item text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Returned' %}">
+                                <span class="small text-muted d-block">Returned</span>
+                                <strong class="fs-5 text-danger d-block mt-1">{{ returned_count }}</strong>
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <a class="workload-stat-item text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Closed' %}">
+                                <span class="small text-muted d-block">Closed</span>
+                                <strong class="fs-5 text-secondary d-block mt-1">{{ closed_count }}</strong>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2 pt-2 border-top" style="font-size: 0.78rem;">
+                        <i class="fa-solid fa-circle-info me-1"></i>Returned jobs that were subsequently closed also appear in the closed count.
+                    </div>
+                </div>
             </div>
-            
-            <div class="row g-2">
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_archive_view' %}">
-                        <span class="small text-muted d-block">All Jobs</span>
-                        <strong class="fs-5 text-dark">{{ all_jobs_count }}</strong>
-                    </a>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Pending' %}">
-                        <span class="small text-muted d-block">Pending</span>
-                        <strong class="fs-5 text-warning">{{ pending_count }}</strong>
-                    </a>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Active' %}">
-                        <span class="small text-muted d-block">In Progress</span>
-                        <strong class="fs-5 text-info">{{ in_progress_count }}</strong>
-                    </a>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'CompletedReady' %}">
-                        <span class="small text-muted d-block">Ready / Pickup</span>
-                        <strong class="fs-5 text-success">{{ completed_awaiting_billing_count }}</strong>
-                    </a>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Returned' %}">
-                        <span class="small text-muted d-block">Returned</span>
-                        <strong class="fs-5 text-danger">{{ returned_count }}</strong>
-                    </a>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a class="workload-stat-card text-decoration-none" href="{% url 'staff_job_filtered_archive_view' 'Closed' %}">
-                        <span class="small text-muted d-block">Closed</span>
-                        <strong class="fs-5 text-secondary">{{ closed_count }}</strong>
-                    </a>
-                </div>
-            </div>
-            <p class="small text-muted mt-2 mb-0">Returned jobs that were subsequently closed also appear in the closed count.</p>
         </section>
     </div>
     {% endif %}
@@ -255,79 +230,86 @@
     <div class="mt-4 pt-3 border-top">
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
             <div>
-                <h2 class="h5 fw-bold text-dark mb-0">
-                    <i class="fas fa-calendar-alt text-primary me-2"></i>Period Performance &amp; Detailed Analytics
+                <h2 class="h6 fw-bold text-dark mb-0 text-uppercase" style="letter-spacing: 0.04em;">
+                    <i class="fa-solid fa-calendar-days text-primary me-1.5"></i>Period Performance &amp; Detailed Analytics
                 </h2>
                 <span class="small text-muted">Select a report section and period range to analyze historical financial and staff performance.</span>
             </div>
         </div>
 
         <!-- Navigation Tabs -->
-        <nav class="nav nav-pills flex-wrap gap-2 border-bottom pb-3 mb-3" aria-label="Report sections">
+        <nav class="nav reports-nav-tabs mb-3" aria-label="Report sections">
             {% if staff_access.reports_financial %}
             <a class="nav-link {% if active_tab == 'financial' %}active{% endif %}" {% if active_tab == 'financial' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=financial">
-                <i class="fas fa-coins me-1"></i>Financial Summary
+                <i class="fa-solid fa-coins"></i>Financial Summary
             </a>
             <a class="nav-link {% if active_tab == 'daybook' %}active{% endif %}" {% if active_tab == 'daybook' %}aria-current="page"{% endif %} href="?daybook_date={{ daybook_date_str }}&amp;tab=daybook">
-                <i class="fas fa-book-open me-1"></i>Daily Daybook &amp; Reconciliation
+                <i class="fa-solid fa-book-open"></i>Daily Daybook &amp; Reconciliation
             </a>
             {% endif %}
             {% if staff_access.reports_technician %}
             <a class="nav-link {% if active_tab == 'technician' %}active{% endif %}" {% if active_tab == 'technician' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=technician">
-                <i class="fas fa-user-cog me-1"></i>Technicians
+                <i class="fa-solid fa-user-gear"></i>Technicians
             </a>
             {% endif %}
             {% if staff_access.reports_vendor %}
             <a class="nav-link {% if active_tab == 'vendor' %}active{% endif %}" {% if active_tab == 'vendor' %}aria-current="page"{% endif %} href="?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}&amp;tab=vendor">
-                <i class="fas fa-truck me-1"></i>Vendors
+                <i class="fa-solid fa-truck-ramp-box"></i>Vendors
             </a>
             {% endif %}
         </nav>
 
         {% if active_tab == 'daybook' %}
         <!-- Daybook Date Selector Form -->
-        <div class="reports-period mb-4">
-            <form method="get" class="row g-3 align-items-end mb-2" data-async-form data-async-target="#reports-dashboard-page">
-                <input type="hidden" name="tab" value="daybook">
-                <div class="col-sm-8 col-lg-5">
-                    <label for="daybook-date-input" class="form-label fw-bold">Select Daybook Date</label>
-                    <input id="daybook-date-input" type="date" name="daybook_date" value="{{ daybook_date_str }}" class="form-control" required>
+        <div class="card shadow-sm border mb-4">
+            <div class="card-body p-3">
+                <form method="get" class="row g-2.5 align-items-end mb-2" data-async-form data-async-target="#reports-dashboard-page">
+                    <input type="hidden" name="tab" value="daybook">
+                    <div class="col-sm-8 col-lg-5">
+                        <label for="daybook-date-input" class="form-label small fw-semibold text-muted mb-1">Select Daybook Date</label>
+                        <input id="daybook-date-input" type="date" name="daybook_date" value="{{ daybook_date_str }}" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-sm-4 col-lg-3">
+                        <button class="btn btn-primary btn-sm w-100" type="submit">
+                            <i class="fa-solid fa-calendar-check me-1"></i>Inspect Daybook
+                        </button>
+                    </div>
+                </form>
+                <div class="d-flex flex-wrap gap-2 align-items-center pt-2 border-top">
+                    <a class="btn btn-sm btn-outline-secondary py-0.5 px-2" href="?daybook_date={{ today_date_str }}&amp;tab=daybook">Today</a>
+                    <span class="small text-muted ms-auto">Viewing Daybook for: <strong class="text-dark">{{ daybook_data.target_date_str }}</strong> {% if daybook_data.is_today %}<span class="badge bg-success ms-1">Today</span>{% endif %}</span>
                 </div>
-                <div class="col-sm-4 col-lg-3">
-                    <button class="btn btn-primary w-100" type="submit">
-                        <i class="fas fa-calendar-check me-1"></i>Inspect Daybook
-                    </button>
-                </div>
-            </form>
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <a class="btn btn-sm btn-outline-secondary" href="?daybook_date={{ today_date_str }}&amp;tab=daybook">Today</a>
-                <span class="small text-muted ms-auto">Viewing Daybook for: <strong>{{ daybook_data.target_date_str }}</strong> {% if daybook_data.is_today %}<span class="badge bg-success ms-1">Today</span>{% endif %}</span>
             </div>
         </div>
         {% else %}
         <!-- The Period Filter Form (Rendered for Financial, Technicians, Vendors) -->
-        <div class="reports-period mb-4">
-            <form method="get" class="row g-3 align-items-end mb-2" data-async-form data-async-target="#reports-dashboard-page">
-                <input type="hidden" name="tab" value="{{ active_tab }}">
-                <div class="col-sm-5 col-lg-4">
-                    <label for="report-start" class="form-label">Period start</label>
-                    <input id="report-start" type="date" name="start_date" value="{{ current_report_start }}" class="form-control" required>
+        <div class="card shadow-sm border mb-4">
+            <div class="card-body p-3">
+                <form method="get" class="row g-2.5 align-items-end mb-2.5" data-async-form data-async-target="#reports-dashboard-page">
+                    <input type="hidden" name="tab" value="{{ active_tab }}">
+                    <div class="col-sm-5 col-lg-4">
+                        <label for="report-start" class="form-label small fw-semibold text-muted mb-1">Period Start</label>
+                        <input id="report-start" type="date" name="start_date" value="{{ current_report_start }}" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-sm-5 col-lg-4">
+                        <label for="report-end" class="form-label small fw-semibold text-muted mb-1">Period End</label>
+                        <input id="report-end" type="date" name="end_date" value="{{ current_report_end }}" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-sm-2 col-lg-4">
+                        <button class="btn btn-primary btn-sm w-100" type="submit">
+                            <i class="fa-solid fa-filter me-1"></i>Apply Period
+                        </button>
+                    </div>
+                </form>
+                <div class="d-flex flex-wrap gap-2 align-items-center pt-2 border-top">
+                    <span class="text-muted small fw-medium me-1">Presets:</span>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <a class="btn btn-outline-secondary py-0.5 px-2.5{% if preset == 'this_month' %} active fw-semibold{% endif %}" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
+                        <a class="btn btn-outline-secondary py-0.5 px-2.5{% if preset == 'last_month' or preset == 'previous_month' %} active fw-semibold{% endif %}" href="?preset=last_month&amp;tab={{ active_tab }}">Previous month</a>
+                        <a class="btn btn-outline-secondary py-0.5 px-2.5{% if preset == 'last_7_days' %} active fw-semibold{% endif %}" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
+                    </div>
+                    <span class="small text-muted ms-auto">Active period: <strong class="text-dark">{{ current_report_start }}</strong> &ndash; <strong class="text-dark">{{ current_report_end }}</strong></span>
                 </div>
-                <div class="col-sm-5 col-lg-4">
-                    <label for="report-end" class="form-label">Period end</label>
-                    <input id="report-end" type="date" name="end_date" value="{{ current_report_end }}" class="form-control" required>
-                </div>
-                <div class="col-sm-2 col-lg-4">
-                    <button class="btn btn-primary w-100" type="submit">
-                        <i class="fas fa-filter me-1"></i>Apply period
-                    </button>
-                </div>
-            </form>
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <a class="btn btn-sm btn-outline-secondary{% if preset == 'this_month' %} active{% endif %}" href="?preset=this_month&amp;tab={{ active_tab }}">This month</a>
-                <a class="btn btn-sm btn-outline-secondary{% if preset == 'last_month' or preset == 'previous_month' %} active{% endif %}" href="?preset=last_month&amp;tab={{ active_tab }}">Previous month</a>
-                <a class="btn btn-sm btn-outline-secondary{% if preset == 'last_7_days' %} active{% endif %}" href="?preset=last_7_days&amp;tab={{ active_tab }}">Last 7 days</a>
-                <span class="small text-muted ms-auto">Active period: <strong>{{ current_report_start }}</strong> &ndash; <strong>{{ current_report_end }}</strong></span>
             </div>
         </div>
         {% endif %}
@@ -335,69 +317,77 @@
         <!-- Tab 1: Financial Summary -->
         {% if active_tab == 'financial' and staff_access.reports_financial %}
         <section>
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                <div>
-                    <span class="small text-muted">{{ current_report_start }} &ndash; {{ current_report_end }} &middot; {{ financial_summary.jobs_closed_count }} closed job{{ financial_summary.jobs_closed_count|pluralize }}</span>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small text-uppercase fw-bold">
+                            <i class="fa-solid fa-coins text-warning me-1.5"></i>Revenue &amp; Margin Summary
+                        </strong>
+                        <span class="text-muted small ms-2">{{ current_report_start }} &ndash; {{ current_report_end }} &bull; {{ financial_summary.jobs_closed_count }} closed job{{ financial_summary.jobs_closed_count|pluralize }}</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a class="btn btn-outline-primary btn-sm" href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">
+                            <i class="fa-solid fa-print me-1"></i>Print Summary
+                        </a>
+                        <a class="btn btn-outline-secondary btn-sm" href="{% url 'export_monthly_summary_csv' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">
+                            <i class="fa-solid fa-file-csv me-1"></i>Export CSV
+                        </a>
+                    </div>
                 </div>
-                <div class="d-flex gap-2 flex-wrap">
-                    <a class="btn btn-outline-primary" href="{% url 'print_monthly_summary_report' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">View / print summary</a>
-                    <a class="btn btn-outline-secondary" href="{% url 'export_monthly_summary_csv' %}?start_date={{ current_report_start }}&amp;end_date={{ current_report_end }}">Export CSV</a>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="ps-3">Category</th>
+                                <th scope="col" class="text-end">Revenue</th>
+                                <th scope="col" class="text-end">Recorded Cost</th>
+                                <th scope="col" class="text-end pe-3">Gross Margin</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for block in financial_summary.closed_financial_blocks %}
+                            <tr>
+                                <th scope="row" class="ps-3 fw-medium {% if block.is_discount %}text-secondary fw-normal{% else %}text-dark{% endif %}">
+                                    {{ block.label }}
+                                </th>
+                                <td class="text-end {% if block.is_discount and block.revenue_abs %}text-danger fw-semibold{% elif not block.revenue %}text-muted{% else %}text-dark{% endif %}">
+                                    {% if block.is_discount and block.revenue_abs %}
+                                        - &#8377;{{ block.revenue_abs|floatformat:2 }}
+                                    {% elif block.revenue %}
+                                        &#8377;{{ block.revenue|floatformat:2 }}
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-muted">
+                                    {% if block.is_discount or not block.expense %}
+                                        &mdash;
+                                    {% else %}
+                                        &#8377;{{ block.expense|floatformat:2 }}
+                                    {% endif %}
+                                </td>
+                                <td class="text-end pe-3 {% if block.is_discount and block.profit_abs %}text-danger fw-semibold{% elif not block.profit %}text-muted{% elif block.profit >= 0 %}text-success fw-semibold{% else %}text-danger fw-semibold{% endif %}">
+                                    {% if block.is_discount and block.profit_abs %}
+                                        - &#8377;{{ block.profit_abs|floatformat:2 }}
+                                    {% elif block.profit %}
+                                        &#8377;{{ block.profit|floatformat:2 }}
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light fw-bold border-top border-2">
+                            <tr>
+                                <th scope="row" class="ps-3">Totals</th>
+                                <td class="text-end text-dark">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</td>
+                                <td class="text-end text-muted">{% if financial_summary.overall_expense %}&#8377;{{ financial_summary.overall_expense|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
+                                <td class="text-end pe-3 fs-6 {% if financial_summary.overall_profit >= 0 %}text-success{% else %}text-danger{% endif %}">&#8377;{{ financial_summary.overall_profit|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
-            </div>
-            <div class="table-responsive mb-4">
-                <table class="table align-middle">
-                    <caption>Revenue and recorded costs for the selected period</caption>
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col">Category</th>
-                            <th scope="col" class="text-end">Revenue</th>
-                            <th scope="col" class="text-end">Cost</th>
-                            <th scope="col" class="text-end">Margin</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for block in financial_summary.closed_financial_blocks %}
-                        <tr>
-                            <th scope="row" class="{% if block.is_discount %}text-secondary fw-normal{% endif %}">
-                                {{ block.label }}
-                            </th>
-                            <td class="text-end {% if block.is_discount and block.revenue_abs %}text-danger fw-semibold{% elif not block.revenue %}text-muted{% endif %}">
-                                {% if block.is_discount and block.revenue_abs %}
-                                    - &#8377;{{ block.revenue_abs|floatformat:2 }}
-                                {% elif block.revenue %}
-                                    &#8377;{{ block.revenue|floatformat:2 }}
-                                {% else %}
-                                    &mdash;
-                                {% endif %}
-                            </td>
-                            <td class="text-end text-muted">
-                                {% if block.is_discount or not block.expense %}
-                                    &mdash;
-                                {% else %}
-                                    &#8377;{{ block.expense|floatformat:2 }}
-                                {% endif %}
-                            </td>
-                            <td class="text-end {% if block.is_discount and block.profit_abs %}text-danger fw-semibold{% elif not block.profit %}text-muted{% endif %}">
-                                {% if block.is_discount and block.profit_abs %}
-                                    - &#8377;{{ block.profit_abs|floatformat:2 }}
-                                {% elif block.profit %}
-                                    &#8377;{{ block.profit|floatformat:2 }}
-                                {% else %}
-                                    &mdash;
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light fw-bold border-top border-2">
-                            <th scope="row">Totals</th>
-                            <td class="text-end">&#8377;{{ financial_summary.overall_revenue|floatformat:2 }}</td>
-                            <td class="text-end text-muted">{% if financial_summary.overall_expense %}&#8377;{{ financial_summary.overall_expense|floatformat:2 }}{% else %}&mdash;{% endif %}</td>
-                            <td class="text-end {% if financial_summary.overall_profit >= 0 %}text-success{% else %}text-danger{% endif %}">&#8377;{{ financial_summary.overall_profit|floatformat:2 }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
             </div>
         </section>
         {% endif %}
@@ -407,7 +397,7 @@
         <section aria-labelledby="daybook-heading">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
                 <div>
-                    <h2 class="h4 mb-1" id="daybook-heading">Daily Daybook &amp; Cash Drawer Reconciliation</h2>
+                    <h2 class="h5 fw-bold text-dark mb-1" id="daybook-heading">Daily Daybook &amp; Reconciliation</h2>
                     <p class="small text-muted mb-0">
                         Date: <strong>{{ daybook_data.target_date_str }}</strong>
                         {% if daybook_data.is_today %}<span class="badge bg-success ms-1">Today</span>{% endif %}
@@ -415,14 +405,14 @@
                     </p>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-outline-success" id="reports-send-daybook-wa-btn" data-date="{{ daybook_data.target_date_str }}">
+                    <button type="button" class="btn btn-outline-success btn-sm shadow-sm" id="reports-send-daybook-wa-btn" data-date="{{ daybook_data.target_date_str }}">
                         <i class="fa-brands fa-whatsapp me-1"></i>WhatsApp Summary
                     </button>
-                    <a class="btn btn-outline-primary" href="{% url 'print_daily_daybook_report' %}?date={{ daybook_data.target_date_str }}">
-                        <i class="fas fa-print me-1"></i>Print Daybook
+                    <a class="btn btn-outline-primary btn-sm shadow-sm" href="{% url 'print_daily_daybook_report' %}?date={{ daybook_data.target_date_str }}">
+                        <i class="fa-solid fa-print me-1"></i>Print Daybook
                     </a>
-                    <a class="btn btn-outline-secondary" href="{% url 'export_daily_daybook_csv' %}?date={{ daybook_data.target_date_str }}">
-                        <i class="fas fa-file-csv me-1"></i>Export CSV
+                    <a class="btn btn-outline-secondary btn-sm shadow-sm" href="{% url 'export_daily_daybook_csv' %}?date={{ daybook_data.target_date_str }}">
+                        <i class="fa-solid fa-file-csv me-1"></i>Export CSV
                     </a>
                 </div>
             </div>
@@ -431,115 +421,125 @@
             <div class="row g-3 mb-4">
                 <!-- Panel 1: Cash Drawer Reconciliation -->
                 <div class="col-lg-6">
-                    <div class="card-box h-100 p-4 border-start border-4 border-success">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h3 class="h5 fw-bold text-dark mb-0">
-                                <i class="fas fa-money-bill-wave text-success me-2"></i>Physical Cash Drawer
-                            </h3>
-                            <span class="badge bg-light text-muted border">{{ daybook_data.default_cash.name|default:"Cash in Hand" }}</span>
+                    <div class="card shadow-sm border h-100">
+                        <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="rounded-circle bg-success-subtle text-success d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;">
+                                    <i class="fa-solid fa-money-bill-wave small"></i>
+                                </div>
+                                <strong class="text-dark small fw-bold">Physical Cash Drawer</strong>
+                            </div>
+                            <span class="badge bg-light text-secondary border">{{ daybook_data.default_cash.name|default:"Cash in Hand" }}</span>
                         </div>
-                        <ul class="list-group list-group-flush mb-3">
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span class="text-muted">Opening Cash Balance (Start of Day)</span>
-                                <strong class="text-dark">&#8377;{{ daybook_data.opening_cash|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-plus text-success me-1"></i>Today's Cash Receipts (Jobs &amp; Sales)</span>
-                                <strong class="text-success">+&#8377;{{ daybook_data.cash_inflows|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-minus text-danger me-1"></i>Today's Cash Expenses / Outflows</span>
-                                <strong class="text-danger">-&#8377;{{ daybook_data.cash_outflows|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-arrow-right text-info me-1"></i>Contra: Deposited into Bank</span>
-                                <strong class="text-info">-&#8377;{{ daybook_data.cash_to_bank|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-arrow-left text-primary me-1"></i>Contra: Withdrawn from Bank</span>
-                                <strong class="text-primary">+&#8377;{{ daybook_data.bank_to_cash|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2 pt-3 border-top border-2">
-                                <span class="fw-bold text-dark fs-6">Expected Physical Cash in Drawer</span>
-                                <span class="h4 mb-0 fw-bold text-success">&#8377;{{ daybook_data.expected_drawer_cash|floatformat:2 }}</span>
-                            </li>
-                        </ul>
-                        <div class="p-2 rounded bg-light small text-muted">
-                            <i class="fas fa-info-circle me-1"></i>At closing, physical cash in the drawer should match <strong>&#8377;{{ daybook_data.expected_drawer_cash|floatformat:2 }}</strong>.
+                        <div class="card-body p-3">
+                            <ul class="list-group list-group-flush mb-3">
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="text-muted small">Opening Cash Balance (Start of Day)</span>
+                                    <strong class="text-dark">&#8377;{{ daybook_data.opening_cash|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-plus text-success me-1.5"></i>Today's Cash Receipts (Jobs &amp; Sales)</span>
+                                    <strong class="text-success">+&#8377;{{ daybook_data.cash_inflows|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-minus text-danger me-1.5"></i>Today's Cash Expenses / Outflows</span>
+                                    <strong class="text-danger">-&#8377;{{ daybook_data.cash_outflows|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-arrow-right text-info me-1.5"></i>Contra: Deposited into Bank</span>
+                                    <strong class="text-info">-&#8377;{{ daybook_data.cash_to_bank|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-arrow-left text-primary me-1.5"></i>Contra: Withdrawn from Bank</span>
+                                    <strong class="text-primary">+&#8377;{{ daybook_data.bank_to_cash|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5 pt-3 border-top border-2">
+                                    <span class="fw-bold text-dark">Expected Physical Cash in Drawer</span>
+                                    <span class="h4 mb-0 fw-bold text-success">&#8377;{{ daybook_data.expected_drawer_cash|floatformat:2 }}</span>
+                                </li>
+                            </ul>
+                            <div class="p-2.5 rounded bg-light border small text-muted">
+                                <i class="fa-solid fa-circle-info text-secondary me-1"></i>At closing, physical cash in drawer should match <strong>&#8377;{{ daybook_data.expected_drawer_cash|floatformat:2 }}</strong>.
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Panel 2: Bank & Digital Wallet Movement -->
                 <div class="col-lg-6">
-                    <div class="card-box h-100 p-4 border-start border-4 border-primary">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h3 class="h5 fw-bold text-dark mb-0">
-                                <i class="fas fa-university text-primary me-2"></i>Bank &amp; Digital Accounts
-                            </h3>
-                            <span class="badge bg-light text-muted border">{{ daybook_data.default_bank.name|default:"Federal Bank / UPI" }}</span>
+                    <div class="card shadow-sm border h-100">
+                        <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;">
+                                    <i class="fa-solid fa-building-columns small"></i>
+                                </div>
+                                <strong class="text-dark small fw-bold">Bank &amp; Digital Accounts</strong>
+                            </div>
+                            <span class="badge bg-light text-secondary border">{{ daybook_data.default_bank.name|default:"Federal Bank / UPI" }}</span>
                         </div>
-                        <ul class="list-group list-group-flush mb-3">
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-plus text-success me-1"></i>UPI / Bank Collections Today</span>
-                                <strong class="text-success">+&#8377;{{ daybook_data.bank_inflows|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-minus text-danger me-1"></i>Bank Payouts / Vendor Payments</span>
-                                <strong class="text-danger">-&#8377;{{ daybook_data.bank_outflows|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-arrow-down text-info me-1"></i>Contra: Cash Deposits Received</span>
-                                <strong class="text-info">+&#8377;{{ daybook_data.cash_to_bank|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                                <span><i class="fas fa-arrow-up text-warning me-1"></i>Contra: ATM / Cash Withdrawals Paid</span>
-                                <strong class="text-warning">-&#8377;{{ daybook_data.bank_to_cash|floatformat:2 }}</strong>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2 pt-3 border-top border-2">
-                                <span class="fw-bold text-dark fs-6">Today's Net Bank Change</span>
-                                <span class="h4 mb-0 fw-bold {% if daybook_data.net_bank_flow >= 0 %}text-primary{% else %}text-danger{% endif %}">
-                                    {% if daybook_data.net_bank_flow >= 0 %}+{% endif %}&#8377;{{ daybook_data.net_bank_flow|floatformat:2 }}
-                                </span>
-                            </li>
-                        </ul>
-                        <div class="p-2 rounded bg-light small text-muted">
-                            <i class="fas fa-shield-alt me-1"></i>UPI &amp; Bank entries reconcile automatically with customer ticket billing and shop expenses.
+                        <div class="card-body p-3">
+                            <ul class="list-group list-group-flush mb-3">
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-plus text-success me-1.5"></i>UPI / Bank Collections Today</span>
+                                    <strong class="text-success">+&#8377;{{ daybook_data.bank_inflows|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-minus text-danger me-1.5"></i>Bank Payouts / Vendor Payments</span>
+                                    <strong class="text-danger">-&#8377;{{ daybook_data.bank_outflows|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-arrow-down text-info me-1.5"></i>Contra: Cash Deposits Received</span>
+                                    <strong class="text-info">+&#8377;{{ daybook_data.cash_to_bank|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <span class="small"><i class="fa-solid fa-arrow-up text-warning me-1.5"></i>Contra: ATM / Cash Withdrawals Paid</span>
+                                    <strong class="text-warning">-&#8377;{{ daybook_data.bank_to_cash|floatformat:2 }}</strong>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2.5 pt-3 border-top border-2">
+                                    <span class="fw-bold text-dark">Today's Net Bank Change</span>
+                                    <span class="h4 mb-0 fw-bold {% if daybook_data.net_bank_flow >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                                        {% if daybook_data.net_bank_flow >= 0 %}+{% endif %}&#8377;{{ daybook_data.net_bank_flow|floatformat:2 }}
+                                    </span>
+                                </li>
+                            </ul>
+                            <div class="p-2.5 rounded bg-light border small text-muted">
+                                <i class="fa-solid fa-shield-halved text-secondary me-1"></i>UPI &amp; Bank entries reconcile automatically with customer ticket billing and shop expenses.
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Multi-Account Balances Table -->
-            <div class="card-box p-3 mb-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h3 class="h6 fw-bold text-dark mb-0">
-                        <i class="fas fa-wallet text-secondary me-2"></i>Accounts Liquidity Summary ({{ daybook_data.target_date_str }})
-                    </h3>
-                    <a href="{% url 'company_profile_settings' %}?tab=bank-details" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-cog me-1"></i>Manage Accounts
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <strong class="text-dark small text-uppercase fw-bold">
+                        <i class="fa-solid fa-wallet text-secondary me-1.5"></i>Accounts Liquidity Summary ({{ daybook_data.target_date_str }})
+                    </strong>
+                    <a href="{% url 'company_profile_settings' %}?tab=bank-details" class="btn btn-outline-secondary btn-sm py-0.5 px-2.5 shadow-sm">
+                        <i class="fa-solid fa-gear me-1"></i>Manage Accounts
                     </a>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Account</th>
+                                <th class="ps-3">Account</th>
                                 <th>Type</th>
                                 <th class="text-end">Receipts Today</th>
                                 <th class="text-end">Payments Today</th>
                                 <th class="text-end">Transfers Net</th>
                                 <th class="text-end">Net Movement</th>
-                                <th class="text-end fw-bold">Current Live Balance</th>
+                                <th class="text-end pe-3 fw-bold">Current Live Balance</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for row in daybook_data.account_rows %}
                             <tr>
-                                <td>
-                                    <span class="fw-bold text-dark">{{ row.name }}</span>
-                                    {% if row.is_default_cash %}<span class="badge bg-success-subtle text-success ms-1">Default Cash</span>{% endif %}
-                                    {% if row.is_default_bank %}<span class="badge bg-primary-subtle text-primary ms-1">Default Bank</span>{% endif %}
+                                <td class="ps-3">
+                                    <span class="fw-semibold text-dark">{{ row.name }}</span>
+                                    {% if row.is_default_cash %}<span class="badge bg-success-subtle text-success border border-success-subtle ms-1">Default Cash</span>{% endif %}
+                                    {% if row.is_default_bank %}<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1">Default Bank</span>{% endif %}
                                 </td>
                                 <td><span class="badge bg-light text-secondary border">{{ row.type_display }}</span></td>
                                 <td class="text-end text-success">+&#8377;{{ row.inflows|floatformat:2 }}</td>
@@ -548,7 +548,7 @@
                                 <td class="text-end fw-semibold {% if row.net_movement >= 0 %}text-success{% else %}text-danger{% endif %}">
                                     {% if row.net_movement >= 0 %}+{% endif %}&#8377;{{ row.net_movement|floatformat:2 }}
                                 </td>
-                                <td class="text-end fw-bold text-dark fs-6">&#8377;{{ row.current_balance|floatformat:2 }}</td>
+                                <td class="text-end pe-3 fw-bold text-dark fs-6">&#8377;{{ row.current_balance|floatformat:2 }}</td>
                             </tr>
                             {% empty %}
                             <tr>
@@ -556,16 +556,16 @@
                             </tr>
                             {% endfor %}
                         </tbody>
-                        <tfoot class="table-light fw-bold">
+                        <tfoot class="table-light fw-bold border-top border-2">
                             <tr>
-                                <td colspan="2">Firm Total</td>
+                                <td colspan="2" class="ps-3">Firm Total</td>
                                 <td class="text-end text-success">+&#8377;{{ daybook_data.total_receipts|floatformat:2 }}</td>
                                 <td class="text-end text-danger">-&#8377;{{ daybook_data.total_payments|floatformat:2 }}</td>
                                 <td class="text-end text-info">&#8377;{{ daybook_data.total_contra|floatformat:2 }}</td>
                                 <td class="text-end {% if daybook_data.net_liquidity_change >= 0 %}text-success{% else %}text-danger{% endif %}">
                                     {% if daybook_data.net_liquidity_change >= 0 %}+{% endif %}&#8377;{{ daybook_data.net_liquidity_change|floatformat:2 }}
                                 </td>
-                                <td class="text-end text-dark fs-6">&#8377;{{ daybook_data.total_liquid_balance|floatformat:2 }}</td>
+                                <td class="text-end pe-3 text-dark fs-6">&#8377;{{ daybook_data.total_liquid_balance|floatformat:2 }}</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -573,41 +573,41 @@
             </div>
 
             <!-- Chronological Audit Ledger of Transactions -->
-            <div class="card-box p-3 mb-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h3 class="h6 fw-bold text-dark mb-0">
-                        <i class="fas fa-list-check text-primary me-2"></i>Daybook Transactions Audit Log
-                    </h3>
-                    <span class="badge bg-light text-muted border">{{ daybook_data.transactions_count }} entry</span>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center">
+                    <strong class="text-dark small text-uppercase fw-bold">
+                        <i class="fa-solid fa-list-check text-primary me-1.5"></i>Daybook Transactions Audit Log
+                    </strong>
+                    <span class="badge bg-light text-secondary border">{{ daybook_data.transactions_count }} entry</span>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Time</th>
+                                <th class="ps-3">Time</th>
                                 <th>Account</th>
                                 <th>Type</th>
                                 <th>Description / Reference</th>
                                 <th>Linked Source</th>
                                 <th>Staff</th>
                                 <th class="text-end">Amount</th>
-                                <th class="text-end">Balance After</th>
+                                <th class="text-end pe-3">Balance After</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for txn in daybook_data.transactions %}
                             <tr>
-                                <td class="small text-muted">{{ txn.created_at|date:"H:i" }}</td>
+                                <td class="ps-3 small text-muted">{{ txn.created_at|date:"H:i" }}</td>
                                 <td><span class="fw-semibold text-dark">{{ txn.account.name }}</span></td>
                                 <td>
                                     {% if txn.transaction_type == 'inflow' %}
-                                    <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-arrow-down me-1"></i>Inflow</span>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fa-solid fa-arrow-down me-1"></i>Inflow</span>
                                     {% elif txn.transaction_type == 'outflow' %}
-                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-arrow-up me-1"></i>Outflow</span>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fa-solid fa-arrow-up me-1"></i>Outflow</span>
                                     {% elif txn.transaction_type == 'transfer_in' %}
-                                    <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="fas fa-exchange-alt me-1"></i>Transfer In</span>
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>Transfer In</span>
                                     {% elif txn.transaction_type == 'transfer_out' %}
-                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exchange-alt me-1"></i>Transfer Out</span>
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>Transfer Out</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -617,15 +617,15 @@
                                 <td>
                                     {% if txn.job_ticket %}
                                     <a href="{% url 'staff_job_detail' txn.job_ticket.job_code %}" class="badge bg-primary text-decoration-none">
-                                        <i class="fas fa-ticket me-1"></i>{{ txn.job_ticket.job_code }}
+                                        <i class="fa-solid fa-ticket me-1"></i>{{ txn.job_ticket.job_code }}
                                     </a>
                                     {% elif txn.expense %}
                                     <a href="{% url 'expense_dashboard' %}" class="badge bg-danger text-decoration-none">
-                                        <i class="fas fa-receipt me-1"></i>Exp #{{ txn.expense_id }}
+                                        <i class="fa-solid fa-receipt me-1"></i>Exp #{{ txn.expense_id }}
                                     </a>
                                     {% elif txn.transfer_counterpart %}
                                     <span class="badge bg-secondary">
-                                        <i class="fas fa-arrows-alt-h me-1"></i>{{ txn.transfer_counterpart.account.name }}
+                                        <i class="fa-solid fa-arrows-left-right me-1"></i>{{ txn.transfer_counterpart.account.name }}
                                     </span>
                                     {% else %}
                                     <span class="text-muted small">&mdash;</span>
@@ -635,12 +635,12 @@
                                 <td class="text-end fw-bold {% if txn.transaction_type == 'inflow' or txn.transaction_type == 'transfer_in' %}text-success{% else %}text-danger{% endif %}">
                                     {% if txn.transaction_type == 'inflow' or txn.transaction_type == 'transfer_in' %}+{% else %}-{% endif %}&#8377;{{ txn.amount|floatformat:2 }}
                                 </td>
-                                <td class="text-end fw-semibold text-muted">&#8377;{{ txn.balance_after|floatformat:2 }}</td>
+                                <td class="text-end pe-3 fw-semibold text-muted">&#8377;{{ txn.balance_after|floatformat:2 }}</td>
                             </tr>
                             {% empty %}
                             <tr>
                                 <td colspan="8" class="text-center text-muted py-4">
-                                    <i class="fas fa-inbox fa-2x mb-2 d-block text-secondary"></i>
+                                    <i class="fa-solid fa-inbox fa-2x mb-2 d-block text-secondary opacity-50"></i>
                                     No financial transactions recorded on {{ daybook_data.target_date_str }}.
                                 </td>
                             </tr>
@@ -655,65 +655,142 @@
         <!-- Tab 2: Technician Performance -->
         {% if active_tab == 'technician' and staff_access.reports_technician %}
         <section aria-labelledby="technician-heading">
-            <h2 class="h4" id="technician-heading">Technician performance</h2>
-            <p class="text-muted small">{{ tech_start_date }} &ndash; {{ tech_end_date }} &middot; Jobs completed in period. Parts and service sales exclude vendor service lines and are before job discounts.</p>
-            <div class="table-responsive"><table class="table table-hover align-middle">
-                <thead><tr><th scope="col">Technician</th><th scope="col" class="text-end">Jobs</th><th scope="col" class="text-end">Parts sales</th><th scope="col" class="text-end">Service sales</th><th scope="col" class="text-end">Total sales</th><th scope="col">Report</th></tr></thead>
-                <tbody>{% for tech in monthly_tech_performance %}<tr>
-                    <th scope="row">{{ tech.user.get_full_name|default:tech.user.username }}<span class="d-block small text-muted fw-normal">{{ tech.unique_id }}</span></th>
-                    <td class="text-end">{{ tech.jobs_done }}</td>
-                    <td class="text-end">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td>
-                    <td class="text-end">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
-                    <td class="text-end fw-semibold">&#8377;{{ tech.monthly_total_sales|floatformat:2 }}</td>
-                    <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'technician_report_print' tech.id %}">View / print</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'technician_report_export_csv' tech.id %}">CSV</a></div></td>
-                </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No technicians available in this workspace.</td></tr>{% endfor %}</tbody>
-                {% if monthly_tech_performance %}
-                <tfoot class="table-group-divider fw-bold">
-                    <tr class="table-light">
-                        <th scope="row">Total</th>
-                        <td class="text-end">{{ tech_total_jobs }}</td>
-                        <td class="text-end">&#8377;{{ tech_total_parts_sales|floatformat:2 }}</td>
-                        <td class="text-end">&#8377;{{ tech_total_service_sales|floatformat:2 }}</td>
-                        <td class="text-end fw-bold text-dark">&#8377;{{ tech_total_combined_sales|floatformat:2 }}</td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-                {% endif %}
-            </table></div>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small text-uppercase fw-bold" id="technician-heading">
+                            <i class="fa-solid fa-user-gear text-primary me-1.5"></i>Technician performance
+                        </strong>
+                        <span class="text-muted small ms-2">{{ tech_start_date }} &ndash; {{ tech_end_date }} &bull; Completed jobs &amp; billing contribution</span>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="ps-3">Technician</th>
+                                <th scope="col" class="text-end">Jobs</th>
+                                <th scope="col" class="text-end">Parts Sales</th>
+                                <th scope="col" class="text-end">Service Sales</th>
+                                <th scope="col" class="text-end">Total Sales</th>
+                                <th scope="col" class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tech in monthly_tech_performance %}
+                            <tr>
+                                <th scope="row" class="ps-3 fw-medium text-dark">
+                                    {{ tech.user.get_full_name|default:tech.user.username }}
+                                    <span class="d-block small text-muted fw-normal">ID: {{ tech.unique_id }}</span>
+                                </th>
+                                <td class="text-end fw-semibold text-dark">{{ tech.jobs_done }}</td>
+                                <td class="text-end text-muted">&#8377;{{ tech.monthly_parts_sales|floatformat:2 }}</td>
+                                <td class="text-end text-muted">&#8377;{{ tech.monthly_service_sales|floatformat:2 }}</td>
+                                <td class="text-end fw-bold text-dark">&#8377;{{ tech.monthly_total_sales|floatformat:2 }}</td>
+                                <td class="text-end pe-3">
+                                    <div class="d-flex justify-content-end gap-1.5">
+                                        <a class="btn btn-sm btn-outline-primary py-0.5 px-2" href="{% url 'technician_report_print' tech.id %}">
+                                            <i class="fa-solid fa-print me-1"></i>View
+                                        </a>
+                                        <a class="btn btn-sm btn-outline-secondary py-0.5 px-2" href="{% url 'technician_report_export_csv' tech.id %}">
+                                            <i class="fa-solid fa-file-csv me-1"></i>CSV
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">No technicians available in this workspace.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        {% if monthly_tech_performance %}
+                        <tfoot class="table-light fw-bold border-top border-2">
+                            <tr>
+                                <th scope="row" class="ps-3">Total</th>
+                                <td class="text-end">{{ tech_total_jobs }}</td>
+                                <td class="text-end text-muted">&#8377;{{ tech_total_parts_sales|floatformat:2 }}</td>
+                                <td class="text-end text-muted">&#8377;{{ tech_total_service_sales|floatformat:2 }}</td>
+                                <td class="text-end fw-bold text-dark">&#8377;{{ tech_total_combined_sales|floatformat:2 }}</td>
+                                <td class="pe-3"></td>
+                            </tr>
+                        </tfoot>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
         </section>
         {% endif %}
 
         <!-- Tab 3: Vendor Performance -->
         {% if active_tab == 'vendor' and staff_access.reports_vendor %}
         <section aria-labelledby="vendor-heading">
-            <h2 class="h4" id="vendor-heading">Vendor performance</h2>
-            <p class="text-muted small">{{ vendor_start_date }} &ndash; {{ vendor_end_date }} &middot; Services returned by vendors during this period, including jobs awaiting customer pickup.</p>
-            <div class="table-responsive"><table class="table table-hover align-middle">
-                <thead><tr><th scope="col">Vendor</th><th scope="col" class="text-end">Jobs returned</th><th scope="col" class="text-end">Vendor cost</th><th scope="col" class="text-end">Client charges</th><th scope="col" class="text-end">Margin before job discounts</th><th scope="col">Report</th></tr></thead>
-                <tbody>{% for vendor in vendor_performance %}<tr>
-                    <th scope="row">{{ vendor.company_name }}</th><td class="text-end">{{ vendor.total_jobs_given }}</td><td class="text-end">&#8377;{{ vendor.total_vendor_cost|floatformat:2 }}</td><td class="text-end">&#8377;{{ vendor.total_client_charge|floatformat:2 }}</td><td class="text-end fw-semibold">&#8377;{{ vendor.profit|floatformat:2 }}</td>
-                    <td><a class="btn btn-sm btn-outline-primary" href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date }}&amp;end_date={{ vendor_end_date }}">View report</a></td>
-                </tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No vendors available in this workspace.</td></tr>{% endfor %}</tbody>
-                {% if vendor_performance %}
-                <tfoot class="table-group-divider fw-bold">
-                    <tr class="table-light">
-                        <th scope="row">Total</th>
-                        <td class="text-end">{{ vendor_total_jobs }}</td>
-                        <td class="text-end">&#8377;{{ vendor_total_cost|floatformat:2 }}</td>
-                        <td class="text-end">&#8377;{{ vendor_total_client_charge|floatformat:2 }}</td>
-                        <td class="text-end fw-semibold">&#8377;{{ vendor_total_profit|floatformat:2 }}</td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-                {% endif %}
-            </table></div>
+            <div class="card shadow-sm border mb-4">
+                <div class="card-header bg-light py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small text-uppercase fw-bold" id="vendor-heading">
+                            <i class="fa-solid fa-truck-ramp-box text-primary me-1.5"></i>Vendor performance
+                        </strong>
+                        <span class="text-muted small ms-2">{{ vendor_start_date }} &ndash; {{ vendor_end_date }} &bull; Returned vendor services</span>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="ps-3">Vendor</th>
+                                <th scope="col" class="text-end">Jobs Returned</th>
+                                <th scope="col" class="text-end">Vendor Cost</th>
+                                <th scope="col" class="text-end">Client Charges</th>
+                                <th scope="col" class="text-end">Margin</th>
+                                <th scope="col" class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for vendor in vendor_performance %}
+                            <tr>
+                                <th scope="row" class="ps-3 fw-medium text-dark">{{ vendor.company_name }}</th>
+                                <td class="text-end fw-semibold text-dark">{{ vendor.total_jobs_given }}</td>
+                                <td class="text-end text-danger">&#8377;{{ vendor.total_vendor_cost|floatformat:2 }}</td>
+                                <td class="text-end text-success">&#8377;{{ vendor.total_client_charge|floatformat:2 }}</td>
+                                <td class="text-end fw-bold {% if vendor.profit >= 0 %}text-success{% else %}text-danger{% endif %}">&#8377;{{ vendor.profit|floatformat:2 }}</td>
+                                <td class="text-end pe-3">
+                                    <a class="btn btn-sm btn-outline-primary py-0.5 px-2" href="{% url 'vendor_report_detail' vendor.id %}?start_date={{ vendor_start_date }}&amp;end_date={{ vendor_end_date }}">
+                                        <i class="fa-solid fa-eye me-1"></i>View Report
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">No vendors available in this workspace.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        {% if vendor_performance %}
+                        <tfoot class="table-light fw-bold border-top border-2">
+                            <tr>
+                                <th scope="row" class="ps-3">Total</th>
+                                <td class="text-end">{{ vendor_total_jobs }}</td>
+                                <td class="text-end text-danger">&#8377;{{ vendor_total_cost|floatformat:2 }}</td>
+                                <td class="text-end text-success">&#8377;{{ vendor_total_client_charge|floatformat:2 }}</td>
+                                <td class="text-end fw-bold {% if vendor_total_profit >= 0 %}text-success{% else %}text-danger{% endif %}">&#8377;{{ vendor_total_profit|floatformat:2 }}</td>
+                                <td class="pe-3"></td>
+                            </tr>
+                        </tfoot>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
         </section>
         {% endif %}
     </div>
     {% endif %}
 
     {% if not staff_access.reports_overview and not staff_access.reports_technician and not staff_access.reports_vendor and not staff_access.reports_financial %}
-    <p class="alert alert-warning">No report sections are enabled for your account. Please contact an admin.</p>
+    <div class="alert alert-warning border d-flex align-items-center gap-2 mb-0">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>No report sections are enabled for your account. Please contact an administrator.</span>
+    </div>
     {% endif %}
 </div>
 
