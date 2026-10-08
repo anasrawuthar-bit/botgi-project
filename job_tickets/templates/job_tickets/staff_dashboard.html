@@ -163,11 +163,14 @@
 
             <!-- New Job Ticket Button -->
             <button type="button"
+                id="toggleNewJobIntakeBtn"
                 class="btn btn-primary d-inline-flex align-items-center gap-2 px-3.5 py-2 shadow-sm fw-semibold"
-                data-bs-toggle="modal"
-                data-bs-target="#createJobTicketModal">
-                <i class="fa-solid fa-plus"></i>
-                <span>New Job Ticket</span>
+                data-bs-toggle="collapse"
+                data-bs-target="#createJobTicketCollapse"
+                aria-expanded="false"
+                aria-controls="createJobTicketCollapse">
+                <i class="fa-solid fa-plus" id="toggleNewJobIntakeIcon"></i>
+                <span id="toggleNewJobIntakeText">New Job Ticket</span>
             </button>
         </div>
     </div>
@@ -277,6 +280,160 @@
     </div>
     {% endif %}
 
+
+    <!-- 3. Inline Job Ticket Intake Card (Collapsible) -->
+    <div class="collapse mb-4" id="createJobTicketCollapse">
+        <div class="card shadow-sm border rounded-3 overflow-hidden">
+            <div class="card-header bg-light border-bottom py-2.5 px-3.5 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2.5">
+                    {% if company.display_logo_url %}
+                        <img src="{{ company.display_logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="sidebar-brand-logo" style="width: 28px; height: 28px; object-fit: contain;" onerror="this.onerror=null; this.src='/static/img/logo.png';">
+                    {% else %}
+                        <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle" style="width: 32px; height: 32px;">
+                            <i class="fa-solid fa-file-circle-plus"></i>
+                        </div>
+                    {% endif %}
+                    <div>
+                        <h5 class="fw-bold mb-0 text-dark" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                            Create New Job Ticket
+                        </h5>
+                        <small class="text-muted">{{ company.company_name|default:"GI Hostings" }}{% if company.tagline %} &bull; {{ company.tagline }}{% else %} &bull; Customer Intake &amp; Device Registration{% endif %}</small>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 d-inline-flex align-items-center gap-1" data-bs-toggle="collapse" data-bs-target="#createJobTicketCollapse" aria-label="Close Intake Form">
+                    <i class="fa-solid fa-xmark"></i>
+                    <span>Close Intake</span>
+                </button>
+            </div>
+            <div class="card-body p-3 p-md-4" style="background-color: var(--light-gray, #f8f9fb);">
+                <form method="post" novalidate id="job-creation-form" 
+                    data-phone-lookup-url="{% url 'client_phone_lookup' %}" enctype="multipart/form-data"
+                    data-no-loader="true">
+                    {% csrf_token %}
+                    <input type="hidden" name="job_ticket_form_submit" value="true">
+
+                    <div id="job-form-messages" class="mb-3"></div>
+
+                    <!-- 1. Customer Information Card -->
+                    <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
+                        <div class="card-body p-3 p-md-4">
+                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                                <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
+                                    <i class="fas fa-user-circle text-primary fs-5"></i> 1. Customer Information
+                                </h6>
+                                <span class="badge bg-primary-subtle text-primary fw-medium px-2 py-1">Required</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label for="id_job_date" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                        <i class="far fa-calendar-alt text-primary me-1"></i> Job / Intake Date <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="date" name="job_date" id="id_job_date" class="form-control"
+                                        value="{% now 'Y-m-d' %}" required
+                                        style="font-size: 1.05rem; font-weight: 500;">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="id_customer_phone" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                        Customer Phone <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light border-end-0 fw-bold text-muted">+91</span>
+                                        <input type="text" name="customer_phone" id="id_customer_phone" class="form-control border-start-0 ps-1"
+                                            autocomplete="off" inputmode="numeric" required
+                                            style="font-size: 1.05rem; font-weight: 500; letter-spacing: 0.5px;">
+                                    </div>
+                                    <div id="customer-phone-error" class="small text-danger mt-1"></div>
+                                </div>
+                                <div class="col-md-5">
+                                    <label for="id_customer_name" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                        Customer Name <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text" name="customer_name" id="id_customer_name" class="form-control"
+                                        placeholder="Enter customer full name with address" autocomplete="off" autocapitalize="words" required
+                                        style="font-size: 1.05rem; font-weight: 500;">
+                                    <div id="customer-name-error" class="small text-danger mt-1"></div>
+                                </div>
+                            </div>
+                            <div id="phone-priority-info" class="mt-2 text-muted small">
+                                <i class="fas fa-info-circle me-1 text-secondary"></i> Enter a 10-digit phone number to check client history, previous devices, and credit dues.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Device Details Section -->
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
+                                <i class="fas fa-laptop-medical text-primary fs-5"></i> 2. Device & Problem Details
+                            </h6>
+                            <small class="text-muted">You can add multiple devices for this customer intake</small>
+                        </div>
+
+                        <div id="device-forms-container"></div>
+
+                        <div class="mb-4 text-center">
+                            <button type="button" id="add-device-btn" class="btn btn-outline-primary btn-sm px-4 py-2 rounded-pill fw-semibold shadow-sm">
+                                <i class="fas fa-plus-circle me-1"></i> Add Another Device
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 3. Estimation & Schedule Card -->
+                    <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
+                        <div class="card-body p-3 p-md-4">
+                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                                <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
+                                    <i class="fas fa-calendar-check text-primary fs-5"></i> 3. Turnaround & Estimation
+                                </h6>
+                                <span class="badge bg-secondary-subtle text-secondary fw-medium px-2 py-1">Optional</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label for="id_estimated_amount" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                        Estimated Amount
+                                    </label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light text-muted fw-bold">&#8377;</span>
+                                        <input type="number" step="0.01" name="estimated_amount" id="id_estimated_amount"
+                                            class="form-control" placeholder="0.00" style="font-weight: 600;">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="id_estimated_delivery" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                        Estimated Ready Date
+                                    </label>
+                                    <input type="date" name="estimated_delivery" id="id_estimated_delivery" class="form-control">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                        Follow-up Reminder
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" name="reminder_hours" id="id_reminder_hours"
+                                            class="form-control" min="0" max="24" placeholder="0" inputmode="numeric">
+                                        <span class="input-group-text bg-light text-muted small">hr</span>
+                                        <input type="number" name="reminder_minutes" id="id_reminder_minutes"
+                                            class="form-control" min="0" max="60" placeholder="0" inputmode="numeric">
+                                        <span class="input-group-text bg-light text-muted small">min</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Footer -->
+                    <div class="d-flex flex-wrap justify-content-between align-items-center pt-3 border-top mt-3">
+                        <button type="button" class="btn btn-outline-secondary px-3" data-bs-toggle="collapse" data-bs-target="#createJobTicketCollapse">
+                            Cancel
+                        </button>
+                        <button type="submit" name="job_ticket_form_submit" class="btn btn-primary px-4 py-2 fw-bold shadow-sm d-flex align-items-center gap-2" id="job-submit-btn">
+                            <i class="fa-solid fa-save"></i> <span>Create Job Ticket(s)</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- 4. Unified Operations Console Card with Tabs -->
     <div class="card border-0 shadow-sm rounded-3 mb-4" style="border: 1px solid var(--border-color) !important; overflow: hidden;">
@@ -405,157 +562,6 @@
         </div>
     </div>
 
-    <div class="modal fade quick-pop-modal" id="createJobTicketModal" tabindex="-1"
-        data-bs-backdrop="static" data-bs-keyboard="false"
-        aria-labelledby="createJobTicketModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header bg-light border-bottom py-3 px-4">
-                    <div class="d-flex align-items-center gap-3">
-                        {% if company.display_logo_url %}
-                            <img src="{{ company.display_logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="sidebar-brand-logo" onerror="this.onerror=null; this.src='/static/img/logo.png';">
-                        {% else %}
-                            <img src="/static/img/logo.png" alt="Software Logo" class="sidebar-brand-logo">
-                        {% endif %}
-                        <div>
-                            <h5 class="modal-title fw-bold mb-0" id="createJobTicketModalLabel" style="color: var(--primary-dark, #0f172a); font-family: 'Plus Jakarta Sans', sans-serif;">
-                                Create New Job Ticket
-                            </h5>
-                            <small class="text-muted">{{ company.company_name|default:"GI Hostings" }}{% if company.tagline %} &bull; {{ company.tagline }}{% endif %}</small>
-                        </div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body p-3 p-md-4" style="background-color: var(--light-gray, #f8f9fb);">
-                    <form method="post" novalidate id="job-creation-form" 
-                        data-phone-lookup-url="{% url 'client_phone_lookup' %}" enctype="multipart/form-data"
-                        data-no-loader="true">
-                        {% csrf_token %}
-                        <input type="hidden" name="job_ticket_form_submit" value="true">
-
-                        <div id="job-form-messages" class="mb-3"></div>
-
-                        <!-- 1. Customer Information Card -->
-                        <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
-                            <div class="card-body p-3 p-md-4">
-                                <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                    <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
-                                        <i class="fas fa-user-circle text-primary fs-5"></i> 1. Customer Information
-                                    </h6>
-                                    <span class="badge bg-primary-subtle text-primary fw-medium px-2 py-1">Required</span>
-                                </div>
-                                <div class="row g-3">
-                                    <div class="col-md-3">
-                                        <label for="id_job_date" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                            <i class="far fa-calendar-alt text-primary me-1"></i> Job / Intake Date <span class="text-danger">*</span>
-                                        </label>
-                                        <input type="date" name="job_date" id="id_job_date" class="form-control"
-                                            value="{% now 'Y-m-d' %}" required
-                                            style="font-size: 1.05rem; font-weight: 500;">
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label for="id_customer_phone" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                            Customer Phone <span class="text-danger">*</span>
-                                        </label>
-                                        <div class="input-group">
-                                            <span class="input-group-text bg-light border-end-0 fw-bold text-muted">+91</span>
-                                            <input type="text" name="customer_phone" id="id_customer_phone" class="form-control border-start-0 ps-1"
-                                                autocomplete="off" inputmode="numeric" required
-                                                style="font-size: 1.05rem; font-weight: 500; letter-spacing: 0.5px;">
-                                        </div>
-                                        <div id="customer-phone-error" class="small text-danger mt-1"></div>
-                                    </div>
-                                    <div class="col-md-5">
-                                        <label for="id_customer_name" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                            Customer Name <span class="text-danger">*</span>
-                                        </label>
-                                        <input type="text" name="customer_name" id="id_customer_name" class="form-control"
-                                            placeholder="Enter customer full name with address" autocomplete="off" autocapitalize="words" required
-                                            style="font-size: 1.05rem; font-weight: 500;">
-                                        <div id="customer-name-error" class="small text-danger mt-1"></div>
-                                    </div>
-                                </div>
-                                <div id="phone-priority-info" class="mt-2 text-muted small">
-                                    <i class="fas fa-info-circle me-1 text-secondary"></i> Enter a 10-digit phone number to check client history, previous devices, and credit dues.
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 2. Device Details Section -->
-                        <div class="mb-3">
-                            <div class="d-flex align-items-center justify-content-between mb-2">
-                                <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
-                                    <i class="fas fa-laptop-medical text-primary fs-5"></i> 2. Device & Problem Details
-                                </h6>
-                                <small class="text-muted">You can add multiple devices for this customer intake</small>
-                            </div>
-
-                            <div id="device-forms-container"></div>
-
-                            <div class="mb-4 text-center">
-                                <button type="button" id="add-device-btn" class="btn btn-outline-primary btn-sm px-4 py-2 rounded-pill fw-semibold shadow-sm">
-                                    <i class="fas fa-plus-circle me-1"></i> Add Another Device
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 3. Estimation & Schedule Card -->
-                        <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
-                            <div class="card-body p-3 p-md-4">
-                                <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                    <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
-                                        <i class="fas fa-calendar-check text-primary fs-5"></i> 3. Turnaround & Estimation
-                                    </h6>
-                                    <span class="badge bg-secondary-subtle text-secondary fw-medium px-2 py-1">Optional</span>
-                                </div>
-                                <div class="row g-3">
-                                    <div class="col-md-4">
-                                        <label for="id_estimated_amount" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                            Estimated Amount
-                                        </label>
-                                        <div class="input-group">
-                                            <span class="input-group-text bg-light text-muted fw-bold">&#8377;</span>
-                                            <input type="number" step="0.01" name="estimated_amount" id="id_estimated_amount"
-                                                class="form-control" placeholder="0.00" style="font-weight: 600;">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label for="id_estimated_delivery" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                            Estimated Ready Date
-                                        </label>
-                                        <input type="date" name="estimated_delivery" id="id_estimated_delivery" class="form-control">
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                            Follow-up Reminder
-                                        </label>
-                                        <div class="input-group">
-                                            <input type="number" name="reminder_hours" id="id_reminder_hours"
-                                                class="form-control" min="0" max="24" placeholder="0" inputmode="numeric">
-                                            <span class="input-group-text bg-light text-muted small">hr</span>
-                                            <input type="number" name="reminder_minutes" id="id_reminder_minutes"
-                                                class="form-control" min="0" max="60" placeholder="0" inputmode="numeric">
-                                            <span class="input-group-text bg-light text-muted small">min</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Modal Action Footer -->
-                        <div class="modal-footer bg-light border-top px-0 pb-0 pt-3 d-flex flex-wrap justify-content-between align-items-center">
-                            <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">
-                                Cancel
-                            </button>
-                            <button type="submit" name="job_ticket_form_submit" class="btn btn-primary px-4 py-2 fw-bold shadow-sm d-flex align-items-center gap-2" id="job-submit-btn">
-                                <i class="fas fa-save"></i> <span>Create Job Ticket(s)</span>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <template id="device-form-template">
         <div class="device-form-block card border shadow-sm p-3 p-md-4 mb-3 rounded-3" style="border-color: #e8ecf3 !important; background: #ffffff;">
@@ -1067,9 +1073,9 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         const jobForm = document.getElementById('job-creation-form');
-        const createJobModalEl = document.getElementById('createJobTicketModal');
-        const createJobModal = window.bootstrap && createJobModalEl
-            ? window.bootstrap.Modal.getOrCreateInstance(createJobModalEl)
+        const createJobCollapseEl = document.getElementById('createJobTicketCollapse');
+        const createJobCollapse = window.bootstrap && createJobCollapseEl
+            ? window.bootstrap.Collapse.getOrCreateInstance(createJobCollapseEl, { toggle: false })
             : null;
         const messagesContainer = document.getElementById('job-form-messages');
         const customerPhoneInput = document.getElementById('id_customer_phone');
@@ -1903,11 +1909,16 @@
             // Append newly created jobs to DOM immediately
             appendPendingJobs(data.jobs);
 
-            // Close the intake modal and stop camera streams
-            if (createJobModal) {
-                createJobModal.hide();
+            // Close the intake card and stop camera streams
+            if (createJobCollapse) {
+                createJobCollapse.hide();
             }
             stopAllCameras();
+            if (jobForm) {
+                jobForm.reset();
+                resetDeviceForms();
+                resetCustomerNameFlags();
+            }
 
             // Silently refresh the pending intake queue, badges, and metrics without full page reload
             if (typeof window.silentReloadStaffTabs === 'function') {
@@ -2143,9 +2154,43 @@
         jobForm.addEventListener('submit', handleSubmit);
     }
 
-    if (createJobModalEl) {
-        createJobModalEl.addEventListener('hidden.bs.modal', stopAllCameras);
+    if (createJobCollapseEl) {
+        createJobCollapseEl.addEventListener('hidden.bs.collapse', function () {
+            stopAllCameras();
+            const toggleBtn = document.getElementById('toggleNewJobIntakeBtn');
+            if (toggleBtn) {
+                toggleBtn.classList.remove('btn-secondary');
+                toggleBtn.classList.add('btn-primary');
+                const icon = document.getElementById('toggleNewJobIntakeIcon');
+                const text = document.getElementById('toggleNewJobIntakeText');
+                if (icon) icon.className = 'fa-solid fa-plus';
+                if (text) text.textContent = 'New Job Ticket';
+            }
+        });
+        createJobCollapseEl.addEventListener('shown.bs.collapse', function () {
+            if (customerPhoneInput) customerPhoneInput.focus();
+            createJobCollapseEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const toggleBtn = document.getElementById('toggleNewJobIntakeBtn');
+            if (toggleBtn) {
+                toggleBtn.classList.remove('btn-primary');
+                toggleBtn.classList.add('btn-secondary');
+                const icon = document.getElementById('toggleNewJobIntakeIcon');
+                const text = document.getElementById('toggleNewJobIntakeText');
+                if (icon) icon.className = 'fa-solid fa-xmark';
+                if (text) text.textContent = 'Close Intake';
+            }
+        });
     }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && createJobCollapseEl && createJobCollapseEl.classList.contains('show')) {
+            if (!document.querySelector('.modal.show')) {
+                if (createJobCollapse) {
+                    createJobCollapse.hide();
+                }
+            }
+        }
+    });
     window.addEventListener('beforeunload', stopAllCameras);
 
     if (container) {
@@ -2279,8 +2324,8 @@
     addDeviceForm(true);
     renderPhonePriorityInfo(null);
     resetCustomerNameFlags();
-    if (shouldReopenCreateJobModal && createJobModal) {
-        createJobModal.show();
+    if (shouldReopenCreateJobModal && createJobCollapse) {
+        createJobCollapse.show();
     }
     // ---------------------------------------------------
 });
