@@ -127,6 +127,64 @@
     .animate-pulse {
         animation: reminder-pulse 1.8s infinite;
     }
+
+    /* Compact Space-Saving Intake Stepper Form */
+    .intake-stepper-card {
+        border: 1px solid var(--border-color) !important;
+        background: #ffffff;
+    }
+    .intake-step-tabs {
+        background: #f1f5f9;
+        padding: 3px;
+        border-radius: 8px;
+    }
+    .intake-step-tabs .nav-link {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.35rem 0.75rem;
+        border-radius: 6px;
+        color: var(--text-secondary, #64748b);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        transition: all 0.15s ease;
+        border: none;
+        background: transparent;
+    }
+    .intake-step-tabs .nav-link:hover {
+        color: var(--text-primary, #0f172a);
+    }
+    .intake-step-tabs .nav-link.active {
+        background: #ffffff;
+        color: var(--primary, #0d6efd);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .intake-step-tabs .step-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        font-size: 0.7rem;
+        font-weight: 700;
+        background: rgba(0, 0, 0, 0.08);
+        color: inherit;
+        line-height: 1;
+    }
+    .intake-step-tabs .nav-link.active .step-badge {
+        background: var(--primary, #0d6efd);
+        color: #ffffff;
+    }
+    .intake-step-tabs .nav-link.is-step-complete .step-badge {
+        background: #198754;
+        color: #ffffff;
+    }
+    .device-form-block {
+        border: 1px solid #e2e8f0 !important;
+        background: #ffffff;
+        border-radius: 8px;
+    }
 </style>
 {% endblock %}
 
@@ -281,134 +339,162 @@
     {% endif %}
 
 
-    <!-- 3. Inline Job Ticket Intake Card (Collapsible) -->
+    <!-- 3. Inline Job Ticket Intake Card (Collapsible Wizard) -->
     <div class="collapse mb-4" id="createJobTicketCollapse">
-        <div class="card shadow-sm border rounded-3 overflow-hidden">
-            <div class="card-header bg-light border-bottom py-2.5 px-3.5 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-2.5">
-                    {% if company.display_logo_url %}
-                        <img src="{{ company.display_logo_url }}" alt="{{ company.company_name|default:'Company' }} Logo" class="sidebar-brand-logo" style="width: 28px; height: 28px; object-fit: contain;" onerror="this.onerror=null; this.src='/static/img/logo.png';">
-                    {% else %}
-                        <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle" style="width: 32px; height: 32px;">
-                            <i class="fa-solid fa-file-circle-plus"></i>
-                        </div>
-                    {% endif %}
+        <div class="card shadow-sm border rounded-3 overflow-hidden intake-stepper-card">
+            <div class="card-header bg-white border-bottom py-2.5 px-3 px-md-3.5 d-flex justify-content-between align-items-center flex-wrap gap-2.5">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-2" style="width: 30px; height: 30px;">
+                        <i class="fa-solid fa-file-circle-plus" style="font-size: 0.9rem;"></i>
+                    </div>
                     <div>
-                        <h5 class="fw-bold mb-0 text-dark" style="font-family: 'Plus Jakarta Sans', sans-serif;">
-                            Create New Job Ticket
-                        </h5>
-                        <small class="text-muted">{{ company.company_name|default:"GI Hostings" }}{% if company.tagline %} &bull; {{ company.tagline }}{% else %} &bull; Customer Intake &amp; Device Registration{% endif %}</small>
+                        <h6 class="fw-bold mb-0 text-dark" style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.95rem;">
+                            New Job Intake
+                        </h6>
                     </div>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 d-inline-flex align-items-center gap-1" data-bs-toggle="collapse" data-bs-target="#createJobTicketCollapse" aria-label="Close Intake Form">
+
+                <!-- Wizard Stepper Tabs -->
+                <ul class="nav nav-pills intake-step-tabs gap-1" id="intakeStepTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active intake-step-btn" id="step-customer-tab" data-bs-toggle="pill" data-bs-target="#intake-step-customer" type="button" role="tab" aria-controls="intake-step-customer" aria-selected="true">
+                            <span class="step-badge" id="step-customer-badge">1</span>
+                            <span class="step-text">Customer</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link intake-step-btn" id="step-device-tab" data-bs-toggle="pill" data-bs-target="#intake-step-device" type="button" role="tab" aria-controls="intake-step-device" aria-selected="false">
+                            <span class="step-badge" id="step-device-badge">2</span>
+                            <span class="step-text">Device &amp; Fault</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link intake-step-btn" id="step-turnaround-tab" data-bs-toggle="pill" data-bs-target="#intake-step-turnaround" type="button" role="tab" aria-controls="intake-step-turnaround" aria-selected="false">
+                            <span class="step-badge" id="step-turnaround-badge">3</span>
+                            <span class="step-text">Turnaround</span>
+                        </button>
+                    </li>
+                </ul>
+
+                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 d-inline-flex align-items-center gap-1" data-bs-toggle="collapse" data-bs-target="#createJobTicketCollapse" aria-label="Close Intake Form" style="font-size: 0.8rem;">
                     <i class="fa-solid fa-xmark"></i>
-                    <span>Close Intake</span>
+                    <span class="d-none d-sm-inline">Close</span>
                 </button>
             </div>
-            <div class="card-body p-3 p-md-4" style="background-color: var(--light-gray, #f8f9fb);">
+            <div class="card-body p-3 p-md-3.5 bg-white">
                 <form method="post" novalidate id="job-creation-form" 
                     data-phone-lookup-url="{% url 'client_phone_lookup' %}" enctype="multipart/form-data"
                     data-no-loader="true">
                     {% csrf_token %}
                     <input type="hidden" name="job_ticket_form_submit" value="true">
 
-                    <div id="job-form-messages" class="mb-3"></div>
+                    <div id="job-form-messages" class="mb-2"></div>
 
-                    <!-- 1. Customer Information Card -->
-                    <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
-                        <div class="card-body p-3 p-md-4">
-                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
-                                    <i class="fas fa-user-circle text-primary fs-5"></i> 1. Customer Information
-                                </h6>
-                                <span class="badge bg-primary-subtle text-primary fw-medium px-2 py-1">Required</span>
-                            </div>
-                            <div class="row g-3">
-                                <div class="col-md-3">
-                                    <label for="id_job_date" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                        <i class="far fa-calendar-alt text-primary me-1"></i> Job / Intake Date <span class="text-danger">*</span>
+                    <!-- Step Content Panes -->
+                    <div class="tab-content" id="intakeStepTabContent">
+
+                        <!-- STEP 1: CUSTOMER INFORMATION -->
+                        <div class="tab-pane fade show active" id="intake-step-customer" role="tabpanel" aria-labelledby="step-customer-tab">
+                            <div class="row g-2.5 align-items-start">
+                                <div class="col-md-3 col-sm-6">
+                                    <label for="id_job_date" class="form-label small fw-semibold text-secondary mb-1">
+                                        <i class="far fa-calendar-alt text-primary me-1"></i> Intake Date <span class="text-danger">*</span>
                                     </label>
-                                    <input type="date" name="job_date" id="id_job_date" class="form-control"
-                                        value="{% now 'Y-m-d' %}" required
-                                        style="font-size: 1.05rem; font-weight: 500;">
+                                    <input type="date" name="job_date" id="id_job_date" class="form-control form-control-sm"
+                                        value="{% now 'Y-m-d' %}" required style="font-weight: 500;">
                                 </div>
-                                <div class="col-md-4">
-                                    <label for="id_customer_phone" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                        Customer Phone <span class="text-danger">*</span>
+                                <div class="col-md-4 col-sm-6">
+                                    <label for="id_customer_phone" class="form-label small fw-semibold text-secondary mb-1">
+                                        <i class="fa-solid fa-phone text-primary me-1"></i> Customer Phone <span class="text-danger">*</span>
                                     </label>
-                                    <div class="input-group">
-                                        <span class="input-group-text bg-light border-end-0 fw-bold text-muted">+91</span>
-                                        <input type="text" name="customer_phone" id="id_customer_phone" class="form-control border-start-0 ps-1"
-                                            autocomplete="off" inputmode="numeric" required
-                                            style="font-size: 1.05rem; font-weight: 500; letter-spacing: 0.5px;">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-light text-muted fw-bold">+91</span>
+                                        <input type="text" name="customer_phone" id="id_customer_phone" class="form-control"
+                                            placeholder="10-digit mobile" autocomplete="off" inputmode="numeric" required
+                                            style="font-weight: 500; letter-spacing: 0.5px;">
                                     </div>
                                     <div id="customer-phone-error" class="small text-danger mt-1"></div>
                                 </div>
-                                <div class="col-md-5">
-                                    <label for="id_customer_name" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                                        Customer Name <span class="text-danger">*</span>
+                                <div class="col-md-5 col-sm-12">
+                                    <label for="id_customer_name" class="form-label small fw-semibold text-secondary mb-1">
+                                        <i class="fa-solid fa-user text-primary me-1"></i> Customer Name <span class="text-danger">*</span>
                                     </label>
-                                    <input type="text" name="customer_name" id="id_customer_name" class="form-control"
-                                        placeholder="Enter customer full name with address" autocomplete="off" autocapitalize="words" required
-                                        style="font-size: 1.05rem; font-weight: 500;">
+                                    <input type="text" name="customer_name" id="id_customer_name" class="form-control form-control-sm"
+                                        placeholder="Customer full name &amp; address" autocomplete="off" autocapitalize="words" required
+                                        style="font-weight: 500;">
                                     <div id="customer-name-error" class="small text-danger mt-1"></div>
                                 </div>
                             </div>
                             <div id="phone-priority-info" class="mt-2 text-muted small">
                                 <i class="fas fa-info-circle me-1 text-secondary"></i> Enter a 10-digit phone number to check client history, previous devices, and credit dues.
                             </div>
-                        </div>
-                    </div>
 
-                    <!-- 2. Device Details Section -->
-                    <div class="mb-3">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
-                                <i class="fas fa-laptop-medical text-primary fs-5"></i> 2. Device & Problem Details
-                            </h6>
-                            <small class="text-muted">You can add multiple devices for this customer intake</small>
-                        </div>
-
-                        <div id="device-forms-container"></div>
-
-                        <div class="mb-4 text-center">
-                            <button type="button" id="add-device-btn" class="btn btn-outline-primary btn-sm px-4 py-2 rounded-pill fw-semibold shadow-sm">
-                                <i class="fas fa-plus-circle me-1"></i> Add Another Device
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- 3. Estimation & Schedule Card -->
-                    <div class="card border-0 shadow-sm rounded-3 mb-4" style="background: #ffffff; border: 1px solid #e8ecf3 !important;">
-                        <div class="card-body p-3 p-md-4">
-                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-                                <h6 class="fw-bold mb-0 d-flex align-items-center gap-2" style="color: var(--primary-dark, #14213d);">
-                                    <i class="fas fa-calendar-check text-primary fs-5"></i> 3. Turnaround & Estimation
-                                </h6>
-                                <span class="badge bg-secondary-subtle text-secondary fw-medium px-2 py-1">Optional</span>
+                            <!-- Step 1 Footer -->
+                            <div class="d-flex justify-content-between align-items-center pt-3 mt-3 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-secondary px-3" data-bs-toggle="collapse" data-bs-target="#createJobTicketCollapse">
+                                    Cancel
+                                </button>
+                                <button type="button" class="btn btn-sm btn-primary px-3.5 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" id="btn-next-to-device">
+                                    <span>Next: Device Details</span>
+                                    <i class="fa-solid fa-arrow-right"></i>
+                                </button>
                             </div>
-                            <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label for="id_estimated_amount" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                        </div>
+
+                        <!-- STEP 2: DEVICE & FAULT DETAILS -->
+                        <div class="tab-pane fade" id="intake-step-device" role="tabpanel" aria-labelledby="step-device-tab">
+                            <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
+                                <span class="small text-muted d-flex align-items-center gap-1.5">
+                                    <i class="fa-solid fa-laptop-medical text-primary"></i> Specify device specifications and customer's reported fault
+                                </span>
+                                <button type="button" id="add-device-btn" class="btn btn-sm btn-outline-primary px-3 py-1 rounded-pill fw-semibold shadow-sm d-inline-flex align-items-center gap-1">
+                                    <i class="fas fa-plus-circle"></i> Add Another Device
+                                </button>
+                            </div>
+
+                            <div id="device-forms-container"></div>
+
+                            <!-- Step 2 Footer -->
+                            <div class="d-flex justify-content-between align-items-center pt-3 mt-2 border-top flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary px-3" id="btn-back-to-customer">
+                                    <i class="fa-solid fa-arrow-left me-1"></i> Back
+                                </button>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="submit" name="job_ticket_form_submit" class="btn btn-sm btn-success px-3.5 py-1.5 fw-bold shadow-sm d-inline-flex align-items-center gap-1.5" id="job-quick-submit-btn" title="Create ticket immediately without turnaround details">
+                                        <i class="fa-solid fa-bolt"></i> <span>Quick Create</span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-primary px-3.5 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" id="btn-next-to-turnaround">
+                                        <span>Next: Turnaround (Optional)</span>
+                                        <i class="fa-solid fa-arrow-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- STEP 3: TURNAROUND & ESTIMATION -->
+                        <div class="tab-pane fade" id="intake-step-turnaround" role="tabpanel" aria-labelledby="step-turnaround-tab">
+                            <div class="row g-2.5 mb-2">
+                                <div class="col-md-4 col-sm-6">
+                                    <label for="id_estimated_amount" class="form-label small fw-semibold text-secondary mb-1">
                                         Estimated Amount
                                     </label>
-                                    <div class="input-group">
+                                    <div class="input-group input-group-sm">
                                         <span class="input-group-text bg-light text-muted fw-bold">&#8377;</span>
                                         <input type="number" step="0.01" name="estimated_amount" id="id_estimated_amount"
                                             class="form-control" placeholder="0.00" style="font-weight: 600;">
                                     </div>
                                 </div>
-                                <div class="col-md-4">
-                                    <label for="id_estimated_delivery" class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                <div class="col-md-4 col-sm-6">
+                                    <label for="id_estimated_delivery" class="form-label small fw-semibold text-secondary mb-1">
                                         Estimated Ready Date
                                     </label>
-                                    <input type="date" name="estimated_delivery" id="id_estimated_delivery" class="form-control">
+                                    <input type="date" name="estimated_delivery" id="id_estimated_delivery" class="form-control form-control-sm">
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                                <div class="col-md-4 col-sm-12">
+                                    <label class="form-label small fw-semibold text-secondary mb-1">
                                         Follow-up Reminder
                                     </label>
-                                    <div class="input-group">
+                                    <div class="input-group input-group-sm">
                                         <input type="number" name="reminder_hours" id="id_reminder_hours"
                                             class="form-control" min="0" max="24" placeholder="0" inputmode="numeric">
                                         <span class="input-group-text bg-light text-muted small">hr</span>
@@ -418,17 +504,21 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
+                            <div class="text-muted small">
+                                <i class="fa-solid fa-circle-info me-1 text-secondary"></i> Estimation &amp; follow-up reminder are optional and can also be adjusted later in job details.
+                            </div>
 
-                    <!-- Action Footer -->
-                    <div class="d-flex flex-wrap justify-content-between align-items-center pt-3 border-top mt-3">
-                        <button type="button" class="btn btn-outline-secondary px-3" data-bs-toggle="collapse" data-bs-target="#createJobTicketCollapse">
-                            Cancel
-                        </button>
-                        <button type="submit" name="job_ticket_form_submit" class="btn btn-primary px-4 py-2 fw-bold shadow-sm d-flex align-items-center gap-2" id="job-submit-btn">
-                            <i class="fa-solid fa-save"></i> <span>Create Job Ticket(s)</span>
-                        </button>
+                            <!-- Step 3 Footer -->
+                            <div class="d-flex justify-content-between align-items-center pt-3 mt-3 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-secondary px-3" id="btn-back-to-device">
+                                    <i class="fa-solid fa-arrow-left me-1"></i> Back
+                                </button>
+                                <button type="submit" name="job_ticket_form_submit" class="btn btn-sm btn-primary px-4 py-1.5 fw-bold shadow-sm d-inline-flex align-items-center gap-2" id="job-submit-btn">
+                                    <i class="fa-solid fa-save"></i> <span>Create Job Ticket(s)</span>
+                                </button>
+                            </div>
+                        </div>
+
                     </div>
                 </form>
             </div>
@@ -443,7 +533,8 @@
                     <button class="nav-link active d-inline-flex align-items-center gap-2" id="pending-tab" data-bs-toggle="tab" data-bs-target="#tab-pending" type="button" role="tab" aria-controls="tab-pending" aria-selected="true">
                         <i class="fa-regular fa-clock"></i>
                         <span>Pending Intake</span>
-                        <span class="badge rounded-pill tab-badge-count {% if pending_count %}bg-warning text-dark{% else %}bg-light text-muted border{% endif %}" data-badge-tab="pending">{{ pending_count }}</span>
+                        <span class="badge rounded-pill tab-badge-count {% if pending_count %}bg-warning text-dark{% else %}bg-light text-muted border{% endif %}" data-badge-tab="pending" title="{{ pending_count }} pending intake">{{ pending_count }}</span>
+                        <span class="visually-hidden">{{ pending_count }} pending intake</span>
                     </button>
                 </li>
                 <li class="nav-item tab-draggable" role="presentation" data-tab-id="in-progress-tab" draggable="true" title="Drag to reorder tabs">
@@ -564,116 +655,116 @@
 
 
     <template id="device-form-template">
-        <div class="device-form-block card border shadow-sm p-3 p-md-4 mb-3 rounded-3" style="border-color: #e8ecf3 !important; background: #ffffff;">
-            <div class="d-flex justify-content-between align-items-center pb-2 mb-3 border-bottom">
+        <div class="device-form-block card border shadow-sm p-3 mb-2.5 rounded-3" style="border-color: #e2e8f0 !important; background: #ffffff;">
+            <div class="d-flex justify-content-between align-items-center pb-2 mb-2.5 border-bottom">
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-primary text-white rounded-pill px-3 py-1 fw-semibold">
+                    <span class="badge bg-primary text-white rounded-pill px-2.5 py-1 fw-semibold" style="font-size: 0.75rem;">
                         <i class="fas fa-laptop me-1"></i> Device #<span class="device-index">1</span>
                     </span>
                     <span class="text-muted small fw-medium device-summary-label"></span>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-danger remove-device-btn d-none px-2 py-1">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-device-btn d-none px-2 py-0.5" style="font-size: 0.78rem;">
                     <i class="fas fa-trash-alt me-1"></i> Remove Device
                 </button>
             </div>
 
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+            <div class="row g-2.5">
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label fw-semibold text-secondary small mb-1">
                         Device Type <span class="text-danger">*</span>
                     </label>
-                    <input type="text" name="device_forms[INDEX].device_type" class="form-control device-type-input"
+                    <input type="text" name="device_forms[INDEX].device_type" class="form-control form-control-sm device-type-input"
                         placeholder="e.g. Laptop" list="preset-device-type" data-device-field="device_type" required>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label fw-semibold text-secondary small mb-1">
                         Brand <span class="text-danger">*</span>
                     </label>
-                    <input type="text" name="device_forms[INDEX].device_brand" class="form-control"
+                    <input type="text" name="device_forms[INDEX].device_brand" class="form-control form-control-sm"
                         placeholder="e.g. Dell, HP, Apple" list="preset-device-brand" data-device-field="device_brand" required>
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                <div class="col-md-2 col-sm-4">
+                    <label class="form-label fw-semibold text-secondary small mb-1">
                         Model <span class="text-danger">*</span>
                     </label>
-                    <input type="text" name="device_forms[INDEX].device_model" class="form-control"
+                    <input type="text" name="device_forms[INDEX].device_model" class="form-control form-control-sm"
                         placeholder="e.g. Inspiron 15" required>
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
+                <div class="col-md-2 col-sm-4">
+                    <label class="form-label fw-semibold text-secondary small mb-1">
                         Serial / IMEI
                     </label>
-                    <input type="text" name="device_forms[INDEX].device_serial" class="form-control"
+                    <input type="text" name="device_forms[INDEX].device_serial" class="form-control form-control-sm"
                         placeholder="Serial / IMEI">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                        <i class="fas fa-lock text-muted me-1"></i>Password / PIN
+                <div class="col-md-2 col-sm-4">
+                    <label class="form-label fw-semibold text-secondary small mb-1">
+                        <i class="fas fa-lock text-muted me-1"></i>PIN / Pass
                     </label>
-                    <input type="text" name="device_forms[INDEX].device_password" class="form-control"
-                        placeholder="PIN, pass, pattern">
+                    <input type="text" name="device_forms[INDEX].device_password" class="form-control form-control-sm"
+                        placeholder="PIN, pass">
                 </div>
 
                 <!-- Reported Issue -->
-                <div class="col-md-12 mt-3">
+                <div class="col-md-12">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
+                        <label class="form-label fw-semibold text-secondary small mb-0">
                             Reported Issue / Fault Description <span class="text-danger">*</span>
                         </label>
-                        <span class="text-muted small">Required</span>
+                        <span class="text-muted" style="font-size: 0.72rem;">Required</span>
                     </div>
-                    <textarea name="device_forms[INDEX].reported_issue" class="form-control"
-                        placeholder="Describe problem observed or reported by customer..." rows="3"
-                        data-device-field="reported_issue" required style="font-size: 0.95rem;"></textarea>
+                    <textarea name="device_forms[INDEX].reported_issue" class="form-control form-control-sm"
+                        placeholder="Describe problem observed or reported by customer..." rows="2"
+                        data-device-field="reported_issue" required style="font-size: 0.875rem;"></textarea>
 
                     {% if job_field_presets.reported_issue %}
-                    <div class="input-group input-group-sm mt-2 preset-picker" data-target-field="reported_issue" data-mode="append_unique">
-                        <span class="input-group-text bg-light text-muted small"><i class="fas fa-list-check me-1"></i> Presets</span>
-                        <select class="form-select preset-select">
+                    <div class="input-group input-group-sm mt-1.5 preset-picker" data-target-field="reported_issue" data-mode="append_unique">
+                        <span class="input-group-text bg-light text-muted small py-0.5"><i class="fas fa-list-check me-1"></i> Presets</span>
+                        <select class="form-select form-select-sm preset-select py-0.5" style="font-size: 0.8rem;">
                             <option value="">Add saved issue...</option>
                             {% for value in job_field_presets.reported_issue %}
                             <option value="{{ value }}">{{ value }}</option>
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm apply-preset-btn py-0.5 px-2">Insert</button>
                     </div>
                     {% endif %}
                 </div>
 
                 <!-- Additional Items / Accessories & Rack Location -->
-                <div class="col-md-7 mt-3">
+                <div class="col-md-6">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
+                        <label class="form-label fw-semibold text-secondary small mb-0">
                             Accessories Left with Device
                         </label>
-                        <span class="text-muted small">Optional</span>
+                        <span class="text-muted" style="font-size: 0.72rem;">Optional</span>
                     </div>
-                    <input type="text" name="device_forms[INDEX].additional_items" class="form-control"
+                    <input type="text" name="device_forms[INDEX].additional_items" class="form-control form-control-sm"
                         placeholder="e.g. Charger, Bag, Mouse" data-device-field="additional_items">
 
                     {% if job_field_presets.additional_items %}
-                    <div class="input-group input-group-sm mt-2 preset-picker" data-target-field="additional_items" data-mode="append_unique">
-                        <span class="input-group-text bg-light text-muted small"><i class="fas fa-toolbox me-1"></i> Presets</span>
-                        <select class="form-select preset-select">
+                    <div class="input-group input-group-sm mt-1.5 preset-picker" data-target-field="additional_items" data-mode="append_unique">
+                        <span class="input-group-text bg-light text-muted small py-0.5"><i class="fas fa-toolbox me-1"></i> Presets</span>
+                        <select class="form-select form-select-sm preset-select py-0.5" style="font-size: 0.8rem;">
                             <option value="">Add saved item...</option>
                             {% for value in job_field_presets.additional_items %}
                             <option value="{{ value }}">{{ value }}</option>
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-outline-secondary apply-preset-btn">Insert</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm apply-preset-btn py-0.5 px-2">Insert</button>
                     </div>
                     {% endif %}
                 </div>
 
-                <div class="col-md-5 mt-3">
+                <div class="col-md-6">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <label class="form-label fw-semibold text-secondary small text-uppercase mb-0">
-                            <i class="fa-solid fa-boxes-stacked me-1 text-primary"></i> Rack & Column
+                        <label class="form-label fw-semibold text-secondary small mb-0">
+                            <i class="fa-solid fa-boxes-stacked me-1 text-primary"></i> Storage Rack &amp; Slot
                         </label>
-                        <span class="text-muted small">Optional</span>
+                        <span class="text-muted" style="font-size: 0.72rem;">Optional</span>
                     </div>
-                    <div class="input-group">
-                        <select name="device_forms[INDEX].rack" class="form-select device-rack-select" id="rack-INDEX" style="flex: 2;">
+                    <div class="input-group input-group-sm">
+                        <select name="device_forms[INDEX].rack" class="form-select form-select-sm device-rack-select" id="rack-INDEX" style="flex: 2;">
                             <option value="">-- No Rack --</option>
                             {% regroup active_racks by group as grouped_dashboard_racks %}
                             {% for grp in grouped_dashboard_racks %}
@@ -689,41 +780,41 @@
                             {% endfor %}
                         </select>
                         <span class="input-group-text bg-light text-muted small px-2">Col</span>
-                        <select name="device_forms[INDEX].rack_column" class="form-select device-rack-col-select" id="rack-col-INDEX" style="min-width: 140px;" disabled>
+                        <select name="device_forms[INDEX].rack_column" class="form-select form-select-sm device-rack-col-select" id="rack-col-INDEX" style="min-width: 120px;" disabled>
                             <option value="">--</option>
                         </select>
                     </div>
-                    <div class="rack-slot-hint text-muted d-block mt-1" style="font-size: 0.76rem;">
-                        Storage rack & column/slot number
+                    <div class="rack-slot-hint text-muted d-block mt-0.5" style="font-size: 0.74rem;">
+                        Storage rack &amp; column/slot number
                     </div>
                 </div>
 
                 <!-- Device Photos & Camera Section -->
-                <div class="col-md-12 mt-3">
-                    <label class="form-label fw-semibold text-secondary small text-uppercase mb-1">
-                        Device Condition Photos (Scratches, Pre-existing Damage)
+                <div class="col-md-12">
+                    <label class="form-label fw-semibold text-secondary small mb-1">
+                        Device Photos (Scratches, Pre-existing Damage)
                     </label>
-                    <div class="p-3 rounded-3 border bg-light">
+                    <div class="p-2.5 rounded-3 border bg-light">
                         <div class="d-flex gap-2 flex-wrap align-items-center">
                             <input type="file" name="device_forms[INDEX].device_photos" id="camera-photo-INDEX"
                                 class="d-none camera-photo-input" accept="image/*" multiple data-photo-kind="camera">
-                            <button type="button" class="btn btn-sm btn-outline-primary photo-trigger-btn shadow-sm"
-                                data-photo-target="camera">
+                            <button type="button" class="btn btn-sm btn-outline-primary photo-trigger-btn shadow-sm py-1 px-2.5"
+                                data-photo-target="camera" style="font-size: 0.78rem;">
                                 <i class="fas fa-camera me-1"></i> Capture Camera Photo
                             </button>
                             <input type="file" name="device_forms[INDEX].device_photos" id="gallery-photos-INDEX"
                                 class="d-none photo-input" accept="image/*" multiple data-photo-kind="gallery">
-                            <button type="button" class="btn btn-sm btn-outline-secondary photo-trigger-btn shadow-sm"
-                                data-photo-target="gallery">
+                            <button type="button" class="btn btn-sm btn-outline-secondary photo-trigger-btn shadow-sm py-1 px-2.5"
+                                data-photo-target="gallery" style="font-size: 0.78rem;">
                                 <i class="fas fa-images me-1"></i> Upload Image Files
                             </button>
-                            <span class="small text-muted ms-auto photo-status" data-photo-status="gallery">
+                            <span class="small text-muted ms-auto photo-status" data-photo-status="gallery" style="font-size: 0.78rem;">
                                 No photos selected
                             </span>
                         </div>
                         <div class="camera-panel border rounded p-2 mt-2 d-none bg-white">
-                            <div class="camera-preview-shell rounded text-center" style="max-height: 240px; overflow: hidden; background: #000;">
-                                <video class="camera-preview" autoplay muted playsinline style="max-height: 240px; width: 100%; object-fit: contain;"></video>
+                            <div class="camera-preview-shell rounded text-center" style="max-height: 200px; overflow: hidden; background: #000;">
+                                <video class="camera-preview" autoplay muted playsinline style="max-height: 200px; width: 100%; object-fit: contain;"></video>
                             </div>
                             <canvas class="camera-canvas d-none"></canvas>
                             <div class="d-flex flex-wrap gap-2 mt-2">
@@ -741,31 +832,31 @@
                 </div>
 
                 <!-- Warranty & Inspection Checklist Switches -->
-                <div class="col-md-6 mt-3">
-                    <div class="p-3 border rounded-3 bg-light h-100">
-                        <div class="form-check form-switch">
+                <div class="col-md-6">
+                    <div class="p-2.5 border rounded-3 bg-light h-100">
+                        <div class="form-check form-switch mb-0">
                             <input class="form-check-input" type="checkbox" role="switch"
                                 name="device_forms[INDEX].is_under_warranty" id="warranty-INDEX">
                             <label class="form-check-label fw-semibold text-dark small" for="warranty-INDEX">
                                 Covered Under In-House Warranty
                             </label>
                         </div>
-                        <small class="text-muted d-block ps-4" style="font-size: 0.78rem;">
-                            Enable if this is a free rework/warranty repair covered by shop policy.
+                        <small class="text-muted d-block ps-4" style="font-size: 0.74rem;">
+                            Free rework/warranty repair covered by shop policy.
                         </small>
                     </div>
                 </div>
-                <div class="col-md-6 mt-3 device-checklist-container">
-                    <div class="p-3 border rounded-3 bg-light h-100 device-checklist-card">
-                        <div class="form-check form-switch">
+                <div class="col-md-6 device-checklist-container">
+                    <div class="p-2.5 border rounded-3 bg-light h-100 device-checklist-card">
+                        <div class="form-check form-switch mb-0">
                             <input class="form-check-input device-checklist-switch" type="checkbox" role="switch"
                                 name="device_forms[INDEX].requires_laptop_inspection_checklist" id="laptop-checklist-INDEX">
                             <label class="form-check-label fw-semibold text-dark small device-checklist-label" for="laptop-checklist-INDEX">
                                 Require Inspection Checklist
                             </label>
                         </div>
-                        <small class="text-muted d-block ps-4 device-checklist-hint" style="font-size: 0.78rem;">
-                            Technician must verify inspection checklist before closing.
+                        <small class="text-muted d-block ps-4 device-checklist-hint" style="font-size: 0.74rem;">
+                            Technician must verify checklist before job closure.
                         </small>
                     </div>
                 </div>
@@ -1242,9 +1333,21 @@
 
     function focusFirstInvalidField() {
         const invalidField = jobForm?.querySelector('.is-invalid');
-        if (invalidField && typeof invalidField.focus === 'function') {
-            invalidField.focus();
+        if (!invalidField) return;
+
+        const parentPane = invalidField.closest('.tab-pane');
+        if (parentPane && !parentPane.classList.contains('active')) {
+            const tabTrigger = document.querySelector(`[data-bs-target="#${parentPane.id}"]`);
+            if (tabTrigger && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(tabTrigger).show();
+            }
         }
+
+        setTimeout(() => {
+            if (typeof invalidField.focus === 'function') {
+                invalidField.focus();
+            }
+        }, 80);
     }
 
     function escapeHtml(str) {
@@ -1918,6 +2021,10 @@
                 jobForm.reset();
                 resetDeviceForms();
                 resetCustomerNameFlags();
+                const step1Tab = document.getElementById('step-customer-tab');
+                if (step1Tab && window.bootstrap) {
+                    bootstrap.Tab.getOrCreateInstance(step1Tab).show();
+                }
             }
 
             // Silently refresh the pending intake queue, badges, and metrics without full page reload
@@ -2168,6 +2275,10 @@
             }
         });
         createJobCollapseEl.addEventListener('shown.bs.collapse', function () {
+            const step1Tab = document.getElementById('step-customer-tab');
+            if (step1Tab && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(step1Tab).show();
+            }
             if (customerPhoneInput) customerPhoneInput.focus();
             createJobCollapseEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             const toggleBtn = document.getElementById('toggleNewJobIntakeBtn');
@@ -2317,6 +2428,132 @@
             customerNameInput.dataset.userEdited = currentName ? 'true' : 'false';
             if (!currentName) {
                 customerNameInput.dataset.autoFilled = 'false';
+            }
+        });
+        customerNameInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('btn-next-to-device')?.click();
+            }
+        });
+    }
+
+    // Wizard step navigation listeners
+    const nextToDeviceBtn = document.getElementById('btn-next-to-device');
+    const backToCustomerBtn = document.getElementById('btn-back-to-customer');
+    const nextToTurnaroundBtn = document.getElementById('btn-next-to-turnaround');
+    const backToDeviceBtn = document.getElementById('btn-back-to-device');
+
+    const stepCustomerTab = document.getElementById('step-customer-tab');
+    const stepDeviceTab = document.getElementById('step-device-tab');
+    const stepTurnaroundTab = document.getElementById('step-turnaround-tab');
+
+    function updateStepPillStatus() {
+        const customerValid = !validateCustomerFields();
+        if (stepCustomerTab) {
+            stepCustomerTab.classList.toggle('is-step-complete', customerValid);
+            const badge = document.getElementById('step-customer-badge');
+            if (badge) {
+                badge.innerHTML = customerValid ? '<i class="fa-solid fa-check"></i>' : '1';
+            }
+        }
+    }
+
+    if (nextToDeviceBtn) {
+        nextToDeviceBtn.addEventListener('click', function () {
+            const customerHasErrors = validateCustomerFields();
+            if (customerHasErrors) {
+                showMessage('error', 'Please fill in customer phone and name before proceeding to device details.');
+                focusFirstInvalidField();
+                return;
+            }
+            clearMessages();
+            updateStepPillStatus();
+            if (stepDeviceTab && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(stepDeviceTab).show();
+            }
+            setTimeout(() => {
+                const firstDevInput = container?.querySelector('.device-type-input');
+                if (firstDevInput) firstDevInput.focus();
+            }, 80);
+        });
+    }
+
+    if (backToCustomerBtn) {
+        backToCustomerBtn.addEventListener('click', function () {
+            clearMessages();
+            if (stepCustomerTab && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(stepCustomerTab).show();
+            }
+        });
+    }
+
+    if (nextToTurnaroundBtn) {
+        nextToTurnaroundBtn.addEventListener('click', function () {
+            const devErrors = validateDevices();
+            if (devErrors.length) {
+                showMessage('error', 'Please complete required device specifications before proceeding.');
+                devErrors.forEach(err => {
+                    const block = container.querySelectorAll('.device-form-block')[err.device_index];
+                    if (block) addFieldError(block, err.field, err.message);
+                });
+                focusFirstInvalidField();
+                return;
+            }
+            clearMessages();
+            if (stepTurnaroundTab && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(stepTurnaroundTab).show();
+            }
+            setTimeout(() => {
+                const amountInput = document.getElementById('id_estimated_amount');
+                if (amountInput) amountInput.focus();
+            }, 80);
+        });
+    }
+
+    if (backToDeviceBtn) {
+        backToDeviceBtn.addEventListener('click', function () {
+            clearMessages();
+            if (stepDeviceTab && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(stepDeviceTab).show();
+            }
+        });
+    }
+
+    // Prevent jumping ahead by tab click if prior step is invalid
+    if (stepDeviceTab) {
+        stepDeviceTab.addEventListener('show.bs.tab', function (e) {
+            const customerHasErrors = validateCustomerFields();
+            if (customerHasErrors) {
+                e.preventDefault();
+                showMessage('error', 'Please complete customer phone and name before moving to device details.');
+                focusFirstInvalidField();
+            } else {
+                updateStepPillStatus();
+            }
+        });
+    }
+
+    if (stepTurnaroundTab) {
+        stepTurnaroundTab.addEventListener('show.bs.tab', function (e) {
+            const customerHasErrors = validateCustomerFields();
+            if (customerHasErrors) {
+                e.preventDefault();
+                showMessage('error', 'Please complete customer information first.');
+                if (stepCustomerTab && window.bootstrap) bootstrap.Tab.getOrCreateInstance(stepCustomerTab).show();
+                focusFirstInvalidField();
+                return;
+            }
+            const devErrors = validateDevices();
+            if (devErrors.length) {
+                e.preventDefault();
+                showMessage('error', 'Please complete required device details first.');
+                if (stepDeviceTab && window.bootstrap) bootstrap.Tab.getOrCreateInstance(stepDeviceTab).show();
+                devErrors.forEach(err => {
+                    const block = container.querySelectorAll('.device-form-block')[err.device_index];
+                    if (block) addFieldError(block, err.field, err.message);
+                });
+                focusFirstInvalidField();
             }
         });
     }

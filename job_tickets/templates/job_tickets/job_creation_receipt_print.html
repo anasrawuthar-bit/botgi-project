@@ -674,6 +674,12 @@
                     <span class="data-label">Intake Date:</span>
                     <span class="data-value">{{ job_ticket.display_intake_date|date:"d M Y" }}</span>
                 </div>
+                {% if job_ticket.rack %}
+                <div class="data-row">
+                    <span class="data-label">Rack Location:</span>
+                    <span class="data-value"><strong>{{ job_ticket.rack.name }}</strong>{% if job_ticket.rack_column %} - Col {{ job_ticket.rack_column }}{% endif %}{% if job_ticket.rack.group %} ({{ job_ticket.rack.group }}){% endif %}</span>
+                </div>
+                {% endif %}
                 {% if job_ticket.intake_date and job_ticket.created_at and job_ticket.intake_date != job_ticket.created_at.date %}
                 <div class="data-row">
                     <span class="data-label">Registered:</span>
