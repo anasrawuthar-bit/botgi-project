@@ -1844,6 +1844,7 @@ class GstMasterFormTests(TestCase):
                 'enable_gst': 'on',
                 'gst_rate': '18.00',
                 'terms_conditions': 'Standard terms',
+                'technician_display_format': 'id',
             },
             instance=profile,
         )

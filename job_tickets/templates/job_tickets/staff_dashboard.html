@@ -185,6 +185,61 @@
         background: #ffffff;
         border-radius: 8px;
     }
+
+    /* Device Sub-Tabs in Step 2 */
+    .device-sub-tabs {
+        background: #f1f5f9;
+        padding: 3px;
+        border-radius: 8px;
+    }
+    .device-sub-tabs .nav-link {
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.3rem 0.7rem;
+        border-radius: 6px;
+        color: var(--text-secondary, #64748b);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border: none;
+        background: transparent;
+        transition: all 0.15s ease;
+    }
+    .device-sub-tabs .nav-link:hover {
+        color: var(--text-primary, #0f172a);
+    }
+    .device-sub-tabs .nav-link.active {
+        background: #ffffff;
+        color: var(--primary, #0d6efd);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .device-sub-tabs .device-tab-remove {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        font-size: 0.7rem;
+        color: #94a3b8;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        margin-left: 3px;
+        line-height: 1;
+    }
+    .device-sub-tabs .device-tab-remove:hover {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+    .device-sub-tabs .nav-link.has-device-error {
+        color: #dc2626;
+    }
+    .device-sub-tabs .nav-link.has-device-error::after {
+        content: '•';
+        color: #dc2626;
+        font-size: 1rem;
+        line-height: 0;
+    }
 </style>
 {% endblock %}
 
@@ -443,16 +498,21 @@
 
                         <!-- STEP 2: DEVICE & FAULT DETAILS -->
                         <div class="tab-pane fade" id="intake-step-device" role="tabpanel" aria-labelledby="step-device-tab">
-                            <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
-                                <span class="small text-muted d-flex align-items-center gap-1.5">
-                                    <i class="fa-solid fa-laptop-medical text-primary"></i> Specify device specifications and customer's reported fault
-                                </span>
-                                <button type="button" id="add-device-btn" class="btn btn-sm btn-outline-primary px-3 py-1 rounded-pill fw-semibold shadow-sm d-inline-flex align-items-center gap-1">
-                                    <i class="fas fa-plus-circle"></i> Add Another Device
+                            <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom flex-wrap gap-2">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="small text-muted d-none d-sm-inline fw-semibold">
+                                        <i class="fa-solid fa-laptop-medical text-primary me-1"></i> Devices:
+                                    </span>
+                                    <ul class="nav nav-pills device-sub-tabs gap-1" id="deviceSubTabs" role="tablist">
+                                        <!-- Dynamically synced device sub-tabs -->
+                                    </ul>
+                                </div>
+                                <button type="button" id="add-device-btn" class="btn btn-sm btn-outline-primary px-3 py-1 rounded-pill fw-semibold shadow-sm d-inline-flex align-items-center gap-1.5" style="font-size: 0.8rem;">
+                                    <i class="fas fa-plus-circle"></i> <span>Add Device</span>
                                 </button>
                             </div>
 
-                            <div id="device-forms-container"></div>
+                            <div id="device-forms-container" class="tab-content"></div>
 
                             <!-- Step 2 Footer -->
                             <div class="d-flex justify-content-between align-items-center pt-3 mt-2 border-top flex-wrap gap-2">
@@ -655,7 +715,7 @@
 
 
     <template id="device-form-template">
-        <div class="device-form-block card border shadow-sm p-3 mb-2.5 rounded-3" style="border-color: #e2e8f0 !important; background: #ffffff;">
+        <div class="device-form-block tab-pane fade card border shadow-sm p-3 mb-2.5 rounded-3" id="device-pane-INDEX" role="tabpanel" aria-labelledby="device-subtab-INDEX" style="border-color: #e2e8f0 !important; background: #ffffff;">
             <div class="d-flex justify-content-between align-items-center pb-2 mb-2.5 border-bottom">
                 <div class="d-flex align-items-center gap-2">
                     <span class="badge bg-primary text-white rounded-pill px-2.5 py-1 fw-semibold" style="font-size: 0.75rem;">
@@ -1335,11 +1395,21 @@
         const invalidField = jobForm?.querySelector('.is-invalid');
         if (!invalidField) return;
 
-        const parentPane = invalidField.closest('.tab-pane');
-        if (parentPane && !parentPane.classList.contains('active')) {
-            const tabTrigger = document.querySelector(`[data-bs-target="#${parentPane.id}"]`);
-            if (tabTrigger && window.bootstrap) {
-                bootstrap.Tab.getOrCreateInstance(tabTrigger).show();
+        // 1. If inside Step 1, 2, or 3, activate the step tab if inactive
+        const stepPane = invalidField.closest('#intake-step-customer, #intake-step-device, #intake-step-turnaround');
+        if (stepPane && !stepPane.classList.contains('active')) {
+            const stepTrigger = document.querySelector(`[data-bs-target="#${stepPane.id}"]`);
+            if (stepTrigger && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(stepTrigger).show();
+            }
+        }
+
+        // 2. If inside a device sub-pane, activate that device subtab if inactive
+        const devicePane = invalidField.closest('.device-form-block');
+        if (devicePane && !devicePane.classList.contains('active')) {
+            const devTrigger = document.querySelector(`[data-bs-target="#${devicePane.id}"]`);
+            if (devTrigger && window.bootstrap) {
+                bootstrap.Tab.getOrCreateInstance(devTrigger).show();
             }
         }
 
@@ -1347,7 +1417,7 @@
             if (typeof invalidField.focus === 'function') {
                 invalidField.focus();
             }
-        }, 80);
+        }, 100);
     }
 
     function escapeHtml(str) {
@@ -1564,6 +1634,7 @@
         targetInput.focus();
         if (targetField === 'device_type') {
             syncDeviceChecklistToggle(formBlock);
+            updateSubTabLabel(formBlock);
         }
     }
 
@@ -1799,6 +1870,12 @@
     function validateDevices() {
         const errors = [];
         const blocks = container ? container.querySelectorAll('.device-form-block') : [];
+
+        // Clear sub-tab error indicators
+        document.querySelectorAll('#deviceSubTabs .nav-link').forEach(tab => {
+            tab.classList.remove('has-device-error');
+        });
+
         blocks.forEach((block, index) => {
             block.dataset.index = index;
             clearFieldErrors(block);
@@ -1810,6 +1887,7 @@
                 { name: 'reported_issue', label: 'Reported issue' },
             ];
 
+            let blockHasError = false;
             requiredFields.forEach(field => {
                 const input = block.querySelector(`[name="device_forms[${index}].${field.name}"]`);
                 if (input && !input.value.trim()) {
@@ -1818,8 +1896,14 @@
                         field: field.name,
                         message: `${field.label} is required.`,
                     });
+                    blockHasError = true;
                 }
             });
+
+            if (blockHasError) {
+                const subTab = document.getElementById(`device-subtab-${index}`);
+                if (subTab) subTab.classList.add('has-device-error');
+            }
         });
         return errors;
     }
@@ -2190,35 +2274,137 @@
         `;
     }
 
+    function syncDeviceSubTabs(activeIdx = null) {
+        const tabsContainer = document.getElementById('deviceSubTabs');
+        if (!tabsContainer || !container) return;
+
+        const blocks = container.querySelectorAll('.device-form-block');
+        if (blocks.length === 0) {
+            tabsContainer.innerHTML = '';
+            return;
+        }
+
+        let currentActiveIdx = -1;
+        if (activeIdx !== null && activeIdx !== undefined && activeIdx >= 0 && activeIdx < blocks.length) {
+            currentActiveIdx = activeIdx;
+        } else {
+            blocks.forEach((block, idx) => {
+                if (block.classList.contains('active')) {
+                    currentActiveIdx = idx;
+                }
+            });
+            if (currentActiveIdx === -1) {
+                currentActiveIdx = 0;
+            }
+        }
+
+        tabsContainer.innerHTML = '';
+        blocks.forEach((block, idx) => {
+            block.dataset.index = idx;
+            block.id = `device-pane-${idx}`;
+            block.setAttribute('aria-labelledby', `device-subtab-${idx}`);
+
+            const isActive = (idx === currentActiveIdx);
+            if (isActive) {
+                block.classList.add('show', 'active');
+            } else {
+                block.classList.remove('show', 'active');
+            }
+
+            const typeInput = block.querySelector('[data-device-field="device_type"]');
+            const rawType = (typeInput?.value || '').trim();
+            const displayLabel = rawType
+                ? `#${idx + 1}: ${rawType.length > 12 ? rawType.slice(0, 11) + '…' : rawType}`
+                : `Device ${idx + 1}`;
+
+            const summaryEl = block.querySelector('.device-summary-label');
+            if (summaryEl) {
+                summaryEl.textContent = rawType ? `• ${rawType}` : '';
+            }
+
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.setAttribute('role', 'presentation');
+
+            const removeBtnHtml = blocks.length > 1
+                ? `<span class="device-tab-remove" data-remove-index="${idx}" title="Remove device" role="button" aria-label="Remove device ${idx + 1}">&times;</span>`
+                : '';
+
+            li.innerHTML = `
+                <button class="nav-link ${isActive ? 'active' : ''}" id="device-subtab-${idx}" data-bs-toggle="pill" data-bs-target="#device-pane-${idx}" type="button" role="tab" aria-controls="device-pane-${idx}" aria-selected="${isActive}">
+                    <i class="fa-solid fa-laptop me-1"></i>
+                    <span class="device-tab-title">${escapeHtml(displayLabel)}</span>
+                    ${removeBtnHtml}
+                </button>
+            `;
+            tabsContainer.appendChild(li);
+        });
+    }
+
+    function updateSubTabLabel(formBlock) {
+        if (!formBlock) return;
+        const idx = parseInt(formBlock.dataset.index, 10);
+        const subTab = document.getElementById(`device-subtab-${idx}`);
+        if (!subTab) return;
+
+        const titleEl = subTab.querySelector('.device-tab-title');
+        const summaryEl = formBlock.querySelector('.device-summary-label');
+        const typeInput = formBlock.querySelector('[data-device-field="device_type"]');
+        const rawType = (typeInput?.value || '').trim();
+
+        if (rawType) {
+            const shortName = rawType.length > 12 ? rawType.slice(0, 11) + '…' : rawType;
+            if (titleEl) titleEl.textContent = `#${idx + 1}: ${shortName}`;
+            if (summaryEl) summaryEl.textContent = `• ${rawType}`;
+        } else {
+            if (titleEl) titleEl.textContent = `Device ${idx + 1}`;
+            if (summaryEl) summaryEl.textContent = '';
+        }
+    }
+
+    function removeDeviceByIndex(removeIdx) {
+        if (!container) return;
+        const blocks = container.querySelectorAll('.device-form-block');
+        if (blocks.length <= 1) {
+            alert("You must have at least one device in the job ticket.");
+            return;
+        }
+        const targetBlock = blocks[removeIdx];
+        if (!targetBlock) return;
+
+        stopCamera(targetBlock);
+        clearCapturedPhotos(targetBlock);
+        targetBlock.remove();
+
+        const newActiveIdx = Math.max(0, removeIdx - 1);
+        updateIndices(newActiveIdx);
+    }
+
     function addDeviceForm(initial = false) {
         if (!template || !container) return;
 
         const clone = template.content.cloneNode(true);
         const formBlock = clone.querySelector('.device-form-block');
+        const currentBlocks = container.querySelectorAll('.device-form-block');
+        const targetIndex = currentBlocks.length;
 
         // 1. Update the index placeholder text
-        formBlock.querySelector('.device-index').textContent = formIndex + 1;
-        formBlock.dataset.index = formIndex;
+        formBlock.querySelector('.device-index').textContent = targetIndex + 1;
+        formBlock.dataset.index = targetIndex;
+        formBlock.id = `device-pane-${targetIndex}`;
+        formBlock.setAttribute('aria-labelledby', `device-subtab-${targetIndex}`);
 
         // 2. Update field names and IDs with the new index
         clone.querySelectorAll('[name*="[INDEX]"], [for*="INDEX"]').forEach(el => {
-            if (el.name) el.name = el.name.replace('[INDEX]', `[${formIndex}]`);
-            if (el.id) el.id = el.id.replace('INDEX', formIndex);
-            if (el.htmlFor) el.htmlFor = el.htmlFor.replace('INDEX', formIndex);
+            if (el.name) el.name = el.name.replace('[INDEX]', `[${targetIndex}]`);
+            if (el.id) el.id = el.id.replace('INDEX', targetIndex);
+            if (el.htmlFor) el.htmlFor = el.htmlFor.replace('INDEX', targetIndex);
         });
 
         // 3. Attach remove listener
         formBlock.querySelector('.remove-device-btn').addEventListener('click', function () {
-            const currentBlocks = container.querySelectorAll('.device-form-block');
-            if (currentBlocks.length > 1) {
-                stopCamera(formBlock);
-                clearCapturedPhotos(formBlock);
-                formBlock.remove();
-                updateIndices();
-                refreshRemoveButtonsVisibility();
-            } else {
-                alert("You must have at least one device in the job ticket.");
-            }
+            const blockIndex = parseInt(formBlock.dataset.index, 10);
+            removeDeviceByIndex(blockIndex);
         });
 
         container.appendChild(clone);
@@ -2228,33 +2414,62 @@
         }
         syncDeviceChecklistToggle(formBlock);
 
-        formIndex++;
+        formIndex = container.querySelectorAll('.device-form-block').length;
         refreshRemoveButtonsVisibility();
+        syncDeviceSubTabs(targetIndex);
+
+        if (!initial) {
+            setTimeout(() => {
+                const typeInput = formBlock.querySelector('.device-type-input');
+                if (typeInput) typeInput.focus();
+            }, 50);
+        }
     }
 
     // Helper to re-index forms after a removal
-    function updateIndices() {
-        formIndex = 0;
+    function updateIndices(activateIdx = 0) {
         if (!container) return;
-        container.querySelectorAll('.device-form-block').forEach(formBlock => {
-            formBlock.querySelector('.device-index').textContent = formIndex + 1;
-            formBlock.dataset.index = formIndex;
+        const blocks = container.querySelectorAll('.device-form-block');
+        blocks.forEach((formBlock, idx) => {
+            formBlock.querySelector('.device-index').textContent = idx + 1;
+            formBlock.dataset.index = idx;
+            formBlock.id = `device-pane-${idx}`;
+            formBlock.setAttribute('aria-labelledby', `device-subtab-${idx}`);
 
             formBlock.querySelectorAll('[name*="["]').forEach(el => {
-                el.name = el.name.replace(/\[\d+\]/, `[${formIndex}]`);
+                el.name = el.name.replace(/\[\d+\]/, `[${idx}]`);
             });
-            formBlock.querySelectorAll('[id*="-"], [for*="-"]').forEach(el => {
-                if (el.id) el.id = el.id.replace(/-\d+/, `-${formIndex}`);
-                if (el.htmlFor) el.htmlFor = el.htmlFor.replace(/-\d+/, `-${formIndex}`);
+            formBlock.querySelectorAll('[id], [for]').forEach(el => {
+                if (el.id && /-\d+$/.test(el.id)) {
+                    el.id = el.id.replace(/-\d+$/, `-${idx}`);
+                }
+                if (el.htmlFor && /-\d+$/.test(el.htmlFor)) {
+                    el.htmlFor = el.htmlFor.replace(/-\d+$/, `-${idx}`);
+                }
             });
-
-            formIndex++;
         });
+
+        formIndex = blocks.length;
         refreshRemoveButtonsVisibility();
+        const safeActive = Math.min(activateIdx, Math.max(0, blocks.length - 1));
+        syncDeviceSubTabs(safeActive);
     }
 
     if (addButton) {
         addButton.addEventListener('click', () => addDeviceForm(false));
+    }
+
+    const deviceSubTabsEl = document.getElementById('deviceSubTabs');
+    if (deviceSubTabsEl) {
+        deviceSubTabsEl.addEventListener('click', function (e) {
+            const removeBtn = e.target.closest('.device-tab-remove');
+            if (removeBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const removeIdx = parseInt(removeBtn.dataset.removeIndex, 10);
+                removeDeviceByIndex(removeIdx);
+            }
+        });
     }
 
     if (jobForm) {
@@ -2339,7 +2554,9 @@
 
         container.addEventListener('input', function (event) {
             if (event.target && event.target.classList.contains('device-type-input')) {
-                syncDeviceChecklistToggle(event.target.closest('.device-form-block'));
+                const block = event.target.closest('.device-form-block');
+                syncDeviceChecklistToggle(block);
+                updateSubTabLabel(block);
             }
         });
 
@@ -2360,7 +2577,9 @@
             }
 
             if (event.target && event.target.classList.contains('device-type-input')) {
-                syncDeviceChecklistToggle(event.target.closest('.device-form-block'));
+                const block = event.target.closest('.device-form-block');
+                syncDeviceChecklistToggle(block);
+                updateSubTabLabel(block);
             }
         });
     }
@@ -2380,6 +2599,7 @@
                 if (typeInput) {
                     typeInput.value = type;
                     syncDeviceChecklistToggle(firstBlock);
+                    updateSubTabLabel(firstBlock);
                 }
                 if (brandInput) brandInput.value = brand;
                 if (modelInput) modelInput.value = model;
