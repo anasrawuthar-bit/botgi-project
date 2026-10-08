@@ -716,48 +716,36 @@
 
     <template id="device-form-template">
         <div class="device-form-block tab-pane fade card border shadow-sm p-3 mb-2.5 rounded-3" id="device-pane-INDEX" role="tabpanel" aria-labelledby="device-subtab-INDEX" style="border-color: #e2e8f0 !important; background: #ffffff;">
-            <div class="d-flex justify-content-between align-items-center pb-2 mb-2.5 border-bottom">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-primary text-white rounded-pill px-2.5 py-1 fw-semibold" style="font-size: 0.75rem;">
-                        <i class="fas fa-laptop me-1"></i> Device #<span class="device-index">1</span>
-                    </span>
-                    <span class="text-muted small fw-medium device-summary-label"></span>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-danger remove-device-btn d-none px-2 py-0.5" style="font-size: 0.78rem;">
-                    <i class="fas fa-trash-alt me-1"></i> Remove Device
-                </button>
-            </div>
-
             <div class="row g-2.5">
-                <div class="col-md-3 col-sm-6">
+                <div class="col-md-2 col-sm-6">
                     <label class="form-label fw-semibold text-secondary small mb-1">
                         Device Type <span class="text-danger">*</span>
                     </label>
                     <input type="text" name="device_forms[INDEX].device_type" class="form-control form-control-sm device-type-input"
                         placeholder="e.g. Laptop" list="preset-device-type" data-device-field="device_type" required>
                 </div>
-                <div class="col-md-3 col-sm-6">
+                <div class="col-md-2 col-sm-6">
                     <label class="form-label fw-semibold text-secondary small mb-1">
                         Brand <span class="text-danger">*</span>
                     </label>
                     <input type="text" name="device_forms[INDEX].device_brand" class="form-control form-control-sm"
                         placeholder="e.g. Dell, HP, Apple" list="preset-device-brand" data-device-field="device_brand" required>
                 </div>
-                <div class="col-md-2 col-sm-4">
+                <div class="col-md-3 col-sm-6">
                     <label class="form-label fw-semibold text-secondary small mb-1">
                         Model <span class="text-danger">*</span>
                     </label>
                     <input type="text" name="device_forms[INDEX].device_model" class="form-control form-control-sm"
-                        placeholder="e.g. Inspiron 15" required>
+                        placeholder="e.g. Inspiron 15 3521" required>
                 </div>
-                <div class="col-md-2 col-sm-4">
+                <div class="col-md-3 col-sm-6">
                     <label class="form-label fw-semibold text-secondary small mb-1">
                         Serial / IMEI
                     </label>
                     <input type="text" name="device_forms[INDEX].device_serial" class="form-control form-control-sm"
                         placeholder="Serial / IMEI">
                 </div>
-                <div class="col-md-2 col-sm-4">
+                <div class="col-md-2 col-sm-6">
                     <label class="form-label fw-semibold text-secondary small mb-1">
                         <i class="fas fa-lock text-muted me-1"></i>PIN / Pass
                     </label>
@@ -919,6 +907,11 @@
                             Technician must verify checklist before job closure.
                         </small>
                     </div>
+                </div>
+                <div class="col-md-12 d-flex justify-content-end">
+                    <button type="button" class="btn btn-sm btn-link text-danger text-decoration-none remove-device-btn d-none p-0 mt-1" style="font-size: 0.76rem;">
+                        <i class="fas fa-trash-alt me-1"></i> Remove this device
+                    </button>
                 </div>
             </div>
         </div>
@@ -2392,7 +2385,8 @@
         const targetIndex = currentBlocks.length;
 
         // 1. Update the index placeholder text
-        formBlock.querySelector('.device-index').textContent = targetIndex + 1;
+        const devIdxEl = formBlock.querySelector('.device-index');
+        if (devIdxEl) devIdxEl.textContent = targetIndex + 1;
         formBlock.dataset.index = targetIndex;
         formBlock.id = `device-pane-${targetIndex}`;
         formBlock.setAttribute('aria-labelledby', `device-subtab-${targetIndex}`);
@@ -2405,10 +2399,13 @@
         });
 
         // 3. Attach remove listener
-        formBlock.querySelector('.remove-device-btn').addEventListener('click', function () {
-            const blockIndex = parseInt(formBlock.dataset.index, 10);
-            removeDeviceByIndex(blockIndex);
-        });
+        const removeBtn = formBlock.querySelector('.remove-device-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', function () {
+                const blockIndex = parseInt(formBlock.dataset.index, 10);
+                removeDeviceByIndex(blockIndex);
+            });
+        }
 
         container.appendChild(clone);
         const rackSelect = formBlock.querySelector('.device-rack-select');
@@ -2434,7 +2431,8 @@
         if (!container) return;
         const blocks = container.querySelectorAll('.device-form-block');
         blocks.forEach((formBlock, idx) => {
-            formBlock.querySelector('.device-index').textContent = idx + 1;
+            const devIdxEl = formBlock.querySelector('.device-index');
+            if (devIdxEl) devIdxEl.textContent = idx + 1;
             formBlock.dataset.index = idx;
             formBlock.id = `device-pane-${idx}`;
             formBlock.setAttribute('aria-labelledby', `device-subtab-${idx}`);
